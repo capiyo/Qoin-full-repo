@@ -34,6 +34,8 @@ pub struct EdgeDecision {
     pub angular_threshold_radians: f64,
     pub action: &'static str,
     pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_veto: Option<String>,
     pub research_only: bool,
 }
 
@@ -164,7 +166,7 @@ impl EdgeStrategy {
             symbol: symbol.to_owned(), strategy_key: self.strategy_key.clone(),
             strategy_version: self.version.clone(), features, attention, attended_features: attended,
             decision_vector: [bullish, bearish], magnitude, angle_radians: angle,
-            angular_threshold_radians: threshold, action, reason, research_only: true,
+            angular_threshold_radians: threshold, action, reason, risk_veto: None, research_only: true,
         })
     }
 }
