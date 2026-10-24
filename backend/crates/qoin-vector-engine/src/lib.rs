@@ -425,6 +425,23 @@ impl EdgeStrategy {
         liquidation_events: f64,
         last_liquidation_side: Option<&str>,
     ) -> Result<EdgeDecision, String> {
+        self.decide_with_context(symbol, order_flow_imbalance, funding_rate, spread_bps,
+            ewma_abs_return, event_intensity, liquidation_events, last_liquidation_side,
+            &DecisionContext::default())
+    }
+
+    pub fn decide_with_context(
+        &self,
+        symbol: &str,
+        order_flow_imbalance: f64,
+        funding_rate: Option<f64>,
+        spread_bps: Option<f64>,
+        ewma_abs_return: f64,
+        event_intensity: f64,
+        liquidation_events: f64,
+        last_liquidation_side: Option<&str>,
+        context: &DecisionContext,
+    ) -> Result<EdgeDecision, String> {
         self.validate()?;
         let scale = |name: &str| *self.feature_scales.get(name).expect("validated scale");
         let raw = [
