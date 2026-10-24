@@ -15,12 +15,10 @@ use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 
-mod edge_strategy;
-mod vector_engine;
 mod risk;
 #[cfg(feature = "live-execution")]
 mod trading;
-use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use qoin_vector_engine::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
