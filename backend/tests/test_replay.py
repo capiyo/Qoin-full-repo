@@ -1,9 +1,9 @@
 import unittest
 from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, deflated_sharpe_ratio, run_replay, walk_forward_splits
 
-def event(ts, seq, price, age=0, regime=True, fill=1.0, kind="trade", funding=0.0):
+def event(ts, seq, price, age=0, regime=True, fill=1.0, kind="trade", funding=0.0, expected_edge=100.0):
     return ReplayEvent(ts, ts + age, "BTCUSDT", kind, price, price - 0.01, price + 0.01,
-                       0.9, funding, 0.001, seq, regime, False, fill, expected_edge_bps=100.0)
+                       0.9, funding, 0.001, seq, regime, False, fill, expected_edge_bps=expected_edge)
 
 class ReplayTests(unittest.TestCase):
     def test_no_trade_baseline(self):
