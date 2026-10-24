@@ -24,6 +24,8 @@ These are target requirements, not claims about current code. Until these contro
 - Missing cost estimates, missing replay arrival timestamps, missing sequence continuity, incomplete risk policy, or absent account/exchange context fail closed.
 - Risk evaluation is separate from model scoring and is persisted with decisions. `execution_allowed` remains false; the risk gate is not wired to an order-submission path.
 
+The independent risk policy loader requires all of these owner-supplied settings before it will validate: `QOIN_MAX_POSITIONS`, `QOIN_MAX_CORRELATED_EXPOSURE_FRACTION`, `QOIN_MAX_DAILY_LOSS_FRACTION`, `QOIN_MAX_WEEKLY_LOSS_FRACTION`, `QOIN_MAX_DRAWDOWN_FRACTION`, `QOIN_RISK_MAX_SPREAD_BPS`, `QOIN_RISK_MAX_SLIPPAGE_BPS`, `QOIN_MAX_FEED_AGE_MS`, and `QOIN_RISK_MIN_STATE_QUALITY`. Per-trade risk (0.25%) and leverage (2x) are hard upper bounds in code. Supplying these variables alone is insufficient: equity, stop distance, open exposure, correlated exposure, realized losses, feed status, protective-stop confirmation, and exchange reconciliation must also come from trusted account/exchange state.
+
 ## Still required before any live-trading consideration
 - Supply and review actual production values for position-count, correlated-exposure, daily/weekly loss, drawdown, spread, slippage, feed-age, and state-quality limits. Current `RiskLimits::target_policy()` deliberately fails validation because the owner has not provided these limits.
 - Implement and test exchange-side protective-stop placement, reduce-only/stop semantics, timeout and partial-fill recovery, exchange reconciliation, and crash recovery for orders/positions.
