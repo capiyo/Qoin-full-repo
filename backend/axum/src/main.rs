@@ -18,7 +18,7 @@ use tower_http::trace::TraceLayer;
 mod risk;
 #[cfg(feature = "live-execution")]
 mod trading;
-use qoin_vector_engine::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use qoin_vector_engine::{DecisionContext, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -28,6 +28,7 @@ struct MarketEvent {
     symbol: String,
     event_type: String,
     ts_ms: i64,
+    #[serde(default)] received_at_ms: Option<i64>,
     #[serde(default)] price: Option<f64>,
     #[serde(default)] size: Option<f64>,
     #[serde(default)] side: Option<String>,
@@ -47,8 +48,13 @@ struct SymbolState {
     last_event_ts_ms: Option<i64>,
     last_state_update_ts_ms: Option<i64>,
     last_event_id: Option<String>,
+    candidate_action: Option<String>,
+    candidate_persistence_ticks: usize,
     last_price: Option<f64>,
     spread_bps: Option<f64>,
+    spread_ts_ms: Option<i64>,
+    funding_ts_ms: Option<i64>,
+    open_interest_ts_ms: Option<i64>,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
