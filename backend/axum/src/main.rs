@@ -42,6 +42,9 @@ struct SymbolState {
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
+    last_decay_ts_ms: Option<i64>,
+    last_book_ts_ms: Option<i64>,
+    book_imbalance: Option<f64>,
     last_price: Option<f64>,
     spread_bps: Option<f64>,
     signed_flow: f64,
@@ -51,7 +54,7 @@ struct SymbolState {
     ewma_abs_return: f64,
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
-    liquidation_events: usize,
+    liquidation_events: f64,
     last_liquidation_side: Option<String>,
     state_quality: f64,
 }
@@ -81,40 +84,90 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         if bid < 0.0 || ask < bid { return Err("book prices must be non-negative and ask >= bid".into()); }
     }
     if [e.price,e.size,e.bid,e.ask,e.bid_size,e.ask_size,e.open_interest].into_iter().flatten().any(|v| v < 0.0) {
-        return Err("prices, sizes, and open interest must be non-negative".into());
-    }
-    Ok(())
+   const FLOW_HALF_LIFE_MS: f64 = 5_000.0;
+const INTENSITY_HALF_LIFE_MS: f64 = 2_000.0;
+const LIQUIDATION_HALF_LIFE_MS: f64 = 30_000.0;
+
+fn decay(value: f64, elapsed_ms: i64, half_life_ms: f64) -> f64 {
+    if elapsed_ms <= 0 { return value; }
+    value * 2.0_f64.powf(-(elapsed_ms as f64) / half_life_ms)
 }
+
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.symbol = event.symbol.clone();
+    // All rolling quantities are bounded by explicit half-lives. Event-time
+    // ordering is checked before this function, so elapsed time cannot be negative.
+    if let Some(previous_ts) = state.last_decay_ts_ms {
+        let elapsed = event.ts_ms.saturating_sub(previous_ts);
+        state.signed_flow = decay(state.signed_flow, elapsed, FLOW_HALF_LIFE_MS);
+        state.total_trade_size = decay(state.total_trade_size, elapsed, FLOW_HALF_LIFE_MS);
+        state.event_intensity = decay(state.event_intensity, elapsed, INTENSITY_HALF_LIFE_MS);
+        state.liquidation_events = decay(state.liquidation_events, elapsed, LIQUIDATION_HALF_LIFE_MS);
+    }
+    state.last_decay_ts_ms = Some(event.ts_ms);
+
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
-            state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
+            let abs_return = (price / previous).ln().abs();
+            // Return volatility also decays with a stated 60-second half-life.
+            let elapsed = state.last_event_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts)).unwrap_or(0);
+            state.ewma_abs_return = decay(state.ewma_abs_return, elapsed, 60_000.0)
+                + 0.06 * abs_return;
         }
         state.last_price = Some(price);
     }
-    if let (Some(bid),Some(ask))=(event.bid,event.ask) {
-        let mid=(bid+ask)/2.0;
-        state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
-        if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
-            if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;}
+    if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
+        let mid = (bid + ask) / 2.0;
+        state.spread_bps = if mid > 0.0 { Some((ask - bid) / mid * 10_000.0) } else { None };
+        state.last_book_ts_ms = Some(event.ts_ms);
+        if let (Some(bs), Some(as_)) = (event.bid_size, event.ask_size) {
+            if bs + as_ > 0.0 {
+                // Keep book imbalance separate: it is dimensionless and must not
+                // enter the trade-flow numerator without a matching denominator.
+                state.book_imbalance = Some(((bs - as_) / (bs + as_)).clamp(-1.0, 1.0));
+            }
         }
     }
     match event.event_type.as_str() {
-        "trade" => { let size=event.size.unwrap_or(0.0); match event.side.as_deref() {
-            Some("buy")=>state.signed_flow+=size, Some("sell")=>state.signed_flow-=size, _=>{} }
-            state.total_trade_size+=size; state.event_intensity+=1.0; }
-        "liquidation" => { state.liquidation_events+=1; state.event_intensity+=2.0;
-            state.last_liquidation_side=event.liquidation_side.clone();
-            if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
-            if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);} }
-        "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
-        "open_interest" => if event.open_interest.is_some(){state.open_interest=event.open_interest;},
-        "book" => {}, _ => {}
+        "trade" => {
+            let size = event.size.unwrap_or(0.0);
+            match event.side.as_deref() {
+                Some("buy") => state.signed_flow += size,
+                Some("sell") => state.signed_flow -= size,
+                _ => {}
+            }
+            state.total_trade_size += size;
+            state.event_intensity += 1.0;
+        }
+        "liquidation" => {
+            state.liquidation_events += 1.0;
+            state.event_intensity += 2.0;
+            state.last_liquidation_side = event.liquidation_side.clone();
+            if event.liquidation_side.as_deref() == Some("long") {
+                state.signed_flow -= event.size.unwrap_or(0.0);
+                state.total_trade_size += event.size.unwrap_or(0.0);
+            }
+            if event.liquidation_side.as_deref() == Some("short") {
+                state.signed_flow += event.size.unwrap_or(0.0);
+                state.total_trade_size += event.size.unwrap_or(0.0);
+            }
+        }
+        "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; },
+        "open_interest" => if event.open_interest.is_some() { state.open_interest = event.open_interest; },
+        "book" => {},
+        _ => {}
     }
-    state.event_count+=1;
-    state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
-    if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
+    state.event_count += 1;
+    state.last_event_ts_ms = Some(event.ts_ms);
+    state.order_flow_imbalance = if state.total_trade_size > f64::EPSILON {
+        (state.signed_flow / state.total_trade_size).clamp(-1.0, 1.0)
+    } else { 0.0 };
+    // Quality is based on actual fresh data availability, not lifetime event count.
+    let book_fresh = state.last_book_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 5_000).unwrap_or(false);
+    let price_fresh = state.last_price.is_some();
+    state.state_quality = (if book_fresh { 0.5 } else { 0.0 }) + (if price_fresh { 0.5 } else { 0.0 });
+}
+ize).clamp(-1.0,1.0);}
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
