@@ -484,7 +484,7 @@ async fn recover_pending_events(
             let mut decision = strategy.decide(
                 &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
                 snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-                snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
+                snapshot.liquidation_pressure
             ).map_err(|e| format!("recompute recovered decision: {e}"))?;
             if decision.action == "buy" || decision.action == "sell" {
                 decision.risk_veto = Some("InvalidOrMissingContext".into());
