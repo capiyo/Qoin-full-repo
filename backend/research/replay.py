@@ -252,10 +252,11 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                 close_position(event, position)
                 stop_closed = True
 
-        peak_equity = max(peak_equity, equity)
-        daily_loss = max(0.0, (daily_start_equity - equity) / daily_start_equity) if daily_start_equity > 0 else 1.0
-        weekly_loss = max(0.0, (weekly_start_equity - equity) / weekly_start_equity) if weekly_start_equity > 0 else 1.0
-        drawdown = max(0.0, (peak_equity - equity) / peak_equity) if peak_equity > 0 else 1.0
+        marked_equity = equity + sum(p.quantity * (last_prices.get(p.symbol, p.entry_price) - p.entry_price) * p.side for p in positions.values())
+        peak_equity = max(peak_equity, marked_equity)
+        daily_loss = max(0.0, (daily_start_equity - marked_equity) / daily_start_equity) if daily_start_equity > 0 else 1.0
+        weekly_loss = max(0.0, (weekly_start_equity - marked_equity) / weekly_start_equity) if weekly_start_equity > 0 else 1.0
+        drawdown = max(0.0, (peak_equity - marked_equity) / peak_equity) if peak_equity > 0 else 1.0
         if drawdown >= config.max_drawdown_fraction:
             drawdown_breaker_active = True
 
