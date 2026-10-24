@@ -1,13 +1,13 @@
 # Qoin Backend Services
 
-This branch contains the separated Rust/C++ backend and its research and persistence layer. The React and React Native clients live on the `frontend` branch.
+The monorepo keeps UI clients under `frontend/` and Rust/C++ services under `backend/`. This backend remains research-only; live order submission is disconnected.
 
 ## Service ownership
 
-- `services/drogon` — C++ Drogon public HTTP gateway, request forwarding, API boundary, and response/error handling.
-- `services/axum` — Rust/Axum authoritative market-event ingestion, state estimation, strategy evaluation, vector/attention decisions, and MongoDB persistence.
-- `services/axum-api` — compatibility research signal API.
-- `crates/qoin-vector-engine` — reusable deterministic Rust signal crate.
+- `backend/drogon` — C++ Drogon public HTTP gateway, request forwarding, API boundary, and response/error handling.
+- `backend/axum` — Rust/Axum authoritative market-event ingestion, state estimation, strategy evaluation, vector/attention decisions, and MongoDB persistence.
+- `backend/axum-api` — compatibility research signal API.
+- `backend/crates/qoin-vector-engine` — reusable deterministic Rust signal crate.
 - `contracts/` — shared HTTP and event schemas.
 - `config/`, `research/`, `tests/` — strategy configuration, research models, and verification.
 
@@ -18,20 +18,21 @@ Drogon must not duplicate Axum's business logic. MongoDB is the durable source o
 Requirements: Rust stable, C++17, CMake, Drogon development libraries, Docker, and MongoDB 7.
 
 ```sh
-docker compose up -d mongodb
-cargo test --workspace
-cargo run --manifest-path services/axum/Cargo.toml
+docker compose -f backend/docker-compose.yml up -d mongodb
+cargo fmt --all --manifest-path backend/Cargo.toml -- --check
+cargo test --workspace --all-features --manifest-path backend/Cargo.toml
+cargo run --manifest-path backend/axum/Cargo.toml
 ```
 
 In another terminal:
 
 ```sh
-cmake -S services/drogon -B build/drogon
+cmake -S backend/drogon -B build/drogon
 cmake --build build/drogon
 ./build/drogon/qoin-gateway
 ```
 
-Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, and `QOIN_DROGON_PORT` as required. Keep Axum private behind Drogon in deployment.
+Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, and a strong `QOIN_ADMIN_TOKEN`. Event ingestion and strategy mutation are denied if the token is missing and are checked in both Drogon and Axum. Keep Axum bound to loopback/private networking.
 
 ## Strategy persistence and safety
 
