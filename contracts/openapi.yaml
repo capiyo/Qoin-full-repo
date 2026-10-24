@@ -15,6 +15,8 @@ paths:
   /api/v1/events:
     post:
       summary: Ingest one market event
+      security:
+        - IngestBearer: []
       requestBody:
         required: true
         content:
@@ -24,7 +26,9 @@ paths:
       responses:
         '200': { description: Event accepted or duplicate ignored }
         '400': { description: Invalid event }
-        '503': { description: Persistence failure }
+        '401': { description: Missing or invalid ingestion bearer token }
+        '409': { description: Duplicate, out-of-order, or sequence-gap event }
+        '503': { description: Persistence failure or pending-event recovery }
   /api/v1/state:
     get:
       summary: Get latest state estimate for a symbol
@@ -46,6 +50,11 @@ paths:
         '200': { description: Latest decision or abstain response }
         '503': { description: Storage unavailable }
 components:
+  securitySchemes:
+    IngestBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque token
   schemas:
     MarketEvent:
       type: object
@@ -56,6 +65,9 @@ components:
         symbol: { type: string, minLength: 1 }
         event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
         ts_ms: { type: integer, minimum: 1 }
+        sequence: { type: integer, nullable: true, minimum: 1 }
+        regime: { type: string, nullable: true, enum: [bull, bear, range] }
+        regime_confidence: { type: number, nullable: true, minimum: 0, maximum: 1 }
         price: { type: number, nullable: true, minimum: 0 }
         size: { type: number, nullable: true, minimum: 0 }
         side: { type: string, nullable: true, enum: [buy, sell, unknown] }
