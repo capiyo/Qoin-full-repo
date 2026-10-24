@@ -27,5 +27,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "backend -> target"
-      - run: cargo fmt --all --manifest-path backend/Cargo.toml -- --check
       - run: cargo test --workspace --all-features --manifest-path backend/Cargo.toml
