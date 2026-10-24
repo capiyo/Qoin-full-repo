@@ -286,10 +286,31 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     if !ingest_authorized(&headers) { return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"authorized service token required"}))); }
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let _ingest_guard = s.ingest_lock.lock().await;
+    // Preflight a new event against a private state clone before making it durable.
+    // A stale/out-of-order/gapped event must never enter market_events.
+    let mut preflight_snapshot: Option<SymbolState> = None;
+    let mut preflight_error: Option<String> = None;
+    let current_snapshot = match s.memory.read() {
+        Ok(guard) => guard.get(&event.symbol).cloned().unwrap_or_default(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
+    };
+    let mut candidate_snapshot = current_snapshot;
+    match apply(&mut candidate_snapshot, &event, &s.decay) {
+        Ok(()) => preflight_snapshot = Some(candidate_snapshot),
+        Err(message) => {
+            // A repeated event may correctly fail sequence/time preflight because it
+            // was already applied. Let the idempotency path below recover it by ID.
+            match s.events.find_one(doc!{"venue": &event.venue, "symbol": &event.symbol, "event_id": &event.event_id}, None).await {
+                Ok(Some(_)) => preflight_error = Some(message),
+                Ok(None) => return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message}))),
+                Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event idempotency lookup unavailable"}))),
+            }
+        }
+    }
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     let mut recovered_snapshot: Option<SymbolState> = None;
-    match s.events.insert_one(raw,None).await{
-        Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>{
+    let event_was_inserted = match s.events.insert_one(raw,None).await{
+        Ok(_) => true,Err(e) if e.to_string().contains("E11000") => {
             // A duplicate may be an event persisted before a previous state write failed.
             // Re-process it unless the durable in-memory checkpoint already includes it.
             let in_memory = s.memory.read().ok().and_then(|guard| guard.get(&event.symbol).cloned());
@@ -315,10 +336,15 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
             }
         },
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
-    }
+    };
     let already_applied = recovered_snapshot.is_some();
     let mut snapshot = if let Some(recovered) = recovered_snapshot {
         recovered
+    } else if event_was_inserted {
+        match preflight_snapshot {
+            Some(candidate) => candidate,
+            None => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"preflight state unavailable"}))),
+        }
     } else {
         let guard = match s.memory.read() {
             Ok(v) => v,
@@ -326,6 +352,13 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         };
         guard.get(&event.symbol).cloned().unwrap_or_default()
     };
+    // If preflight failed, the event already existed and is handled through the
+    // recovery path. Do not mutate or persist a failed candidate state.
+    if let Some(message) = preflight_error {
+        if recovered_snapshot.is_none() {
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"duplicate event state requires recovery","detail":message})));
+        }
+    }
     let decay = s.decay;
     if snapshot.last_event_id.as_deref() != Some(event.event_id.as_str()) {
         if let Err(message) = apply(&mut snapshot, &event, &decay) {
