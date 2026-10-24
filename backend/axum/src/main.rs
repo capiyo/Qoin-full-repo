@@ -139,6 +139,24 @@ fn token_authorized(headers: &HeaderMap, env_name: &str) -> bool {
 }
 fn admin_authorized(headers: &HeaderMap) -> bool { token_authorized(headers, "QOIN_ADMIN_TOKEN") }
 fn ingest_authorized(headers: &HeaderMap) -> bool { token_authorized(headers, "QOIN_INGEST_TOKEN") }
+fn market_risk_context(
+    snapshot: &SymbolState,
+    spread_bps: Option<f64>,
+    estimated_slippage_bps: Option<f64>,
+    feed_age_ms: Option<i64>,
+    kill_switch: bool,
+) -> risk::RiskContext {
+    risk::RiskContext {
+        spread_bps,
+        estimated_slippage_bps,
+        feed_age_ms: feed_age_ms.filter(|age| *age >= 0).map(|age| age as u64),
+        state_quality: Some(snapshot.state_quality),
+        sequence_gap: !snapshot.sequence_valid,
+        duplicate_or_out_of_order: false,
+        kill_switch,
+        ..risk::RiskContext::default()
+    }
+}
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -438,19 +456,14 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         tracing::error!(error=%e,"state snapshot persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
-    let mut risk_context = risk::RiskContext::default();
-    // Market-derived risk inputs must reach the independent gate as well as the
-    // signal engine. Account/exchange-owned fields remain absent until a trusted
-    // account-state adapter supplies them, so the gate continues to fail closed.
-    risk_context.spread_bps = fresh_spread;
-    risk_context.estimated_slippage_bps = context.slippage_bps;
-    risk_context.feed_age_ms = context.state_age_ms
-        .filter(|age| *age >= 0)
-        .map(|age| age as u64);
-    risk_context.state_quality = context.state_quality;
-    risk_context.sequence_gap = !snapshot.sequence_valid;
-    risk_context.duplicate_or_out_of_order = false;
-    risk_context.kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH").map(|v| v != "false" && v != "0").unwrap_or(true);
+    // Account/exchange-owned fields remain absent until a trusted adapter supplies
+    // them, so this independent gate continues to fail closed.
+    let kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH")
+        .map(|v| v != "false" && v != "0")
+        .unwrap_or(true);
+    let risk_context = market_risk_context(
+        &snapshot, fresh_spread, context.slippage_bps, context.state_age_ms, kill_switch,
+    );
     let risk_limits = risk::RiskLimits::from_env().unwrap_or_else(|error| { tracing::warn!(%error, "risk policy incomplete; all entries remain vetoed"); risk::RiskLimits::target_policy() });
     let risk_assessment = risk::evaluate_entry(&risk_limits, &risk_context);
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
@@ -717,4 +730,32 @@ mod tests {
         assert!(state.liquidation_pressure < 0.1);
     }
 
+}
+
+#[cfg(test)]
+mod market_risk_context_tests {
+    use super::*;
+
+    #[test]
+    fn market_freshness_and_quality_are_forwarded_to_risk_gate() {
+        let snapshot = SymbolState {
+            sequence_valid: true,
+            state_quality: 0.75,
+            ..SymbolState::default()
+        };
+        let context = market_risk_context(&snapshot, Some(2.0), Some(1.5), Some(120), false);
+        assert_eq!(context.spread_bps, Some(2.0));
+        assert_eq!(context.estimated_slippage_bps, Some(1.5));
+        assert_eq!(context.feed_age_ms, Some(120));
+        assert_eq!(context.state_quality, Some(0.75));
+        assert!(!context.sequence_gap);
+        assert!(!context.kill_switch);
+    }
+
+    #[test]
+    fn invalid_market_age_fails_closed_as_missing_age() {
+        let snapshot = SymbolState { sequence_valid: true, ..SymbolState::default() };
+        let context = market_risk_context(&snapshot, Some(2.0), Some(1.5), Some(-1), false);
+        assert_eq!(context.feed_age_ms, None);
+    }
 }
