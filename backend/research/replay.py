@@ -342,6 +342,65 @@ def walk_forward_splits(length: int, train_size: int, test_size: int, purge: int
     return splits
 
 
+def walk_forward_parameter_sensitivity(
+    events: Iterable[ReplayEvent],
+    parameter_grid: Iterable[dict[str, float]],
+    strategy_factory: Callable[[dict[str, float]], Strategy],
+    train_size: int,
+    test_size: int,
+    purge: int,
+    embargo: int,
+    config: ReplayConfig = ReplayConfig(),
+) -> list[dict]:
+    """Select parameters on each chronological training window and report untouched OOS results.
+
+    The strategy factory must be deterministic and may use only the supplied parameters.
+    This helper never updates live strategy state; it returns a research report only.
+    """
+    observations = list(events)
+    candidates = list(parameter_grid)
+    if not candidates:
+        raise ValueError("parameter_grid must contain at least one candidate")
+    if not observations:
+        raise ValueError("events must not be empty")
+    splits = walk_forward_splits(len(observations), train_size, test_size, purge, embargo)
+    if not splits:
+        raise ValueError("not enough events for one purged/embargoed walk-forward split")
+    report: list[dict] = []
+    for fold, (train_indices, test_indices) in enumerate(splits):
+        train_events = [observations[index] for index in train_indices]
+        test_events = [observations[index] for index in test_indices]
+        train_results = []
+        for params in candidates:
+            result = run_replay(train_events, strategy_factory(dict(params)), config)
+            train_results.append((result.final_equity, dict(params), result))
+        # Fixed tie-breaking by input order keeps runs reproducible.
+        _, selected_params, train_result = max(
+            enumerate(train_results), key=lambda item: (item[1][0], -item[0])
+        )[1]
+        test_result = run_replay(test_events, strategy_factory(dict(selected_params)), config)
+        report.append({
+            "fold": fold,
+            "train_start_index": train_indices.start,
+            "train_end_index_exclusive": train_indices.stop,
+            "test_start_index": test_indices.start,
+            "test_end_index_exclusive": test_indices.stop,
+            "purge": purge,
+            "embargo": embargo,
+            "selected_parameters": selected_params,
+            "train_total_return": train_result.total_return,
+            "test_total_return": test_result.total_return,
+            "test_max_drawdown": test_result.max_drawdown,
+            "test_trade_count": test_result.trade_count,
+            "test_profit_factor": test_result.profit_factor if isfinite(test_result.profit_factor) else None,
+            "test_fees_paid": test_result.fees_paid,
+            "test_spread_cost": test_result.spread_cost,
+            "test_slippage_cost": test_result.slippage_cost,
+            "test_risk_vetoes": test_result.risk_vetoes,
+        })
+    return report
+
+
 def baseline_strategies() -> dict[str, Strategy]:
     """Simple baselines used only for comparison; none implies a deployable edge."""
     return {
