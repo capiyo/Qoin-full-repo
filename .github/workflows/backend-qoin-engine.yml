@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.89.0
       - name: Compile and run Rust tests
         run: cargo test --manifest-path backend/Cargo.toml --workspace
+      - name: Run Clippy
+        run: cargo clippy --manifest-path backend/Cargo.toml --workspace --all-targets -- -D warnings
