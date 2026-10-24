@@ -121,8 +121,7 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: f64,
-        last_liquidation_side: Option<&str>,
+        liquidation_pressure: f64,
     ) -> Result<EdgeDecision, String> {
         self.validate()?;
         let scale = |name: &str| *self.feature_scales.get(name).expect("validated scale");
@@ -133,8 +132,7 @@ impl EdgeStrategy {
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
             event_intensity / scale("event_intensity"),
-            (liquidation_events / scale("liquidation_pressure"))
-                * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+            liquidation_pressure / scale("liquidation_pressure"),
         ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
         let features_vec: Vec<f64> = raw.iter().map(|value| value.clamp(-1.0, 1.0)).collect();
@@ -210,13 +208,13 @@ mod tests {
     #[test]
     fn missing_spread_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, None, None, 0.001, 4.0, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, None, None, 0.001, 4.0, 0.0).unwrap();
         assert_eq!(d.action, "wait");
     }
     #[test]
     fn missing_calibrated_cost_inputs_fail_closed() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("cost gate failed"));
     }
@@ -233,7 +231,7 @@ mod tests {
             strategy.slippage_bps = Some(1.0);
             strategy.cost_multiplier = Some(2.0);
         }
-        let a = cold.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
+        let a = cold.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0).unwrap();
         let b = focused.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         assert_ne!(a.attention, b.attention);
         for row in &b.attention {
