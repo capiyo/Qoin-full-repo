@@ -242,6 +242,8 @@ mod tests {
         let a = cold.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         let b = focused.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         assert_ne!(a.attention, b.attention);
+        assert_eq!(a.action, "wait");
+        assert!(a.reason.contains("regime gate failed"));
         for row in &b.attention {
             assert!((row.iter().sum::<f64>() - 1.0).abs() < 1e-9);
         }
