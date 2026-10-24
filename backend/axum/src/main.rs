@@ -46,6 +46,7 @@ struct MarketEvent {
 #[serde(default)]
 struct SymbolState {
     symbol: String,
+    venue: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
     last_state_update_ts_ms: Option<i64>,
@@ -170,20 +171,27 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent, decay: &DecayConfig) -> Result<(), String> {
+    if state.event_count > 0 && state.venue.is_empty() {
+        return Err("legacy state has no venue provenance; recovery or migration is required before ingest".into());
+    }
+    if state.event_count > 0 && state.venue != event.venue {
+        return Err("venue mismatch: symbol state cannot mix events from different venues".into());
+    }
     if let Some(previous_ts) = state.last_event_ts_ms {
         if event.ts_ms <= previous_ts { return Err("out-of-order event rejected".into()); }
     }
     if let Some(sequence) = event.sequence {
-        if let Some(previous) = state.last_sequences.get(&event.event_type) {
+        let stream_key = format!("{}:{}", event.venue, event.event_type);
+        if let Some(previous) = state.last_sequences.get(&stream_key) {
             if sequence <= *previous { return Err("out-of-order source sequence rejected".into()); }
             if sequence != previous.saturating_add(1) { return Err("source sequence gap rejected".into()); }
         }
-        state.last_sequences.insert(event.event_type.clone(), sequence);
-        state.unsequenced_event_types.remove(&event.event_type);
+        state.last_sequences.insert(stream_key.clone(), sequence);
+        state.unsequenced_event_types.remove(&stream_key);
         state.sequence_valid = state.unsequenced_event_types.is_empty();
     } else {
         // A feed without sequence metadata cannot prove continuity; signals must abstain.
-        state.unsequenced_event_types.insert(event.event_type.clone(), true);
+        state.unsequenced_event_types.insert(format!("{}:{}", event.venue, event.event_type), true);
         state.sequence_valid = false;
     }
     let previous_update = state.last_state_update_ts_ms.or(state.last_event_ts_ms);
@@ -200,6 +208,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, decay: &DecayConfig) -> R
     state.liquidation_size *= liquidation_decay;
     state.ewma_abs_return *= volatility_decay;
     state.symbol = event.symbol.clone();
+    state.venue = event.venue.clone();
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
             let abs_return = (price.ln() - previous.ln()).abs();
@@ -595,7 +604,7 @@ mod tests {
         let before = state.clone();
         let mut gap = event("gap", 2_000, "trade"); gap.sequence = Some(12);
         assert!(apply(&mut state, &gap, &test_decay(30_000.0)).unwrap_err().contains("sequence gap"));
-        assert_eq!(state.last_sequences.get("trade"), before.last_sequences.get("trade"));
+        assert_eq!(state.last_sequences.get("test:trade"), before.last_sequences.get("trade"));
         let mut next = event("next", 2_000, "trade"); next.sequence = Some(11);
         apply(&mut state, &next, &test_decay(30_000.0)).unwrap();
         assert!(state.sequence_valid);
