@@ -96,6 +96,8 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if e.received_at_ms.map(|arrival| arrival < e.ts_ms || arrival <= 0).unwrap_or(false) { return Err("received_at_ms must be at or after event time".into()); }
+    if env::var("QOIN_REPLAY_MODE").map(|v| v == "true").unwrap_or(false) && e.received_at_ms.is_none() { return Err("replay events require received_at_ms for causal latency modeling".into()); }
     if !["trade", "book", "liquidation", "funding", "open_interest"].contains(&e.event_type.as_str()) {
         return Err("unsupported event_type".into());
     }
@@ -149,6 +151,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
     if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
         let mid = (bid + ask) / 2.0;
         state.spread_bps = if mid > 0.0 { Some((ask - bid) / mid * 10_000.0) } else { None };
+        state.spread_ts_ms = Some(event.ts_ms);
         if let (Some(bs), Some(as_)) = (event.bid_size, event.ask_size) {
             let depth = bs + as_;
             if depth > 0.0 {
@@ -179,8 +182,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
                 _ => {}
             }
         }
-        "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; },
-        "open_interest" => if event.open_interest.is_some() { state.open_interest = event.open_interest; },
+        "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; state.funding_ts_ms = Some(event.ts_ms); },
+        "open_interest" => if event.open_interest.is_some() { state.open_interest = event.open_interest; state.open_interest_ts_ms = Some(event.ts_ms); },
         "book" => {}
         _ => return Err("unsupported event_type".into()),
     }
@@ -366,7 +369,7 @@ mod tests {
     fn event(id: &str, ts_ms: i64, event_type: &str) -> MarketEvent {
         MarketEvent {
             event_id: id.into(), venue: "test".into(), symbol: "BTCUSDT".into(),
-            event_type: event_type.into(), ts_ms, price: None, size: Some(2.0),
+            event_type: event_type.into(), ts_ms, received_at_ms: None, price: None, size: Some(2.0),
             side: Some("buy".into()), bid: None, ask: None, bid_size: None, ask_size: None,
             funding_rate: None, open_interest: None, liquidation_side: None,
         }
