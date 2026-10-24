@@ -46,10 +46,10 @@ pub struct EngineConfig {
     pub score_clip: f64,
     /// Number of strongest absolute forces retained by Pareto selection.
     pub top_k: usize,
-    /// Minimum cosine alignment between observed and expected force vectors.
-    pub min_alignment: f64,
     /// Maximum angular deviation in radians for a directional entry.
     pub max_angle_radians: f64,
+    /// Exit hysteresis threshold, strictly below the entry signal threshold.
+    pub exit_threshold: f64,
     /// Volatility dampening coefficient.
     pub volatility_dampener: f64,
     /// Small regularized OFI × OI interaction coefficient.
@@ -63,8 +63,8 @@ impl Default for EngineConfig {
             input_clip: 3.0,
             score_clip: 1.0,
             top_k: 5,
-            min_alignment: 0.15,
-            max_angle_radians: 1.42,
+            max_angle_radians: 0.70,
+            exit_threshold: 0.35,
             volatility_dampener: 0.15,
             interaction_coefficient: 0.025,
         }
@@ -94,8 +94,8 @@ fn valid_config(config: &EngineConfig) -> bool {
     config.signal_threshold.is_finite()
         && config.input_clip.is_finite()
         && config.score_clip.is_finite()
-        && config.min_alignment.is_finite()
         && config.max_angle_radians.is_finite()
+        && config.exit_threshold.is_finite()
         && config.volatility_dampener.is_finite()
         && config.interaction_coefficient.is_finite()
         && config.signal_threshold > 0.0
@@ -103,8 +103,9 @@ fn valid_config(config: &EngineConfig) -> bool {
         && config.score_clip > 0.0
         && config.score_clip <= 1.0
         && (1..=7).contains(&config.top_k)
-        && (-1.0..=1.0).contains(&config.min_alignment)
         && (0.0..=std::f64::consts::PI).contains(&config.max_angle_radians)
+        && config.exit_threshold >= 0.0
+        && config.exit_threshold < config.signal_threshold
         && config.volatility_dampener >= 0.0
         && config.interaction_coefficient.abs() <= 0.25
 }
@@ -169,15 +170,13 @@ pub fn decide(
     let score = (directional * dampener).clamp(-config.score_clip, config.score_clip);
 
     // Angular and magnitude gates must both pass before a new directional entry.
-    let buy_aligned = alignment >= config.min_alignment
-        && angle_radians <= config.max_angle_radians;
-    let sell_aligned = alignment <= -config.min_alignment
-        && (std::f64::consts::PI - angle_radians) <= config.max_angle_radians;
+    let buy_aligned = angle_radians <= config.max_angle_radians;
+    let sell_aligned = (std::f64::consts::PI - angle_radians) <= config.max_angle_radians;
     let decision = if score >= config.signal_threshold && buy_aligned {
         Decision::Buy
     } else if score <= -config.signal_threshold && sell_aligned {
         Decision::Sell
-    } else if has_open_position {
+    } else if has_open_position && score.abs() <= config.exit_threshold {
         Decision::Close
     } else {
         Decision::Wait
@@ -253,4 +252,29 @@ mod tests {
         let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
         assert_ne!(result.decision, Decision::Buy);
     }
+    #[test]
+    fn open_position_does_not_close_on_every_subthreshold_tick() {
+        let input = ForceObservation { ofi: 1.5, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
+        let result = decide(input, &EngineConfig::default(), "baseline-v3", true).unwrap();
+        assert_eq!(result.decision, Decision::Wait);
+        assert!(result.score.abs() > EngineConfig::default().exit_threshold);
+        assert!(result.score.abs() < EngineConfig::default().signal_threshold);
+    }
+
+    #[test]
+    fn open_position_closes_only_below_exit_threshold() {
+        let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
+        let result = decide(input, &EngineConfig::default(), "baseline-v3", true).unwrap();
+        assert_eq!(result.decision, Decision::Close);
+    }
+
+    #[test]
+    fn exit_threshold_must_be_below_entry_threshold() {
+        let mut config = EngineConfig::default();
+        config.exit_threshold = config.signal_threshold;
+        assert_eq!(decide(sample(), &config, "baseline-v3", false).unwrap_err(), EngineError::InvalidConfig);
+    }
+
 }
