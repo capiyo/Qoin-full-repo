@@ -16,6 +16,7 @@ use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tower_http::trace::TraceLayer;
 
 use qoin_vector_engine::strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use qoin_vector_engine::RegimeContext;
 mod risk;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -36,6 +37,8 @@ struct MarketEvent {
     #[serde(default)] funding_rate: Option<f64>,
     #[serde(default)] open_interest: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
+    #[serde(default)] regime: Option<String>,
+    #[serde(default)] regime_confidence: Option<f64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -48,6 +51,9 @@ struct SymbolState {
     book_imbalance: Option<f64>,
     last_price: Option<f64>,
     last_price_ts_ms: Option<i64>,
+    market_regime: Option<String>,
+    regime_confidence: Option<f64>,
+    last_regime_ts_ms: Option<i64>,
     spread_bps: Option<f64>,
     signed_flow: f64,
     total_trade_size: f64,
@@ -88,6 +94,12 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    match (e.regime.as_deref(), e.regime_confidence) {
+        (None, None) => {},
+        (Some(regime), Some(confidence))
+            if matches!(regime, "bull" | "bear" | "range") && (0.0..=1.0).contains(&confidence) => {},
+        _ => return Err("regime must be bull/bear/range and paired with confidence in [0,1]".into()),
+    }
     match e.event_type.as_str() {
         "trade" => {
             if !matches!(e.side.as_deref(), Some("buy" | "sell")) || e.size.map(|v| v <= 0.0).unwrap_or(true) {
@@ -110,7 +122,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         _ => return Err("unsupported event_type".into()),
     }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
-        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
+        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest),("regime_confidence",e.regime_confidence)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
     }
     if let (Some(bid),Some(ask))=(e.bid,e.ask) {
@@ -144,6 +156,11 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.liquidation_pressure = decay(state.liquidation_pressure, elapsed, LIQUIDATION_HALF_LIFE_MS);
     }
     state.last_decay_ts_ms = Some(event.ts_ms);
+    if let (Some(regime), Some(confidence)) = (&event.regime, event.regime_confidence) {
+        state.market_regime = Some(regime.clone());
+        state.regime_confidence = Some(confidence);
+        state.last_regime_ts_ms = Some(event.ts_ms);
+    }
 
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
@@ -579,7 +596,7 @@ mod state_tests {
             event_id: format!("e-{ts_ms}"), venue: "test".into(), symbol: "BTCUSDT".into(),
             event_type: event_type.into(), ts_ms, price: None, size: None, side: None,
             bid: None, ask: None, bid_size: None, ask_size: None, funding_rate: None,
-            open_interest: None, liquidation_side: None,
+            open_interest: None, liquidation_side: None, regime: None, regime_confidence: None,
         }
     }
 
