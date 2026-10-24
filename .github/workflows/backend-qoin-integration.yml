@@ -94,6 +94,6 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"sequence":1,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"sequence":1,"price":100.01,"size":1,"side":"buy"}' >/tmp/duplicate.json
-          jq -e '.status == "duplicate_ignored"' /tmp/duplicate.json
+          jq -e '.status == "duplicate_ignored"' /tmp/duplicate.json || { cat /tmp/duplicate.json; cat /tmp/qoin-axum-restarted.log; exit 1; }
           test "$(curl -sS -o /tmp/sequence-gap.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token' -H 'content-type: application/json' --data '{"event_id":"ci-trade-gap","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000200,"sequence":3,"price":100.02,"size":1,"side":"buy"}')" = "409"
 
