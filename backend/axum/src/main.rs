@@ -307,7 +307,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
                 }
             }
             if recovered_snapshot.is_some() {
-                match s.decisions.find_one(doc!{"event_id": &event.event_id, "symbol": &event.symbol}, None).await {
+                match s.decisions.find_one(doc!{"event_id": &event.event_id, "symbol": &event.symbol, "venue": &event.venue}, None).await {
                     Ok(Some(_)) => return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
                     Ok(None) => {},
                     Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision storage unavailable during duplicate recovery"}))),
@@ -413,6 +413,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     decision_doc.insert("event_id", event.event_id.clone());
+    decision_doc.insert("venue", event.venue.clone());
     decision_doc.insert("risk_gate", mongodb::bson::to_bson(&risk_assessment).unwrap_or(mongodb::bson::Bson::Null));
     decision_doc.insert("execution_allowed", false);
     decision_doc.insert("effective_action", if risk_assessment.allowed { decision.action } else { "wait" });
@@ -488,7 +489,7 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
-    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_id":1})
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"event_id":{"$exists":true}}).build()).build(),None).await.expect("decision idempotency index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
