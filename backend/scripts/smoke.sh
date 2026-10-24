@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 BASE_URL="${QOIN_GATEWAY_URL:-http://127.0.0.1:8080}"
-: "${QOIN_ADMIN_TOKEN:?Set QOIN_ADMIN_TOKEN to the service token before running this authenticated smoke test}"
+: "${QOIN_INGEST_TOKEN:?Set QOIN_ADMIN_TOKEN to the service token before running this authenticated smoke test}"
 curl --fail --silent --show-error "$BASE_URL/health"
 printf '\n'
 EVENT="{\"event_id\":\"smoke-$(date +%s)\",\"venue\":\"smoke\",\"symbol\":\"BTCUSDT\",\"event_type\":\"trade\",\"ts_ms\":$(date +%s%3N),\"price\":65000,\"size\":0.001,\"side\":\"buy\"}"
