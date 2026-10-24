@@ -425,7 +425,7 @@ async fn recover_pending_events(
     strategy: &EdgeStrategy,
 ) -> Result<HashMap<String, SymbolState>, String> {
     let options = mongodb::options::FindOptions::builder().sort(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build();
-    let mut cursor = events.find(doc!{"processing_status":"pending"}, options).await
+    let mut cursor = events.find(doc!{"processing_status":{"$in":["pending","state_persisted"]}}, options).await
         .map_err(|e| format!("query pending events: {e}"))?;
     let mut recovered: HashMap<String, SymbolState> = HashMap::new();
     while let Some(raw) = cursor.try_next().await.map_err(|e| format!("read pending event: {e}"))? {
