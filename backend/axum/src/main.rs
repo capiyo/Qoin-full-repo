@@ -126,8 +126,8 @@ impl DecayConfig {
 fn decay_factor(elapsed_ms: f64, half_life_ms: f64) -> f64 {
     0.5_f64.powf(elapsed_ms.max(0.0) / half_life_ms)
 }
-fn admin_authorized(headers: &HeaderMap) -> bool {
-    let expected = match env::var("QOIN_ADMIN_TOKEN") {
+fn token_authorized(headers: &HeaderMap, env_name: &str) -> bool {
+    let expected = match env::var(env_name) {
         Ok(value) if !value.trim().is_empty() => format!("Bearer {}", value),
         _ => return false,
     };
@@ -136,6 +136,8 @@ fn admin_authorized(headers: &HeaderMap) -> bool {
         .map(|value| value == expected)
         .unwrap_or(false)
 }
+fn admin_authorized(headers: &HeaderMap) -> bool { token_authorized(headers, "QOIN_ADMIN_TOKEN") }
+fn ingest_authorized(headers: &HeaderMap) -> bool { token_authorized(headers, "QOIN_INGEST_TOKEN") }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -270,7 +272,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "mongodb":ok,"strategy_version":strategy_version,"live_order_submission":"not wired"})))
 }
 async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<MarketEvent>)->impl IntoResponse{
-    if !admin_authorized(&headers) { return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"authorized service token required"}))); }
+    if !ingest_authorized(&headers) { return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"authorized service token required"}))); }
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let _ingest_guard = s.ingest_lock.lock().await;
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
