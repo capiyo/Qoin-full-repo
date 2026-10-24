@@ -68,7 +68,7 @@ impl EdgeStrategy {
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
-            version: "edge-map-v5".to_owned(),
+            version: "edge-map-v6".to_owned(),
             status: "research_baseline".to_owned(),
             bullish_weights, bearish_weights,
             angular_threshold_degrees: 25.0,
@@ -78,7 +78,7 @@ impl EdgeStrategy {
             expected_edge_bps_per_magnitude: None,
             fee_bps: None,
             slippage_bps: None,
-            cost_multiplier: Some(2.0),
+            cost_multiplier: None,
             min_regime_confidence: None,
             feature_scales,
             updated_at_ms: 0,
