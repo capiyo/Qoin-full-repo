@@ -1,5 +1,5 @@
 import unittest
-from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, run_replay, walk_forward_splits
+from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, deflated_sharpe_ratio, run_replay, walk_forward_splits
 
 def event(ts, seq, price, age=0, regime=True, fill=1.0, kind="trade", funding=0.0):
     return ReplayEvent(ts, ts + age, "BTCUSDT", kind, price, price - 0.01, price + 0.01,
@@ -37,6 +37,10 @@ class ReplayTests(unittest.TestCase):
         items = [event(1000, 1, 100, fill=0.5), event(2000, 1, 100, kind="funding", funding=0.01)]
         result = run_replay(items, lambda item: "buy")
         self.assertLess(result.funding_pnl, 0.0)
+
+    def test_deflated_sharpe_needs_enough_returns(self):
+        self.assertIsNone(deflated_sharpe_ratio([0.1, 0.2]))
+        self.assertIsNotNone(deflated_sharpe_ratio([0.1, -0.02, 0.05, 0.04], trials=1))
 
     def test_walk_forward_gap(self):
         splits = walk_forward_splits(100, 30, 10, purge=3, embargo=2)
