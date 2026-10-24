@@ -1,66 +1,36 @@
-# Qoin — Market-Force Trading Research Monorepo
+# Qoin Frontend Monorepo
 
-A multi-client workspace for researching a present-centered crypto market-force algorithm. React web and React Native share API contracts. **Axum (Rust) is the authoritative ingestion, state, strategy-map, and vector-decision engine; Drogon (C++) is the HTTP gateway; MongoDB is the durable source of truth.** The current strategy is a research baseline, not a validated or proven profitable edge.
+This branch is the **frontend-only workspace** for Qoin. It keeps the React web clients and React Native mobile client together, with shared TypeScript API contracts and UI types.
 
-## Monorepo layout
+## Layout
 
-- apps/react-web — React + TypeScript + Vite research dashboard.
-- apps/web — existing Next.js React dashboard.
-- apps/mobile — Expo / React Native app.
-- packages/core — shared UI tokens, types, mock market data, and Qoin API client.
-- crates/qoin-vector-engine — deterministic Rust baseline signal engine.
-- services/axum — authoritative event ingestion, state estimation, vector/attention decisions, MongoDB persistence, and versioned edge strategy map.
-- services/drogon — C++ HTTP gateway that forwards to Axum; it must not duplicate model logic.
-- services/axum-api — separate research-signal API retained for compatibility; the integrated market-event flow uses services/axum.
-- docs/QOIN_ALGORITHM_OBSERVATIONS_MATH_PHILOSOPHY.md and PDF — mathematical and philosophical specification.
-- docs/ARCHITECTURE.md and docs/MONOREPO_ARCHITECTURE.md — service responsibilities and engineering gates.
+- `apps/react-web` — React + TypeScript + Vite web client.
+- `apps/web` — existing Next.js React web client.
+- `apps/mobile` — Expo / React Native app.
+- `packages/core` — shared types, themes, mock data, and API client.
+- `contracts/` — HTTP/event schemas shared with the backend team.
+
+Backend implementation is maintained on the `backend` branch. Clients should call the API contract, not reimplement trading decisions. Axum owns strategy evaluation and persistence; Drogon is the public gateway. MongoDB is never accessed directly from a client.
 
 ## Requirements
 
-- Node.js and pnpm 9
-- Rust stable toolchain (Cargo)
-- MongoDB 7 (or compatible)
-- C++17, CMake, and the Drogon development package to build the gateway
+- Node.js 20+
+- pnpm 9.12.0
 
-## Start services locally
+## Commands
 
-    cp .env.example .env
-    docker compose up -d mongodb
-    cargo run --manifest-path services/axum/Cargo.toml
+```sh
+pnpm install
+pnpm dev:react-web
+pnpm dev:web
+pnpm dev:mobile
+pnpm build
+```
 
-In a second terminal, build the C++ gateway:
+The root scripts target the frontend packages only. Configure API URLs using the environment variables documented by the backend/API contract.
 
-    cmake -S services/drogon -B build/drogon
-    cmake --build build/drogon
-    ./build/drogon/qoin-gateway
+## Branch policy
 
-Defaults bind both HTTP services to loopback: Drogon at 127.0.0.1:8080, Axum at 127.0.0.1:8081. Do not expose Axum directly to the public internet. Set QOIN_MONGODB_URI, QOIN_MONGODB_DATABASE, QOIN_AXUM_ADDR, QOIN_AXUM_URL, and QOIN_DROGON_PORT as needed.
-
-## API flow
-
-- GET /health — Drogon forwards Axum/MongoDB health and the active strategy version.
-- POST /api/v1/events — ingest a normalized market event through Drogon.
-- GET /api/v1/state?symbol=BTCUSDT — latest state.
-- GET /api/v1/vector?symbol=BTCUSDT — latest stored decision.
-- GET /api/v1/strategy — inspect the active edge strategy map.
-- PUT /api/v1/strategy — validate, persist, and activate a complete strategy map through Axum.
-
-On first startup, Axum seeds the MongoDB edge_strategy collection with an explicit versioned baseline if no active map exists. The map contains named bullish/bearish feature weights, feature scales, attention scale, angular threshold, magnitude threshold, and the spread gate. Strategy updates are persisted before activation, and each decision records the strategy version. Promote new maps only after reviewed chronological replay; backtest outcomes never automatically rewrite the active strategy.
-
-## Tests
-
-    cargo test --workspace
-
-The integrated flow-engine CI also runs cargo test --manifest-path services/axum/Cargo.toml. Drogon compilation requires its native system package and is verified separately from the Rust tests.
-
-## Important status and safety limits
-
-- The current coefficients are explicit hand-specified baseline values, not trained weights or evidence of edge.
-- Input scaling and current state estimation remain early-stage; robust past-only rolling normalization, complete event replay/recovery, and validated market-data adapters remain to be completed.
-- A signal is not an order. Live order submission is not connected to the market-event flow. QOIN_TRADING_MODE=disabled is the default.
-- Backtesting, paper/shadow validation, testnet, realistic costs, and profitability remain unverified. No real-money trading should be enabled without explicit human approval and independent risk controls.
-
-## Algorithm paper
-
-- Detailed PDF: docs/QOIN_ALGORITHM_OBSERVATIONS_MATH_PHILOSOPHY.pdf
-- Editable Markdown source: docs/QOIN_ALGORITHM_OBSERVATIONS_MATH_PHILOSOPHY.md
+- `frontend`: React and React Native applications plus shared frontend package and contracts.
+- `backend`: Axum, Drogon, vector engine, MongoDB integration, research and backend tests.
+- `main`: integration snapshot containing both sides; use pull requests to bring tested branch work together.

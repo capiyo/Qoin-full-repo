@@ -1,5 +1,5 @@
 {
-  "name": "qoin",
+  "name": "qoin-frontend",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -9,8 +9,6 @@
     "dev:web": "pnpm --filter @qoin/web dev",
     "dev:react-web": "pnpm --filter @qoin/react-web dev",
     "dev:mobile": "pnpm --filter @qoin/mobile start",
-    "dev:api": "cargo run -p qoin-axum-api",
-    "test:api": "cargo test --workspace",
     "build": "turbo run build",
     "lint": "turbo run lint"
   },
