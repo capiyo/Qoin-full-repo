@@ -1,5 +1,3 @@
-pub mod strategy;
-
 //! Deterministic, research-stage market-force vector decision engine.
 //!
 //! This crate emits signals only. It does not size positions, place orders, or
