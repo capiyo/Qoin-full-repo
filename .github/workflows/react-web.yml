@@ -3,14 +3,14 @@ name: Qoin React web
 on:
   push:
     paths:
-      - "apps/react-web/**"
+      - "apps/web/**"
       - "packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/react-web.yml"
   pull_request:
     paths:
-      - "apps/react-web/**"
+      - "apps/web/**"
       - "packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
@@ -28,4 +28,4 @@ jobs:
         with:
           node-version: 20
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --filter @qoin/react-web build
+      - run: pnpm --filter @qoin/web build
