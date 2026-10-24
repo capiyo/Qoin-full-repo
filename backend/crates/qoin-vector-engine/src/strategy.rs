@@ -58,13 +58,13 @@ impl EdgeStrategy {
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
-            version: "edge-map-v1".to_owned(),
+            version: "edge-map-v2".to_owned(),
             status: "research_baseline".to_owned(),
             bullish_weights, bearish_weights,
             angular_threshold_degrees: 25.0,
             magnitude_threshold: 0.35,
             max_spread_bps: 25.0,
-            attention_scale: 1.0,
+            attention_scale: 6.0,
             feature_scales,
             updated_at_ms: 0,
         }
@@ -150,7 +150,7 @@ impl EdgeStrategy {
         let spread_ok = spread_bps.map(|v| v.is_finite() && v >= 0.0 && v <= self.max_spread_bps).unwrap_or(false);
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
-        } else if event_intensity <= 0.0 {
+        } else if event_intensity <= 0.05 {
             ("wait", "no current event-intensity evidence".to_owned())
         } else if magnitude < self.magnitude_threshold {
             ("wait", "decision-vector magnitude below strategy threshold".to_owned())
