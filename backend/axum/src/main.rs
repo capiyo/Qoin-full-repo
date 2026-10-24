@@ -281,6 +281,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
     let arrival_ts_ms = chrono::Utc::now().timestamp_millis();
     if existing_event.is_none() && s.feed_mode == "live" {
         if let Err(message) = validate_feed_age(event.ts_ms, arrival_ts_ms, 2_000) {
+            if let Ok(mut pending) = s.pending_signals.write() { pending.remove(&event.symbol); }
             return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message,"event_id":event.event_id})));
         }
     }
@@ -298,6 +299,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"pending-event lookup failed"}))),
     };
     if unresolved.is_some() {
+        if let Ok(mut pending) = s.pending_signals.write() { pending.remove(&event.symbol); }
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"earlier event is pending recovery; retry it before advancing this symbol"})));
     }
 
@@ -328,10 +330,12 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
             }
         };
         if let Err(message) = validate_sequence(current.as_ref().and_then(|state| state.last_sequence_by_venue.get(&event.venue).copied()), event.sequence) {
+            if let Ok(mut pending) = s.pending_signals.write() { pending.remove(&event.symbol); }
             return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
         }
         if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
             if event.ts_ms <= previous {
+                if let Ok(mut pending) = s.pending_signals.write() { pending.remove(&event.symbol); }
                 return (StatusCode::CONFLICT, Json(serde_json::json!({
                     "error":"out-of-order event rejected", "event_id":event.event_id,
                     "event_ts_ms":event.ts_ms, "last_event_ts_ms":previous
@@ -399,6 +403,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         } else if !fresh_book || !fresh_price || snapshot.state_quality < 1.0 {
             decision.reason = "entry gate vetoed: book/price state is stale or incomplete".into();
             decision.action = "wait";
+            if let Ok(mut pending) = s.pending_signals.write() { pending.remove(&event.symbol); }
         } else {
             match s.pending_signals.write() {
                 Ok(mut pending) => {
