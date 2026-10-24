@@ -93,11 +93,15 @@ int main() {
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/strategy", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        if (req->method() == drogon::Get) {
-            proxyGet(req, std::move(cb), "/internal/strategy");
+        proxyGet(req, std::move(cb), "/internal/strategy");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/strategy", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (!authorized(req, "QOIN_ADMIN_TOKEN")) {
+            LOG_WARN << "Rejected unauthenticated strategy mutation";
+            cb(unauthorizedResponse());
             return;
         }
-        if (!authorized(req, "QOIN_ADMIN_TOKEN")) { cb(unauthorizedResponse()); return; }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Put);
@@ -118,7 +122,7 @@ int main() {
             forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
-    }, {drogon::Get, drogon::Put});
+    }, {drogon::Put});
     const char* portEnv = std::getenv("QOIN_DROGON_PORT");
     const auto port = portEnv ? std::stoi(portEnv) : 8080;
     drogon::app().addListener("127.0.0.1", static_cast<uint16_t>(port));
