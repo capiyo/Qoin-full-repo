@@ -624,6 +624,19 @@ mod tests {
     }
 
     #[test]
+    fn venue_mismatch_is_rejected_without_mixing_state() {
+        let mut state = SymbolState::default();
+        apply(&mut state, &event("one", 1_000, "trade"), &DecayConfig::default()).unwrap();
+        let before = state.clone();
+        let mut other_venue = event("two", 2_000, "trade");
+        other_venue.venue = "other".into();
+        assert!(apply(&mut state, &other_venue, &DecayConfig::default()).unwrap_err().contains("venue mismatch"));
+        assert_eq!(state.venue, before.venue);
+        assert_eq!(state.last_event_id, before.last_event_id);
+        assert_eq!(state.signed_flow, before.signed_flow);
+    }
+
+    #[test]
     fn missing_sequence_marks_feed_untrusted() {
         let mut state = SymbolState::default();
         apply(&mut state, &event("one", 1_000, "trade"), &test_decay(30_000.0)).unwrap();
