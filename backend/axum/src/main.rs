@@ -186,80 +186,125 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
        "mongodb":ok,"strategy_version":strategy_version,"live_order_submission":"not wired"})))
 }
-async fn ingest(State(s):State<AppState>,headers:HeaderMap,Json(event):Json<MarketEvent>)->impl IntoResponse{
+async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json<MarketEvent>) -> impl IntoResponse {
     if !authorized(&headers, "QOIN_INGEST_TOKEN") {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"valid ingestion bearer token required"})));
     }
-    // Serialize ingestion per process so event-time validation, persistence, and
-    // state commit cannot race with another event for the same symbol.
     let _ingest_guard = s.ingest_lock.lock().await;
-    if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
-    let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
-    let current = match s.memory.read() {
-        Ok(guard) => guard.get(&event.symbol).cloned(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
+    if let Err(message) = validate_event(&event) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message})));
+    }
+
+    let event_filter = doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id};
+    let existing_event = match s.events.find_one(event_filter.clone(), None).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event idempotency lookup failed"}))),
     };
-    let current = if let Some(state) = current { Some(state) } else {
-        match s.states.find_one(doc!{"symbol":&event.symbol}, FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
-            Ok(Some(mut doc)) => {
-                doc.remove("_id"); doc.remove("stored_at");
-                mongodb::bson::from_document::<SymbolState>(doc).ok()
+    let existing_decision = match s.decisions.find_one(doc!{"source_event_id":&event.event_id}, None).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision idempotency lookup failed"}))),
+    };
+    if existing_decision.is_some() {
+        let _ = s.events.update_one(event_filter, doc!{"$set":doc!{"processing_status":"complete"}}, None).await;
+        return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id})));
+    }
+
+    // Do not allow a later event to pass an unresolved event-log record. The
+    // original event can be retried safely because its ID is the idempotency key.
+    let unresolved = match s.events.find_one(doc!{
+        "symbol":&event.symbol, "processing_status":"pending", "event_id":{"$ne":&event.event_id}
+    }, None).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"pending-event lookup failed"}))),
+    };
+    if unresolved.is_some() {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"earlier event is pending recovery; retry it before advancing this symbol"})));
+    }
+
+    let existing_snapshot = match s.states.find_one(doc!{"source_event_id":&event.event_id}, None).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"snapshot idempotency lookup failed"}))),
+    };
+    let snapshot = if let Some(mut persisted) = existing_snapshot {
+        persisted.remove("_id");
+        persisted.remove("stored_at");
+        match mongodb::bson::from_document::<SymbolState>(persisted) {
+            Ok(value) => value,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"persisted event snapshot cannot be recovered"}))),
+        }
+    } else {
+        let current = match s.memory.read() {
+            Ok(guard) => guard.get(&event.symbol).cloned(),
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
+        };
+        let current = if let Some(state) = current { Some(state) } else {
+            match s.states.find_one(doc!{"symbol":&event.symbol}, FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+                Ok(Some(mut doc)) => {
+                    doc.remove("_id"); doc.remove("stored_at");
+                    mongodb::bson::from_document::<SymbolState>(doc).ok()
+                }
+                Ok(None) => None,
+                Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
             }
-            Ok(None) => None,
-            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
+        };
+        if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
+            if event.ts_ms <= previous {
+                return (StatusCode::CONFLICT, Json(serde_json::json!({
+                    "error":"out-of-order event rejected", "event_id":event.event_id,
+                    "event_ts_ms":event.ts_ms, "last_event_ts_ms":previous
+                })));
+            }
         }
+        let mut candidate = current.unwrap_or_default();
+        apply(&mut candidate, &event);
+        if existing_event.is_none() {
+            let mut raw = match mongodb::bson::to_document(&event) {
+                Ok(value) => value,
+                Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"event serialization failed"}))),
+            };
+            raw.insert("processing_status", "pending");
+            if let Err(error) = s.events.insert_one(raw, None).await {
+                if !error.to_string().contains("E11000") {
+                    tracing::error!(error=%error,"event persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event persistence failed"})));
+                }
+            }
+        }
+        let mut state_doc = match mongodb::bson::to_document(&candidate) {
+            Ok(value) => value,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state serialization failed","event_persisted":true}))),
+        };
+        state_doc.insert("stored_at", mongodb::bson::DateTime::now());
+        state_doc.insert("source_event_id", event.event_id.clone());
+        if let Err(error) = s.states.insert_one(state_doc, None).await {
+            tracing::error!(error=%error,"state snapshot persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+        }
+        let _ = s.events.update_one(event_filter.clone(), doc!{"$set":doc!{"processing_status":"state_persisted"}}, None).await;
+        candidate
     };
-    if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
-        if event.ts_ms <= previous {
-            return (StatusCode::CONFLICT, Json(serde_json::json!({
-                "error":"out-of-order event rejected", "event_id":event.event_id,
-                "event_ts_ms":event.ts_ms, "last_event_ts_ms":previous
-            })));
-        }
-    }
-    let mut candidate = current.unwrap_or_default();
-    apply(&mut candidate, &event);
-    // Persist only after event-time validation. The unique compound index is the
-    // idempotency authority across process restarts.
-    match s.events.insert_one(raw,None).await {
-        Ok(_) => {},
-        Err(e) if e.to_string().contains("E11000") => return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
-        Err(e) => {
-            tracing::error!(error=%e,"event persistence failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event persistence failed"})));
-        }
-    }
-    let snapshot = candidate;
-    let mut state_doc = match mongodb::bson::to_document(&snapshot) {
-        Ok(doc) => doc,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state serialization failed","event_persisted":true}))),
-    };
-    state_doc.insert("stored_at", mongodb::bson::DateTime::now());
-    state_doc.insert("source_event_id", event.event_id.clone());
-    if let Err(e)=s.states.insert_one(state_doc,None).await{
-        tracing::error!(error=%e,"state snapshot persistence failed");
-        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
-    }
-    // Only publish the candidate to process memory after the durable snapshot exists.
+
     match s.memory.write() {
         Ok(mut guard) => { guard.insert(event.symbol.clone(), snapshot.clone()); }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after durable snapshot"}))),
     }
-    let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
-    let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
-        snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
-        Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
+    let strategy = match s.active_strategy.read() {
+        Ok(value) => value.clone(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
-    // Only trade/book updates may advance an entry candidate. Three consecutive
-    // same-direction eligible ticks are required; other event types cannot fire entries.
+    let mut decision: EdgeDecision = match strategy.decide(
+        &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.funding_rate,
+        snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
+        snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
+    ) {
+        Ok(value) => value,
+        Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":error}))),
+    };
+
     if decision.action == "buy" || decision.action == "sell" {
         let eligible_event = matches!(event.event_type.as_str(), "trade" | "book");
-        let fresh_book = snapshot.last_book_ts_ms
-            .map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000)
-            .unwrap_or(false);
-        let fresh_price = snapshot.last_price_ts_ms
-            .map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000)
-            .unwrap_or(false);
+        let fresh_book = snapshot.last_book_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000).unwrap_or(false);
+        let fresh_price = snapshot.last_price_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000).unwrap_or(false);
         if !eligible_event {
             decision.reason = "entry gate requires a trade or book event".into();
             decision.action = "wait";
@@ -286,9 +331,9 @@ async fn ingest(State(s):State<AppState>,headers:HeaderMap,Json(event):Json<Mark
     } else if let Ok(mut pending) = s.pending_signals.write() {
         pending.remove(&event.symbol);
     }
-    // Portfolio/equity/stop/exposure state is not yet supplied by a reconciled
-    // portfolio service. Fail closed: research signals may be observed, but no
-    // entry proposal is promoted to an actionable buy/sell without risk context.
+
+    // No reconciled equity/stop/exposure context is wired into this service yet.
+    // Thus the independent risk gate vetoes every otherwise eligible entry.
     if decision.action == "buy" || decision.action == "sell" {
         if let Err(veto) = risk::evaluate_entry(None, risk::RiskLimits::default()) {
             decision.risk_veto = Some(format!("{veto:?}"));
@@ -296,14 +341,23 @@ async fn ingest(State(s):State<AppState>,headers:HeaderMap,Json(event):Json<Mark
             decision.action = "wait";
         }
     }
-    let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
-    decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
-    if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
-        tracing::error!(error=%e,"decision persistence failed");
-        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
+    let mut decision_doc = match mongodb::bson::to_document(&decision) {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))),
+    };
+    decision_doc.insert("stored_at", mongodb::bson::DateTime::now());
+    decision_doc.insert("source_event_id", event.event_id.clone());
+    if let Err(error) = s.decisions.insert_one(decision_doc, None).await {
+        tracing::error!(error=%error,"decision persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
+    if let Err(error) = s.events.update_one(event_filter, doc!{"$set":doc!{"processing_status":"complete"}}, None).await {
+        tracing::error!(error=%error,"event completion status update failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision persisted but event completion status failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
+
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
