@@ -102,7 +102,7 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: usize,
+        liquidation_events: f64,
         last_liquidation_side: Option<&str>,
     ) -> Result<EdgeDecision, String> {
         self.validate()?;
@@ -113,7 +113,7 @@ impl EdgeStrategy {
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
             event_intensity / scale("event_intensity"),
-            (liquidation_events as f64 / scale("liquidation_pressure"))
+            (liquidation_events / scale("liquidation_pressure"))
                 * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
         ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
