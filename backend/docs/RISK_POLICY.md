@@ -18,7 +18,7 @@ These are target requirements, not claims about current code. Until these contro
 
 
 ## Implemented fail-closed controls (research branch)
-- Axum and Drogon both require `QOIN_ADMIN_TOKEN` for event ingestion and strategy mutation; an unset token denies mutation.
+- Axum and Drogon require `QOIN_INGEST_TOKEN` for event ingestion and `QOIN_ADMIN_TOKEN` for strategy mutation; either missing token denies its protected operation. The gateway forwards each credential only to the internal Axum service.
 - State flow, traded size, event intensity, volatility memory, and liquidation counts decay using `QOIN_STATE_HALF_LIFE_MS` (default 30 seconds). Book imbalance is stored separately from trade-volume accounting.
 - Entry candidates require fresh spread/state, known per-event-type sequence continuity, a configured persistence count, explicit regime approval, and a configured expected-edge estimate that exceeds `cost_multiplier × (fees + spread + slippage)`.
 - Missing cost estimates, missing replay arrival timestamps, missing sequence continuity, incomplete risk policy, or absent account/exchange context fail closed.
