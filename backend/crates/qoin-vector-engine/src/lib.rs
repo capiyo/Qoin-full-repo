@@ -50,6 +50,8 @@ pub struct EngineConfig {
     pub max_angle_radians: f64,
     /// Exit hysteresis threshold, strictly below the entry signal threshold.
     pub exit_threshold: f64,
+    /// Walk-forward calibrated regime confidence threshold; None disables entries.
+    pub min_regime_confidence: Option<f64>,
     /// Volatility dampening coefficient.
     pub volatility_dampener: f64,
     /// Small regularized OFI × OI interaction coefficient.
@@ -65,10 +67,26 @@ impl Default for EngineConfig {
             top_k: 5,
             max_angle_radians: 0.70,
             exit_threshold: 0.35,
+            min_regime_confidence: None,
             volatility_dampener: 0.15,
             interaction_coefficient: 0.025,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegimeContext {
+    pub regime: String,
+    pub confidence: f64,
+}
+pub fn regime_gate(context: Option<&RegimeContext>, min_confidence: Option<f64>) -> bool {
+    let (Some(context), Some(minimum)) = (context, min_confidence) else { return false; };
+    matches!(context.regime.as_str(), "bull" | "bear" | "range")
+        && context.confidence.is_finite()
+        && (0.0..=1.0).contains(&context.confidence)
+        && minimum.is_finite()
+        && (0.0..=1.0).contains(&minimum)
+        && context.confidence >= minimum
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -124,6 +142,7 @@ fn valid_config(config: &EngineConfig) -> bool {
         && (0.0..=std::f64::consts::PI).contains(&config.max_angle_radians)
         && config.exit_threshold >= 0.0
         && config.exit_threshold < config.signal_threshold
+        && config.min_regime_confidence.map(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)).unwrap_or(false)
         && config.volatility_dampener >= 0.0
         && config.interaction_coefficient.abs() <= 0.25
 }
