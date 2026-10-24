@@ -1,4 +1,7 @@
 name: Qoin Drogon gateway
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches: [main, backend, organized-monorepo, qoin-hardening, feat/mongodb-edge-strategy-map]
