@@ -328,7 +328,7 @@ impl EdgeStrategy {
             angular_threshold_degrees: 25.0,
             magnitude_threshold: 0.35,
             max_spread_bps: 25.0,
-            attention_scale: 1.0,
+            attention_scale: 6.0,
             feature_scales,
             updated_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0),
         }
@@ -368,7 +368,7 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: usize,
+        liquidation_events: f64,
         last_liquidation_side: Option<&str>,
     ) -> Result<EdgeDecision, String> {
         self.validate()?;
@@ -379,7 +379,7 @@ impl EdgeStrategy {
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
             event_intensity / scale("event_intensity"),
-            (liquidation_events as f64 / scale("liquidation_pressure"))
+            (liquidation_events / scale("liquidation_pressure"))
                 * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
         ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
@@ -414,8 +414,8 @@ impl EdgeStrategy {
         let spread_ok = spread_bps.map(|v| v.is_finite() && v >= 0.0 && v <= self.max_spread_bps).unwrap_or(false);
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
-        } else if event_intensity <= 0.0 {
-            ("wait", "no current event-intensity evidence".to_owned())
+        } else if event_intensity < 0.1 {
+            ("wait", "decayed event intensity is below the recent-evidence floor".to_owned())
         } else if magnitude < self.magnitude_threshold {
             ("wait", "decision-vector magnitude below strategy threshold".to_owned())
         } else if angle <= threshold && bullish > bearish {
