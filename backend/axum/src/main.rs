@@ -529,6 +529,11 @@ async fn main(){
 mod tests {
     use super::*;
 
+    fn test_decay(half_life_ms: f64) -> DecayConfig {
+        DecayConfig { flow_half_life_ms: half_life_ms, event_intensity_half_life_ms: half_life_ms,
+            liquidation_half_life_ms: half_life_ms, volatility_half_life_ms: half_life_ms }
+    }
+
     fn event(id: &str, ts_ms: i64, event_type: &str) -> MarketEvent {
         MarketEvent {
             event_id: id.into(), venue: "test".into(), symbol: "BTCUSDT".into(),
@@ -541,8 +546,8 @@ mod tests {
     #[test]
     fn flow_and_intensity_decay_by_half_life() {
         let mut state = SymbolState::default();
-        apply(&mut state, &event("one", 1_000, "trade"), 1_000.0).unwrap();
-        apply(&mut state, &event("two", 2_000, "trade"), 1_000.0).unwrap();
+        apply(&mut state, &event("one", 1_000, "trade"), &test_decay(1_000.0)).unwrap();
+        apply(&mut state, &event("two", 2_000, "trade"), &test_decay(1_000.0)).unwrap();
         assert!((state.signed_flow - 3.0).abs() < 1e-9);
         assert!((state.event_intensity - 1.5).abs() < 1e-9);
         assert!((state.total_trade_size - 3.0).abs() < 1e-9);
@@ -551,12 +556,12 @@ mod tests {
     #[test]
     fn book_imbalance_does_not_inflate_trade_denominator() {
         let mut state = SymbolState::default();
-        apply(&mut state, &event("trade", 1_000, "trade"), 30_000.0).unwrap();
+        apply(&mut state, &event("trade", 1_000, "trade"), &test_decay(30_000.0)).unwrap();
         let mut book = event("book", 2_000, "book");
         book.bid = Some(99.0); book.ask = Some(101.0);
         book.bid_size = Some(9.0); book.ask_size = Some(1.0);
-        apply(&mut state, &book, 30_000.0).unwrap();
-        assert!((state.total_trade_size - 2.0).abs() < 1e-9);
+        apply(&mut state, &book, &test_decay(30_000.0)).unwrap();
+        assert!((state.total_trade_size - 2.0 * 0.5_f64.powf(1_000.0 / 30_000.0)).abs() < 1e-9);
         assert!((state.order_flow_imbalance - 1.0).abs() < 1e-9);
         assert!((state.book_imbalance - 0.8).abs() < 1e-9);
     }
@@ -564,9 +569,9 @@ mod tests {
     #[test]
     fn out_of_order_event_is_rejected_without_mutation() {
         let mut state = SymbolState::default();
-        apply(&mut state, &event("later", 2_000, "trade"), 30_000.0).unwrap();
+        apply(&mut state, &event("later", 2_000, "trade"), &test_decay(30_000.0)).unwrap();
         let before = state.clone();
-        assert!(apply(&mut state, &event("earlier", 1_000, "trade"), 30_000.0).is_err());
+        assert!(apply(&mut state, &event("earlier", 1_000, "trade"), &test_decay(30_000.0)).is_err());
         assert_eq!(state.last_event_id, before.last_event_id);
         assert_eq!(state.signed_flow, before.signed_flow);
     }
@@ -584,21 +589,39 @@ mod tests {
     fn sequence_gaps_are_rejected_without_advancing_state() {
         let mut state = SymbolState::default();
         let mut first = event("one", 1_000, "trade"); first.sequence = Some(10);
-        apply(&mut state, &first, 30_000.0).unwrap();
+        apply(&mut state, &first, &test_decay(30_000.0)).unwrap();
         let before = state.clone();
         let mut gap = event("gap", 2_000, "trade"); gap.sequence = Some(12);
         assert!(apply(&mut state, &gap, 30_000.0).unwrap_err().contains("sequence gap"));
         assert_eq!(state.last_sequences.get("trade"), before.last_sequences.get("trade"));
         let mut next = event("next", 2_000, "trade"); next.sequence = Some(11);
-        apply(&mut state, &next, 30_000.0).unwrap();
+        apply(&mut state, &next, &test_decay(30_000.0)).unwrap();
         assert!(state.sequence_valid);
     }
 
     #[test]
     fn missing_sequence_marks_feed_untrusted() {
         let mut state = SymbolState::default();
-        apply(&mut state, &event("one", 1_000, "trade"), 30_000.0).unwrap();
+        apply(&mut state, &event("one", 1_000, "trade"), &test_decay(30_000.0)).unwrap();
         assert!(!state.sequence_valid);
+    }
+
+    #[test]
+    fn liquidation_pressure_is_separate_and_normalized() {
+        let mut state = SymbolState::default();
+        let mut long_liquidation = event("liq-long", 1_000, "liquidation");
+        long_liquidation.size = Some(2.0);
+        long_liquidation.liquidation_side = Some("long".into());
+        apply(&mut state, &long_liquidation, &test_decay(30_000.0)).unwrap();
+        assert_eq!(state.signed_flow, 0.0);
+        assert_eq!(state.total_trade_size, 0.0);
+        assert_eq!(state.liquidation_pressure, -2.0);
+        let mut short_liquidation = event("liq-short", 2_000, "liquidation");
+        short_liquidation.size = Some(2.0);
+        short_liquidation.liquidation_side = Some("short".into());
+        apply(&mut state, &short_liquidation, &test_decay(30_000.0)).unwrap();
+        assert!(state.liquidation_pressure > 0.0);
+        assert!(state.liquidation_pressure < 0.1);
     }
 
 }
