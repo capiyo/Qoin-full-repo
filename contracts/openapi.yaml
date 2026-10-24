@@ -29,6 +29,27 @@ paths:
         '401': { description: Missing or invalid ingestion bearer token }
         '409': { description: Duplicate, out-of-order, or sequence-gap event }
         '503': { description: Persistence failure or pending-event recovery }
+  /api/v1/strategy:
+    get:
+      summary: Read the active versioned research strategy map
+      responses:
+        '200': { description: Active strategy map }
+        '503': { description: Strategy storage unavailable }
+    put:
+      summary: Update the research strategy map (does not enable live trading)
+      security:
+        - AdminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Strategy map persisted }
+        '400': { description: Invalid strategy map }
+        '401': { description: Missing or invalid admin bearer token }
+        '503': { description: Strategy persistence failure }
   /api/v1/state:
     get:
       summary: Get latest state estimate for a symbol
@@ -52,6 +73,10 @@ paths:
 components:
   securitySchemes:
     IngestBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque token
+    AdminBearer:
       type: http
       scheme: bearer
       bearerFormat: opaque token
