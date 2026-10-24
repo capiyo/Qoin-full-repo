@@ -305,6 +305,14 @@ pub struct EdgeStrategy {
     pub attention_scale: f64,
     pub feature_scales: BTreeMap<String, f64>,
     pub updated_at_ms: i64,
+    #[serde(default = "default_min_persistence_ticks")]
+    pub min_persistence_ticks: usize,
+    #[serde(default = "default_cost_multiplier")]
+    pub cost_multiplier: f64,
+    #[serde(default = "default_max_state_age_ms")]
+    pub max_state_age_ms: i64,
+    #[serde(default = "default_min_state_quality")]
+    pub min_state_quality: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -319,6 +327,7 @@ pub struct EdgeDecision {
     pub magnitude: f64,
     pub angle_radians: f64,
     pub angular_threshold_radians: f64,
+    pub candidate_action: &'static str,
     pub action: &'static str,
     pub reason: String,
     pub research_only: bool,
@@ -328,6 +337,22 @@ pub const EDGE_FEATURE_NAMES: [&str; 6] = [
     "order_flow_imbalance", "funding_pressure", "liquidity_stress",
     "volatility_shock", "event_intensity", "liquidation_pressure",
 ];
+
+fn default_min_persistence_ticks() -> usize { 3 }
+fn default_cost_multiplier() -> f64 { 1.5 }
+fn default_max_state_age_ms() -> i64 { 5_000 }
+fn default_min_state_quality() -> f64 { 0.2 }
+
+#[derive(Debug, Clone, Default)]
+pub struct DecisionContext {
+    pub expected_edge_bps: Option<f64>,
+    pub fee_bps: Option<f64>,
+    pub slippage_bps: Option<f64>,
+    pub state_age_ms: Option<i64>,
+    pub state_quality: Option<f64>,
+    pub persistence_ticks: usize,
+    pub regime_allowed: bool,
+}
 
 impl EdgeStrategy {
     pub fn baseline() -> Self {
@@ -352,6 +377,10 @@ impl EdgeStrategy {
             attention_scale: 6.0,
             feature_scales,
             updated_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0),
+            min_persistence_ticks: default_min_persistence_ticks(),
+            cost_multiplier: default_cost_multiplier(),
+            max_state_age_ms: default_max_state_age_ms(),
+            min_state_quality: default_min_state_quality(),
         }
     }
 
@@ -366,7 +395,11 @@ impl EdgeStrategy {
             || !self.max_spread_bps.is_finite()
             || self.max_spread_bps <= 0.0
             || !self.attention_scale.is_finite()
-            || !(0.0..=10.0).contains(&self.attention_scale) {
+            || !(0.0..=10.0).contains(&self.attention_scale)
+            || self.min_persistence_ticks == 0
+            || !self.cost_multiplier.is_finite() || self.cost_multiplier < 1.0
+            || self.max_state_age_ms <= 0
+            || !self.min_state_quality.is_finite() || !(0.0..=1.0).contains(&self.min_state_quality) {
             return Err("invalid strategy thresholds or attention_scale".into());
         }
         for name in EDGE_FEATURE_NAMES {
