@@ -77,6 +77,7 @@ int main() {
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Post);
         request->setPath("/internal/events");
+        request->addHeader("authorization", std::string(req->getHeader("authorization")));
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         request->setBody(std::string(req->getBody()));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
@@ -107,6 +108,7 @@ int main() {
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Put);
         request->setPath("/internal/strategy");
+        request->addHeader("authorization", std::string(req->getHeader("authorization")));
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         request->setBody(std::string(req->getBody()));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
