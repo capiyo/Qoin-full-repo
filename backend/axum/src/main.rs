@@ -383,7 +383,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         Ok(mut guard) => { guard.insert(event.symbol.clone(), snapshot.clone()); }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after persistence"}))),
     }
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"gate_context":{"expected_edge_bps":context.expected_edge_bps,"fee_bps":context.fee_bps,"slippage_bps":context.slippage_bps,"state_age_ms":context.state_age_ms,"state_quality":context.state_quality,"persistence_ticks":context.persistence_ticks,"feed_sequence_valid":context.feed_sequence_valid,"is_entry_tick":context.is_entry_tick,"regime_allowed":context.regime_allowed},"risk_gate":risk_assessment,"effective_action":if risk_assessment.allowed {decision.action} else {"wait"},"execution_allowed":false})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"gate_context":{"expected_edge_bps":context.expected_edge_bps,"fee_bps":context.fee_bps,"slippage_bps":context.slippage_bps,"state_age_ms":context.state_age_ms,"state_quality":context.state_quality,"persistence_ticks":context.persistence_ticks,"feed_sequence_valid":context.feed_sequence_valid,"is_entry_tick":context.is_entry_tick,"regime_allowed":context.regime_allowed},"risk_gate":risk_assessment.clone(),"effective_action":if risk_assessment.allowed {decision.action} else {"wait"},"execution_allowed":false})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
