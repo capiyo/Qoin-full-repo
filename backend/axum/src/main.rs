@@ -15,6 +15,7 @@ use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tower_http::trace::TraceLayer;
 
 use qoin_vector_engine::strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+mod risk;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -233,10 +234,20 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after durable snapshot"}))),
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
-    let decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
+    let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
+    // Portfolio/equity/stop/exposure state is not yet supplied by a reconciled
+    // portfolio service. Fail closed: research signals may be observed, but no
+    // entry proposal is promoted to an actionable buy/sell without risk context.
+    if decision.action == "buy" || decision.action == "sell" {
+        if let Err(veto) = risk::evaluate_entry(None, risk::RiskLimits::default()) {
+            decision.risk_veto = Some(format!("{veto:?}"));
+            decision.reason = format!("risk gate vetoed entry: {veto:?}; portfolio context unavailable");
+            decision.action = "wait";
+        }
+    }
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
