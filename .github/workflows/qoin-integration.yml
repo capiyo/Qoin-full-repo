@@ -1,7 +1,7 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map]
+    branches: [main, backend, feat/mongodb-edge-strategy-map]
     paths:
       - "services/axum/**"
       - "services/drogon/**"
