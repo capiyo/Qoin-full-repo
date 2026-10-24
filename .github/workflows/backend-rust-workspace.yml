@@ -15,6 +15,7 @@ on:
       - "backend/Cargo.lock"
       - "backend/crates/**"
       - "backend/axum-api/**"
+      - "backend/axum/**"
       - ".github/workflows/backend-rust-workspace.yml"
 
 jobs:
