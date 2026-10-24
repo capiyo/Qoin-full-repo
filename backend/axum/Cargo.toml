@@ -3,7 +3,12 @@ name = "qoin-flow-engine"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+live-execution = []
+
 [dependencies]
+qoin-vector-engine = { path = "../crates/qoin-vector-engine" }
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 serde = { version = "1", features = ["derive"] }
