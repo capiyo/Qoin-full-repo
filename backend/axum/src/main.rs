@@ -228,14 +228,12 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.event_intensity += 2.0;
             let size = event.size.unwrap_or(0.0);
             state.liquidation_size += size;
+            // Keep liquidation pressure as its own force. It is not ordinary
+            // trade flow and must not contaminate the OFI numerator/denominator.
             if event.liquidation_side.as_deref() == Some("long") {
-                state.signed_flow -= size;
-                state.total_trade_size += size;
                 state.liquidation_pressure -= size;
             }
             if event.liquidation_side.as_deref() == Some("short") {
-                state.signed_flow += size;
-                state.total_trade_size += size;
                 state.liquidation_pressure += size;
             }
         }
