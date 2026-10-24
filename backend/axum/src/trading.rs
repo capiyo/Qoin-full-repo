@@ -8,6 +8,10 @@ use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use url::form_urlencoded;
 type HmacSha256 = Hmac<Sha256>;
 
+// Hard release gate: order orchestration still lacks exchange-side protective-stop
+// confirmation, full reconciliation, and recovery. Only a reviewed code change may enable it.
+const LIVE_EXECUTION_GATES_IMPLEMENTED: bool = false;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct OrderRequest {
     pub symbol: String,
@@ -31,6 +35,9 @@ pub struct BinanceExecutor {
 }
 impl BinanceExecutor {
     pub fn from_env() -> Result<Self, String> {
+        if !LIVE_EXECUTION_GATES_IMPLEMENTED {
+            return Err("live execution hard-disabled: protective-stop orchestration, exchange reconciliation, and crash recovery are not release-verified".into());
+        }
         if env::var("QOIN_TRADING_MODE").unwrap_or_else(|_| "disabled".into()) != "live" {
             return Err("live execution disabled: QOIN_TRADING_MODE is not live".into());
         }
@@ -83,5 +90,20 @@ impl BinanceExecutor {
         if order.reduce_only { params.push(("reduceOnly".into(), "true".into())); }
         let response = self.signed_request(Method::POST, "/fapi/v1/order", params).await?;
         Ok(ExecutionResponse { mode: "live", accepted: true, exchange: "binance_usdm_futures", response })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executor_remains_hard_disabled_until_release_gates_are_implemented() {
+        let result = BinanceExecutor::from_env();
+        match result {
+            Err(error) => assert!(error.contains("hard-disabled")),
+            Ok(_) => panic!("live executor must remain disabled"),
+        }
     }
 }

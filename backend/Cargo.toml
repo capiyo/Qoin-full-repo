@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-  "backend/crates/qoin-vector-engine",
-  "backend/axum-api",
-  "backend/axum",
+  "crates/qoin-vector-engine",
+  "axum-api",
+  "axum",
 ]
 
 [workspace.package]

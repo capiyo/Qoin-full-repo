@@ -37,6 +37,16 @@
       "type": "integer",
       "minimum": 1
     },
+    "received_at_ms": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Arrival timestamp supplied only by deterministic replay; live arrival time is server-observed."
+    },
+    "sequence": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Optional per-event-type source sequence used to reject gaps and out-of-order updates."
+    },
     "price": {
       "type": [
         "number",
@@ -103,6 +113,10 @@
         "null"
       ],
       "minimum": 0
+    },
+    "basis": {
+      "type": ["number", "null"],
+      "description": "Basis observation, stored separately and aged independently."
     },
     "liquidation_side": {
       "type": [

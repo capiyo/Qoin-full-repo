@@ -1,13 +1,13 @@
 # Qoin Backend Services
 
-This branch contains the separated Rust/C++ backend and its research and persistence layer. The React and React Native clients live on the `frontend` branch.
+The monorepo keeps UI clients under `frontend/` and Rust/C++ services under `backend/`. This backend remains research-only; live order submission is disconnected.
 
 ## Service ownership
 
-- `services/drogon` — C++ Drogon public HTTP gateway, request forwarding, API boundary, and response/error handling.
-- `services/axum` — Rust/Axum authoritative market-event ingestion, state estimation, strategy evaluation, vector/attention decisions, and MongoDB persistence.
-- `services/axum-api` — compatibility research signal API.
-- `crates/qoin-vector-engine` — reusable deterministic Rust signal crate.
+- `backend/drogon` — C++ Drogon public HTTP gateway, request forwarding, API boundary, and response/error handling.
+- `backend/axum` — Rust/Axum authoritative market-event ingestion, causal state estimation, sequence/freshness checks, independent risk-gate invocation, and MongoDB persistence.
+- `backend/axum-api` — compatibility research signal API.
+- `backend/crates/qoin-vector-engine` — sole owner of deterministic force-vector, attention, entry/exit hysteresis, and signal-gate decisions.
 - `contracts/` — shared HTTP and event schemas.
 - `config/`, `research/`, `tests/` — strategy configuration, research models, and verification.
 
@@ -18,24 +18,24 @@ Drogon must not duplicate Axum's business logic. MongoDB is the durable source o
 Requirements: Rust stable, C++17, CMake, Drogon development libraries, Docker, and MongoDB 7.
 
 ```sh
-docker compose up -d mongodb
-cargo test --workspace
-cargo run --manifest-path services/axum/Cargo.toml
+docker compose -f backend/docker-compose.yml up -d mongodb
+cargo test --workspace --all-features --manifest-path backend/Cargo.toml
+cargo run --manifest-path backend/axum/Cargo.toml
 ```
 
 In another terminal:
 
 ```sh
-cmake -S services/drogon -B build/drogon
+cmake -S backend/drogon -B build/drogon
 cmake --build build/drogon
 ./build/drogon/qoin-gateway
 ```
 
-Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, and `QOIN_DROGON_PORT` as required. Keep Axum private behind Drogon in deployment.
+Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, a strong `QOIN_INGEST_TOKEN`, and a separate `QOIN_ADMIN_TOKEN`. Event ingestion and strategy mutation are denied if their respective tokens are missing and are checked in both Drogon and Axum. Keep Axum bound to loopback/private networking.
 
 ## Strategy persistence and safety
 
-Axum seeds a validated versioned baseline in MongoDB's `edge_strategy` collection if no active strategy exists. Strategy changes are validated and persisted before activation, and decisions carry the strategy version. Coefficients remain a research baseline—not proof of profitability. Live order submission is disconnected and trading remains disabled by default.
+Axum seeds a validated versioned baseline in MongoDB's `edge_strategy` collection if no active strategy exists. Legacy maps are migrated to the expanded nine-force schema. Entries require sequence continuity, fresh state/spread, persistence, explicit regime approval, and expected edge above the configured cost multiple. Missing gates fail closed. The independent risk gate also fails closed until all owner-approved limits and account/exchange context exist. The `live-execution` feature only compiles the adapter; no signal invokes it. Live order submission remains disconnected and disabled.
 
 ## Branch policy
 
