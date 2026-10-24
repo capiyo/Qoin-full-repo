@@ -35,6 +35,8 @@ class ReplayEvent:
     def validate(self) -> None:
         if self.event_ts_ms <= 0 or self.arrival_ts_ms < self.event_ts_ms:
             raise ValueError("event and arrival timestamps must be positive and causal")
+        if self.sequence is not None and self.sequence < 0:
+            raise ValueError("sequence must be non-negative")
         if not self.symbol or self.event_type not in {"trade", "book", "funding", "open_interest", "liquidation"}:
             raise ValueError("invalid symbol or event type")
         numbers = (self.mid_price, self.bid, self.ask, self.ofi, self.funding_rate, self.volatility, self.fill_ratio)
