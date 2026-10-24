@@ -66,6 +66,7 @@ struct SymbolState {
     open_interest: Option<f64>,
     liquidation_events: f64,
     liquidation_pressure: f64,
+    liquidation_size: f64,
     state_quality: f64,
 }
 #[derive(Clone)]
@@ -166,6 +167,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.event_intensity = decay(state.event_intensity, elapsed, INTENSITY_HALF_LIFE_MS);
         state.liquidation_events = decay(state.liquidation_events, elapsed, LIQUIDATION_HALF_LIFE_MS);
         state.liquidation_pressure = decay(state.liquidation_pressure, elapsed, LIQUIDATION_HALF_LIFE_MS);
+        state.liquidation_size = decay(state.liquidation_size, elapsed, LIQUIDATION_HALF_LIFE_MS);
     }
     state.last_decay_ts_ms = Some(event.ts_ms);
     if let (Some(regime), Some(confidence)) = (&event.regime, event.regime_confidence) {
@@ -214,6 +216,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.liquidation_events += 1.0;
             state.event_intensity += 2.0;
             let size = event.size.unwrap_or(0.0);
+            state.liquidation_size += size;
             if event.liquidation_side.as_deref() == Some("long") {
                 state.signed_flow -= size;
                 state.total_trade_size += size;
@@ -364,7 +367,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
     let mut decision: EdgeDecision = match strategy.decide(
         &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
         snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_pressure, regime_context.as_ref()
+        if snapshot.liquidation_size > f64::EPSILON { (snapshot.liquidation_pressure / snapshot.liquidation_size).clamp(-1.0, 1.0) } else { 0.0 }, regime_context.as_ref()
     ) {
         Ok(value) => value,
         Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":error}))),
@@ -527,7 +530,7 @@ async fn recover_pending_events(
             let mut decision = strategy.decide(
                 &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
                 snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-                snapshot.liquidation_pressure, regime_context.as_ref()
+                if snapshot.liquidation_size > f64::EPSILON { (snapshot.liquidation_pressure / snapshot.liquidation_size).clamp(-1.0, 1.0) } else { 0.0 }, regime_context.as_ref()
             ).map_err(|e| format!("recompute recovered decision: {e}"))?;
             if decision.action == "buy" || decision.action == "sell" {
                 decision.risk_veto = Some("InvalidOrMissingContext".into());
