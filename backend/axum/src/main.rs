@@ -319,7 +319,23 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
             // A repeated event may correctly fail sequence/time preflight because it
             // was already applied. Let the idempotency path below recover it by ID.
             match s.events.find_one(doc!{"venue": &event.venue, "symbol": &event.symbol, "event_id": &event.event_id}, None).await {
-                Ok(Some(_)) => preflight_error = Some(message),
+                Ok(Some(_)) => {
+                    // Resolve a fully processed duplicate before attempting another
+                    // insert. This makes retries independent of in-memory checkpoint
+                    // timing and avoids relying on duplicate-key error text.
+                    match s.decisions.find_one(
+                        doc!{"event_id": &event.event_id, "symbol": &event.symbol, "venue": &event.venue},
+                        None,
+                    ).await {
+                        Ok(Some(_)) => return (StatusCode::OK, Json(serde_json::json!({
+                            "status":"duplicate_ignored", "event_id":event.event_id
+                        }))),
+                        Ok(None) => preflight_error = Some(message),
+                        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                            "error":"decision storage unavailable during duplicate preflight"
+                        }))),
+                    }
+                },
                 Ok(None) => return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message}))),
                 Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event idempotency lookup unavailable"}))),
             }
