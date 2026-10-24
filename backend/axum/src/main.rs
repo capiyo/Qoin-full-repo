@@ -17,6 +17,9 @@ use tower_http::trace::TraceLayer;
 
 mod edge_strategy;
 mod vector_engine;
+mod risk;
+#[cfg(feature = "live-execution")]
+mod trading;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -236,9 +239,12 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events.max(0.0) as usize,snapshot.last_liquidation_side.as_deref()){
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
+    let risk_assessment = risk::evaluate_entry(&risk::RiskLimits::target_policy(), &risk::RiskContext::default());
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     decision_doc.insert("event_id", event.event_id.clone());
+    decision_doc.insert("risk_gate", mongodb::bson::to_bson(&risk_assessment).unwrap_or(mongodb::bson::Bson::Null));
+    decision_doc.insert("execution_allowed", false);
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
@@ -247,7 +253,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(mut guard) => { guard.insert(event.symbol.clone(), snapshot.clone()); }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after persistence"}))),
     }
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"risk_gate":risk_assessment,"execution_allowed":false})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
