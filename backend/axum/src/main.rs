@@ -304,6 +304,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         Some(chrono::Utc::now().timestamp_millis())
     };
     let state_age_ms = arrival_ts_ms.map(|arrival| arrival.saturating_sub(event.ts_ms));
+    let is_entry_tick = matches!(event.event_type.as_str(), "trade" | "book");
     let mut context = DecisionContext {
         expected_edge_bps: env::var("QOIN_EXPECTED_EDGE_BPS").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0),
         fee_bps: env::var("QOIN_FEE_BPS").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v >= 0.0),
@@ -312,6 +313,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         state_quality: Some(snapshot.state_quality),
         persistence_ticks: snapshot.candidate_persistence_ticks,
         feed_sequence_valid: snapshot.sequence_valid,
+        is_entry_tick,
         position_side: None,
         regime_allowed: env::var("QOIN_REGIME_ALLOWED").map(|v| v == "true").unwrap_or(false),
     };
@@ -321,16 +323,18 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
-    if candidate.candidate_action == "buy" || candidate.candidate_action == "sell" {
-        if snapshot.candidate_action.as_deref() == Some(candidate.candidate_action) {
-            snapshot.candidate_persistence_ticks = snapshot.candidate_persistence_ticks.saturating_add(1);
+    if is_entry_tick {
+        if candidate.candidate_action == "buy" || candidate.candidate_action == "sell" {
+            if snapshot.candidate_action.as_deref() == Some(candidate.candidate_action) {
+                snapshot.candidate_persistence_ticks = snapshot.candidate_persistence_ticks.saturating_add(1);
+            } else {
+                snapshot.candidate_action = Some(candidate.candidate_action.to_owned());
+                snapshot.candidate_persistence_ticks = 1;
+            }
         } else {
-            snapshot.candidate_action = Some(candidate.candidate_action.to_owned());
-            snapshot.candidate_persistence_ticks = 1;
+            snapshot.candidate_action = None;
+            snapshot.candidate_persistence_ticks = 0;
         }
-    } else {
-        snapshot.candidate_action = None;
-        snapshot.candidate_persistence_ticks = 0;
     }
     context.persistence_ticks = snapshot.candidate_persistence_ticks;
     let decision: EdgeDecision = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
