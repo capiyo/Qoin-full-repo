@@ -296,6 +296,14 @@ impl EdgeStrategy {
         };
         let age_ok = context.state_age_ms.map(|age| age >= 0 && age <= self.max_state_age_ms).unwrap_or(false);
         let quality_ok = context.state_quality.map(|q| q.is_finite() && q >= self.min_state_quality && q <= 1.0).unwrap_or(false);
+        let exit_threshold = self.exit_angular_threshold_degrees.to_radians();
+        let exit_requested = match context.position_side {
+            Some(PositionSide::Long) => bearish > bullish && magnitude >= self.exit_magnitude_threshold
+                && (std::f64::consts::FRAC_PI_2 - angle).abs() <= exit_threshold,
+            Some(PositionSide::Short) => bullish > bearish && magnitude >= self.exit_magnitude_threshold
+                && angle <= exit_threshold,
+            None => false,
+        };
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
         } else if event_intensity < 0.1 {
@@ -306,6 +314,10 @@ impl EdgeStrategy {
             ("wait", "state quality is below the configured floor".to_owned())
         } else if !context.feed_sequence_valid {
             ("wait", "feed sequence continuity is unknown or invalid".to_owned())
+        } else if exit_requested {
+            ("close", "position crossed the separate exit hysteresis threshold".to_owned())
+        } else if context.position_side.is_some() {
+            ("wait", "open position retained; no opposite exit threshold crossed".to_owned())
         } else if context.persistence_ticks < self.min_persistence_ticks {
             ("wait", "candidate has not persisted for the required number of ticks".to_owned())
         } else if !context.regime_allowed {
