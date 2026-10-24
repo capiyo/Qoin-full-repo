@@ -334,11 +334,12 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
                     Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision storage unavailable during duplicate recovery"}))),
                 }
             }
+            false
         },
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     };
     let already_applied = recovered_snapshot.is_some();
-    let mut snapshot = if let Some(recovered) = recovered_snapshot {
+    let mut snapshot = if let Some(recovered) = recovered_snapshot.clone() {
         recovered
     } else if event_was_inserted {
         match preflight_snapshot {
