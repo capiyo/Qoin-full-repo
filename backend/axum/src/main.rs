@@ -146,11 +146,13 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
 
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
-            let abs_return = (price / previous).ln().abs();
-            // Return volatility also decays with a stated 60-second half-life.
+            let abs_return = (price.ln() - previous.ln()).abs();
+            // Time-based EWMA: alpha is derived from elapsed event time, not
+            // event count, so bursty feeds do not change the memory half-life.
             let elapsed = state.last_event_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts)).unwrap_or(0);
-            state.ewma_abs_return = decay(state.ewma_abs_return, elapsed, 60_000.0)
-                + 0.06 * abs_return;
+            let retention = 2.0_f64.powf(-(elapsed as f64) / 60_000.0);
+            let alpha = 1.0 - retention;
+            state.ewma_abs_return = retention * state.ewma_abs_return + alpha * abs_return;
         }
         state.last_price = Some(price);
         state.last_price_ts_ms = Some(event.ts_ms);
