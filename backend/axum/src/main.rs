@@ -37,7 +37,7 @@ struct MarketEvent {
     #[serde(default)] open_interest: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct SymbolState {
     symbol: String,
     event_count: usize,
@@ -66,6 +66,7 @@ struct AppState {
     strategies: Collection<Document>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
+    ingest_lock: Arc<tokio::sync::Mutex<()>>,
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
@@ -178,21 +179,54 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "mongodb":ok,"strategy_version":strategy_version,"live_order_submission":"not wired"})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
+    // Serialize ingestion per process so event-time validation, persistence, and
+    // state commit cannot race with another event for the same symbol.
+    let _ingest_guard = s.ingest_lock.lock().await;
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
-    let snapshot={
-        let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+    let current = match s.memory.read() {
+        Ok(guard) => guard.get(&event.symbol).cloned(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
     };
-    let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
-    state_doc.insert("stored_at",mongodb::bson::DateTime::now());
+    let current = if let Some(state) = current { Some(state) } else {
+        match s.states.find_one(doc!{"symbol":&event.symbol}, FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+            Ok(Some(mut doc)) => {
+                doc.remove("_id"); doc.remove("stored_at");
+                mongodb::bson::from_document::<SymbolState>(doc).ok()
+            }
+            Ok(None) => None,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
+        }
+    };
+    if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
+        if event.ts_ms <= previous {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({
+                "error":"out-of-order event rejected", "event_id":event.event_id,
+                "event_ts_ms":event.ts_ms, "last_event_ts_ms":previous
+            })));
+        }
+    }
+    let mut candidate = current.unwrap_or_default();
+    apply(&mut candidate, &event);
+    let snapshot = candidate;
+    let mut state_doc = match mongodb::bson::to_document(&snapshot) {
+        Ok(doc) => doc,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state serialization failed","event_persisted":true}))),
+    };
+    state_doc.insert("stored_at", mongodb::bson::DateTime::now());
+    state_doc.insert("source_event_id", event.event_id.clone());
     if let Err(e)=s.states.insert_one(state_doc,None).await{
         tracing::error!(error=%e,"state snapshot persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+    }
+    // Only publish the candidate to process memory after the durable snapshot exists.
+    match s.memory.write() {
+        Ok(mut guard) => { guard.insert(event.symbol.clone(), snapshot.clone()); }
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after durable snapshot"}))),
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     let decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
@@ -269,7 +303,7 @@ async fn main(){
         }
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active))};
+    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(()))};
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
