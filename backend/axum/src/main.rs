@@ -37,6 +37,7 @@ struct MarketEvent {
     #[serde(default)] liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 struct SymbolState {
     symbol: String,
     event_count: usize,
