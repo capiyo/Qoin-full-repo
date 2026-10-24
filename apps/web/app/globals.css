@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap");
+
+html, body {
+  background-color: var(--qoin-bg-primary, #0b0e14);
+  color: var(--qoin-text-primary, #d1d4db);
+}
+
+body {
+  font-family: "Inter", sans-serif;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.qoin-card {
+  background-color: #131722;
+  border: 1px solid #1e222d;
+  border-radius: 0.75rem;
+}
+
+.qoin-focus:focus-visible {
+  outline: 2px solid #2fd8e8;
+  outline-offset: 2px;
+}
