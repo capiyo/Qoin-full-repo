@@ -472,7 +472,7 @@ async fn recover_pending_events(
             .map_err(|e| format!("lookup recovered decision: {e}"))?;
         if prior_decision.is_none() {
             let mut decision = strategy.decide(
-                &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.funding_rate,
+                &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
                 snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
                 snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
             ).map_err(|e| format!("recompute recovered decision: {e}"))?;
