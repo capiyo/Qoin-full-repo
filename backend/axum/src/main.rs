@@ -242,6 +242,51 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     if let Err(message) = apply(&mut snapshot, &event, half_life_ms) {
         return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
     }
+    let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
+    let max_age_ms = strategy.max_state_age_ms;
+    let fresh_spread = snapshot.spread_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
+        .and(snapshot.spread_bps);
+    let fresh_funding = snapshot.funding_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
+        .and(snapshot.funding_rate);
+    let arrival_ts_ms = if env::var("QOIN_REPLAY_MODE").map(|v| v == "true").unwrap_or(false) {
+        event.received_at_ms
+    } else {
+        Some(chrono::Utc::now().timestamp_millis())
+    };
+    let state_age_ms = arrival_ts_ms.map(|arrival| arrival.saturating_sub(event.ts_ms));
+    let mut context = DecisionContext {
+        expected_edge_bps: env::var("QOIN_EXPECTED_EDGE_BPS").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0),
+        fee_bps: env::var("QOIN_FEE_BPS").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v >= 0.0),
+        slippage_bps: env::var("QOIN_SLIPPAGE_BPS").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v >= 0.0),
+        state_age_ms,
+        state_quality: Some(snapshot.state_quality),
+        persistence_ticks: snapshot.candidate_persistence_ticks,
+        regime_allowed: env::var("QOIN_REGIME_ALLOWED").map(|v| v == "true").unwrap_or(false),
+    };
+    let candidate = match strategy.decide_with_context(&snapshot.symbol, snapshot.order_flow_imbalance,
+        fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
+        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(), &context) {
+        Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
+    };
+    if candidate.candidate_action == "buy" || candidate.candidate_action == "sell" {
+        if snapshot.candidate_action.as_deref() == Some(candidate.candidate_action) {
+            snapshot.candidate_persistence_ticks = snapshot.candidate_persistence_ticks.saturating_add(1);
+        } else {
+            snapshot.candidate_action = Some(candidate.candidate_action.to_owned());
+            snapshot.candidate_persistence_ticks = 1;
+        }
+    } else {
+        snapshot.candidate_action = None;
+        snapshot.candidate_persistence_ticks = 0;
+    }
+    context.persistence_ticks = snapshot.candidate_persistence_ticks;
+    let decision: EdgeDecision = match strategy.decide_with_context(&snapshot.symbol, snapshot.order_flow_imbalance,
+        fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
+        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(), &context) {
+        Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
+    };
     let mut state_doc = match mongodb::bson::to_document(&snapshot) {
         Ok(value) => value,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state serialization failed"}))),
@@ -252,11 +297,6 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         tracing::error!(error=%e,"state snapshot persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
-    let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
-    let decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
-        snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events.max(0.0),snapshot.last_liquidation_side.as_deref()){
-        Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
-    };
     let risk_assessment = risk::evaluate_entry(&risk::RiskLimits::target_policy(), &risk::RiskContext::default());
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
