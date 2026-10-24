@@ -26,6 +26,12 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(result.trade_count, 0)
         self.assertEqual(result.stale_events, 1)
 
+    def test_missing_expected_edge_vetoes_entry(self):
+        items = [event(1000, 1, 100, expected_edge=None)]
+        result = run_replay(items, lambda item: "buy")
+        self.assertEqual(result.trade_count, 0)
+        self.assertEqual(result.risk_vetoes, 1)
+
     def test_cost_stress_reduces_equity(self):
         items = [event(1000, 1, 100), event(2000, 2, 101)]
         strategy = lambda item: "buy" if item.event_ts_ms == 1000 else "close"
