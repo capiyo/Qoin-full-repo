@@ -194,9 +194,14 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>{
             // A duplicate may be an event persisted before a previous state write failed.
             // Re-process it unless the durable in-memory checkpoint already includes it.
-            if let Ok(guard) = s.memory.read() {
-                if guard.get(&event.symbol).and_then(|state| state.last_event_id.as_deref()) == Some(event.event_id.as_str()) {
-                    return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id})));
+            let already_in_memory = s.memory.read().ok()
+                .and_then(|guard| guard.get(&event.symbol).and_then(|state| state.last_event_id.clone()))
+                .as_deref() == Some(event.event_id.as_str());
+            if already_in_memory {
+                match s.decisions.find_one(doc!{"event_id": &event.event_id, "symbol": &event.symbol}, None).await {
+                    Ok(Some(_)) => return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
+                    Ok(None) => {},
+                    Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision storage unavailable during duplicate recovery"}))),
                 }
             }
         },
