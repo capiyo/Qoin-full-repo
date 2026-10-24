@@ -39,6 +39,7 @@ struct MarketEvent {
     #[serde(default)] ask_size: Option<f64>,
     #[serde(default)] funding_rate: Option<f64>,
     #[serde(default)] open_interest: Option<f64>,
+    #[serde(default)] basis: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -59,6 +60,7 @@ struct SymbolState {
     spread_ts_ms: Option<i64>,
     funding_ts_ms: Option<i64>,
     open_interest_ts_ms: Option<i64>,
+    basis_ts_ms: Option<i64>,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
@@ -67,6 +69,8 @@ struct SymbolState {
     ewma_abs_return: f64,
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
+    open_interest_change: f64,
+    basis: Option<f64>,
     liquidation_events: f64,
     last_liquidation_side: Option<String>,
     state_quality: f64,
@@ -115,7 +119,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("liquidation events require positive size and liquidation_side long/short".into());
     }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
-        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
+        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest),("basis",e.basis)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
     }
     if let (Some(bid),Some(ask))=(e.bid,e.ask) {
@@ -200,7 +204,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
             }
         }
         "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; state.funding_ts_ms = Some(event.ts_ms); },
-        "open_interest" => if event.open_interest.is_some() { state.open_interest = event.open_interest; state.open_interest_ts_ms = Some(event.ts_ms); },
+        "open_interest" => if let Some(value) = event.open_interest { if let Some(previous) = state.open_interest.filter(|v| *v > 0.0) { state.open_interest_change = (value - previous) / previous; } state.open_interest = Some(value); state.open_interest_ts_ms = Some(event.ts_ms); },
+        "basis" => if event.basis.is_some() { state.basis = event.basis; state.basis_ts_ms = Some(event.ts_ms); },
         "book" => {}
         _ => return Err("unsupported event_type".into()),
     }
@@ -448,7 +453,7 @@ mod tests {
             event_id: id.into(), venue: "test".into(), symbol: "BTCUSDT".into(),
             event_type: event_type.into(), ts_ms, received_at_ms: None, sequence: None, price: None, size: Some(2.0),
             side: Some("buy".into()), bid: None, ask: None, bid_size: None, ask_size: None,
-            funding_rate: None, open_interest: None, liquidation_side: None,
+            funding_rate: None, open_interest: None, basis: None, liquidation_side: None,
         }
     }
 
