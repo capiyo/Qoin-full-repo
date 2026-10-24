@@ -26,7 +26,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(response->getBody());
+        forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
 }
@@ -75,7 +75,7 @@ int main() {
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(response->getBody());
+            forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
     }, {drogon::Post});
@@ -101,7 +101,7 @@ int main() {
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(response->getBody());
+            forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
     }, {drogon::Get, drogon::Put});
