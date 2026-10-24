@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn missing_spread_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0.0, None).unwrap();
         assert_eq!(d.action, "wait");
     }
     #[test]
