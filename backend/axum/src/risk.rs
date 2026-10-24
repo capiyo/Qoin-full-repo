@@ -60,7 +60,7 @@ impl RiskLimits {
             max_feed_age_ms,
             min_state_quality: number("QOIN_RISK_MIN_STATE_QUALITY")?,
         };
-        policy.validate().map_err(str::to_owned)?;
+        policy.validate().map_err(|error| error.to_string())?;
         Ok(policy)
     }
 
