@@ -1,13 +1,13 @@
 name: Build Qoin research PDF
 on:
   push:
-    branches: [qoin-engine-integration]
+    branches: [main]
     paths:
       - 'docs/QOIN_ALGORITHM_OBSERVATIONS_MATH_PHILOSOPHY.md'
       - 'scripts/build_qoin_paper.py'
       - '.github/workflows/build-qoin-paper.yml'
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
       - 'docs/QOIN_ALGORITHM_OBSERVATIONS_MATH_PHILOSOPHY.md'
       - 'scripts/build_qoin_paper.py'
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: qoin-engine-integration
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with:
@@ -45,5 +45,5 @@ jobs:
             echo "PDF is already current"
           else
             git commit -m "Add generated Qoin algorithm research PDF"
-            git push origin HEAD:qoin-engine-integration
+            git push origin HEAD:main
           fi
