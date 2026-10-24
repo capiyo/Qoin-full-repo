@@ -15,7 +15,7 @@ The repository is grouped by platform and service so each part is easy to open d
 - `backend/research/` — Python research and reference models.
 - `backend/tests/` — backend tests.
 
-Shared API contracts are in `contracts/`. Backend deployment and engineering documentation are in `backend/docs/`.
+Shared API contracts are in `contracts/`. Canonical trading safety and ownership documents are in `docs/RISK_POLICY.md`, `docs/RESPONSIBILITIES.md`, and `docs/EXPERIMENT_LOG.md`; detailed backend runbooks and architecture notes remain in `backend/docs/`.
 
 ## Commands
 Install the JavaScript workspace with pnpm. Run `pnpm dev:web`, `pnpm dev:mobile`, or `pnpm --filter @qoin/web build`.
