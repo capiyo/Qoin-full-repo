@@ -79,6 +79,7 @@ struct AppState {
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     ingest_lock: Arc<tokio::sync::Mutex<()>>,
     pending_signals: Arc<RwLock<HashMap<String, (String, usize)>>>,
+    feed_mode: String,
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
@@ -280,7 +281,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision idempotency lookup failed"}))),
     };
     let arrival_ts_ms = chrono::Utc::now().timestamp_millis();
-    if existing_event.is_none() {
+    if existing_event.is_none() && s.feed_mode == "live" {
         if let Err(message) = validate_feed_age(event.ts_ms, arrival_ts_ms, 2_000) {
             return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message,"event_id":event.event_id})));
         }
@@ -621,7 +622,11 @@ async fn main(){
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
     let recovered_memory = recover_pending_events(&events, &states, &decisions, &active).await
         .expect("pending event recovery must succeed before serving traffic");
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(recovered_memory)),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(())),pending_signals:Arc::new(RwLock::new(HashMap::new()))};
+    let feed_mode = env::var("QOIN_FEED_MODE").unwrap_or_else(|_| "live".into());
+    if !matches!(feed_mode.as_str(), "live" | "replay") {
+        panic!("QOIN_FEED_MODE must be either live or replay");
+    }
+    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(recovered_memory)),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(())),pending_signals:Arc::new(RwLock::new(HashMap::new())),feed_mode};
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
