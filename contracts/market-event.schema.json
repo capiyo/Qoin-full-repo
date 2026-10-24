@@ -114,6 +114,33 @@
         "short",
         null
       ]
+    },
+    "sequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "regime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "bull",
+        "bear",
+        "range",
+        null
+      ]
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
     }
   }
 }
