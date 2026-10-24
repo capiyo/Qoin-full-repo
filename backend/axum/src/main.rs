@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
+use futures_util::TryStreamExt;
 use mongodb::{
     bson::{doc, Document},
     options::{FindOneOptions, IndexOptions, UpdateOptions},
@@ -416,6 +417,86 @@ async fn put_strategy(State(s):State<AppState>,headers:HeaderMap,Json(strategy):
     match s.active_strategy.write(){Ok(mut current)=>*current=stored.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned after persistence"})))}
     (StatusCode::OK,Json(serde_json::json!({"status":"strategy_updated","strategy":stored,"live_trading":false})))
 }
+
+async fn recover_pending_events(
+    events: &Collection<Document>,
+    states: &Collection<Document>,
+    decisions: &Collection<Document>,
+    strategy: &EdgeStrategy,
+) -> Result<HashMap<String, SymbolState>, String> {
+    let options = mongodb::options::FindOptions::builder().sort(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build();
+    let mut cursor = events.find(doc!{"processing_status":"pending"}, options).await
+        .map_err(|e| format!("query pending events: {e}"))?;
+    let mut recovered: HashMap<String, SymbolState> = HashMap::new();
+    while let Some(raw) = cursor.try_next().await.map_err(|e| format!("read pending event: {e}"))? {
+        let event: MarketEvent = mongodb::bson::from_document(raw)
+            .map_err(|e| format!("decode pending event: {e}"))?;
+        let persisted = states.find_one(doc!{"source_event_id":&event.event_id}, None).await
+            .map_err(|e| format!("lookup pending event snapshot: {e}"))?;
+        let snapshot = if let Some(mut doc) = persisted {
+            doc.remove("_id"); doc.remove("stored_at");
+            mongodb::bson::from_document::<SymbolState>(doc)
+                .map_err(|e| format!("decode pending event snapshot: {e}"))?
+        } else {
+            let current = if let Some(value) = recovered.get(&event.symbol) {
+                Some(value.clone())
+            } else {
+                match states.find_one(doc!{"symbol":&event.symbol}, FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await
+                    .map_err(|e| format!("load prior state during recovery: {e}"))? {
+                    Some(mut doc) => {
+                        doc.remove("_id"); doc.remove("stored_at");
+                        Some(mongodb::bson::from_document::<SymbolState>(doc)
+                            .map_err(|e| format!("decode prior state during recovery: {e}"))?)
+                    }
+                    None => None,
+                }
+            };
+            if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
+                if event.ts_ms <= previous {
+                    return Err(format!("pending event {} is older than recovered state; refusing unsafe replay", event.event_id));
+                }
+            }
+            let mut candidate = current.unwrap_or_default();
+            apply(&mut candidate, &event);
+            let mut state_doc = mongodb::bson::to_document(&candidate)
+                .map_err(|e| format!("serialize recovered state: {e}"))?;
+            state_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            state_doc.insert("source_event_id", event.event_id.clone());
+            states.insert_one(state_doc, None).await
+                .map_err(|e| format!("persist recovered state: {e}"))?;
+            candidate
+        };
+        recovered.insert(event.symbol.clone(), snapshot.clone());
+
+        let prior_decision = decisions.find_one(doc!{"source_event_id":&event.event_id}, None).await
+            .map_err(|e| format!("lookup recovered decision: {e}"))?;
+        if prior_decision.is_none() {
+            let mut decision = strategy.decide(
+                &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.funding_rate,
+                snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
+                snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
+            ).map_err(|e| format!("recompute recovered decision: {e}"))?;
+            if decision.action == "buy" || decision.action == "sell" {
+                decision.risk_veto = Some("InvalidOrMissingContext".into());
+                decision.reason = "recovery risk veto: reconciled portfolio context unavailable".into();
+                decision.action = "wait";
+            }
+            let mut decision_doc = mongodb::bson::to_document(&decision)
+                .map_err(|e| format!("serialize recovered decision: {e}"))?;
+            decision_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            decision_doc.insert("source_event_id", event.event_id.clone());
+            decisions.insert_one(decision_doc, None).await
+                .map_err(|e| format!("persist recovered decision: {e}"))?;
+        }
+        events.update_one(
+            doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id},
+            doc!{"$set":doc!{"processing_status":"complete"}},
+            None
+        ).await.map_err(|e| format!("mark recovered event complete: {e}"))?;
+    }
+    Ok(recovered)
+}
+
 #[tokio::main]
 async fn main(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
@@ -465,7 +546,9 @@ async fn main(){
         }
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(())),pending_signals:Arc::new(RwLock::new(HashMap::new()))};
+    let recovered_memory = recover_pending_events(&events, &states, &decisions, &active).await
+        .expect("pending event recovery must succeed before serving traffic");
+    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(recovered_memory)),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(())),pending_signals:Arc::new(RwLock::new(HashMap::new()))};
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
