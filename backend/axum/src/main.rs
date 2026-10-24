@@ -341,10 +341,14 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         Ok(value) => value.clone(),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
+    let regime_context = snapshot.last_regime_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) <= 2_000)
+        .and_then(|_| snapshot.market_regime.as_ref().zip(snapshot.regime_confidence)
+            .map(|(regime, confidence)| RegimeContext { regime: regime.clone(), confidence }));
     let mut decision: EdgeDecision = match strategy.decide(
         &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
         snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_pressure
+        snapshot.liquidation_pressure, regime_context.as_ref()
     ) {
         Ok(value) => value,
         Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":error}))),
@@ -498,10 +502,14 @@ async fn recover_pending_events(
         let prior_decision = decisions.find_one(doc!{"source_event_id":&event.event_id}, None).await
             .map_err(|e| format!("lookup recovered decision: {e}"))?;
         if prior_decision.is_none() {
+            let regime_context = snapshot.last_regime_ts_ms
+                .filter(|ts| event.ts_ms.saturating_sub(*ts) <= 2_000)
+                .and_then(|_| snapshot.market_regime.as_ref().zip(snapshot.regime_confidence)
+                    .map(|(regime, confidence)| RegimeContext { regime: regime.clone(), confidence }));
             let mut decision = strategy.decide(
                 &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
                 snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-                snapshot.liquidation_pressure
+                snapshot.liquidation_pressure, regime_context.as_ref()
             ).map_err(|e| format!("recompute recovered decision: {e}"))?;
             if decision.action == "buy" || decision.action == "sell" {
                 decision.risk_veto = Some("InvalidOrMissingContext".into());
