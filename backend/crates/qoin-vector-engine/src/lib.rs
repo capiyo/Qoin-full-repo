@@ -433,4 +433,25 @@ mod tests {
         assert_eq!(strategy.version, version);
     }
 
+    #[test]
+    fn strong_opposing_force_closes_long_without_opening_short() {
+        let strategy = EdgeStrategy::baseline();
+        let mut context = passing_context();
+        context.position_side = Some(PositionSide::Long);
+        let result = strategy.decide_with_forces("BTCUSDT", -0.9, -0.4, Some(0.001),
+            Some(1.0), 0.001, 4.0, 0.0, None, 0.01, Some(-0.0001), &context).unwrap();
+        assert_eq!(result.action, "close");
+    }
+
+    #[test]
+    fn weak_opposing_force_does_not_close_position() {
+        let strategy = EdgeStrategy::baseline();
+        let mut context = passing_context();
+        context.position_side = Some(PositionSide::Long);
+        let result = strategy.decide_with_forces("BTCUSDT", -0.01, 0.0, Some(0.0),
+            Some(1.0), 0.0, 4.0, 0.0, None, 0.0, Some(0.0), &context).unwrap();
+        assert_eq!(result.action, "wait");
+        assert!(result.reason.contains("exit threshold"));
+    }
+
 }
