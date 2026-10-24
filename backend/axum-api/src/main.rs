@@ -60,7 +60,7 @@ async fn main() {
     qoin_vector_engine::decide(
         ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
-        &config, &config_version, false,
+        &config, &config_version, false, None,
     ).expect("Qoin engine configuration must be valid");
     let state = Arc::new(AppState { config, config_version });
     let cors = CorsLayer::new()
