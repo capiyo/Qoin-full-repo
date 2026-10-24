@@ -105,10 +105,10 @@ pub fn evaluate_entry(limits: &RiskLimits, context: &RiskContext) -> RiskDecisio
     let veto = |reason| RiskDecision {
         allowed: false, reason, estimated_trade_risk_fraction: None, resulting_leverage: None,
     };
-    if limits.validate().is_err() { return veto("risk_policy_incomplete"); }
     if context.kill_switch { return veto("global_kill_switch"); }
     if context.sequence_gap { return veto("feed_sequence_gap"); }
     if context.duplicate_or_out_of_order { return veto("duplicate_or_out_of_order_event"); }
+    if limits.validate().is_err() { return veto("risk_policy_incomplete"); }
     if !context.protective_stop_confirmed { return veto("protective_stop_not_confirmed"); }
     if !context.exchange_reconciled { return veto("exchange_state_not_reconciled"); }
 
