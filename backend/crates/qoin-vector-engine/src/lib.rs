@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn weak_signal_without_position_waits() {
         let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0, open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
-        let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(input, &EngineConfig::default(), "baseline-v2", false, None).unwrap();
         assert_eq!(result.decision, Decision::Wait);
         assert_eq!(result.active_force_count, 0);
     }
@@ -254,7 +254,7 @@ mod tests {
     fn non_finite_values_are_rejected() {
         let mut input = sample();
         input.ofi = f64::NAN;
-        assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap_err(), EngineError::NonFiniteInput);
+        assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false, None).unwrap_err(), EngineError::NonFiniteInput);
     }
 
     #[test]
@@ -263,7 +263,7 @@ mod tests {
             ofi: -2.0, liquidity: -1.0, volatility: 0.2, funding: 0.5,
             open_interest_change: -1.0, liquidation_pressure: -0.5, basis: 0.0,
         };
-        let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(input, &EngineConfig::default(), "baseline-v2", false, None).unwrap();
         assert_eq!(result.decision, Decision::Sell);
     }
 
@@ -271,13 +271,13 @@ mod tests {
     fn invalid_top_k_is_rejected() {
         let mut config = EngineConfig::default();
         config.top_k = 0;
-        assert_eq!(decide(sample(), &config, "baseline-v2", false).unwrap_err(), EngineError::InvalidConfig);
+        assert_eq!(decide(sample(), &config, "baseline-v2", false, None).unwrap_err(), EngineError::InvalidConfig);
     }
 
     #[test]
     fn opposing_force_vector_does_not_trigger_entry() {
         let input = ForceObservation { ofi: -2.5, liquidity: -2.0, volatility: 0.1, funding: 1.5, open_interest_change: -2.0, liquidation_pressure: -1.5, basis: 1.0 };
-        let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(input, &EngineConfig::default(), "baseline-v2", false, None).unwrap();
         assert_ne!(result.decision, Decision::Buy);
     }
     #[test]
@@ -294,7 +294,7 @@ mod tests {
     fn open_position_closes_only_below_exit_threshold() {
         let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
-        let result = decide(input, &EngineConfig::default(), "baseline-v3", true).unwrap();
+        let result = decide(input, &EngineConfig::default(), "baseline-v3", true, None).unwrap();
         assert_eq!(result.decision, Decision::Close);
     }
 
