@@ -66,6 +66,7 @@ struct AppState {
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     ingest_lock: Arc<tokio::sync::Mutex<()>>,
+    pending_signals: Arc<RwLock<HashMap<String, (String, usize)>>>,
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
@@ -238,6 +239,39 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
+    // Only trade/book updates may advance an entry candidate. Three consecutive
+    // same-direction eligible ticks are required; other event types cannot fire entries.
+    if decision.action == "buy" || decision.action == "sell" {
+        let eligible_event = matches!(event.event_type.as_str(), "trade" | "book");
+        let fresh_book = snapshot.last_book_ts_ms
+            .map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000)
+            .unwrap_or(false);
+        if !eligible_event {
+            decision.reason = "entry gate requires a trade or book event".into();
+            decision.action = "wait";
+        } else if !fresh_book || snapshot.state_quality < 1.0 {
+            decision.reason = "entry gate vetoed: book/price state is stale or incomplete".into();
+            decision.action = "wait";
+        } else {
+            match s.pending_signals.write() {
+                Ok(mut pending) => {
+                    let entry = pending.entry(event.symbol.clone()).or_insert((decision.action.to_owned(), 0));
+                    if entry.0 == decision.action { entry.1 += 1; }
+                    else { *entry = (decision.action.to_owned(), 1); }
+                    if entry.1 < 3 {
+                        decision.reason = format!("entry persistence not met ({}/3)", entry.1);
+                        decision.action = "wait";
+                    }
+                }
+                Err(_) => {
+                    decision.reason = "entry gate vetoed: persistence state unavailable".into();
+                    decision.action = "wait";
+                }
+            }
+        }
+    } else if let Ok(mut pending) = s.pending_signals.write() {
+        pending.remove(&event.symbol);
+    }
     // Portfolio/equity/stop/exposure state is not yet supplied by a reconciled
     // portfolio service. Fail closed: research signals may be observed, but no
     // entry proposal is promoted to an actionable buy/sell without risk context.
@@ -318,7 +352,7 @@ async fn main(){
         }
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(()))};
+    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(tokio::sync::Mutex::new(())),pending_signals:Arc::new(RwLock::new(HashMap::new()))};
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
