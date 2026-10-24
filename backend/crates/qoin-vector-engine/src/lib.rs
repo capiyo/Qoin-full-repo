@@ -555,4 +555,21 @@ mod tests {
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("recent-evidence"));
     }
+    #[test]
+    fn persistence_gate_rejects_insufficient_ticks() {
+        let s = EdgeStrategy::baseline();
+        let mut c = passing_context(); c.persistence_ticks = 1;
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        assert_eq!(d.action, "wait");
+        assert!(d.reason.contains("persisted"));
+    }
+    #[test]
+    fn cost_gate_rejects_edge_below_cost_multiple() {
+        let s = EdgeStrategy::baseline();
+        let mut c = passing_context(); c.expected_edge_bps = Some(3.0);
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        assert_eq!(d.action, "wait");
+        assert!(d.reason.contains("expected edge"));
+    }
+
 }
