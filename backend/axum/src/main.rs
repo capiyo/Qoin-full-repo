@@ -315,7 +315,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
     let mut decision: EdgeDecision = match strategy.decide(
-        &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.funding_rate,
+        &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
         snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
         snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
     ) {
@@ -526,7 +526,7 @@ async fn main(){
             Ok(v)=>{
                 v.validate().expect("stored edge strategy must validate");
                 // Migrate only the known hand-authored baseline, never a user-tuned map.
-                if v.version == "edge-map-v1" && v.status == "research_baseline" {
+                if matches!(v.version.as_str(), "edge-map-v1" | "edge-map-v2") && v.status == "research_baseline" {
                     let mut migrated = EdgeStrategy::baseline();
                     migrated.updated_at_ms = chrono::Utc::now().timestamp_millis();
                     let d = mongodb::bson::to_document(&migrated).expect("serialize migrated baseline");
