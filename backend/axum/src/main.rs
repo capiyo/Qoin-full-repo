@@ -87,6 +87,27 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    match e.event_type.as_str() {
+        "trade" => {
+            if !matches!(e.side.as_deref(), Some("buy" | "sell")) || e.size.map(|v| v <= 0.0).unwrap_or(true) {
+                return Err("trade events require positive size and side buy/sell".into());
+            }
+        }
+        "book" => {
+            if e.bid.is_none() || e.ask.is_none() || e.bid_size.is_none() || e.ask_size.is_none() {
+                return Err("book events require bid, ask, bid_size, and ask_size".into());
+            }
+        }
+        "liquidation" => {
+            if !matches!(e.liquidation_side.as_deref(), Some("long" | "short")) || e.size.map(|v| v <= 0.0).unwrap_or(true) {
+                return Err("liquidation events require positive size and liquidation_side long/short".into());
+            }
+        }
+        "funding" if e.funding_rate.is_some() => {},
+        "open_interest" if e.open_interest.is_some() => {},
+        "funding" | "open_interest" => return Err("funding and open-interest events require their corresponding value".into()),
+        _ => return Err("unsupported event_type".into()),
+    }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
         ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
@@ -409,7 +430,13 @@ async fn main(){
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
+    states.create_index(mongodb::IndexModel::builder().keys(doc!{"source_event_id":1})
+        .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"source_event_id":{"$exists":true}}).build()).build(),None)
+        .await.expect("state event idempotency index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"source_event_id":1})
+        .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"source_event_id":{"$exists":true}}).build()).build(),None)
+        .await.expect("decision event idempotency index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
