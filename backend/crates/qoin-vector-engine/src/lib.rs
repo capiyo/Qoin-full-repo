@@ -343,4 +343,15 @@ mod tests {
         assert!(result.rationale.contains("expected edge"));
     }
 
+    #[test]
+    fn regime_gate_rejects_missing_unknown_and_low_confidence_regimes() {
+        assert!(!regime_gate(None, Some(0.6)));
+        let unknown = RegimeContext { regime: "unknown".into(), confidence: 0.99 };
+        assert!(!regime_gate(Some(&unknown), Some(0.6)));
+        let weak = RegimeContext { regime: "bull".into(), confidence: 0.4 };
+        assert!(!regime_gate(Some(&weak), Some(0.6)));
+        let strong = RegimeContext { regime: "bear".into(), confidence: 0.9 };
+        assert!(regime_gate(Some(&strong), Some(0.6)));
+    }
+
 }
