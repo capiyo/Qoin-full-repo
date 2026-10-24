@@ -448,7 +448,7 @@ mod tests {
         let mut context = passing_context();
         context.position_side = Some(PositionSide::Long);
         let result = strategy.decide_with_forces("BTCUSDT", -0.01, 0.0, Some(0.0),
-            Some(1.0), 0.0, 4.0, 0.0, None, 0.0, Some(0.0), &context).unwrap();
+            Some(1.0), 0.0, 4.0, 0.0, 0.0, 0.0, Some(0.0), &context).unwrap();
         assert_eq!(result.action, "wait");
         assert!(result.reason.contains("exit threshold"));
     }
