@@ -37,6 +37,9 @@ async fn main() {
     // Every runtime parameter is explicit and tied to a config version.
     // Invalid values fail startup rather than silently changing model behavior.
     let mut config = EngineConfig::default();
+    if let Ok(value) = std::env::var("QOIN_EXIT_THRESHOLD") {
+        config.exit_threshold = value.parse().expect("QOIN_EXIT_THRESHOLD must be numeric");
+    }
     if let Ok(value) = std::env::var("QOIN_SIGNAL_THRESHOLD") {
         config.signal_threshold = value.parse().expect("QOIN_SIGNAL_THRESHOLD must be numeric");
     }
