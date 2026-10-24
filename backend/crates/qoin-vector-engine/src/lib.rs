@@ -6,6 +6,8 @@
 //! not trained weights and not evidence of an edge.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -256,10 +258,7 @@ mod tests {
 
 // The persisted strategy-map decision implementation lives in this crate so
 // services cannot fork or shadow the canonical decision logic.
-//! Versioned edge-strategy map loaded from MongoDB and used by the Axum decision path.
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+// Versioned edge-strategy map loaded from MongoDB and used by the Axum decision path.
 
 pub const STRATEGY_KEY: &str = "active";
 
