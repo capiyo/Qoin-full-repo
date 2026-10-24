@@ -113,11 +113,11 @@ impl EdgeStrategy {
         for (i, name) in EDGE_FEATURE_NAMES.iter().enumerate() {
             bullish_weights.insert((*name).to_owned(), bullish[i]);
             bearish_weights.insert((*name).to_owned(), bearish[i]);
-            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 10.0, 0.01, 100.0][i]);
+            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 1.0, 0.01, 100.0][i]);
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
-            version: "edge-map-v2".to_owned(),
+            version: "edge-map-v3".to_owned(),
             status: "research_baseline".to_owned(),
             bullish_weights, bearish_weights,
             angular_threshold_degrees: 25.0,
@@ -205,11 +205,10 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: f64,
-        last_liquidation_side: Option<&str>,
+        liquidation_pressure: f64,
     ) -> Result<EdgeDecision, String> {
         self.decide_with_context(symbol, order_flow_imbalance, funding_rate, spread_bps,
-            ewma_abs_return, event_intensity, liquidation_events, last_liquidation_side,
+            ewma_abs_return, event_intensity, liquidation_pressure,
             &DecisionContext::default())
     }
 
@@ -221,12 +220,11 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: f64,
-        last_liquidation_side: Option<&str>,
+        liquidation_pressure: f64,
         context: &DecisionContext,
     ) -> Result<EdgeDecision, String> {
         self.decide_with_forces(symbol, order_flow_imbalance, 0.0, funding_rate, spread_bps,
-            ewma_abs_return, event_intensity, liquidation_events, last_liquidation_side,
+            ewma_abs_return, event_intensity, liquidation_pressure,
             0.0, None, context)
     }
 
@@ -239,8 +237,7 @@ impl EdgeStrategy {
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
         event_intensity: f64,
-        liquidation_events: f64,
-        last_liquidation_side: Option<&str>,
+        liquidation_pressure: f64,
         open_interest_change: f64,
         basis: Option<f64>,
         context: &DecisionContext,
@@ -254,8 +251,7 @@ impl EdgeStrategy {
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
             event_intensity / scale("event_intensity"),
-            (liquidation_events / scale("liquidation_pressure"))
-                * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+            liquidation_pressure / scale("liquidation_pressure"),
             open_interest_change / scale("open_interest_change"),
             basis.unwrap_or(0.0) * scale("basis"),
         ];
