@@ -1,4 +1,5 @@
 //! Versioned strategy map and deterministic decision logic shared by all services.
+use crate::{cost_gate, CostContext};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -159,12 +160,17 @@ impl EdgeStrategy {
         let angle = bearish.atan2(bullish);
         let threshold = self.angular_threshold_degrees.to_radians();
         let spread_ok = spread_bps.map(|v| v.is_finite() && v >= 0.0 && v <= self.max_spread_bps).unwrap_or(false);
-        let cost_ok = match (self.expected_edge_bps_per_magnitude, self.fee_bps, spread_bps, self.slippage_bps, self.cost_multiplier) {
-            (Some(edge_per_magnitude), Some(fees), Some(spread), Some(slippage), Some(k))
-                if edge_per_magnitude.is_finite() && fees.is_finite() && spread.is_finite() && slippage.is_finite() && k.is_finite() =>
-                    magnitude * edge_per_magnitude > k * (fees + spread + slippage),
-            _ => false,
+        let cost_context = match (self.expected_edge_bps_per_magnitude, self.fee_bps, spread_bps, self.slippage_bps, self.cost_multiplier) {
+            (Some(edge_per_magnitude), Some(fees), Some(spread), Some(slippage), Some(k)) => Some(CostContext {
+                expected_edge_bps: magnitude * edge_per_magnitude,
+                fees_bps: fees,
+                spread_bps: spread,
+                slippage_bps: slippage,
+                multiplier: k,
+            }),
+            _ => None,
         };
+        let cost_ok = cost_gate(cost_context.as_ref());
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
         } else if !cost_ok {
