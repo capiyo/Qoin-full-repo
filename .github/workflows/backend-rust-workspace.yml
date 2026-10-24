@@ -5,6 +5,7 @@ on:
     paths:
       - "backend/Cargo.toml"
       - "backend/Cargo.lock"
+      - "rust-toolchain.toml"
       - "backend/crates/**"
       - "backend/axum-api/**"
       - "backend/axum/**"
@@ -22,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --manifest-path backend/Cargo.toml
+      - run: cargo clippy --workspace --all-targets --manifest-path backend/Cargo.toml -- -D warnings
