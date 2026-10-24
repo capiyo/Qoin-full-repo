@@ -98,6 +98,7 @@ pub struct DecisionContext {
     pub state_quality: Option<f64>,
     pub persistence_ticks: usize,
     pub feed_sequence_valid: bool,
+    pub is_entry_tick: bool,
     pub regime_allowed: bool,
     pub position_side: Option<PositionSide>,
 }
@@ -314,6 +315,8 @@ impl EdgeStrategy {
             ("wait", "state quality is below the configured floor".to_owned())
         } else if !context.feed_sequence_valid {
             ("wait", "feed sequence continuity is unknown or invalid".to_owned())
+        } else if !context.is_entry_tick {
+            ("wait", "entry and exit evaluation only runs on trade/book ticks".to_owned())
         } else if exit_requested {
             ("close", "position crossed the separate exit hysteresis threshold".to_owned())
         } else if context.position_side.is_some() {
@@ -345,7 +348,7 @@ impl EdgeStrategy {
 mod tests {
     use super::*;
     fn passing_context() -> DecisionContext {
-        DecisionContext { expected_edge_bps: Some(50.0), fee_bps: Some(2.0), slippage_bps: Some(2.0), state_age_ms: Some(100), state_quality: Some(0.9), persistence_ticks: 3, feed_sequence_valid: true, regime_allowed: true, position_side: None }
+        DecisionContext { expected_edge_bps: Some(50.0), fee_bps: Some(2.0), slippage_bps: Some(2.0), state_age_ms: Some(100), state_quality: Some(0.9), persistence_ticks: 3, feed_sequence_valid: true, is_entry_tick: true, regime_allowed: true, position_side: None }
     }
     #[test]
     fn baseline_map_is_complete_and_valid() { assert!(EdgeStrategy::baseline().validate().is_ok()); }
