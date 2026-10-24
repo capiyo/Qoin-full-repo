@@ -5,9 +5,9 @@ The monorepo keeps UI clients under `frontend/` and Rust/C++ services under `bac
 ## Service ownership
 
 - `backend/drogon` — C++ Drogon public HTTP gateway, request forwarding, API boundary, and response/error handling.
-- `backend/axum` — Rust/Axum authoritative market-event ingestion, state estimation, strategy evaluation, vector/attention decisions, and MongoDB persistence.
+- `backend/axum` — Rust/Axum authoritative market-event ingestion, causal state estimation, sequence/freshness checks, independent risk-gate invocation, and MongoDB persistence.
 - `backend/axum-api` — compatibility research signal API.
-- `backend/crates/qoin-vector-engine` — reusable deterministic Rust signal crate.
+- `backend/crates/qoin-vector-engine` — sole owner of deterministic force-vector, attention, entry/exit hysteresis, and signal-gate decisions.
 - `contracts/` — shared HTTP and event schemas.
 - `config/`, `research/`, `tests/` — strategy configuration, research models, and verification.
 
@@ -19,7 +19,6 @@ Requirements: Rust stable, C++17, CMake, Drogon development libraries, Docker, a
 
 ```sh
 docker compose -f backend/docker-compose.yml up -d mongodb
-cargo fmt --all --manifest-path backend/Cargo.toml -- --check
 cargo test --workspace --all-features --manifest-path backend/Cargo.toml
 cargo run --manifest-path backend/axum/Cargo.toml
 ```
@@ -32,7 +31,7 @@ cmake --build build/drogon
 ./build/drogon/qoin-gateway
 ```
 
-Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, and a strong `QOIN_ADMIN_TOKEN`. Event ingestion and strategy mutation are denied if the token is missing and are checked in both Drogon and Axum. Keep Axum bound to loopback/private networking.
+Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, a strong `QOIN_INGEST_TOKEN`, and a separate `QOIN_ADMIN_TOKEN`. Event ingestion and strategy mutation are denied if their respective tokens are missing and are checked in both Drogon and Axum. Keep Axum bound to loopback/private networking.
 
 ## Strategy persistence and safety
 
