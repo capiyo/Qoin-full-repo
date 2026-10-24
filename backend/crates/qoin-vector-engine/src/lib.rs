@@ -351,6 +351,7 @@ pub struct DecisionContext {
     pub state_age_ms: Option<i64>,
     pub state_quality: Option<f64>,
     pub persistence_ticks: usize,
+    pub feed_sequence_valid: bool,
     pub regime_allowed: bool,
 }
 
@@ -505,6 +506,8 @@ impl EdgeStrategy {
             ("wait", "state is stale or event-to-arrival latency is unavailable".to_owned())
         } else if !quality_ok {
             ("wait", "state quality is below the configured floor".to_owned())
+        } else if !context.feed_sequence_valid {
+            ("wait", "feed sequence continuity is unknown or invalid".to_owned())
         } else if context.persistence_ticks < self.min_persistence_ticks {
             ("wait", "candidate has not persisted for the required number of ticks".to_owned())
         } else if !context.regime_allowed {
