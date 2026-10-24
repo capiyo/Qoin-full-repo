@@ -377,7 +377,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     context.persistence_ticks = snapshot.candidate_persistence_ticks;
     let decision: EdgeDecision = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
         fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(),
+        if snapshot.liquidation_size > f64::EPSILON { (snapshot.liquidation_pressure / snapshot.liquidation_size).clamp(-1.0, 1.0) } else { 0.0 },
         fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
@@ -592,7 +592,7 @@ mod tests {
         apply(&mut state, &first, &test_decay(30_000.0)).unwrap();
         let before = state.clone();
         let mut gap = event("gap", 2_000, "trade"); gap.sequence = Some(12);
-        assert!(apply(&mut state, &gap, 30_000.0).unwrap_err().contains("sequence gap"));
+        assert!(apply(&mut state, &gap, &test_decay(30_000.0)).unwrap_err().contains("sequence gap"));
         assert_eq!(state.last_sequences.get("trade"), before.last_sequences.get("trade"));
         let mut next = event("next", 2_000, "trade"); next.sequence = Some(11);
         apply(&mut state, &next, &test_decay(30_000.0)).unwrap();
