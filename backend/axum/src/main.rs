@@ -187,7 +187,9 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, decay: &DecayConfig) -> R
             if sequence != previous.saturating_add(1) { return Err("source sequence gap rejected".into()); }
         }
         state.last_sequences.insert(stream_key.clone(), sequence);
-        state.unsequenced_event_types.remove(&stream_key);
+        // Once an unsequenced event has been observed, a later sequence number
+        // cannot reconstruct the missing interval. Keep the stream untrusted until
+        // an explicit operator-controlled resync/checkpoint is implemented.
         state.sequence_valid = state.unsequenced_event_types.is_empty();
     } else {
         // A feed without sequence metadata cannot prove continuity; signals must abstain.
@@ -641,6 +643,16 @@ mod tests {
         let mut state = SymbolState::default();
         apply(&mut state, &event("one", 1_000, "trade"), &test_decay(30_000.0)).unwrap();
         assert!(!state.sequence_valid);
+    }
+
+    #[test]
+    fn sequence_metadata_after_unsequenced_event_does_not_restore_trust() {
+        let mut state = SymbolState::default();
+        apply(&mut state, &event("unsequenced", 1_000, "trade"), &test_decay(30_000.0)).unwrap();
+        let mut sequenced = event("sequenced", 2_000, "trade");
+        sequenced.sequence = Some(1);
+        apply(&mut state, &sequenced, &test_decay(30_000.0)).unwrap();
+        assert!(!state.sequence_valid, "sequence continuity requires an explicit resync after unknown gaps");
     }
 
     #[test]
