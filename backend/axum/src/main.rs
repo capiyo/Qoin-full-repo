@@ -52,6 +52,7 @@ struct SymbolState {
     candidate_action: Option<String>,
     candidate_persistence_ticks: usize,
     last_sequences: BTreeMap<String, u64>,
+    unsequenced_event_types: BTreeMap<String, bool>,
     sequence_valid: bool,
     last_price: Option<f64>,
     spread_bps: Option<f64>,
@@ -132,9 +133,11 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
             if sequence != previous.saturating_add(1) { return Err("source sequence gap rejected".into()); }
         }
         state.last_sequences.insert(event.event_type.clone(), sequence);
-        state.sequence_valid = true;
+        state.unsequenced_event_types.remove(&event.event_type);
+        state.sequence_valid = state.unsequenced_event_types.is_empty();
     } else {
         // A feed without sequence metadata cannot prove continuity; signals must abstain.
+        state.unsequenced_event_types.insert(event.event_type.clone(), true);
         state.sequence_valid = false;
     }
     if let Some(previous_ts) = state.last_event_ts_ms {
