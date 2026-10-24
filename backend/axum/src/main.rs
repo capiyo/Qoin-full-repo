@@ -312,6 +312,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         state_quality: Some(snapshot.state_quality),
         persistence_ticks: snapshot.candidate_persistence_ticks,
         feed_sequence_valid: snapshot.sequence_valid,
+        position_side: None,
         regime_allowed: env::var("QOIN_REGIME_ALLOWED").map(|v| v == "true").unwrap_or(false),
     };
     let candidate = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
