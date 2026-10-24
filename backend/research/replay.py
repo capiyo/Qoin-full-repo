@@ -134,6 +134,7 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
     peak_equity = equity
     positions: dict[str, Position] = {}
     last_arrival_ms = 0
+    last_prices: dict[str, float] = {}
     last_sequences: dict[tuple[str, str], int] = {}
     invalid_symbols: set[str] = set()
     trade_pnls: list[float] = []
@@ -174,6 +175,7 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         if event.arrival_ts_ms < last_arrival_ms:
             raise ValueError("arrival events must be replayed chronologically")
         last_arrival_ms = event.arrival_ts_ms
+        last_prices[event.symbol] = event.mid_price
         key = (event.symbol, event.event_type)
         if event.sequence_reset:
             last_sequences[key] = event.sequence if event.sequence is not None else 0
@@ -194,7 +196,7 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         age_ms = event.arrival_ts_ms - event.event_ts_ms
         spread_bps = (event.ask - event.bid) / event.mid_price * 10_000.0
         position = positions.get(event.symbol)
-        if position:
+        if position and event.event_type == "funding":
             funding = -position.side * position.quantity * event.mid_price * event.funding_rate
             equity += funding
             funding_pnl += funding
@@ -228,8 +230,8 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                     slippage_cost += quantity * event.mid_price * slip / 10_000.0
                     stop_price = fill_price * (1.0 - side * config.stop_distance_bps / 10_000.0)
                     positions[event.symbol] = Position(event.symbol, side, quantity, fill_price, stop_price, fee)
-        unrealized = sum(p.quantity * (event.mid_price - p.entry_price) * p.side
-                         for p in positions.values() if p.symbol == event.symbol)
+        unrealized = sum(p.quantity * (last_prices.get(p.symbol, p.entry_price) - p.entry_price) * p.side
+                         for p in positions.values())
         equity_curve.append(equity + unrealized)
         peak_equity = max(peak_equity, equity)
         if equity <= 0:
