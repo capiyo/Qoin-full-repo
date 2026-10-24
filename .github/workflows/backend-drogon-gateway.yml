@@ -1,10 +1,10 @@
 name: Qoin Drogon gateway
 on:
   push:
-    branches: [main, backend, feat/mongodb-edge-strategy-map]
+    branches: [main, backend, organized-monorepo, qoin-hardening, feat/mongodb-edge-strategy-map]
     paths:
       - "backend/drogon/**"
-      - ".github/workflows/drogon-gateway.yml"
+      - ".github/workflows/backend-drogon-gateway.yml"
   pull_request:
     branches: [main]
     paths:
