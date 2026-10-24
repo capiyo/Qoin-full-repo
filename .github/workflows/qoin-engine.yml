@@ -1,9 +1,9 @@
 name: Qoin engine checks
 on:
   push:
-    branches: [master, qoin-engine-integration]
+    branches: [main, feat/mongodb-edge-strategy-map, qoin-engine-integration]
   pull_request:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
