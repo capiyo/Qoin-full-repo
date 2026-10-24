@@ -11,7 +11,7 @@ use mongodb::{
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, sync::{Arc, RwLock}};
+use std::{collections::{BTreeMap, HashMap}, env, sync::{Arc, RwLock}};
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 
@@ -29,6 +29,7 @@ struct MarketEvent {
     event_type: String,
     ts_ms: i64,
     #[serde(default)] received_at_ms: Option<i64>,
+    #[serde(default)] sequence: Option<u64>,
     #[serde(default)] price: Option<f64>,
     #[serde(default)] size: Option<f64>,
     #[serde(default)] side: Option<String>,
@@ -50,6 +51,8 @@ struct SymbolState {
     last_event_id: Option<String>,
     candidate_action: Option<String>,
     candidate_persistence_ticks: usize,
+    last_sequences: BTreeMap<String, u64>,
+    sequence_valid: bool,
     last_price: Option<f64>,
     spread_bps: Option<f64>,
     spread_ts_ms: Option<i64>,
@@ -123,6 +126,17 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Result<(), String> {
+    if let Some(sequence) = event.sequence {
+        if let Some(previous) = state.last_sequences.get(&event.event_type) {
+            if sequence <= *previous { return Err("out-of-order source sequence rejected".into()); }
+            if sequence != previous.saturating_add(1) { return Err("source sequence gap rejected".into()); }
+        }
+        state.last_sequences.insert(event.event_type.clone(), sequence);
+        state.sequence_valid = true;
+    } else {
+        // A feed without sequence metadata cannot prove continuity; signals must abstain.
+        state.sequence_valid = false;
+    }
     if let Some(previous_ts) = state.last_event_ts_ms {
         if event.ts_ms < previous_ts {
             return Err("out-of-order event rejected".into());
@@ -279,6 +293,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         state_age_ms,
         state_quality: Some(snapshot.state_quality),
         persistence_ticks: snapshot.candidate_persistence_ticks,
+        feed_sequence_valid: snapshot.sequence_valid,
         regime_allowed: env::var("QOIN_REGIME_ALLOWED").map(|v| v == "true").unwrap_or(false),
     };
     let candidate = match strategy.decide_with_context(&snapshot.symbol, snapshot.order_flow_imbalance,
@@ -313,7 +328,10 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         tracing::error!(error=%e,"state snapshot persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
-    let risk_assessment = risk::evaluate_entry(&risk::RiskLimits::target_policy(), &risk::RiskContext::default());
+    let mut risk_context = risk::RiskContext::default();
+    risk_context.sequence_gap = !snapshot.sequence_valid;
+    risk_context.duplicate_or_out_of_order = false;
+    let risk_assessment = risk::evaluate_entry(&risk::RiskLimits::target_policy(), &risk_context);
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     decision_doc.insert("event_id", event.event_id.clone());
@@ -425,7 +443,7 @@ mod tests {
     fn event(id: &str, ts_ms: i64, event_type: &str) -> MarketEvent {
         MarketEvent {
             event_id: id.into(), venue: "test".into(), symbol: "BTCUSDT".into(),
-            event_type: event_type.into(), ts_ms, received_at_ms: None, price: None, size: Some(2.0),
+            event_type: event_type.into(), ts_ms, received_at_ms: None, sequence: None, price: None, size: Some(2.0),
             side: Some("buy".into()), bid: None, ask: None, bid_size: None, ask_size: None,
             funding_rate: None, open_interest: None, liquidation_side: None,
         }
