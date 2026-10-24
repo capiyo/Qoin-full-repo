@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import isfinite, sqrt
+from math import e, isfinite, sqrt
+from statistics import NormalDist
 from typing import Callable, Iterable, Literal
 
 Action = Literal["buy", "sell", "close", "wait"]
@@ -274,14 +275,27 @@ def baseline_strategies() -> dict[str, Strategy]:
 
 
 def deflated_sharpe_ratio(returns: list[float], trials: int = 1) -> float | None:
-    """Conservative Sharpe-like diagnostic; requires at least 3 finite returns and >=1 trial."""
-    if trials < 1 or len(returns) < 3 or any(not isfinite(value) for value in returns):
+    """Return the probabilistic deflated Sharpe ratio for a set of periodic returns."""
+    count = len(returns)
+    if trials < 1 or count < 3 or any(not isfinite(value) for value in returns):
         return None
-    mean = sum(returns) / len(returns)
-    variance = sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)
+    mean = sum(returns) / count
+    variance = sum((value - mean) ** 2 for value in returns) / (count - 1)
     if variance <= 0:
         return None
-    sharpe = mean / sqrt(variance)
-    # Multiple-testing penalty grows with the number of tried configurations.
-    penalty = sqrt(2.0 * max(0.0, __import__("math").log(trials)))
-    return sharpe - penalty
+    standard_deviation = sqrt(variance)
+    sharpe = mean / standard_deviation
+    skew = sum((value - mean) ** 3 for value in returns) / count / (standard_deviation ** 3)
+    kurtosis = sum((value - mean) ** 4 for value in returns) / count / (variance ** 2)
+    sharpe_variance = (1.0 - skew * sharpe + ((kurtosis - 1.0) / 4.0) * sharpe ** 2) / (count - 1)
+    if sharpe_variance <= 0 or not isfinite(sharpe_variance):
+        return None
+    sharpe_error = sqrt(sharpe_variance)
+    if trials == 1:
+        expected_best_sharpe = 0.0
+    else:
+        normal = NormalDist()
+        gamma = 0.5772156649015329
+        expected_max_z = (1.0 - gamma) * normal.inv_cdf(1.0 - 1.0 / trials) + gamma * normal.inv_cdf(1.0 - 1.0 / (trials * e))
+        expected_best_sharpe = sharpe_error * expected_max_z
+    return NormalDist().cdf((sharpe - expected_best_sharpe) / sharpe_error)
