@@ -604,7 +604,7 @@ mod tests {
         let before = state.clone();
         let mut gap = event("gap", 2_000, "trade"); gap.sequence = Some(12);
         assert!(apply(&mut state, &gap, &test_decay(30_000.0)).unwrap_err().contains("sequence gap"));
-        assert_eq!(state.last_sequences.get("test:trade"), before.last_sequences.get("trade"));
+        assert_eq!(state.last_sequences.get("test:trade"), before.last_sequences.get("test:trade"));
         let mut next = event("next", 2_000, "trade"); next.sequence = Some(11);
         apply(&mut state, &next, &test_decay(30_000.0)).unwrap();
         assert!(state.sequence_valid);
