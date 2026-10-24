@@ -7,6 +7,16 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
+bool authorized(const drogon::HttpRequestPtr& request) {
+    const char* configured = std::getenv("QOIN_ADMIN_TOKEN");
+    if (!configured || std::string(configured).empty()) return false;
+    return request->getHeader("authorization") == std::string("Bearer ") + configured;
+}
+drogon::HttpResponsePtr unauthorizedResponse() {
+    auto response = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "authorized service token required"}});
+    response->setStatusCode(drogon::k401Unauthorized);
+    return response;
+}
 void proxyGet(const drogon::HttpRequestPtr&,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
@@ -59,11 +69,13 @@ int main() {
             proxyGet(req, std::move(cb), path);
             return;
         }
+        if (!authorized(req)) { cb(unauthorizedResponse()); return; }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Post);
         request->setPath("/internal/events");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        request->addHeader("authorization", req->getHeader("authorization"));
         request->setBody(std::string(req->getBody()));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
@@ -85,11 +97,13 @@ int main() {
             proxyGet(req, std::move(cb), "/internal/strategy");
             return;
         }
+        if (!authorized(req)) { cb(unauthorizedResponse()); return; }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Put);
         request->setPath("/internal/strategy");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        request->addHeader("authorization", req->getHeader("authorization"));
         request->setBody(std::string(req->getBody()));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
