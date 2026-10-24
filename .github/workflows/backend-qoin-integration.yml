@@ -85,7 +85,6 @@ jobs:
           HTTP_STATUS=$(curl --silent --output /tmp/unauthorized-strategy.json --write-out '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
           test "$HTTP_STATUS" = "401"
           BOOK_TS=$(date +%s%3N)
-          BOOK_TS=$(date +%s%3N)
           TRADE_TS=$((BOOK_TS + 100))
           OLD_TS=$((BOOK_TS + 50))
           BOOK_EVENT=$(printf '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":%s,"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' "$BOOK_TS")
