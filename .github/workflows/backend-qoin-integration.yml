@@ -1,4 +1,7 @@
 name: Qoin Axum-Drogon MongoDB integration
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches: [main, organized-monorepo, hardening/research-safety-gates, backend, feat/mongodb-edge-strategy-map]
