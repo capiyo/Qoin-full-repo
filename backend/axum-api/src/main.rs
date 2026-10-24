@@ -46,11 +46,11 @@ async fn main() {
     if let Ok(value) = std::env::var("QOIN_TOP_K") {
         config.top_k = value.parse().expect("QOIN_TOP_K must be an integer");
     }
-    if let Ok(value) = std::env::var("QOIN_MIN_ALIGNMENT") {
-        config.min_alignment = value.parse().expect("QOIN_MIN_ALIGNMENT must be numeric");
-    }
     if let Ok(value) = std::env::var("QOIN_MAX_ANGLE_RADIANS") {
         config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric");
+    }
+    if let Ok(value) = std::env::var("QOIN_EXIT_THRESHOLD") {
+        config.exit_threshold = value.parse().expect("QOIN_EXIT_THRESHOLD must be numeric");
     }
     let config_version = std::env::var("QOIN_CONFIG_VERSION")
         .unwrap_or_else(|_| "baseline-v2".to_owned());
