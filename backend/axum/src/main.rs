@@ -693,6 +693,8 @@ mod state_tests {
         long_liq.liquidation_side = Some("long".into());
         apply(&mut state, &long_liq);
         assert_eq!(state.liquidation_pressure, -2.0);
+        assert_eq!(state.signed_flow, 0.0);
+        assert_eq!(state.total_trade_size, 0.0);
         let mut short_liq = event(2_000, "liquidation");
         short_liq.size = Some(2.0);
         short_liq.liquidation_side = Some("short".into());
