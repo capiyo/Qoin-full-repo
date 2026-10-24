@@ -371,7 +371,7 @@ mod tests {
     fn persistence_gate_rejects_insufficient_ticks() {
         let s = EdgeStrategy::baseline();
         let mut c = passing_context(); c.persistence_ticks = 1;
-        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, &c).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("persisted"));
     }
@@ -379,7 +379,7 @@ mod tests {
     fn cost_gate_rejects_edge_below_cost_multiple() {
         let s = EdgeStrategy::baseline();
         let mut c = passing_context(); c.expected_edge_bps = Some(3.0);
-        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, &c).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("expected edge"));
     }
@@ -388,7 +388,7 @@ mod tests {
     fn regime_gate_rejects_when_not_explicitly_allowed() {
         let s = EdgeStrategy::baseline();
         let mut c = passing_context(); c.regime_allowed = false;
-        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, &c).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("regime"));
     }
@@ -396,7 +396,7 @@ mod tests {
     fn stale_state_rejects_candidate() {
         let s = EdgeStrategy::baseline();
         let mut c = passing_context(); c.state_age_ms = Some(5_001);
-        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, &c).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("stale"));
     }
@@ -405,8 +405,8 @@ mod tests {
         let mut selective = EdgeStrategy::baseline();
         let mut uniform = EdgeStrategy::baseline();
         uniform.attention_scale = 0.0;
-        let a = selective.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, None, &passing_context()).unwrap();
-        let b = uniform.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, None, &passing_context()).unwrap();
+        let a = selective.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, &passing_context()).unwrap();
+        let b = uniform.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, &passing_context()).unwrap();
         assert_ne!(a.attention, b.attention);
     }
 
@@ -415,7 +415,7 @@ mod tests {
         let strategy = EdgeStrategy::baseline();
         let context = passing_context();
         let result = strategy.decide_with_forces("BTCUSDT", 0.9, 0.4, Some(0.001),
-            Some(1.0), 0.001, 4.0, 0.0, None, 0.01, Some(0.0001), &context).unwrap();
+            Some(1.0), 0.001, 4.0, 0.0, 0.01, Some(0.0001), &context).unwrap();
         assert_eq!(result.action, "buy", "candidate={}, reason={}", result.candidate_action, result.reason);
     }
 
@@ -438,7 +438,7 @@ mod tests {
         let mut context = passing_context();
         context.position_side = Some(PositionSide::Long);
         let result = strategy.decide_with_forces("BTCUSDT", -0.9, -0.4, Some(0.001),
-            Some(1.0), 0.001, 4.0, 0.0, None, 0.01, Some(-0.0001), &context).unwrap();
+            Some(1.0), 0.001, 4.0, 0.0, 0.01, Some(-0.0001), &context).unwrap();
         assert_eq!(result.action, "close");
     }
 
