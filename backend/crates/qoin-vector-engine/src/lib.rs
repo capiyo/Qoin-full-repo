@@ -483,16 +483,38 @@ impl EdgeStrategy {
         let angle = bearish.atan2(bullish);
         let threshold = self.angular_threshold_degrees.to_radians();
         let spread_ok = spread_bps.map(|v| v.is_finite() && v >= 0.0 && v <= self.max_spread_bps).unwrap_or(false);
+        let candidate_action = if magnitude >= self.magnitude_threshold && angle <= threshold && bullish > bearish {
+            "buy"
+        } else if magnitude >= self.magnitude_threshold && (std::f64::consts::FRAC_PI_2 - angle).abs() <= threshold && bearish > bullish {
+            "sell"
+        } else { "wait" };
+        let expected_edge = context.expected_edge_bps.filter(|v| v.is_finite() && *v > 0.0);
+        let fees = context.fee_bps.filter(|v| v.is_finite() && *v >= 0.0);
+        let slippage = context.slippage_bps.filter(|v| v.is_finite() && *v >= 0.0);
+        let cost_gate = match (expected_edge, fees, spread_bps.filter(|v| v.is_finite() && *v >= 0.0), slippage) {
+            (Some(edge), Some(fee), Some(spread), Some(slip)) => edge > self.cost_multiplier * (fee + spread + slip),
+            _ => false,
+        };
+        let age_ok = context.state_age_ms.map(|age| age >= 0 && age <= self.max_state_age_ms).unwrap_or(false);
+        let quality_ok = context.state_quality.map(|q| q.is_finite() && q >= self.min_state_quality && q <= 1.0).unwrap_or(false);
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
         } else if event_intensity < 0.1 {
             ("wait", "decayed event intensity is below the recent-evidence floor".to_owned())
-        } else if magnitude < self.magnitude_threshold {
-            ("wait", "decision-vector magnitude below strategy threshold".to_owned())
-        } else if angle <= threshold && bullish > bearish {
-            ("buy", "vector is inside the mapped buy angle and passes magnitude/liquidity gates".to_owned())
-        } else if (std::f64::consts::FRAC_PI_2 - angle).abs() <= threshold && bearish > bullish {
-            ("sell", "vector is inside the mapped sell angle and passes magnitude/liquidity gates".to_owned())
+        } else if !age_ok {
+            ("wait", "state is stale or event-to-arrival latency is unavailable".to_owned())
+        } else if !quality_ok {
+            ("wait", "state quality is below the configured floor".to_owned())
+        } else if context.persistence_ticks < self.min_persistence_ticks {
+            ("wait", "candidate has not persisted for the required number of ticks".to_owned())
+        } else if !context.regime_allowed {
+            ("wait", "regime gate is not explicitly satisfied".to_owned())
+        } else if !cost_gate {
+            ("wait", "expected edge does not exceed configured multiple of fees, spread, and slippage".to_owned())
+        } else if candidate_action == "buy" {
+            ("buy", "all entry gates passed for the bullish vector candidate".to_owned())
+        } else if candidate_action == "sell" {
+            ("sell", "all entry gates passed for the bearish vector candidate".to_owned())
         } else {
             ("wait", "vector is outside both mapped angular boundaries".to_owned())
         };
@@ -501,7 +523,7 @@ impl EdgeStrategy {
             symbol: symbol.to_owned(), strategy_key: self.strategy_key.clone(),
             strategy_version: self.version.clone(), features, attention, attended_features: attended,
             decision_vector: [bullish, bearish], magnitude, angle_radians: angle,
-            angular_threshold_radians: threshold, action, reason, research_only: true,
+            angular_threshold_radians: threshold, candidate_action, action, reason, research_only: true,
         })
     }
 }
