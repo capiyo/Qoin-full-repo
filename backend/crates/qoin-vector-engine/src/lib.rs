@@ -296,7 +296,7 @@ pub struct EdgeDecision {
     pub research_only: bool,
 }
 
-pub const EDGE_EDGE_FEATURE_NAMES: [&str; 6] = [
+pub const EDGE_FEATURE_NAMES: [&str; 6] = [
     "order_flow_imbalance", "funding_pressure", "liquidity_stress",
     "volatility_shock", "event_intensity", "liquidation_pressure",
 ];
