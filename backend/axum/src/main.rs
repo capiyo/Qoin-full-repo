@@ -117,7 +117,12 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         if bid < 0.0 || ask < bid { return Err("book prices must be non-negative and ask >= bid".into()); }
     }
     if [e.price,e.size,e.bid,e.ask,e.bid_size,e.ask_size,e.open_interest].into_iter().flatten().any(|v| v < 0.0) {
-   const FLOW_HALF_LIFE_MS: f64 = 5_000.0;
+        return Err("prices, sizes, and open interest must be non-negative".into());
+    }
+    Ok(())
+}
+
+const FLOW_HALF_LIFE_MS: f64 = 5_000.0;
 const INTENSITY_HALF_LIFE_MS: f64 = 2_000.0;
 const LIQUIDATION_HALF_LIFE_MS: f64 = 30_000.0;
 
