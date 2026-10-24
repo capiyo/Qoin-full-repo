@@ -516,8 +516,21 @@ async fn main(){
     for value in symbols.drain(..) {
         if let Some(symbol) = value.as_str() {
             if let Some(mut document) = states.find_one(doc!{"symbol":symbol}, FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await.expect("load latest state") {
+                let legacy_venue_missing = document.get_str("venue").is_err();
+                let last_event_id = document.get_str("event_id").ok().map(str::to_owned)
+                    .or_else(|| document.get_str("last_event_id").ok().map(str::to_owned));
+                let recovered_venue = if legacy_venue_missing {
+                    if let Some(event_id) = last_event_id {
+                        events.find_one(doc!{"symbol":symbol,"event_id":event_id},None).await
+                            .expect("recover legacy state venue from event log")
+                            .and_then(|event| event.get_str("venue").ok().map(str::to_owned))
+                    } else { None }
+                } else { document.get_str("venue").ok().map(str::to_owned) };
                 document.remove("_id"); document.remove("stored_at"); document.remove("event_id");
-                if let Ok(snapshot) = mongodb::bson::from_document::<SymbolState>(document) {
+                if let Ok(mut snapshot) = mongodb::bson::from_document::<SymbolState>(document) {
+                    if snapshot.venue.is_empty() {
+                        if let Some(venue) = recovered_venue { snapshot.venue = venue; }
+                    }
                     recovered.insert(symbol.to_owned(), snapshot);
                 }
             }
