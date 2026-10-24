@@ -1,5 +1,5 @@
 //! Versioned strategy map and deterministic decision logic shared by all services.
-use crate::{cost_gate, CostContext};
+use crate::{cost_gate, regime_gate, CostContext, RegimeContext};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -24,6 +24,8 @@ pub struct EdgeStrategy {
     /// Conservative slippage estimate in basis points. None means entries fail the cost gate.
     #[serde(default)] pub slippage_bps: Option<f64>,
     #[serde(default)] pub cost_multiplier: Option<f64>,
+    /// Walk-forward calibrated regime confidence threshold; None disables entries.
+    #[serde(default)] pub min_regime_confidence: Option<f64>,
     pub feature_scales: BTreeMap<String, f64>,
     pub updated_at_ms: i64,
 }
@@ -77,6 +79,7 @@ impl EdgeStrategy {
             fee_bps: None,
             slippage_bps: None,
             cost_multiplier: Some(2.0),
+            min_regime_confidence: None,
             feature_scales,
             updated_at_ms: 0,
         }
@@ -97,7 +100,8 @@ impl EdgeStrategy {
             || self.expected_edge_bps_per_magnitude.map(|v| !v.is_finite() || v <= 0.0).unwrap_or(false)
             || self.fee_bps.map(|v| !v.is_finite() || v < 0.0).unwrap_or(false)
             || self.slippage_bps.map(|v| !v.is_finite() || v < 0.0).unwrap_or(false)
-            || self.cost_multiplier.map(|v| !v.is_finite() || v <= 0.0).unwrap_or(false) {
+            || self.cost_multiplier.map(|v| !v.is_finite() || v <= 0.0).unwrap_or(false)
+            || self.min_regime_confidence.map(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)).unwrap_or(false) {
             return Err("invalid strategy thresholds or attention_scale".into());
         }
         for name in FEATURE_NAMES {
@@ -122,6 +126,7 @@ impl EdgeStrategy {
         ewma_abs_return: f64,
         event_intensity: f64,
         liquidation_pressure: f64,
+        regime: Option<&RegimeContext>,
     ) -> Result<EdgeDecision, String> {
         self.validate()?;
         let scale = |name: &str| *self.feature_scales.get(name).expect("validated scale");
@@ -169,10 +174,13 @@ impl EdgeStrategy {
             _ => None,
         };
         let cost_ok = cost_gate(cost_context.as_ref());
+        let regime_ok = regime_gate(regime, self.min_regime_confidence);
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
         } else if !cost_ok {
             ("wait", "cost gate failed: calibrated expected edge, fees, and slippage inputs are required".to_owned())
+        } else if !regime_ok {
+            ("wait", "regime gate failed: fresh regime and calibrated confidence threshold are required".to_owned())
         } else if event_intensity <= 0.05 {
             ("wait", "no current event-intensity evidence".to_owned())
         } else if magnitude < self.magnitude_threshold {
@@ -208,7 +216,7 @@ mod tests {
     #[test]
     fn missing_spread_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, None, None, 0.001, 4.0, 0.0).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, None, None, 0.001, 4.0, 0.0, None).unwrap();
         assert_eq!(d.action, "wait");
     }
     #[test]
