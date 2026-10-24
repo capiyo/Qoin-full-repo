@@ -8,7 +8,7 @@
 - Use paper/testnet and shadow mode before any production consideration.
 
 ## Implemented controls in the current research branch
-- Axum ingestion rejects event timestamps that do not advance per symbol and uses a unique venue/symbol/event ID index for duplicate detection.
+- Axum ingestion rejects event timestamps that do not advance per symbol, enforces contiguous sequence numbers whenever a stream supplies them, and uses unique venue/symbol/event IDs for duplicate detection.
 - Flow, event intensity, and liquidation pressure use explicit exponential half-life decay; book imbalance is stored separately from trade-flow accounting.
 - Entry signals require fresh price/book state, eligible event types, and three consecutive same-direction candidate ticks.
 - Strategy entries fail closed unless calibrated expected-edge, fee, spread, and slippage inputs pass the cost gate and a fresh bull/bear/range regime classification meets a separately configured confidence threshold.
