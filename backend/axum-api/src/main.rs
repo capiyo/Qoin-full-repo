@@ -30,10 +30,6 @@ struct SignalRequest {
     observation: ForceObservation,
     #[serde(default)]
     context: DecisionContext,
-    #[serde(default)]
-    liquidation_events: f64,
-    #[serde(default)]
-    liquidation_side: Option<String>,
 }
 
 fn default_symbol() -> String { "BTCUSDT".to_owned() }
@@ -113,8 +109,7 @@ async fn signal(
         observation.spread_bps,
         observation.volatility,
         observation.event_intensity,
-        request.liquidation_events,
-        request.liquidation_side.as_deref(),
+        observation.liquidation_pressure,
         observation.open_interest_change,
         Some(observation.basis),
         &request.context,
