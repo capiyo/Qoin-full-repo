@@ -27,6 +27,7 @@ class ReplayEvent:
     reject_order: bool = False
     fill_ratio: float = 1.0
     sequence_reset: bool = False
+    correlation_group: str = "default"
 
     def validate(self) -> None:
         if self.event_ts_ms <= 0 or self.arrival_ts_ms < self.event_ts_ms:
@@ -55,12 +56,19 @@ class ReplayConfig:
     total_cost_stress_multiplier: float = 1.0
     max_spread_bps: float = 25.0
     max_feed_age_ms: int = 5_000
+    max_positions: int = 3
+    max_correlated_exposure_fraction: float = 0.5
+    max_daily_loss_fraction: float = 0.02
+    max_weekly_loss_fraction: float = 0.05
+    max_drawdown_fraction: float = 0.10
 
     def validate(self) -> None:
         values = (self.initial_equity, self.risk_per_trade_fraction, self.max_leverage,
                   self.stop_distance_bps, self.fee_bps, self.base_slippage_bps,
                   self.volatile_slippage_multiplier, self.volatility_threshold,
-                  self.total_cost_stress_multiplier, self.max_spread_bps)
+                  self.total_cost_stress_multiplier, self.max_spread_bps,
+                  self.max_correlated_exposure_fraction, self.max_daily_loss_fraction,
+                  self.max_weekly_loss_fraction, self.max_drawdown_fraction)
         if any(not isfinite(v) for v in values) or self.initial_equity <= 0:
             raise ValueError("replay configuration must contain finite values and positive equity")
         if not 0 < self.risk_per_trade_fraction <= 0.0025 or not 0 < self.max_leverage <= 2.0:
@@ -69,11 +77,16 @@ class ReplayConfig:
             raise ValueError("stop distance, feed age, and spread cap must be positive")
         if self.total_cost_stress_multiplier < 1.0 or self.volatile_slippage_multiplier < 1.0:
             raise ValueError("cost multipliers cannot reduce costs")
+        if self.max_positions < 1 or not 0 < self.max_correlated_exposure_fraction <= 1.0:
+            raise ValueError("position and correlated exposure caps must be positive")
+        if any(not 0 < value < 1 for value in (self.max_daily_loss_fraction, self.max_weekly_loss_fraction, self.max_drawdown_fraction)):
+            raise ValueError("loss and drawdown limits must be fractions in (0, 1)")
 
 
 @dataclass
 class Position:
     symbol: str
+    correlation_group: str
     side: int
     quantity: float
     entry_price: float
@@ -95,6 +108,7 @@ class ReplayResult:
     rejected_orders: int
     stale_events: int
     sequence_rejections: int
+    risk_vetoes: int
     equity_curve: list[float] = field(default_factory=list)
     trade_pnls: list[float] = field(default_factory=list)
 
@@ -136,12 +150,18 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
     positions: dict[str, Position] = {}
     last_arrival_ms = 0
     last_prices: dict[str, float] = {}
+    peak_equity = equity
+    daily_start_equity = equity
+    weekly_start_equity = equity
+    current_day = None
+    current_week = None
+    drawdown_breaker_active = False
     last_sequences: dict[tuple[str, str], int] = {}
     invalid_symbols: set[str] = set()
     trade_pnls: list[float] = []
     equity_curve: list[float] = []
     fees_paid = spread_cost = slippage_cost = funding_pnl = 0.0
-    trades = wins = losses = rejected = stale = sequence_rejections = 0
+    trades = wins = losses = rejected = stale = sequence_rejections = risk_vetoes = 0
 
     def close_position(event: ReplayEvent, position: Position, fraction: float = 1.0) -> None:
         nonlocal equity, fees_paid, spread_cost, slippage_cost, trades, wins, losses
