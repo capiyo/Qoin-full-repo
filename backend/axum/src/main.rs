@@ -178,7 +178,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, decay: &DecayConfig) -> R
         return Err("venue mismatch: symbol state cannot mix events from different venues".into());
     }
     if let Some(previous_ts) = state.last_event_ts_ms {
-        if event.ts_ms <= previous_ts { return Err("out-of-order event rejected".into()); }
+        if event.ts_ms < previous_ts { return Err("out-of-order event rejected".into()); }
     }
     if let Some(sequence) = event.sequence {
         let stream_key = format!("{}:{}", event.venue, event.event_type);
