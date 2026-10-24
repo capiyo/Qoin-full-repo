@@ -1,7 +1,8 @@
 # Service responsibilities
 
-- **Axum** owns event validation, state estimation, the vector baseline, and writes to MongoDB. Model logic must not be duplicated in the gateway.
-- **Drogon** owns the local HTTP gateway and forwards requests to Axum. It must not calculate features, alter model decisions, or send exchange orders.
-- **MongoDB** stores raw events (`market_events`), state snapshots (`market_states`), and vector decisions (`trade_decisions`).
-- **Research tools** provide deterministic Python references and offline experiments. No offline training result may automatically mutate live model weights.
+- **Axum (Rust)** owns event validation, state estimation, causal feature work, the vector/attention engine, strategy-map validation, signal decisions, and all MongoDB persistence.
+- **Drogon (C++)** is the public HTTP gateway and forwards requests to Axum. It must not calculate features, alter model decisions, train weights, or send exchange orders.
+- **MongoDB** stores raw events (`market_events`), state snapshots (`market_states`), vector decisions (`trade_decisions`), and the versioned active edge strategy (`edge_strategy`).
+- **Edge strategy map** is the versioned configuration object with named bullish/bearish weights, feature scales, attention scale, angular/magnitude thresholds, and spread gate. Axum loads and validates it on startup. Strategy updates are persisted before becoming active. Each decision records the map version.
+- **Research tools** provide deterministic references and offline experiments. Backtest results must not automatically mutate the active strategy; promotion of a new map must be an explicit reviewed update.
 - **Execution** is intentionally not wired into the signal path. Any future execution service must pass a separate risk gate and remain disabled pending human approval.
