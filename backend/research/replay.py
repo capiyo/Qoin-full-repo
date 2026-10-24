@@ -266,8 +266,11 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                     if position:
                         close_position(event, position, min(event.fill_ratio, 1.0))
                 elif event.symbol not in positions and not stop_closed:
+                    spread, slip, fee_rate = _execution_costs(event, config)
+                    cost_gate = event.expected_edge_bps is not None and event.expected_edge_bps > config.cost_multiplier * (fee_rate + spread + slip)
                     blocked = (
                         not event.regime_allowed
+                        or not cost_gate
                         or len(positions) >= config.max_positions
                         or daily_loss >= config.max_daily_loss_fraction
                         or weekly_loss >= config.max_weekly_loss_fraction
@@ -293,7 +296,6 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                         else:
                             side = 1 if action == "buy" else -1
                             quantity = notional / event.mid_price * event.fill_ratio
-                            spread, slip, fee_rate = _execution_costs(event, config)
                             fill_price = event.mid_price * (1.0 + side * (spread / 20_000.0 + slip / 10_000.0))
                             fee = quantity * event.mid_price * fee_rate / 10_000.0
                             equity -= fee
