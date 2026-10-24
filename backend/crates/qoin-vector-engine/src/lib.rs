@@ -504,13 +504,7 @@ impl EdgeStrategy {
             basis.unwrap_or(0.0) * scale("basis"),
         ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
-        let features_vec: Vec<f64> = raw.iter().enumerate().map(|(i, v)| {
-            let name = EDGE_FEATURE_NAMES[i];
-            let value = if i == 2 { *v } else { *v };
-            let cap = if i == 2 { 1.0 } else { 1.0 };
-            let _ = name;
-            value.clamp(-cap, cap)
-        }).collect();
+        let features_vec: Vec<f64> = raw.iter().map(|value| value.clamp(-1.0, 1.0)).collect();
         let n = features_vec.len();
         let mut attention = vec![vec![0.0; n]; n];
         let mut attended = vec![0.0; n];
