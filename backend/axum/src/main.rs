@@ -380,7 +380,7 @@ async fn main(){
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_id":1})
-        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("decision idempotency index");
+        .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"event_id":{"$exists":true}}).build()).build(),None).await.expect("decision idempotency index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
