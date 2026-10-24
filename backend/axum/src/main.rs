@@ -91,6 +91,15 @@ fn authorized(headers: &HeaderMap, token_env: &str) -> bool {
         .map(|provided| provided == expected).unwrap_or(false)
 }
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
+fn validate_sequence(previous: Option<i64>, current: Option<i64>) -> Result<(), String> {
+    let Some(previous) = previous else { return Ok(()); };
+    let expected = previous.checked_add(1).ok_or_else(|| "sequence counter exhausted".to_owned())?;
+    match current {
+        Some(value) if value == expected => Ok(()),
+        Some(value) => Err(format!("sequence gap or duplicate: expected {expected}, received {value}")),
+        None => Err(format!("sequence required after sequencing began; expected {expected}")),
+    }
+}
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -300,18 +309,8 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
                 Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
             }
         };
-        if let Some(previous_sequence) = current.as_ref().and_then(|state| state.last_sequence) {
-            match event.sequence {
-                Some(sequence) if sequence == previous_sequence + 1 => {},
-                Some(sequence) => return (StatusCode::CONFLICT, Json(serde_json::json!({
-                    "error":"sequence gap or duplicate rejected", "sequence":sequence,
-                    "expected_sequence":previous_sequence + 1
-                }))),
-                None => return (StatusCode::CONFLICT, Json(serde_json::json!({
-                    "error":"sequence required after sequence tracking begins",
-                    "expected_sequence":previous_sequence + 1
-                }))),
-            }
+        if let Err(message) = validate_sequence(current.as_ref().and_then(|state| state.last_sequence), event.sequence) {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
         }
         if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
             if event.ts_ms <= previous {
@@ -499,12 +498,8 @@ async fn recover_pending_events(
                     None => None,
                 }
             };
-            if let Some(previous_sequence) = current.as_ref().and_then(|state| state.last_sequence) {
-                match event.sequence {
-                    Some(sequence) if sequence == previous_sequence + 1 => {},
-                    _ => return Err(format!("pending event {} has a sequence gap; refusing unsafe replay", event.event_id)),
-                }
-            }
+            validate_sequence(current.as_ref().and_then(|state| state.last_sequence), event.sequence)
+                .map_err(|message| format!("pending event {} cannot be safely replayed: {message}", event.event_id))?;
             if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
                 if event.ts_ms <= previous {
                     return Err(format!("pending event {} is older than recovered state; refusing unsafe replay", event.event_id));
@@ -681,6 +676,15 @@ mod state_tests {
         apply(&mut state, &short_liq);
         assert!(state.liquidation_pressure > 0.0);
         assert!(state.liquidation_pressure < 0.1);
+    }
+
+    #[test]
+    fn sequence_gaps_duplicates_and_missing_sequence_are_rejected() {
+        assert!(validate_sequence(None, Some(100)).is_ok());
+        assert!(validate_sequence(Some(100), Some(101)).is_ok());
+        assert!(validate_sequence(Some(100), Some(103)).is_err());
+        assert!(validate_sequence(Some(100), Some(100)).is_err());
+        assert!(validate_sequence(Some(100), None).is_err());
     }
 
 }
