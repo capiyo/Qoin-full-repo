@@ -82,12 +82,17 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
+          HTTP_STATUS=$(curl --silent --output /tmp/unauthorized-strategy.json --write-out '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$HTTP_STATUS" = "401"
+          BOOK_TS=$(date +%s%3N)
           BOOK_TS=$(date +%s%3N)
           TRADE_TS=$((BOOK_TS + 100))
           OLD_TS=$((BOOK_TS + 50))
           BOOK_EVENT=$(printf '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":%s,"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' "$BOOK_TS")
           TRADE_EVENT=$(printf '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":%s,"sequence":2,"price":100.01,"size":1,"side":"buy"}' "$TRADE_TS")
           OLD_EVENT=$(printf '{"event_id":"ci-old-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":%s,"sequence":3,"price":100.00,"size":1,"side":"sell"}' "$OLD_TS")
+          HTTP_STATUS=$(curl --silent --output /tmp/unauthorized-event.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "$BOOK_EVENT")
+          test "$HTTP_STATUS" = "401"
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$BOOK_EVENT" >/tmp/book.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$TRADE_EVENT" >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
