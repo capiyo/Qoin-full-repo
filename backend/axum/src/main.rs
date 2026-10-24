@@ -56,6 +56,7 @@ struct SymbolState {
     unsequenced_event_types: BTreeMap<String, bool>,
     sequence_valid: bool,
     last_price: Option<f64>,
+    last_price_ts_ms: Option<i64>,
     spread_bps: Option<f64>,
     spread_ts_ms: Option<i64>,
     funding_ts_ms: Option<i64>,
@@ -72,7 +73,8 @@ struct SymbolState {
     open_interest_change: f64,
     basis: Option<f64>,
     liquidation_events: f64,
-    last_liquidation_side: Option<String>,
+    liquidation_pressure: f64,
+    liquidation_size: f64,
     state_quality: f64,
 }
 #[derive(Clone)]
@@ -84,11 +86,46 @@ struct AppState {
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     ingest_lock: Arc<Mutex<()>>,
+    decay: DecayConfig,
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
+#[derive(Debug, Clone, Copy)]
+struct DecayConfig {
+    flow_half_life_ms: f64,
+    event_intensity_half_life_ms: f64,
+    liquidation_half_life_ms: f64,
+    volatility_half_life_ms: f64,
+}
+impl Default for DecayConfig {
+    fn default() -> Self {
+        Self { flow_half_life_ms: 5_000.0, event_intensity_half_life_ms: 2_000.0,
+            liquidation_half_life_ms: 30_000.0, volatility_half_life_ms: 60_000.0 }
+    }
+}
+impl DecayConfig {
+    fn from_env() -> Result<Self, String> {
+        let mut config = Self::default();
+        for (name, target) in [
+            ("QOIN_FLOW_HALF_LIFE_MS", &mut config.flow_half_life_ms),
+            ("QOIN_EVENT_INTENSITY_HALF_LIFE_MS", &mut config.event_intensity_half_life_ms),
+            ("QOIN_LIQUIDATION_HALF_LIFE_MS", &mut config.liquidation_half_life_ms),
+            ("QOIN_VOLATILITY_HALF_LIFE_MS", &mut config.volatility_half_life_ms),
+        ] {
+            if let Ok(raw) = env::var(name) {
+                let value = raw.parse::<f64>().map_err(|_| format!("{name} must be numeric"))?;
+                if !value.is_finite() || value <= 0.0 { return Err(format!("{name} must be finite and positive")); }
+                *target = value;
+            }
+        }
+        Ok(config)
+    }
+}
+fn decay_factor(elapsed_ms: f64, half_life_ms: f64) -> f64 {
+    0.5_f64.powf(elapsed_ms.max(0.0) / half_life_ms)
+}
 fn admin_authorized(headers: &HeaderMap) -> bool {
     let expected = match env::var("QOIN_ADMIN_TOKEN") {
         Ok(value) if !value.trim().is_empty() => format!("Bearer {}", value),
@@ -130,9 +167,9 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     }
     Ok(())
 }
-fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Result<(), String> {
+fn apply(state: &mut SymbolState, event: &MarketEvent, decay: &DecayConfig) -> Result<(), String> {
     if let Some(previous_ts) = state.last_event_ts_ms {
-        if event.ts_ms < previous_ts { return Err("out-of-order event rejected".into()); }
+        if event.ts_ms <= previous_ts { return Err("out-of-order event rejected".into()); }
     }
     if let Some(sequence) = event.sequence {
         if let Some(previous) = state.last_sequences.get(&event.event_type) {
@@ -148,24 +185,28 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
         state.sequence_valid = false;
     }
     let previous_update = state.last_state_update_ts_ms.or(state.last_event_ts_ms);
-    if let Some(previous_ts) = previous_update {
-        let elapsed_ms = event.ts_ms.saturating_sub(previous_ts).max(0) as f64;
-        let decay = 0.5_f64.powf(elapsed_ms / half_life_ms);
-        state.signed_flow *= decay;
-        state.total_trade_size *= decay;
-        state.event_intensity *= decay;
-        state.liquidation_events *= decay;
-        state.ewma_abs_return *= decay;
-    }
+    let elapsed_ms = previous_update.map(|previous_ts| event.ts_ms.saturating_sub(previous_ts).max(0) as f64).unwrap_or(0.0);
+    let flow_decay = decay_factor(elapsed_ms, decay.flow_half_life_ms);
+    let event_decay = decay_factor(elapsed_ms, decay.event_intensity_half_life_ms);
+    let liquidation_decay = decay_factor(elapsed_ms, decay.liquidation_half_life_ms);
+    let volatility_decay = decay_factor(elapsed_ms, decay.volatility_half_life_ms);
+    state.signed_flow *= flow_decay;
+    state.total_trade_size *= flow_decay;
+    state.event_intensity *= event_decay;
+    state.liquidation_events *= liquidation_decay;
+    state.liquidation_pressure *= liquidation_decay;
+    state.liquidation_size *= liquidation_decay;
+    state.ewma_abs_return *= volatility_decay;
     state.symbol = event.symbol.clone();
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
-            let abs_return = (price / previous).ln().abs();
-            if abs_return.is_finite() {
-                state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * abs_return;
-            }
+            let abs_return = (price.ln() - previous.ln()).abs();
+            let price_elapsed_ms = state.last_price_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts).max(0) as f64).unwrap_or(elapsed_ms);
+            let alpha = 1.0 - decay_factor(price_elapsed_ms, decay.volatility_half_life_ms);
+            if abs_return.is_finite() { state.ewma_abs_return += alpha * abs_return; }
         }
         state.last_price = Some(price);
+        state.last_price_ts_ms = Some(event.ts_ms);
     }
     if let Some(basis) = event.basis { state.basis = Some(basis); state.basis_ts_ms = Some(event.ts_ms); }
     if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
@@ -195,10 +236,11 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
             let size = event.size.unwrap_or(0.0);
             state.liquidation_events += 1.0;
             state.event_intensity += 2.0;
-            state.last_liquidation_side = event.liquidation_side.clone();
+            state.liquidation_size += size;
+            // Liquidations are their own normalized force, not ordinary trade OFI.
             match event.liquidation_side.as_deref() {
-                Some("long") => { state.signed_flow -= size; state.total_trade_size += size; }
-                Some("short") => { state.signed_flow += size; state.total_trade_size += size; }
+                Some("long") => state.liquidation_pressure -= size,
+                Some("short") => state.liquidation_pressure += size,
                 _ => {}
             }
         }
