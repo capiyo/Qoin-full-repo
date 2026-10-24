@@ -23,7 +23,7 @@ fn non_market_event_cannot_trigger_entry_or_exit() {
     context.position_side = Some(PositionSide::Long);
     let result = strategy.decide_with_forces(
         "BTCUSDT", -0.9, -0.4, Some(0.001), Some(1.0), 0.001, 4.0,
-        0.0, None, 0.01, Some(-0.0001), &context,
+        0.0, 0.01, Some(-0.0001), &context,
     ).unwrap();
     assert_eq!(result.action, "wait");
     assert!(result.reason.contains("trade/book ticks"));
