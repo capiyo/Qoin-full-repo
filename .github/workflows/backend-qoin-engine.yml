@@ -1,7 +1,7 @@
 name: Qoin engine checks
 on:
   push:
-    branches: [main, organized-monorepo, feat/mongodb-edge-strategy-map, qoin-engine-integration]
+    branches: [main, organized-monorepo, qoin-hardening, feat/mongodb-edge-strategy-map, qoin-engine-integration]
   pull_request:
     branches: [main]
   workflow_dispatch:
