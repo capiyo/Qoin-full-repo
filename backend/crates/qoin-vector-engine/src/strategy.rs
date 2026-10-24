@@ -210,13 +210,13 @@ mod tests {
     #[test]
     fn missing_spread_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, None, None, 0.001, 4.0, 0.0, None).unwrap();
         assert_eq!(d.action, "wait");
     }
     #[test]
     fn missing_calibrated_cost_inputs_fail_closed() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("cost gate failed"));
     }
@@ -233,7 +233,7 @@ mod tests {
             strategy.slippage_bps = Some(1.0);
             strategy.cost_multiplier = Some(2.0);
         }
-        let a = cold.decide("BTCUSDT", 0.8, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
+        let a = cold.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         let b = focused.decide("BTCUSDT", 0.8, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         assert_ne!(a.attention, b.attention);
         for row in &b.attention {
