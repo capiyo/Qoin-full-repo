@@ -332,9 +332,10 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         snapshot.candidate_persistence_ticks = 0;
     }
     context.persistence_ticks = snapshot.candidate_persistence_ticks;
-    let decision: EdgeDecision = match strategy.decide_with_context(&snapshot.symbol, snapshot.order_flow_imbalance,
+    let decision: EdgeDecision = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
         fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(), &context) {
+        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(),
+        fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
     let mut state_doc = match mongodb::bson::to_document(&snapshot) {
