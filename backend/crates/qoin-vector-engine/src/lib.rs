@@ -644,4 +644,13 @@ mod tests {
         assert_ne!(a.attention, b.attention);
     }
 
+    #[test]
+    fn a_candidate_passes_only_when_all_context_gates_pass() {
+        let strategy = EdgeStrategy::baseline();
+        let context = passing_context();
+        let result = strategy.decide_with_forces("BTCUSDT", 0.9, 0.4, Some(0.001),
+            Some(1.0), 0.001, 4.0, 0.0, None, 0.01, Some(0.0001), &context).unwrap();
+        assert_eq!(result.action, "buy", "candidate={}, reason={}", result.candidate_action, result.reason);
+    }
+
 }
