@@ -389,7 +389,7 @@ def record_experiment(metadata: dict, result: ReplayResult, log_path: str = "bac
             "trade_count": result.trade_count,
             "wins": result.wins,
             "losses": result.losses,
-            "profit_factor": result.profit_factor,
+            "profit_factor": result.profit_factor if isfinite(result.profit_factor) else None,
             "fees_paid": result.fees_paid,
             "spread_cost": result.spread_cost,
             "slippage_cost": result.slippage_cost,
