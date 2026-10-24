@@ -16,6 +16,13 @@ pub struct EdgeStrategy {
     pub magnitude_threshold: f64,
     pub max_spread_bps: f64,
     pub attention_scale: f64,
+    /// Walk-forward calibrated edge conversion. None means entries fail the cost gate.
+    #[serde(default)] pub expected_edge_bps_per_magnitude: Option<f64>,
+    /// Round-trip fees in basis points. None means entries fail the cost gate.
+    #[serde(default)] pub fee_bps: Option<f64>,
+    /// Conservative slippage estimate in basis points. None means entries fail the cost gate.
+    #[serde(default)] pub slippage_bps: Option<f64>,
+    #[serde(default)] pub cost_multiplier: Option<f64>,
     pub feature_scales: BTreeMap<String, f64>,
     pub updated_at_ms: i64,
 }
@@ -65,6 +72,10 @@ impl EdgeStrategy {
             magnitude_threshold: 0.35,
             max_spread_bps: 25.0,
             attention_scale: 6.0,
+            expected_edge_bps_per_magnitude: None,
+            fee_bps: None,
+            slippage_bps: None,
+            cost_multiplier: Some(2.0),
             feature_scales,
             updated_at_ms: 0,
         }
@@ -81,7 +92,11 @@ impl EdgeStrategy {
             || !self.max_spread_bps.is_finite()
             || self.max_spread_bps <= 0.0
             || !self.attention_scale.is_finite()
-            || !(0.0..=10.0).contains(&self.attention_scale) {
+            || !(0.0..=10.0).contains(&self.attention_scale)
+            || self.expected_edge_bps_per_magnitude.map(|v| !v.is_finite() || v <= 0.0).unwrap_or(false)
+            || self.fee_bps.map(|v| !v.is_finite() || v < 0.0).unwrap_or(false)
+            || self.slippage_bps.map(|v| !v.is_finite() || v < 0.0).unwrap_or(false)
+            || self.cost_multiplier.map(|v| !v.is_finite() || v <= 0.0).unwrap_or(false) {
             return Err("invalid strategy thresholds or attention_scale".into());
         }
         for name in FEATURE_NAMES {
@@ -148,8 +163,16 @@ impl EdgeStrategy {
         let angle = bearish.atan2(bullish);
         let threshold = self.angular_threshold_degrees.to_radians();
         let spread_ok = spread_bps.map(|v| v.is_finite() && v >= 0.0 && v <= self.max_spread_bps).unwrap_or(false);
+        let cost_ok = match (self.expected_edge_bps_per_magnitude, self.fee_bps, spread_bps, self.slippage_bps, self.cost_multiplier) {
+            (Some(edge_per_magnitude), Some(fees), Some(spread), Some(slippage), Some(k))
+                if edge_per_magnitude.is_finite() && fees.is_finite() && spread.is_finite() && slippage.is_finite() && k.is_finite() =>
+                    magnitude * edge_per_magnitude > k * (fees + spread + slippage),
+            _ => false,
+        };
         let (action, reason) = if !spread_ok {
             ("wait", "spread missing or above the strategy map's liquidity gate".to_owned())
+        } else if !cost_ok {
+            ("wait", "cost gate failed: calibrated expected edge, fees, and slippage inputs are required".to_owned())
         } else if event_intensity <= 0.05 {
             ("wait", "no current event-intensity evidence".to_owned())
         } else if magnitude < self.magnitude_threshold {
