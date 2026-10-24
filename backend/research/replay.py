@@ -221,11 +221,29 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
             funding = -position.side * position.quantity * event.mid_price * event.funding_rate
             equity += funding
             funding_pnl += funding
+
+        stop_closed = False
+        if position and event.event_type in {"trade", "book"}:
             stop_hit = (position.side == 1 and event.mid_price <= position.stop_price) or (
                 position.side == -1 and event.mid_price >= position.stop_price
             )
             if stop_hit and not event.reject_order:
                 close_position(event, position)
+                stop_closed = True
+
+        day_key = event.event_ts_ms // 86_400_000
+        week_key = event.event_ts_ms // (7 * 86_400_000)
+        if current_day is None or day_key != current_day:
+            current_day, daily_start_equity = day_key, equity
+        if current_week is None or week_key != current_week:
+            current_week, weekly_start_equity = week_key, equity
+        peak_equity = max(peak_equity, equity)
+        daily_loss = max(0.0, (daily_start_equity - equity) / daily_start_equity) if daily_start_equity > 0 else 1.0
+        weekly_loss = max(0.0, (weekly_start_equity - equity) / weekly_start_equity) if weekly_start_equity > 0 else 1.0
+        drawdown = max(0.0, (peak_equity - equity) / peak_equity) if peak_equity > 0 else 1.0
+        if drawdown >= config.max_drawdown_fraction:
+            drawdown_breaker_active = True
+
         if age_ms > config.max_feed_age_ms:
             stale += 1
         elif event.event_type in {"trade", "book"} and event.symbol not in invalid_symbols and spread_bps <= config.max_spread_bps:
@@ -236,21 +254,43 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                 elif action == "close":
                     if position:
                         close_position(event, position, min(event.fill_ratio, 1.0))
-                elif event.symbol not in positions and event.regime_allowed:
-                    side = 1 if action == "buy" else -1
-                    risk_budget = equity * config.risk_per_trade_fraction
-                    risk_fraction = config.stop_distance_bps / 10_000.0
-                    notional = min(risk_budget / risk_fraction, equity * config.max_leverage)
-                    quantity = notional / event.mid_price * event.fill_ratio
-                    spread, slip, fee_rate = _execution_costs(event, config)
-                    fill_price = event.mid_price * (1.0 + side * (spread / 20_000.0 + slip / 10_000.0))
-                    fee = quantity * event.mid_price * fee_rate / 10_000.0
-                    equity -= fee
-                    fees_paid += fee
-                    spread_cost += quantity * event.mid_price * spread / 20_000.0
-                    slippage_cost += quantity * event.mid_price * slip / 10_000.0
-                    stop_price = fill_price * (1.0 - side * config.stop_distance_bps / 10_000.0)
-                    positions[event.symbol] = Position(event.symbol, side, quantity, fill_price, stop_price, fee)
+                elif event.symbol not in positions and not stop_closed:
+                    blocked = (
+                        not event.regime_allowed
+                        or len(positions) >= config.max_positions
+                        or daily_loss >= config.max_daily_loss_fraction
+                        or weekly_loss >= config.max_weekly_loss_fraction
+                        or drawdown_breaker_active
+                    )
+                    gross_exposure = sum(p.quantity * last_prices.get(p.symbol, p.entry_price) for p in positions.values())
+                    group_exposure = sum(
+                        p.quantity * last_prices.get(p.symbol, p.entry_price)
+                        for p in positions.values() if p.correlation_group == event.correlation_group
+                    )
+                    if blocked:
+                        risk_vetoes += 1
+                    else:
+                        risk_budget = equity * config.risk_per_trade_fraction
+                        risk_fraction = config.stop_distance_bps / 10_000.0
+                        notional = min(
+                            risk_budget / risk_fraction,
+                            max(0.0, equity * config.max_leverage - gross_exposure),
+                            max(0.0, equity * config.max_correlated_exposure_fraction - group_exposure),
+                        )
+                        if notional <= 0:
+                            risk_vetoes += 1
+                        else:
+                            side = 1 if action == "buy" else -1
+                            quantity = notional / event.mid_price * event.fill_ratio
+                            spread, slip, fee_rate = _execution_costs(event, config)
+                            fill_price = event.mid_price * (1.0 + side * (spread / 20_000.0 + slip / 10_000.0))
+                            fee = quantity * event.mid_price * fee_rate / 10_000.0
+                            equity -= fee
+                            fees_paid += fee
+                            spread_cost += quantity * event.mid_price * spread / 20_000.0
+                            slippage_cost += quantity * event.mid_price * slip / 10_000.0
+                            stop_price = fill_price * (1.0 - side * config.stop_distance_bps / 10_000.0)
+                            positions[event.symbol] = Position(event.symbol, event.correlation_group, side, quantity, fill_price, stop_price, fee)
         unrealized = sum(p.quantity * (last_prices.get(p.symbol, p.entry_price) - p.entry_price) * p.side
                          for p in positions.values())
         equity_curve.append(equity + unrealized)
@@ -264,7 +304,7 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         _ = position
     return ReplayResult(config.initial_equity, equity, trades, wins, losses, fees_paid,
                         spread_cost, slippage_cost, funding_pnl, rejected, stale,
-                        sequence_rejections, equity_curve, trade_pnls)
+                        sequence_rejections, risk_vetoes, equity_curve, trade_pnls)
 
 
 def walk_forward_splits(length: int, train_size: int, test_size: int, purge: int, embargo: int) -> list[tuple[range, range]]:
