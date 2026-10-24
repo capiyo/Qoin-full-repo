@@ -46,6 +46,10 @@ pub struct EdgeStrategy {
     pub updated_at_ms: i64,
     #[serde(default = "default_min_persistence_ticks")]
     pub min_persistence_ticks: usize,
+    #[serde(default = "default_exit_angular_threshold_degrees")]
+    pub exit_angular_threshold_degrees: f64,
+    #[serde(default = "default_exit_magnitude_threshold")]
+    pub exit_magnitude_threshold: f64,
     #[serde(default = "default_cost_multiplier")]
     pub cost_multiplier: f64,
     #[serde(default = "default_max_state_age_ms")]
@@ -78,6 +82,8 @@ pub const EDGE_FEATURE_NAMES: [&str; 9] = [
 ];
 
 fn default_min_persistence_ticks() -> usize { 3 }
+fn default_exit_angular_threshold_degrees() -> f64 { 45.0 }
+fn default_exit_magnitude_threshold() -> f64 { 0.15 }
 fn default_cost_multiplier() -> f64 { 1.5 }
 fn default_max_state_age_ms() -> i64 { 5_000 }
 fn default_min_state_quality() -> f64 { 0.2 }
@@ -92,6 +98,7 @@ pub struct DecisionContext {
     pub persistence_ticks: usize,
     pub feed_sequence_valid: bool,
     pub regime_allowed: bool,
+    pub position_side: Option<PositionSide>,
 }
 
 impl EdgeStrategy {
@@ -118,6 +125,8 @@ impl EdgeStrategy {
             feature_scales,
             updated_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0),
             min_persistence_ticks: default_min_persistence_ticks(),
+            exit_angular_threshold_degrees: default_exit_angular_threshold_degrees(),
+            exit_magnitude_threshold: default_exit_magnitude_threshold(),
             cost_multiplier: default_cost_multiplier(),
             max_state_age_ms: default_max_state_age_ms(),
             min_state_quality: default_min_state_quality(),
@@ -163,6 +172,12 @@ impl EdgeStrategy {
             || !self.attention_scale.is_finite()
             || !(0.0..=10.0).contains(&self.attention_scale)
             || self.min_persistence_ticks == 0
+            || !self.exit_angular_threshold_degrees.is_finite()
+            || self.exit_angular_threshold_degrees < self.angular_threshold_degrees
+            || self.exit_angular_threshold_degrees > 90.0
+            || !self.exit_magnitude_threshold.is_finite()
+            || self.exit_magnitude_threshold <= 0.0
+            || self.exit_magnitude_threshold >= self.magnitude_threshold
             || !self.cost_multiplier.is_finite() || self.cost_multiplier < 1.0
             || self.max_state_age_ms <= 0
             || !self.min_state_quality.is_finite() || !(0.0..=1.0).contains(&self.min_state_quality) {
