@@ -89,7 +89,7 @@ pub struct RiskContext {
     pub exchange_reconciled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct RiskDecision {
     pub allowed: bool,
     pub reason: &'static str,
