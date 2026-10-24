@@ -35,6 +35,35 @@ impl RiskLimits {
         }
     }
 
+    /// Load owner-supplied caps. Unknown limits are required, never guessed.
+    pub fn from_env() -> Result<Self, String> {
+        let number = |name: &str| -> Result<f64, String> {
+            let raw = std::env::var(name).map_err(|_| format!("missing required risk setting {name}"))?;
+            raw.parse::<f64>().map_err(|_| format!("risk setting {name} must be numeric"))
+        };
+        let count = std::env::var("QOIN_MAX_POSITIONS")
+            .map_err(|_| "missing required risk setting QOIN_MAX_POSITIONS".to_string())?
+            .parse::<usize>().map_err(|_| "QOIN_MAX_POSITIONS must be an integer".to_string())?;
+        let max_feed_age_ms = std::env::var("QOIN_MAX_FEED_AGE_MS")
+            .map_err(|_| "missing required risk setting QOIN_MAX_FEED_AGE_MS".to_string())?
+            .parse::<u64>().map_err(|_| "QOIN_MAX_FEED_AGE_MS must be an integer".to_string())?;
+        let policy = Self {
+            risk_per_trade_fraction: 0.0025,
+            max_leverage: 2.0,
+            max_positions: count,
+            max_correlated_exposure_fraction: number("QOIN_MAX_CORRELATED_EXPOSURE_FRACTION")?,
+            max_daily_loss_fraction: number("QOIN_MAX_DAILY_LOSS_FRACTION")?,
+            max_weekly_loss_fraction: number("QOIN_MAX_WEEKLY_LOSS_FRACTION")?,
+            max_drawdown_fraction: number("QOIN_MAX_DRAWDOWN_FRACTION")?,
+            max_spread_bps: number("QOIN_RISK_MAX_SPREAD_BPS")?,
+            max_slippage_bps: number("QOIN_RISK_MAX_SLIPPAGE_BPS")?,
+            max_feed_age_ms,
+            min_state_quality: number("QOIN_RISK_MIN_STATE_QUALITY")?,
+        };
+        policy.validate().map_err(str::to_owned)?;
+        Ok(policy)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if !self.risk_per_trade_fraction.is_finite()
             || self.risk_per_trade_fraction <= 0.0
