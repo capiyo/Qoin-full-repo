@@ -101,7 +101,9 @@ mod tests {
     #[test]
     fn executor_remains_hard_disabled_until_release_gates_are_implemented() {
         let result = BinanceExecutor::from_env();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("hard-disabled"));
+        match result {
+            Err(error) => assert!(error.contains("hard-disabled")),
+            Ok(_) => panic!("live executor must remain disabled"),
+        }
     }
 }
