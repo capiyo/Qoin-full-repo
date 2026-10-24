@@ -296,7 +296,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
             if let Some(state) = in_memory.filter(|state| state.last_event_id.as_deref() == Some(event.event_id.as_str())) {
                 recovered_snapshot = Some(state);
             } else {
-                match s.states.find_one(doc!{"symbol": &event.symbol, "last_event_id": &event.event_id},
+                match s.states.find_one(doc!{"venue": &event.venue, "symbol": &event.symbol, "last_event_id": &event.event_id},
                     FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
                     Ok(Some(document)) => match mongodb::bson::from_document::<SymbolState>(document) {
                         Ok(state) => recovered_snapshot = Some(state),
