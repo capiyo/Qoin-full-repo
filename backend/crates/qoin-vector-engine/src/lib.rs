@@ -256,6 +256,27 @@ mod tests {
     }
 
     #[test]
+    fn open_position_does_not_close_at_every_sub_entry_threshold_tick() {
+        let input = ForceObservation { ofi: 1.2, liquidity: 0.0, volatility: 0.0, funding: 0.0, open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
+        let result = decide(input, &EngineConfig::default(), "hysteresis-test", true).unwrap();
+        assert_eq!(result.decision, Decision::Wait);
+    }
+
+    #[test]
+    fn open_position_closes_only_below_exit_threshold() {
+        let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0, open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
+        let result = decide(input, &EngineConfig::default(), "hysteresis-test", true).unwrap();
+        assert_eq!(result.decision, Decision::Close);
+    }
+
+    #[test]
+    fn exit_threshold_must_be_below_entry_threshold() {
+        let mut config = EngineConfig::default();
+        config.exit_threshold = config.signal_threshold;
+        assert_eq!(decide(sample(), &config, "bad-hysteresis", false).unwrap_err(), EngineError::InvalidConfig);
+    }
+
+    #[test]
     fn opposing_force_vector_does_not_trigger_entry() {
         let input = ForceObservation { ofi: -2.5, liquidity: -2.0, volatility: 0.1, funding: 1.5, open_interest_change: -2.0, liquidation_pressure: -1.5, basis: 1.0 };
         let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
