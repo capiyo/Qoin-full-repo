@@ -71,6 +71,24 @@ impl Default for EngineConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CostContext {
+    pub expected_edge_bps: f64,
+    pub fees_bps: f64,
+    pub spread_bps: f64,
+    pub slippage_bps: f64,
+    pub multiplier: f64,
+}
+pub fn cost_gate(costs: Option<&CostContext>) -> bool {
+    let Some(c) = costs else { return false; };
+    let values = [c.expected_edge_bps, c.fees_bps, c.spread_bps, c.slippage_bps, c.multiplier];
+    if values.iter().any(|v| !v.is_finite()) || c.expected_edge_bps <= 0.0
+        || c.fees_bps < 0.0 || c.spread_bps < 0.0 || c.slippage_bps < 0.0 || c.multiplier <= 0.0 {
+        return false;
+    }
+    c.expected_edge_bps > c.multiplier * (c.fees_bps + c.spread_bps + c.slippage_bps)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Signal {
     pub decision: Decision,
@@ -115,6 +133,7 @@ pub fn decide(
     config: &EngineConfig,
     config_version: &str,
     has_open_position: bool,
+    costs: Option<&CostContext>,
 ) -> Result<Signal, EngineError> {
     let raw = input.values();
     if raw.iter().any(|v| !v.is_finite()) {
@@ -172,16 +191,21 @@ pub fn decide(
     // Angular and magnitude gates must both pass before a new directional entry.
     let buy_aligned = angle_radians <= config.max_angle_radians;
     let sell_aligned = (std::f64::consts::PI - angle_radians) <= config.max_angle_radians;
-    let decision = if score >= config.signal_threshold && buy_aligned {
+    let cost_ok = cost_gate(costs);
+    let decision = if score >= config.signal_threshold && buy_aligned && cost_ok {
         Decision::Buy
-    } else if score <= -config.signal_threshold && sell_aligned {
+    } else if score <= -config.signal_threshold && sell_aligned && cost_ok {
         Decision::Sell
     } else if has_open_position && score.abs() <= config.exit_threshold {
         Decision::Close
     } else {
         Decision::Wait
     };
-    let rationale = if !buy_aligned && !sell_aligned {
+    let directional_candidate = (score >= config.signal_threshold && buy_aligned)
+        || (score <= -config.signal_threshold && sell_aligned);
+    let rationale = if directional_candidate && !cost_ok {
+        "WAIT: calibrated expected edge must exceed fees, spread, and slippage stress".to_owned()
+    } else if !buy_aligned && !sell_aligned {
         "WAIT: force vector failed directional angular convergence; research baseline only".to_owned()
     } else {
         "research baseline; top-k force attention; signal only; independent risk gate required".to_owned()
@@ -202,6 +226,10 @@ pub fn decide(
 mod tests {
     use super::*;
 
+    fn test_cost_context() -> CostContext {
+        CostContext { expected_edge_bps: 100.0, fees_bps: 1.0, spread_bps: 2.0, slippage_bps: 1.0, multiplier: 2.0 }
+    }
+
     fn sample() -> ForceObservation {
         ForceObservation {
             ofi: 2.0, liquidity: 1.0, volatility: 0.2, funding: -0.5,
@@ -211,7 +239,7 @@ mod tests {
 
     #[test]
     fn strong_positive_force_produces_buy() {
-        assert_eq!(decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Buy);
+        assert_eq!(decide(sample(), &EngineConfig::default(), "baseline-v2", false, Some(&test_cost_context())).unwrap().decision, Decision::Buy);
     }
 
     #[test]
@@ -256,7 +284,7 @@ mod tests {
     fn open_position_does_not_close_on_every_subthreshold_tick() {
         let input = ForceObservation { ofi: 1.5, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 };
-        let result = decide(input, &EngineConfig::default(), "baseline-v3", true).unwrap();
+        let result = decide(input, &EngineConfig::default(), "baseline-v3", true, None).unwrap();
         assert_eq!(result.decision, Decision::Wait);
         assert!(result.score.abs() > EngineConfig::default().exit_threshold);
         assert!(result.score.abs() < EngineConfig::default().signal_threshold);
@@ -274,7 +302,14 @@ mod tests {
     fn exit_threshold_must_be_below_entry_threshold() {
         let mut config = EngineConfig::default();
         config.exit_threshold = config.signal_threshold;
-        assert_eq!(decide(sample(), &config, "baseline-v3", false).unwrap_err(), EngineError::InvalidConfig);
+        assert_eq!(decide(sample(), &config, "baseline-v3", false, None).unwrap_err(), EngineError::InvalidConfig);
+    }
+
+    #[test]
+    fn directional_entry_is_vetoed_without_cost_context() {
+        let result = decide(sample(), &EngineConfig::default(), "baseline-v3", false, None).unwrap();
+        assert_eq!(result.decision, Decision::Wait);
+        assert!(result.rationale.contains("expected edge"));
     }
 
 }
