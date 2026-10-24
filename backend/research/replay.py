@@ -157,6 +157,7 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
     current_week = None
     drawdown_breaker_active = False
     last_sequences: dict[tuple[str, str], int] = {}
+    last_event_times: dict[tuple[str, str], int] = {}
     invalid_symbols: set[str] = set()
     trade_pnls: list[float] = []
     equity_curve: list[float] = []
@@ -198,6 +199,12 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         last_arrival_ms = event.arrival_ts_ms
         last_prices[event.symbol] = event.mid_price
         key = (event.symbol, event.event_type)
+        previous_event_time = last_event_times.get(key)
+        if previous_event_time is not None and event.event_ts_ms < previous_event_time:
+            invalid_symbols.add(event.symbol)
+            sequence_rejections += 1
+        else:
+            last_event_times[key] = event.event_ts_ms
         if event.sequence_reset:
             last_sequences[key] = event.sequence if event.sequence is not None else 0
             invalid_symbols.discard(event.symbol)
