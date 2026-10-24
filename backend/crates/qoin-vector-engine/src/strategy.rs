@@ -234,7 +234,7 @@ mod tests {
             strategy.cost_multiplier = Some(2.0);
         }
         let a = cold.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
-        let b = focused.decide("BTCUSDT", 0.8, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
+        let b = focused.decide("BTCUSDT", 0.8, None, Some(0.0001), Some(2.0), 0.001, 4.0, 0.0, None).unwrap();
         assert_ne!(a.attention, b.attention);
         for row in &b.attention {
             assert!((row.iter().sum::<f64>() - 1.0).abs() < 1e-9);
