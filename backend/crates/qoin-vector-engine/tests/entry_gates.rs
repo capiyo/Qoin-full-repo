@@ -36,7 +36,7 @@ fn missing_sequence_continuity_vetoes_candidate() {
     context.feed_sequence_valid = false;
     let result = strategy.decide_with_forces(
         "BTCUSDT", 0.9, 0.4, Some(0.001), Some(1.0), 0.001, 4.0,
-        0.0, None, 0.01, Some(0.0001), &context,
+        0.0, 0.01, Some(0.0001), &context,
     ).unwrap();
     assert_eq!(result.action, "wait");
     assert!(result.reason.contains("sequence continuity"));
@@ -49,7 +49,7 @@ fn low_state_quality_vetoes_candidate() {
     context.state_quality = Some(0.1);
     let result = strategy.decide_with_forces(
         "BTCUSDT", 0.9, 0.4, Some(0.001), Some(1.0), 0.001, 4.0,
-        0.0, None, 0.01, Some(0.0001), &context,
+        0.0, 0.01, Some(0.0001), &context,
     ).unwrap();
     assert_eq!(result.action, "wait");
     assert!(result.reason.contains("state quality"));
