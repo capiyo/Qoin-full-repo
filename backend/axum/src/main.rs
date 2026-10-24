@@ -184,10 +184,6 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     let _ingest_guard = s.ingest_lock.lock().await;
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
-    match s.events.insert_one(raw,None).await{
-        Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
-        Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
-    }
     let current = match s.memory.read() {
         Ok(guard) => guard.get(&event.symbol).cloned(),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
@@ -212,6 +208,16 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let mut candidate = current.unwrap_or_default();
     apply(&mut candidate, &event);
+    // Persist only after event-time validation. The unique compound index is the
+    // idempotency authority across process restarts.
+    match s.events.insert_one(raw,None).await {
+        Ok(_) => {},
+        Err(e) if e.to_string().contains("E11000") => return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
+        Err(e) => {
+            tracing::error!(error=%e,"event persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"event persistence failed"})));
+        }
+    }
     let snapshot = candidate;
     let mut state_doc = match mongodb::bson::to_document(&snapshot) {
         Ok(doc) => doc,
