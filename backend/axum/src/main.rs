@@ -498,7 +498,7 @@ async fn recover_pending_events(
                     None => None,
                 }
             };
-            validate_sequence(current.as_ref().and_then(|state| state.last_sequence), event.sequence)
+            validate_sequence(current.as_ref().and_then(|state| state.last_sequence_by_venue.get(&event.venue).copied()), event.sequence)
                 .map_err(|message| format!("pending event {} cannot be safely replayed: {message}", event.event_id))?;
             if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
                 if event.ts_ms <= previous {
