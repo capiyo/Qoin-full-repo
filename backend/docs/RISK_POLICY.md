@@ -15,3 +15,20 @@
 - Reject stale, out-of-order, malformed, or low-quality market data; abstain when spread or feed quality fails.
 
 These are target requirements, not claims about current code. Until these controls are implemented and independently tested, the project must remain research/paper-only.
+
+
+## Implemented fail-closed controls (research branch)
+- Axum and Drogon both require `QOIN_ADMIN_TOKEN` for event ingestion and strategy mutation; an unset token denies mutation.
+- State flow, traded size, event intensity, volatility memory, and liquidation counts decay using `QOIN_STATE_HALF_LIFE_MS` (default 30 seconds). Book imbalance is stored separately from trade-volume accounting.
+- Entry candidates require fresh spread/state, known per-event-type sequence continuity, a configured persistence count, explicit regime approval, and a configured expected-edge estimate that exceeds `cost_multiplier × (fees + spread + slippage)`.
+- Missing cost estimates, missing replay arrival timestamps, missing sequence continuity, incomplete risk policy, or absent account/exchange context fail closed.
+- Risk evaluation is separate from model scoring and is persisted with decisions. `execution_allowed` remains false; the risk gate is not wired to an order-submission path.
+
+## Still required before any live-trading consideration
+- Supply and review actual production values for position-count, correlated-exposure, daily/weekly loss, drawdown, spread, slippage, feed-age, and state-quality limits. Current `RiskLimits::target_policy()` deliberately fails validation because the owner has not provided these limits.
+- Implement and test exchange-side protective-stop placement, reduce-only/stop semantics, timeout and partial-fill recovery, exchange reconciliation, and crash recovery for orders/positions.
+- Validate sequence semantics against each actual exchange feed adapter. A sequence counter must be scoped to the correct exchange stream; missing sequence metadata currently blocks new entries.
+- Prove the configured expected-edge estimator with out-of-sample research; setting `QOIN_EXPECTED_EDGE_BPS` is not evidence of an edge.
+- Complete replay, paper/testnet, and shadow gates in this document, obtain an independent risk review, and obtain explicit written approval from the project owner.
+
+The controls above are implementation progress, not a release authorization. Live trading must remain disabled.
