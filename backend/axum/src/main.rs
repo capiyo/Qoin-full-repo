@@ -494,4 +494,25 @@ mod tests {
         invalid.size = Some(0.0);
         assert!(validate_event(&invalid).is_err());
     }
+    #[test]
+    fn sequence_gaps_are_rejected_without_advancing_state() {
+        let mut state = SymbolState::default();
+        let mut first = event("one", 1_000, "trade"); first.sequence = Some(10);
+        apply(&mut state, &first, 30_000.0).unwrap();
+        let before = state.clone();
+        let mut gap = event("gap", 2_000, "trade"); gap.sequence = Some(12);
+        assert!(apply(&mut state, &gap, 30_000.0).unwrap_err().contains("sequence gap"));
+        assert_eq!(state.last_sequences.get("trade"), before.last_sequences.get("trade"));
+        let mut next = event("next", 2_000, "trade"); next.sequence = Some(11);
+        apply(&mut state, &next, 30_000.0).unwrap();
+        assert!(state.sequence_valid);
+    }
+
+    #[test]
+    fn missing_sequence_marks_feed_untrusted() {
+        let mut state = SymbolState::default();
+        apply(&mut state, &event("one", 1_000, "trade"), 30_000.0).unwrap();
+        assert!(!state.sequence_valid);
+    }
+
 }
