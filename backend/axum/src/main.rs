@@ -57,7 +57,7 @@ struct SymbolState {
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
     liquidation_events: f64,
-    last_liquidation_side: Option<String>,
+    liquidation_pressure: f64,
     state_quality: f64,
 }
 #[derive(Clone)]
@@ -141,6 +141,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.total_trade_size = decay(state.total_trade_size, elapsed, FLOW_HALF_LIFE_MS);
         state.event_intensity = decay(state.event_intensity, elapsed, INTENSITY_HALF_LIFE_MS);
         state.liquidation_events = decay(state.liquidation_events, elapsed, LIQUIDATION_HALF_LIFE_MS);
+        state.liquidation_pressure = decay(state.liquidation_pressure, elapsed, LIQUIDATION_HALF_LIFE_MS);
     }
     state.last_decay_ts_ms = Some(event.ts_ms);
 
@@ -183,14 +184,16 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         "liquidation" => {
             state.liquidation_events += 1.0;
             state.event_intensity += 2.0;
-            state.last_liquidation_side = event.liquidation_side.clone();
+            let size = event.size.unwrap_or(0.0);
             if event.liquidation_side.as_deref() == Some("long") {
-                state.signed_flow -= event.size.unwrap_or(0.0);
-                state.total_trade_size += event.size.unwrap_or(0.0);
+                state.signed_flow -= size;
+                state.total_trade_size += size;
+                state.liquidation_pressure -= size;
             }
             if event.liquidation_side.as_deref() == Some("short") {
-                state.signed_flow += event.size.unwrap_or(0.0);
-                state.total_trade_size += event.size.unwrap_or(0.0);
+                state.signed_flow += size;
+                state.total_trade_size += size;
+                state.liquidation_pressure += size;
             }
         }
         "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; },
@@ -324,7 +327,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
     let mut decision: EdgeDecision = match strategy.decide(
         &snapshot.symbol, snapshot.order_flow_imbalance, snapshot.book_imbalance, snapshot.funding_rate,
         snapshot.spread_bps, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_events, snapshot.last_liquidation_side.as_deref()
+        snapshot.liquidation_pressure
     ) {
         Ok(value) => value,
         Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":error}))),
