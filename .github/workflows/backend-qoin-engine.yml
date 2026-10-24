@@ -25,4 +25,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and run Rust tests
-        run: cargo test --manifest-path backend/axum/Cargo.toml
+        run: cargo test --manifest-path backend/Cargo.toml --workspace
