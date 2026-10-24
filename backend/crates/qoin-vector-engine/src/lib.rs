@@ -153,6 +153,7 @@ pub fn decide(
     config_version: &str,
     has_open_position: bool,
     costs: Option<&CostContext>,
+    regime: Option<&RegimeContext>,
 ) -> Result<Signal, EngineError> {
     let raw = input.values();
     if raw.iter().any(|v| !v.is_finite()) {
@@ -211,9 +212,10 @@ pub fn decide(
     let buy_aligned = angle_radians <= config.max_angle_radians;
     let sell_aligned = (std::f64::consts::PI - angle_radians) <= config.max_angle_radians;
     let cost_ok = cost_gate(costs);
-    let decision = if score >= config.signal_threshold && buy_aligned && cost_ok {
+    let regime_ok = regime_gate(regime, config.min_regime_confidence);
+    let decision = if score >= config.signal_threshold && buy_aligned && cost_ok && regime_ok {
         Decision::Buy
-    } else if score <= -config.signal_threshold && sell_aligned && cost_ok {
+    } else if score <= -config.signal_threshold && sell_aligned && cost_ok && regime_ok {
         Decision::Sell
     } else if has_open_position && score.abs() <= config.exit_threshold {
         Decision::Close
@@ -224,6 +226,8 @@ pub fn decide(
         || (score <= -config.signal_threshold && sell_aligned);
     let rationale = if directional_candidate && !cost_ok {
         "WAIT: calibrated expected edge must exceed fees, spread, and slippage stress".to_owned()
+    } else if directional_candidate && !regime_ok {
+        "WAIT: a fresh, calibrated market-regime classification is required".to_owned()
     } else if !buy_aligned && !sell_aligned {
         "WAIT: force vector failed directional angular convergence; research baseline only".to_owned()
     } else {
