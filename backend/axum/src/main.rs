@@ -619,4 +619,20 @@ mod state_tests {
             assert!(decay(value, 1_000, 5_000.0) <= value);
         }
     }
+    #[test]
+    fn liquidation_pressure_tracks_signed_flow_and_reversals() {
+        let mut state = SymbolState::default();
+        let mut long_liq = event(1_000, "liquidation");
+        long_liq.size = Some(2.0);
+        long_liq.liquidation_side = Some("long".into());
+        apply(&mut state, &long_liq);
+        assert_eq!(state.liquidation_pressure, -2.0);
+        let mut short_liq = event(2_000, "liquidation");
+        short_liq.size = Some(2.0);
+        short_liq.liquidation_side = Some("short".into());
+        apply(&mut state, &short_liq);
+        assert!(state.liquidation_pressure > 0.0);
+        assert!(state.liquidation_pressure < 0.1);
+    }
+
 }
