@@ -7,8 +7,8 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
-bool authorized(const drogon::HttpRequestPtr& request) {
-    const char* configured = std::getenv("QOIN_ADMIN_TOKEN");
+bool authorized(const drogon::HttpRequestPtr& request, const char* token_env) {
+    const char* configured = std::getenv(token_env);
     if (!configured || std::string(configured).empty()) return false;
     return request->getHeader("authorization") == std::string("Bearer ") + configured;
 }
@@ -69,7 +69,7 @@ int main() {
             proxyGet(req, std::move(cb), path);
             return;
         }
-        if (!authorized(req)) { cb(unauthorizedResponse()); return; }
+        if (!authorized(req, "QOIN_INGEST_TOKEN")) { cb(unauthorizedResponse()); return; }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Post);
@@ -97,7 +97,7 @@ int main() {
             proxyGet(req, std::move(cb), "/internal/strategy");
             return;
         }
-        if (!authorized(req)) { cb(unauthorizedResponse()); return; }
+        if (!authorized(req, "QOIN_ADMIN_TOKEN")) { cb(unauthorizedResponse()); return; }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Put);
