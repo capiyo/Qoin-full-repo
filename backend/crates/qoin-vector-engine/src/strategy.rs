@@ -46,26 +46,26 @@ pub struct EdgeDecision {
     pub research_only: bool,
 }
 
-pub const FEATURE_NAMES: [&str; 6] = [
-    "order_flow_imbalance", "funding_pressure", "liquidity_stress",
+pub const FEATURE_NAMES: [&str; 7] = [
+    "order_flow_imbalance", "book_imbalance", "funding_pressure", "liquidity_stress",
     "volatility_shock", "event_intensity", "liquidation_pressure",
 ];
 
 impl EdgeStrategy {
     pub fn baseline() -> Self {
-        let bullish = [0.70, -0.15, -0.10, -0.08, 0.0, 0.10];
-        let bearish = [-0.70, 0.15, -0.10, -0.08, 0.0, -0.10];
+        let bullish = [0.70, 0.08, -0.15, -0.10, -0.08, 0.0, 0.10];
+        let bearish = [-0.70, -0.08, 0.15, -0.10, -0.08, 0.0, -0.10];
         let mut bullish_weights = BTreeMap::new();
         let mut bearish_weights = BTreeMap::new();
         let mut feature_scales = BTreeMap::new();
         for (i, name) in FEATURE_NAMES.iter().enumerate() {
             bullish_weights.insert((*name).to_owned(), bullish[i]);
             bearish_weights.insert((*name).to_owned(), bearish[i]);
-            feature_scales.insert((*name).to_owned(), [1.0, 100.0, 500.0, 0.01, 10.0, 10.0][i]);
+            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 10.0][i]);
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
-            version: "edge-map-v2".to_owned(),
+            version: "edge-map-v3".to_owned(),
             status: "research_baseline".to_owned(),
             bullish_weights, bearish_weights,
             angular_threshold_degrees: 25.0,
@@ -115,6 +115,7 @@ impl EdgeStrategy {
         &self,
         symbol: &str,
         order_flow_imbalance: f64,
+        book_imbalance: Option<f64>,
         funding_rate: Option<f64>,
         spread_bps: Option<f64>,
         ewma_abs_return: f64,
@@ -126,6 +127,7 @@ impl EdgeStrategy {
         let scale = |name: &str| *self.feature_scales.get(name).expect("validated scale");
         let raw = [
             order_flow_imbalance,
+            book_imbalance.unwrap_or(0.0) / scale("book_imbalance"),
             funding_rate.unwrap_or(0.0) * scale("funding_pressure"),
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
