@@ -1,19 +1,19 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, backend, feat/mongodb-edge-strategy-map]
+    branches: [main, organized-monorepo, hardening/research-safety-gates, backend, feat/mongodb-edge-strategy-map]
     paths:
       - "backend/axum/**"
       - "backend/drogon/**"
       - "backend/docker-compose.yml"
-      - ".github/workflows/qoin-integration.yml"
+      - ".github/workflows/backend-qoin-integration.yml"
   pull_request:
-    branches: [main]
+    branches: [main, organized-monorepo]
     paths:
       - "backend/axum/**"
       - "backend/drogon/**"
       - "backend/docker-compose.yml"
-      - ".github/workflows/qoin-integration.yml"
+      - ".github/workflows/backend-qoin-integration.yml"
   workflow_dispatch:
 
 jobs:
@@ -51,7 +51,8 @@ jobs:
           export QOIN_AXUM_ADDR=127.0.0.1:8081
           export QOIN_AXUM_URL=http://127.0.0.1:8081
           export QOIN_DROGON_PORT=8080
-          ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
+          export QOIN_ADMIN_TOKEN=ci-test-token
+          ./backend/target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
           ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
           DROGON_PID=$!
@@ -65,11 +66,12 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
-          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
+          test "$(curl -sS -o /tmp/unauthorized.json -w '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)" = "401"
+          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'authorization: Bearer ci-test-token' -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
           jq -e '.status == "strategy_updated" and .strategy.version == "edge-map-ci-smoke-v2"' /tmp/strategy-put.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
-          ./target/debug/qoin-flow-engine >/tmp/qoin-axum-restarted.log 2>&1 &
+          ./backend/target/debug/qoin-flow-engine >/tmp/qoin-axum-restarted.log 2>&1 &
           AXUM_PID=$!
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8081/health >/tmp/health-restarted.json; then break; fi
@@ -77,6 +79,6 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-test-token' -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-test-token' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
