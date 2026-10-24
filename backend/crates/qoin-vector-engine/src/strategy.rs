@@ -64,11 +64,11 @@ impl EdgeStrategy {
         for (i, name) in FEATURE_NAMES.iter().enumerate() {
             bullish_weights.insert((*name).to_owned(), bullish[i]);
             bearish_weights.insert((*name).to_owned(), bearish[i]);
-            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 10.0][i]);
+            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 1.0][i]);
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
-            version: "edge-map-v4".to_owned(),
+            version: "edge-map-v5".to_owned(),
             status: "research_baseline".to_owned(),
             bullish_weights, bearish_weights,
             angular_threshold_degrees: 25.0,
