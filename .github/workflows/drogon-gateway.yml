@@ -20,7 +20,7 @@ jobs:
       - name: Install Drogon and build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev
+          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev
       - name: Configure gateway
         run: cmake -S services/drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
       - name: Build gateway
