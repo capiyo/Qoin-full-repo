@@ -131,6 +131,9 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Result<(), String> {
+    if let Some(previous_ts) = state.last_event_ts_ms {
+        if event.ts_ms < previous_ts { return Err("out-of-order event rejected".into()); }
+    }
     if let Some(sequence) = event.sequence {
         if let Some(previous) = state.last_sequences.get(&event.event_type) {
             if sequence <= *previous { return Err("out-of-order source sequence rejected".into()); }
@@ -143,11 +146,6 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
         // A feed without sequence metadata cannot prove continuity; signals must abstain.
         state.unsequenced_event_types.insert(event.event_type.clone(), true);
         state.sequence_valid = false;
-    }
-    if let Some(previous_ts) = state.last_event_ts_ms {
-        if event.ts_ms < previous_ts {
-            return Err("out-of-order event rejected".into());
-        }
     }
     let previous_update = state.last_state_update_ts_ms.or(state.last_event_ts_ms);
     if let Some(previous_ts) = previous_update {
@@ -356,6 +354,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     let mut risk_context = risk::RiskContext::default();
     risk_context.sequence_gap = !snapshot.sequence_valid;
     risk_context.duplicate_or_out_of_order = false;
+    risk_context.kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH").map(|v| v != "false" && v != "0").unwrap_or(false);
     let risk_assessment = risk::evaluate_entry(&risk::RiskLimits::target_policy(), &risk_context);
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
