@@ -3,7 +3,7 @@ on:
   push:
     branches: [main, organized-monorepo, hardening/research-safety-gates, feat/mongodb-edge-strategy-map, qoin-engine-integration]
   pull_request:
-    branches: [main]
+    branches: [main, organized-monorepo]
   workflow_dispatch:
 
 jobs:
