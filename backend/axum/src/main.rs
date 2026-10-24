@@ -361,6 +361,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     decision_doc.insert("event_id", event.event_id.clone());
     decision_doc.insert("risk_gate", mongodb::bson::to_bson(&risk_assessment).unwrap_or(mongodb::bson::Bson::Null));
     decision_doc.insert("execution_allowed", false);
+    decision_doc.insert("gate_context", mongodb::bson::to_bson(&context).unwrap_or(mongodb::bson::Bson::Null));
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
@@ -369,7 +370,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         Ok(mut guard) => { guard.insert(event.symbol.clone(), snapshot.clone()); }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned after persistence"}))),
     }
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"risk_gate":risk_assessment,"execution_allowed":false})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"gate_context":context,"risk_gate":risk_assessment,"execution_allowed":false})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
