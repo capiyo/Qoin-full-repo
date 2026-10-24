@@ -59,9 +59,15 @@ jobs:
           cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
           trap cleanup EXIT
           for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/health >/tmp/axum-health.json; then break; fi
+            sleep 1
+          done
+          if [ ! -s /tmp/axum-health.json ]; then cat /tmp/qoin-axum.log; exit 1; fi
+          for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
             sleep 1
           done
+          if [ ! -s /tmp/health.json ]; then cat /tmp/qoin-axum.log; cat /tmp/qoin-drogon.log; exit 1; fi
           jq -e '.status == "ok" and .mongodb == true' /tmp/health.json
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
