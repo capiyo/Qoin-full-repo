@@ -40,6 +40,8 @@ pub enum Decision {
 pub struct EngineConfig {
     /// Minimum absolute directional score to consider a trade.
     pub signal_threshold: f64,
+    /// Lower exit threshold; must be strictly below the entry threshold.
+    pub exit_threshold: f64,
     /// Maximum allowed absolute input after normalization/clipping.
     pub input_clip: f64,
     /// Maximum absolute output score.
@@ -60,11 +62,12 @@ impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             signal_threshold: 0.65,
+            exit_threshold: 0.25,
             input_clip: 3.0,
             score_clip: 1.0,
             top_k: 5,
-            min_alignment: 0.15,
-            max_angle_radians: 1.42,
+            min_alignment: 0.65,
+            max_angle_radians: 0.80,
             volatility_dampener: 0.15,
             interaction_coefficient: 0.025,
         }
@@ -92,6 +95,9 @@ pub enum EngineError {
 
 fn valid_config(config: &EngineConfig) -> bool {
     config.signal_threshold.is_finite()
+        && config.exit_threshold.is_finite()
+        && config.exit_threshold > 0.0
+        && config.exit_threshold < config.signal_threshold
         && config.input_clip.is_finite()
         && config.score_clip.is_finite()
         && config.min_alignment.is_finite()
@@ -177,12 +183,14 @@ pub fn decide(
         Decision::Buy
     } else if score <= -config.signal_threshold && sell_aligned {
         Decision::Sell
-    } else if has_open_position {
+    } else if has_open_position && score.abs() < config.exit_threshold {
         Decision::Close
     } else {
         Decision::Wait
     };
-    let rationale = if !buy_aligned && !sell_aligned {
+    let rationale = if has_open_position && score.abs() < config.exit_threshold {
+        "CLOSE: score crossed the lower exit threshold; entry and exit use hysteresis".to_owned()
+    } else if !buy_aligned && !sell_aligned {
         "WAIT: force vector failed directional angular convergence; research baseline only".to_owned()
     } else {
         "research baseline; top-k force attention; signal only; independent risk gate required".to_owned()
