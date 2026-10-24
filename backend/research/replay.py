@@ -40,7 +40,7 @@ class ReplayEvent:
         if self.mid_price <= 0 or self.bid <= 0 or self.ask < self.bid:
             raise ValueError("invalid market prices")
         if not 0.0 <= self.fill_ratio <= 1.0:
-            raise ValueError("fill_ratio must be in [-1, 1]")
+            raise ValueError("fill_ratio must be in [0, 1]")
 
 
 @dataclass(frozen=True)
