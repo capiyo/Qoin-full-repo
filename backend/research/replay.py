@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+from pathlib import Path
 from math import e, isfinite, sqrt
 from statistics import NormalDist
 from typing import Callable, Iterable, Literal
@@ -373,3 +375,32 @@ def deflated_sharpe_ratio(returns: list[float], trials: int = 1) -> float | None
         expected_max_z = (1.0 - gamma) * normal.inv_cdf(1.0 - 1.0 / trials) + gamma * normal.inv_cdf(1.0 - 1.0 / (trials * e))
         expected_best_sharpe = sharpe_error * expected_max_z
     return NormalDist().cdf((sharpe - expected_best_sharpe) / sharpe_error)
+
+
+def record_experiment(metadata: dict, result: ReplayResult, log_path: str = "backend/research/experiment_runs.jsonl") -> None:
+    """Append immutable experiment metadata and metrics to the research log."""
+    payload = {
+        "metadata": metadata,
+        "metrics": {
+            "initial_equity": result.initial_equity,
+            "final_equity": result.final_equity,
+            "total_return": result.total_return,
+            "max_drawdown": result.max_drawdown,
+            "trade_count": result.trade_count,
+            "wins": result.wins,
+            "losses": result.losses,
+            "profit_factor": result.profit_factor,
+            "fees_paid": result.fees_paid,
+            "spread_cost": result.spread_cost,
+            "slippage_cost": result.slippage_cost,
+            "funding_pnl": result.funding_pnl,
+            "rejected_orders": result.rejected_orders,
+            "stale_events": result.stale_events,
+            "sequence_rejections": result.sequence_rejections,
+            "risk_vetoes": result.risk_vetoes,
+        },
+    }
+    destination = Path(log_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, sort_keys=True, allow_nan=False) + "\n")
