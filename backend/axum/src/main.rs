@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post, put},
     Json, Router,
@@ -75,6 +75,16 @@ struct AppState {
 struct SymbolQuery { symbol: Option<String> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
+fn admin_authorized(headers: &HeaderMap) -> bool {
+    let expected = match env::var("QOIN_ADMIN_TOKEN") {
+        Ok(value) if !value.trim().is_empty() => format!("Bearer {}", value),
+        _ => return false,
+    };
+    headers.get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value == expected)
+        .unwrap_or(false)
+}
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -187,7 +197,8 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
        "mongodb":ok,"strategy_version":strategy_version,"live_order_submission":"not wired"})))
 }
-async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
+async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<MarketEvent>)->impl IntoResponse{
+    if !admin_authorized(&headers) { return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"authorized service token required"}))); }
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let _ingest_guard = s.ingest_lock.lock().await;
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
@@ -274,7 +285,8 @@ async fn get_strategy(State(s):State<AppState>)->impl IntoResponse{
     match s.active_strategy.read(){Ok(v)=>(StatusCode::OK,Json(serde_json::to_value(&*v).unwrap_or_default())),
         Err(_)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))}
 }
-async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>)->impl IntoResponse{
+async fn put_strategy(State(s):State<AppState>, headers: HeaderMap, Json(strategy):Json<EdgeStrategy>)->impl IntoResponse{
+    if !admin_authorized(&headers) { return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"authorized service token required"}))); }
     if let Err(message)=strategy.validate(){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let mut stored=strategy.clone();
     stored.updated_at_ms=chrono::Utc::now().timestamp_millis();
