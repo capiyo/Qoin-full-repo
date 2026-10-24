@@ -27,6 +27,7 @@ struct MarketEvent {
     symbol: String,
     event_type: String,
     ts_ms: i64,
+    #[serde(default)] sequence: Option<i64>,
     #[serde(default)] price: Option<f64>,
     #[serde(default)] size: Option<f64>,
     #[serde(default)] side: Option<String>,
@@ -46,6 +47,7 @@ struct SymbolState {
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
+    last_sequence: Option<i64>,
     last_decay_ts_ms: Option<i64>,
     last_book_ts_ms: Option<i64>,
     book_imbalance: Option<f64>,
@@ -94,6 +96,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if e.sequence.map(|value| value <= 0).unwrap_or(false) { return Err("sequence must be positive when supplied".into()); }
     match (e.regime.as_deref(), e.regime_confidence) {
         (None, None) => {},
         (Some(regime), Some(confidence))
@@ -220,6 +223,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     }
     state.event_count += 1;
     state.last_event_ts_ms = Some(event.ts_ms);
+    if event.sequence.is_some() { state.last_sequence = event.sequence; }
     state.order_flow_imbalance = if state.total_trade_size > f64::EPSILON {
         (state.signed_flow / state.total_trade_size).clamp(-1.0, 1.0)
     } else { 0.0 };
@@ -296,6 +300,19 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
                 Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
             }
         };
+        if let Some(previous_sequence) = current.as_ref().and_then(|state| state.last_sequence) {
+            match event.sequence {
+                Some(sequence) if sequence == previous_sequence + 1 => {},
+                Some(sequence) => return (StatusCode::CONFLICT, Json(serde_json::json!({
+                    "error":"sequence gap or duplicate rejected", "sequence":sequence,
+                    "expected_sequence":previous_sequence + 1
+                }))),
+                None => return (StatusCode::CONFLICT, Json(serde_json::json!({
+                    "error":"sequence required after sequence tracking begins",
+                    "expected_sequence":previous_sequence + 1
+                }))),
+            }
+        }
         if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
             if event.ts_ms <= previous {
                 return (StatusCode::CONFLICT, Json(serde_json::json!({
@@ -482,6 +499,12 @@ async fn recover_pending_events(
                     None => None,
                 }
             };
+            if let Some(previous_sequence) = current.as_ref().and_then(|state| state.last_sequence) {
+                match event.sequence {
+                    Some(sequence) if sequence == previous_sequence + 1 => {},
+                    _ => return Err(format!("pending event {} has a sequence gap; refusing unsafe replay", event.event_id)),
+                }
+            }
             if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
                 if event.ts_ms <= previous {
                     return Err(format!("pending event {} is older than recovered state; refusing unsafe replay", event.event_id));
@@ -602,7 +625,7 @@ mod state_tests {
     fn event(ts_ms: i64, event_type: &str) -> MarketEvent {
         MarketEvent {
             event_id: format!("e-{ts_ms}"), venue: "test".into(), symbol: "BTCUSDT".into(),
-            event_type: event_type.into(), ts_ms, price: None, size: None, side: None,
+            event_type: event_type.into(), ts_ms, sequence: None, price: None, size: None, side: None,
             bid: None, ask: None, bid_size: None, ask_size: None, funding_rate: None,
             open_interest: None, liquidation_side: None, regime: None, regime_confidence: None,
         }
