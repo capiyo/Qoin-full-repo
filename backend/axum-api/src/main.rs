@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use qoin_vector_engine::{decide, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::{decide, CostContext, EngineConfig, ForceObservation, Signal};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::cors::CorsLayer;
@@ -26,6 +26,8 @@ struct Health {
 struct SignalRequest {
     observation: ForceObservation,
     has_open_position: bool,
+    #[serde(default)]
+    costs: Option<CostContext>,
 }
 
 #[tokio::main]
@@ -96,6 +98,7 @@ async fn signal(
         &state.config,
         &state.config_version,
         request.has_open_position,
+        request.costs.as_ref(),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
