@@ -313,12 +313,9 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         };
         guard.get(&event.symbol).cloned().unwrap_or_default()
     };
-    let half_life_ms = env::var("QOIN_STATE_HALF_LIFE_MS").ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .unwrap_or(30_000.0);
+    let decay = s.decay;
     if snapshot.last_event_id.as_deref() != Some(event.event_id.as_str()) {
-        if let Err(message) = apply(&mut snapshot, &event, half_life_ms) {
+        if let Err(message) = apply(&mut snapshot, &event, &decay) {
             return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
         }
     }
@@ -360,7 +357,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     };
     let candidate = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
         fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(),
+        if snapshot.liquidation_size > f64::EPSILON { (snapshot.liquidation_pressure / snapshot.liquidation_size).clamp(-1.0, 1.0) } else { 0.0 },
         fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
@@ -515,7 +512,8 @@ async fn main(){
             }
         }
     }
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(recovered)),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(Mutex::new(()))};
+    let decay = DecayConfig::from_env().expect("all state half-life settings must be finite and positive");
+    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(recovered)),active_strategy:Arc::new(RwLock::new(active)),ingest_lock:Arc::new(Mutex::new(())),decay};
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
