@@ -249,4 +249,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn decayed_event_intensity_gate_rejects_negligible_activity() {
+        let mut strategy = EdgeStrategy::baseline();
+        strategy.expected_edge_bps_per_magnitude = Some(100.0);
+        strategy.fee_bps = Some(1.0);
+        strategy.slippage_bps = Some(1.0);
+        strategy.cost_multiplier = Some(2.0);
+        strategy.min_regime_confidence = Some(0.6);
+        let regime = RegimeContext { regime: "bull".into(), confidence: 0.95 };
+        let d = strategy.decide("BTCUSDT", 0.9, Some(0.2), Some(0.0001), Some(2.0),
+            0.001, 0.01, 0.0, Some(&regime)).unwrap();
+        assert_eq!(d.action, "wait");
+        assert!(d.reason.contains("event-intensity"));
+    }
+
 }
