@@ -46,6 +46,7 @@ struct SymbolState {
     last_book_ts_ms: Option<i64>,
     book_imbalance: Option<f64>,
     last_price: Option<f64>,
+    last_price_ts_ms: Option<i64>,
     spread_bps: Option<f64>,
     signed_flow: f64,
     total_trade_size: f64,
@@ -117,6 +118,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
                 + 0.06 * abs_return;
         }
         state.last_price = Some(price);
+        state.last_price_ts_ms = Some(event.ts_ms);
     }
     if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
         let mid = (bid + ask) / 2.0;
@@ -165,8 +167,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         (state.signed_flow / state.total_trade_size).clamp(-1.0, 1.0)
     } else { 0.0 };
     // Quality is based on actual fresh data availability, not lifetime event count.
-    let book_fresh = state.last_book_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 5_000).unwrap_or(false);
-    let price_fresh = state.last_price.is_some();
+    let book_fresh = state.last_book_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000).unwrap_or(false);
+    let price_fresh = state.last_price_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000).unwrap_or(false);
     state.state_quality = (if book_fresh { 0.5 } else { 0.0 }) + (if price_fresh { 0.5 } else { 0.0 });
 }
 ize).clamp(-1.0,1.0);}
@@ -247,10 +249,13 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         let fresh_book = snapshot.last_book_ts_ms
             .map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000)
             .unwrap_or(false);
+        let fresh_price = snapshot.last_price_ts_ms
+            .map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000)
+            .unwrap_or(false);
         if !eligible_event {
             decision.reason = "entry gate requires a trade or book event".into();
             decision.action = "wait";
-        } else if !fresh_book || snapshot.state_quality < 1.0 {
+        } else if !fresh_book || !fresh_price || snapshot.state_quality < 1.0 {
             decision.reason = "entry gate vetoed: book/price state is stale or incomplete".into();
             decision.action = "wait";
         } else {
@@ -344,9 +349,24 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
-        Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
-            Err(e)=>panic!("stored edge strategy map is invalid: {e}")},
+        Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){
+            Ok(v)=>{
+                v.validate().expect("stored edge strategy must validate");
+                // Migrate only the known hand-authored baseline, never a user-tuned map.
+                if v.version == "edge-map-v1" && v.status == "research_baseline" {
+                    let mut migrated = EdgeStrategy::baseline();
+                    migrated.updated_at_ms = chrono::Utc::now().timestamp_millis();
+                    let d = mongodb::bson::to_document(&migrated).expect("serialize migrated baseline");
+                    strategies.update_one(doc!{"strategy_key":STRATEGY_KEY}, doc!{"$set":d}, None)
+                        .await.expect("persist versioned attention baseline migration");
+                    migrated
+                } else { v }
+            },
+            Err(e)=>panic!("stored edge strategy map is invalid: {e}")
+        },
         None=>{
+            let mut baseline = baseline;
+            baseline.updated_at_ms = chrono::Utc::now().timestamp_millis();
             let d=mongodb::bson::to_document(&baseline).expect("serialize baseline strategy map");
             strategies.insert_one(d,None).await.expect("seed baseline edge strategy map");
             baseline
