@@ -2,6 +2,17 @@
 
 A multi-client workspace for researching a present-centered crypto market-force algorithm. React web and React Native share API contracts. **Axum (Rust) is the authoritative ingestion, state, strategy-map, and vector-decision engine; Drogon (C++) is the HTTP gateway; MongoDB is the durable source of truth.** The current strategy is a research baseline, not a validated or proven profitable edge.
 
+
+## Branch layout
+
+The repository is now explicitly shelved into focused branches so frontend and backend work are not mixed together:
+
+- **[`frontend`](https://github.com/capiyo/Qoin-full-repo/tree/frontend)** — React/Vite web, existing Next.js React web, React Native/Expo mobile, shared TypeScript core, and API contracts.
+- **[`backend`](https://github.com/capiyo/Qoin-full-repo/tree/backend)** — Axum/Rust engine, Drogon/C++ gateway, MongoDB configuration and persistence, vector engine, research, backend tests, and service CI.
+- **[`main`](https://github.com/capiyo/Qoin-full-repo/tree/main)** — integration snapshot containing both sides together. Keep feature work on the focused branches and bring changes into the integration branch deliberately.
+
+The service boundary remains: clients call Drogon; Drogon forwards to Axum; Axum owns strategy/state/vector decisions and MongoDB persistence. Neither frontend clients nor Drogon should duplicate strategy logic.
+
 ## Monorepo layout
 
 - apps/react-web — React + TypeScript + Vite research dashboard.
