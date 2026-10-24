@@ -402,7 +402,7 @@ mod tests {
     }
     #[test]
     fn attention_scale_ablation_changes_attention_weights() {
-        let mut selective = EdgeStrategy::baseline();
+        let selective = EdgeStrategy::baseline();
         let mut uniform = EdgeStrategy::baseline();
         uniform.attention_scale = 0.0;
         let a = selective.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, &passing_context()).unwrap();
@@ -448,7 +448,7 @@ mod tests {
         let mut context = passing_context();
         context.position_side = Some(PositionSide::Long);
         let result = strategy.decide_with_forces("BTCUSDT", -0.01, 0.0, Some(0.0),
-            Some(1.0), 0.0, 4.0, 0.0, 0.0, 0.0, Some(0.0), &context).unwrap();
+            Some(1.0), 0.0, 4.0, 0.0, 0.0, Some(0.0), &context).unwrap();
         assert_eq!(result.action, "wait");
         assert!(result.reason.contains("exit threshold"));
     }
