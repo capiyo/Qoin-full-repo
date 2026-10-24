@@ -82,10 +82,13 @@ jobs:
           BOOK_TS=$(date +%s%3N)
           TRADE_TS=$((BOOK_TS + 100))
           OLD_TS=$((BOOK_TS + 50))
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":${BOOK_TS},"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":${TRADE_TS},"sequence":2,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          BOOK_EVENT=$(printf '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":%s,"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' "$BOOK_TS")
+          TRADE_EVENT=$(printf '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":%s,"sequence":2,"price":100.01,"size":1,"side":"buy"}' "$TRADE_TS")
+          OLD_EVENT=$(printf '{"event_id":"ci-old-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":%s,"sequence":3,"price":100.00,"size":1,"side":"sell"}' "$OLD_TS")
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$BOOK_EVENT" >/tmp/book.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$TRADE_EVENT" >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"sequence":2,"price":100.01,"size":1,"side":"buy"}' >/tmp/duplicate.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$TRADE_EVENT" >/tmp/duplicate.json
           jq -e '.status == "duplicate_ignored"' /tmp/duplicate.json
-          HTTP_STATUS=$(curl --silent --output /tmp/out-of-order.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data '{"event_id":"ci-old-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":${OLD_TS},"sequence":3,"price":100.00,"size":1,"side":"sell"}')
+          HTTP_STATUS=$(curl --silent --output /tmp/out-of-order.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token-rotate-outside-ci' -H 'content-type: application/json' --data "$OLD_EVENT")
           test "$HTTP_STATUS" = "409"
