@@ -88,7 +88,8 @@ fn default_cost_multiplier() -> f64 { 1.5 }
 fn default_max_state_age_ms() -> i64 { 5_000 }
 fn default_min_state_quality() -> f64 { 0.2 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct DecisionContext {
     pub expected_edge_bps: Option<f64>,
     pub fee_bps: Option<f64>,
