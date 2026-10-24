@@ -86,6 +86,7 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
+          test "$(curl -sS -o /tmp/unauthorized-event.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-unauthorized","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}')" = "401"
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token' -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"sequence":1,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'authorization: Bearer ci-ingest-token' -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"sequence":1,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
