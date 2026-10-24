@@ -28,6 +28,7 @@ class ReplayEvent:
     fill_ratio: float = 1.0
     sequence_reset: bool = False
     correlation_group: str = "default"
+    expected_edge_bps: float | None = None
 
     def validate(self) -> None:
         if self.event_ts_ms <= 0 or self.arrival_ts_ms < self.event_ts_ms:
@@ -37,6 +38,8 @@ class ReplayEvent:
         numbers = (self.mid_price, self.bid, self.ask, self.ofi, self.funding_rate, self.volatility, self.fill_ratio)
         if any(not isfinite(float(value)) for value in numbers):
             raise ValueError("all numeric event values must be finite")
+        if self.expected_edge_bps is not None and (not isfinite(self.expected_edge_bps) or self.expected_edge_bps <= 0):
+            raise ValueError("expected edge must be finite and positive when provided")
         if self.mid_price <= 0 or self.bid <= 0 or self.ask < self.bid:
             raise ValueError("invalid market prices")
         if not 0.0 <= self.fill_ratio <= 1.0:
@@ -54,6 +57,7 @@ class ReplayConfig:
     volatile_slippage_multiplier: float = 4.0
     volatility_threshold: float = 0.01
     total_cost_stress_multiplier: float = 1.0
+    cost_multiplier: float = 1.5
     max_spread_bps: float = 25.0
     max_feed_age_ms: int = 5_000
     max_positions: int = 3
@@ -66,7 +70,7 @@ class ReplayConfig:
         values = (self.initial_equity, self.risk_per_trade_fraction, self.max_leverage,
                   self.stop_distance_bps, self.fee_bps, self.base_slippage_bps,
                   self.volatile_slippage_multiplier, self.volatility_threshold,
-                  self.total_cost_stress_multiplier, self.max_spread_bps,
+                  self.total_cost_stress_multiplier, self.cost_multiplier, self.max_spread_bps,
                   self.max_correlated_exposure_fraction, self.max_daily_loss_fraction,
                   self.max_weekly_loss_fraction, self.max_drawdown_fraction)
         if any(not isfinite(v) for v in values) or self.initial_equity <= 0:
@@ -75,7 +79,7 @@ class ReplayConfig:
             raise ValueError("replay risk limits may not exceed the hard 0.25% / 2x policy")
         if self.stop_distance_bps <= 0 or self.max_feed_age_ms <= 0 or self.max_spread_bps <= 0:
             raise ValueError("stop distance, feed age, and spread cap must be positive")
-        if self.total_cost_stress_multiplier < 1.0 or self.volatile_slippage_multiplier < 1.0:
+        if self.total_cost_stress_multiplier < 1.0 or self.volatile_slippage_multiplier < 1.0 or self.cost_multiplier < 1.0:
             raise ValueError("cost multipliers cannot reduce costs")
         if self.max_positions < 1 or not 0 < self.max_correlated_exposure_fraction <= 1.0:
             raise ValueError("position and correlated exposure caps must be positive")
