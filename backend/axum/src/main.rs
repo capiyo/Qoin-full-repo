@@ -261,6 +261,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         },
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
+    let already_applied = recovered_snapshot.is_some();
     let mut snapshot = if let Some(recovered) = recovered_snapshot {
         recovered
     } else {
@@ -321,7 +322,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
-    if is_entry_tick {
+    if is_entry_tick && !already_applied {
         if candidate.candidate_action == "buy" || candidate.candidate_action == "sell" {
             if snapshot.candidate_action.as_deref() == Some(candidate.candidate_action) {
                 snapshot.candidate_persistence_ticks = snapshot.candidate_persistence_ticks.saturating_add(1);
