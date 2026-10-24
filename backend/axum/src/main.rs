@@ -101,6 +101,16 @@ fn validate_sequence(previous: Option<i64>, current: Option<i64>) -> Result<(), 
         None => Err(format!("sequence required after sequencing began; expected {expected}")),
     }
 }
+fn validate_feed_age(event_ts_ms: i64, arrival_ts_ms: i64, max_age_ms: i64) -> Result<(), String> {
+    let age = arrival_ts_ms.saturating_sub(event_ts_ms);
+    if age > max_age_ms {
+        return Err(format!("stale feed event: age {age} ms exceeds {max_age_ms} ms"));
+    }
+    if age < -max_age_ms {
+        return Err(format!("future-dated event exceeds clock-skew allowance of {max_age_ms} ms"));
+    }
+    Ok(())
+}
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -269,6 +279,12 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
         Ok(value) => value,
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"decision idempotency lookup failed"}))),
     };
+    let arrival_ts_ms = chrono::Utc::now().timestamp_millis();
+    if existing_event.is_none() {
+        if let Err(message) = validate_feed_age(event.ts_ms, arrival_ts_ms, 2_000) {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message,"event_id":event.event_id})));
+        }
+    }
     if existing_decision.is_some() {
         let _ = s.events.update_one(event_filter, doc!{"$set":doc!{"processing_status":"complete"}}, None).await;
         return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id})));
@@ -331,6 +347,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
                 Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"event serialization failed"}))),
             };
             raw.insert("processing_status", "pending");
+            raw.insert("received_at_ms", arrival_ts_ms);
             if let Err(error) = s.events.insert_one(raw, None).await {
                 if !error.to_string().contains("E11000") {
                     tracing::error!(error=%error,"event persistence failed");
@@ -688,6 +705,13 @@ mod state_tests {
         assert!(validate_sequence(Some(100), Some(103)).is_err());
         assert!(validate_sequence(Some(100), Some(100)).is_err());
         assert!(validate_sequence(Some(100), None).is_err());
+    }
+
+    #[test]
+    fn stale_and_future_feed_events_are_rejected() {
+        assert!(validate_feed_age(10_000, 11_000, 2_000).is_ok());
+        assert!(validate_feed_age(1_000, 4_000, 2_000).is_err());
+        assert!(validate_feed_age(4_000, 1_000, 2_000).is_err());
     }
 
 }
