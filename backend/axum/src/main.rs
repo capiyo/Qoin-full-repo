@@ -211,14 +211,26 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let _ingest_guard = s.ingest_lock.lock().await;
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    let mut recovered_snapshot: Option<SymbolState> = None;
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>{
             // A duplicate may be an event persisted before a previous state write failed.
             // Re-process it unless the durable in-memory checkpoint already includes it.
-            let already_in_memory = s.memory.read().ok()
-                .and_then(|guard| guard.get(&event.symbol).and_then(|state| state.last_event_id.clone()))
-                .as_deref() == Some(event.event_id.as_str());
-            if already_in_memory {
+            let in_memory = s.memory.read().ok().and_then(|guard| guard.get(&event.symbol).cloned());
+            if let Some(state) = in_memory.filter(|state| state.last_event_id.as_deref() == Some(event.event_id.as_str())) {
+                recovered_snapshot = Some(state);
+            } else {
+                match s.states.find_one(doc!{"symbol": &event.symbol, "last_event_id": &event.event_id},
+                    FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+                    Ok(Some(document)) => match mongodb::bson::from_document::<SymbolState>(document) {
+                        Ok(state) => recovered_snapshot = Some(state),
+                        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"persisted event state could not be recovered"}))),
+                    },
+                    Ok(None) => {},
+                    Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state storage unavailable during duplicate recovery"}))),
+                }
+            }
+            if recovered_snapshot.is_some() {
                 match s.decisions.find_one(doc!{"event_id": &event.event_id, "symbol": &event.symbol}, None).await {
                     Ok(Some(_)) => return (StatusCode::OK, Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
                     Ok(None) => {},
@@ -228,7 +240,9 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         },
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
-    let mut snapshot = {
+    let mut snapshot = if let Some(recovered) = recovered_snapshot {
+        recovered
+    } else {
         let guard = match s.memory.read() {
             Ok(v) => v,
             Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"state lock poisoned"}))),
@@ -239,8 +253,10 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| value.is_finite() && *value > 0.0)
         .unwrap_or(30_000.0);
-    if let Err(message) = apply(&mut snapshot, &event, half_life_ms) {
-        return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
+    if snapshot.last_event_id.as_deref() != Some(event.event_id.as_str()) {
+        if let Err(message) = apply(&mut snapshot, &event, half_life_ms) {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
+        }
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     let max_age_ms = strategy.max_state_age_ms;
