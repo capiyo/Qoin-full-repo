@@ -385,6 +385,32 @@ impl EdgeStrategy {
         }
     }
 
+    /// Fill newly introduced force weights when loading an older persisted map.
+    /// The caller must persist the returned migration before using it as active state.
+    pub fn migrate_legacy_features(&mut self) -> bool {
+        let baseline = Self::baseline();
+        let mut changed = false;
+        for name in EDGE_FEATURE_NAMES {
+            if !self.bullish_weights.contains_key(name) {
+                if let Some(value) = baseline.bullish_weights.get(name) { self.bullish_weights.insert(name.to_owned(), *value); }
+                changed = true;
+            }
+            if !self.bearish_weights.contains_key(name) {
+                if let Some(value) = baseline.bearish_weights.get(name) { self.bearish_weights.insert(name.to_owned(), *value); }
+                changed = true;
+            }
+            if !self.feature_scales.contains_key(name) {
+                if let Some(value) = baseline.feature_scales.get(name) { self.feature_scales.insert(name.to_owned(), *value); }
+                changed = true;
+            }
+        }
+        if changed {
+            self.version = format!("{}-forces-v2", self.version);
+            self.updated_at_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+        }
+        changed
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.strategy_key != STRATEGY_KEY || self.version.trim().is_empty() {
             return Err("strategy_key must be 'active' and version must be non-empty".into());
