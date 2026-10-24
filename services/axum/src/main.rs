@@ -181,7 +181,7 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
     stored.updated_at_ms=chrono::Utc::now().timestamp_millis();
     let doc=match mongodb::bson::to_document(&stored){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"strategy serialization failed"})))};
     let options=UpdateOptions::builder().upsert(true).build();
-    if let Err(e)=s.strategies.update_one(doc!{"strategy_key":STRATEGY_KEY},doc!{"$set":doc},options).await{
+    if let Err(e)=s.strategies.update_one(doc!{"strategy_key":STRATEGY_KEY},doc!{"$set":doc},Some(options)).await{
         tracing::error!(error=%e,"strategy map persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"strategy map persistence failed"})));
     }
