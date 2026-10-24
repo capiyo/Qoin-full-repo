@@ -14,6 +14,7 @@ on:
     paths:
       - "backend/Cargo.toml"
       - "backend/Cargo.lock"
+      - "rust-toolchain.toml"
       - "backend/crates/**"
       - "backend/axum-api/**"
       - ".github/workflows/backend-rust-workspace.yml"
