@@ -169,6 +169,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
         }
         state.last_price = Some(price);
     }
+    if let Some(basis) = event.basis { state.basis = Some(basis); state.basis_ts_ms = Some(event.ts_ms); }
     if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
         let mid = (bid + ask) / 2.0;
         state.spread_bps = if mid > 0.0 { Some((ask - bid) / mid * 10_000.0) } else { None };
@@ -205,7 +206,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent, half_life_ms: f64) -> Res
         }
         "funding" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; state.funding_ts_ms = Some(event.ts_ms); },
         "open_interest" => if let Some(value) = event.open_interest { if let Some(previous) = state.open_interest.filter(|v| *v > 0.0) { state.open_interest_change = (value - previous) / previous; } state.open_interest = Some(value); state.open_interest_ts_ms = Some(event.ts_ms); },
-        "basis" => if event.basis.is_some() { state.basis = event.basis; state.basis_ts_ms = Some(event.ts_ms); },
+
         "book" => {}
         _ => return Err("unsupported event_type".into()),
     }
@@ -288,6 +289,15 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     let fresh_funding = snapshot.funding_ts_ms
         .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
         .and(snapshot.funding_rate);
+    let fresh_book_imbalance = snapshot.spread_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
+        .map(|_| snapshot.book_imbalance).unwrap_or(0.0);
+    let fresh_open_interest_change = snapshot.open_interest_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
+        .map(|_| snapshot.open_interest_change).unwrap_or(0.0);
+    let fresh_basis = snapshot.basis_ts_ms
+        .filter(|ts| event.ts_ms.saturating_sub(*ts) >= 0 && event.ts_ms.saturating_sub(*ts) <= max_age_ms)
+        .and(snapshot.basis);
     let arrival_ts_ms = if env::var("QOIN_REPLAY_MODE").map(|v| v == "true").unwrap_or(false) {
         event.received_at_ms
     } else {
@@ -304,9 +314,10 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         feed_sequence_valid: snapshot.sequence_valid,
         regime_allowed: env::var("QOIN_REGIME_ALLOWED").map(|v| v == "true").unwrap_or(false),
     };
-    let candidate = match strategy.decide_with_context(&snapshot.symbol, snapshot.order_flow_imbalance,
+    let candidate = match strategy.decide_with_forces(&snapshot.symbol, snapshot.order_flow_imbalance, fresh_book_imbalance,
         fresh_funding, fresh_spread, snapshot.ewma_abs_return, snapshot.event_intensity,
-        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(), &context) {
+        snapshot.liquidation_events.max(0.0), snapshot.last_liquidation_side.as_deref(),
+        fresh_open_interest_change, fresh_basis, &context) {
         Ok(v) => v, Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":e})))
     };
     if candidate.candidate_action == "buy" || candidate.candidate_action == "sell" {
