@@ -405,7 +405,7 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
     let mut risk_context = risk::RiskContext::default();
     risk_context.sequence_gap = !snapshot.sequence_valid;
     risk_context.duplicate_or_out_of_order = false;
-    risk_context.kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH").map(|v| v != "false" && v != "0").unwrap_or(false);
+    risk_context.kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH").map(|v| v != "false" && v != "0").unwrap_or(true);
     let risk_limits = risk::RiskLimits::from_env().unwrap_or_else(|error| { tracing::warn!(%error, "risk policy incomplete; all entries remain vetoed"); risk::RiskLimits::target_policy() });
     let risk_assessment = risk::evaluate_entry(&risk_limits, &risk_context);
     let mut decision_doc=match mongodb::bson::to_document(&decision) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"decision serialization failed"}))) };
