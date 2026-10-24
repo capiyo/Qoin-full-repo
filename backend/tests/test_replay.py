@@ -3,7 +3,7 @@ from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, defl
 
 def event(ts, seq, price, age=0, regime=True, fill=1.0, kind="trade", funding=0.0):
     return ReplayEvent(ts, ts + age, "BTCUSDT", kind, price, price - 0.01, price + 0.01,
-                       0.9, funding, 0.001, seq, regime, False, fill)
+                       0.9, funding, 0.001, seq, regime, False, fill, expected_edge_bps=100.0)
 
 class ReplayTests(unittest.TestCase):
     def test_no_trade_baseline(self):
