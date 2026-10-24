@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use qoin_vector_engine::{decide, CostContext, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::{decide, CostContext, EngineConfig, ForceObservation, RegimeContext, Signal};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::cors::CorsLayer;
@@ -28,6 +28,8 @@ struct SignalRequest {
     has_open_position: bool,
     #[serde(default)]
     costs: Option<CostContext>,
+    #[serde(default)]
+    regime: Option<RegimeContext>,
 }
 
 #[tokio::main]
@@ -51,6 +53,9 @@ async fn main() {
     if let Ok(value) = std::env::var("QOIN_MAX_ANGLE_RADIANS") {
         config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric");
     }
+    if let Ok(value) = std::env::var("QOIN_MIN_REGIME_CONFIDENCE") {
+        config.min_regime_confidence = Some(value.parse().expect("QOIN_MIN_REGIME_CONFIDENCE must be numeric"));
+    }
     if let Ok(value) = std::env::var("QOIN_EXIT_THRESHOLD") {
         config.exit_threshold = value.parse().expect("QOIN_EXIT_THRESHOLD must be numeric");
     }
@@ -60,7 +65,7 @@ async fn main() {
     qoin_vector_engine::decide(
         ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
-        &config, &config_version, false, None,
+        &config, &config_version, false, None, None,
     ).expect("Qoin engine configuration must be valid");
     let state = Arc::new(AppState { config, config_version });
     let cors = CorsLayer::new()
@@ -99,6 +104,7 @@ async fn signal(
         &state.config_version,
         request.has_open_position,
         request.costs.as_ref(),
+        request.regime.as_ref(),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
