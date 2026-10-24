@@ -354,4 +354,14 @@ mod tests {
         assert!(regime_gate(Some(&strong), Some(0.6)));
     }
 
+    #[test]
+    fn cost_gate_requires_strictly_positive_net_edge_over_costs() {
+        let equal = CostContext { expected_edge_bps: 8.0, fees_bps: 1.0, spread_bps: 2.0, slippage_bps: 1.0, multiplier: 2.0 };
+        assert!(!cost_gate(Some(&equal)));
+        let better = CostContext { expected_edge_bps: 8.01, ..equal };
+        assert!(cost_gate(Some(&better)));
+        let invalid = CostContext { expected_edge_bps: f64::NAN, ..better };
+        assert!(!cost_gate(Some(&invalid)));
+    }
+
 }
