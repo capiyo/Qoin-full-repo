@@ -54,7 +54,9 @@ async fn main() {
         config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric");
     }
     if let Ok(value) = std::env::var("QOIN_MIN_REGIME_CONFIDENCE") {
-        config.min_regime_confidence = Some(value.parse().expect("QOIN_MIN_REGIME_CONFIDENCE must be numeric"));
+        if !value.trim().is_empty() {
+            config.min_regime_confidence = Some(value.parse().expect("QOIN_MIN_REGIME_CONFIDENCE must be numeric"));
+        }
     }
     if let Ok(value) = std::env::var("QOIN_EXIT_THRESHOLD") {
         config.exit_threshold = value.parse().expect("QOIN_EXIT_THRESHOLD must be numeric");
