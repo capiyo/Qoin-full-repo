@@ -572,4 +572,30 @@ mod tests {
         assert!(d.reason.contains("expected edge"));
     }
 
+    #[test]
+    fn regime_gate_rejects_when_not_explicitly_allowed() {
+        let s = EdgeStrategy::baseline();
+        let mut c = passing_context(); c.regime_allowed = false;
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        assert_eq!(d.action, "wait");
+        assert!(d.reason.contains("regime"));
+    }
+    #[test]
+    fn stale_state_rejects_candidate() {
+        let s = EdgeStrategy::baseline();
+        let mut c = passing_context(); c.state_age_ms = Some(5_001);
+        let d = s.decide_with_context("BTCUSDT", 0.9, Some(0.001), Some(1.0), 0.001, 4.0, 0.0, None, &c).unwrap();
+        assert_eq!(d.action, "wait");
+        assert!(d.reason.contains("stale"));
+    }
+    #[test]
+    fn attention_scale_ablation_changes_attention_weights() {
+        let mut selective = EdgeStrategy::baseline();
+        let mut uniform = EdgeStrategy::baseline();
+        uniform.attention_scale = 0.0;
+        let a = selective.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, None, &passing_context()).unwrap();
+        let b = uniform.decide_with_context("BTCUSDT", 0.8, Some(0.001), Some(2.0), 0.002, 4.0, 0.0, None, &passing_context()).unwrap();
+        assert_ne!(a.attention, b.attention);
+    }
+
 }
