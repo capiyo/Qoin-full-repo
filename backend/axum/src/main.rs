@@ -598,7 +598,7 @@ async fn main(){
             Ok(v)=>{
                 v.validate().expect("stored edge strategy must validate");
                 // Migrate only the known hand-authored baseline, never a user-tuned map.
-                if matches!(v.version.as_str(), "edge-map-v1" | "edge-map-v2" | "edge-map-v3" | "edge-map-v4") && v.status == "research_baseline" {
+                if matches!(v.version.as_str(), "edge-map-v1" | "edge-map-v2" | "edge-map-v3" | "edge-map-v4" | "edge-map-v5") && v.status == "research_baseline" {
                     let mut migrated = EdgeStrategy::baseline();
                     migrated.updated_at_ms = chrono::Utc::now().timestamp_millis();
                     let d = mongodb::bson::to_document(&migrated).expect("serialize migrated baseline");
