@@ -345,7 +345,7 @@ impl EdgeStrategy {
 mod tests {
     use super::*;
     fn passing_context() -> DecisionContext {
-        DecisionContext { expected_edge_bps: Some(50.0), fee_bps: Some(2.0), slippage_bps: Some(2.0), state_age_ms: Some(100), state_quality: Some(0.9), persistence_ticks: 3, regime_allowed: true }
+        DecisionContext { expected_edge_bps: Some(50.0), fee_bps: Some(2.0), slippage_bps: Some(2.0), state_age_ms: Some(100), state_quality: Some(0.9), persistence_ticks: 3, feed_sequence_valid: true, regime_allowed: true, position_side: None }
     }
     #[test]
     fn baseline_map_is_complete_and_valid() { assert!(EdgeStrategy::baseline().validate().is_ok()); }
