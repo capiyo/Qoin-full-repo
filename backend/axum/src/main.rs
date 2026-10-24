@@ -394,3 +394,55 @@ async fn main(){
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
 }
+
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    fn event(ts_ms: i64, event_type: &str) -> MarketEvent {
+        MarketEvent {
+            event_id: format!("e-{ts_ms}"), venue: "test".into(), symbol: "BTCUSDT".into(),
+            event_type: event_type.into(), ts_ms, price: None, size: None, side: None,
+            bid: None, ask: None, bid_size: None, ask_size: None, funding_rate: None,
+            open_interest: None, liquidation_side: None,
+        }
+    }
+
+    #[test]
+    fn signed_flow_and_size_decay_with_same_half_life() {
+        let mut state = SymbolState::default();
+        state.signed_flow = 4.0;
+        state.total_trade_size = 4.0;
+        state.event_intensity = 4.0;
+        state.liquidation_events = 2.0;
+        state.last_decay_ts_ms = Some(1_000);
+        state.last_event_ts_ms = Some(1_000);
+        apply(&mut state, &event(6_000, "book"));
+        assert!((state.signed_flow - 2.0).abs() < 1e-9);
+        assert!((state.total_trade_size - 2.0).abs() < 1e-9);
+        assert!((state.order_flow_imbalance - 1.0).abs() < 1e-9);
+        assert!(state.event_intensity < 1.0);
+        assert!(state.liquidation_events < 2.0 && state.liquidation_events > 1.0);
+    }
+
+    #[test]
+    fn book_imbalance_does_not_pollute_trade_flow_denominator() {
+        let mut state = SymbolState::default();
+        let mut e = event(1_000, "book");
+        e.bid = Some(99.0); e.ask = Some(101.0);
+        e.bid_size = Some(9.0); e.ask_size = Some(1.0);
+        apply(&mut state, &e);
+        assert_eq!(state.book_imbalance, Some(0.8));
+        assert_eq!(state.signed_flow, 0.0);
+        assert_eq!(state.total_trade_size, 0.0);
+        assert_eq!(state.order_flow_imbalance, 0.0);
+    }
+
+    #[test]
+    fn decay_does_not_increase_values() {
+        for value in [0.0, 0.5, 1.0, 100.0] {
+            assert!(decay(value, 1_000, 5_000.0) <= value);
+        }
+    }
+}
