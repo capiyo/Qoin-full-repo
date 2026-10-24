@@ -653,4 +653,17 @@ mod tests {
         assert_eq!(result.action, "buy", "candidate={}, reason={}", result.candidate_action, result.reason);
     }
 
+    #[test]
+    fn legacy_strategy_maps_migrate_idempotently() {
+        let mut strategy = EdgeStrategy::baseline();
+        strategy.bullish_weights.remove("book_imbalance");
+        strategy.bearish_weights.remove("book_imbalance");
+        strategy.feature_scales.remove("book_imbalance");
+        assert!(strategy.migrate_legacy_features());
+        assert!(strategy.validate().is_ok());
+        let version = strategy.version.clone();
+        assert!(!strategy.migrate_legacy_features());
+        assert_eq!(strategy.version, version);
+    }
+
 }
