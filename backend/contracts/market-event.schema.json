@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QoinMarketEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "venue",
+    "symbol",
+    "event_type",
+    "ts_ms"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "venue": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "trade",
+        "book",
+        "funding",
+        "open_interest",
+        "liquidation"
+      ]
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "price": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "size": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "side": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "buy",
+        "sell",
+        "unknown",
+        null
+      ]
+    },
+    "bid": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "ask": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "bid_size": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "ask_size": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "funding_rate": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "open_interest": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "liquidation_side": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "long",
+        "short",
+        null
+      ]
+    }
+  }
+}

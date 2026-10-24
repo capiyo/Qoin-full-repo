@@ -3,18 +3,18 @@ name: Qoin React web
 on:
   push:
     paths:
-      - "apps/web/**"
-      - "packages/core/**"
+      - "frontend/web/**"
+      - "frontend/shared/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
-      - ".github/workflows/react-web.yml"
+      - ".github/workflows/frontend-web.yml"
   pull_request:
     paths:
-      - "apps/web/**"
-      - "packages/core/**"
+      - "frontend/web/**"
+      - "frontend/shared/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
-      - ".github/workflows/react-web.yml"
+      - ".github/workflows/frontend-web.yml"
 
 jobs:
   build:

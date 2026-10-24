@@ -1,0 +1,26 @@
+name: Qoin Rust workspace
+
+on:
+  push:
+    paths:
+      - "backend/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/crates/**"
+      - "backend/axum-api/**"
+      - ".github/workflows/rust-workspace.yml"
+  pull_request:
+    paths:
+      - "backend/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/crates/**"
+      - "backend/axum-api/**"
+      - ".github/workflows/rust-workspace.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace

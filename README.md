@@ -1,34 +1,21 @@
-# Qoin Frontend Monorepo
+# Qoin — organized monorepo
 
-This branch contains the React web and React Native applications in one frontend workspace, with shared TypeScript logic and API contracts.
+The repository is grouped by platform and service so each part is easy to open directly on GitHub.
 
-## Layout
+## Frontend
+- `frontend/web/` — React DOM + Vite + TypeScript + Tailwind web client.
+- `frontend/mobile/` — Expo / React Native mobile client.
+- `frontend/shared/core/` — shared TypeScript types, API client, theme and mock data.
 
-- `apps/web` — React DOM + Vite + TypeScript web client.
-- `apps/mobile` — Expo / React Native app.
-- `packages/core` — shared types, themes, mock data, and API client.
-- `contracts/` — HTTP/event schemas shared with the backend.
+## Backend
+- `backend/axum/` — Rust trading, strategy and vector-engine service.
+- `backend/axum-api/` — Rust API service.
+- `backend/drogon/` — C++ public gateway.
+- `backend/crates/` — reusable Rust engine crates.
+- `backend/research/` — Python research and reference models.
+- `backend/tests/` — backend tests.
 
-Backend implementation is maintained on the `backend` branch. Clients call the API contract; they do not implement trading decisions or connect directly to MongoDB. Axum owns strategy evaluation and persistence, and Drogon is the public gateway.
-
-## Requirements
-
-- Node.js 20+
-- pnpm 9.12.0
+Shared API contracts are in `contracts/`. Backend deployment and engineering documentation are in `backend/docs/`.
 
 ## Commands
-
-```sh
-pnpm install
-pnpm dev:web
-pnpm dev:mobile
-pnpm --filter @qoin/web build
-```
-
-Configure API URLs using the environment variables documented by the backend/API contract.
-
-## Branch policy
-
-- `frontend`: React web, React Native, shared frontend package, and API contracts.
-- `backend`: Axum, Drogon, vector engine, MongoDB integration, research and backend tests.
-- `main`: integration snapshot containing both sides; use pull requests to bring tested branch work together.
+Install the JavaScript workspace with pnpm. Run `pnpm dev:web`, `pnpm dev:mobile`, or `pnpm --filter @qoin/web build`.

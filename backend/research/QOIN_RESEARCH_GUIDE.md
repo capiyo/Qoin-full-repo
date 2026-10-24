@@ -1,0 +1,23 @@
+# Qoin quantitative research guide
+
+## Research objective
+Study whether short-horizon market-force vectors provide incremental predictive value after realistic trading costs. Current coefficients are hypotheses, not learned truths. Current market state should dominate the signal; past observations are used only for causal normalization, smoothing, and context.
+
+## Candidate forces
+- Order-flow imbalance (OFI) and trade aggressor flow.
+- Bid/ask depth and spread/liquidity stress.
+- Volatility and filtered return changes.
+- Funding pressure and open-interest changes.
+- Liquidation pressure and event intensity.
+- Basis and cross-venue divergence when reliable synchronized feeds exist.
+
+## Geometric baseline
+Represent each normalized force as a point/vector. Use angular alignment, magnitude, and stability gates; abstain when data quality or spread fails. Derivatives must be computed only after causal smoothing and robust filtering. Curvature/acceleration remains disabled until it demonstrates out-of-sample value. Use regularized pairwise interactions and a top-k/Pareto view for interpretation rather than allowing all noisy features to dominate.
+
+## Learning protocol
+Start a fresh adaptive episode at each new position. Partial fills belong to the same episode; closing completes it; a reversal must be a separate close and open lifecycle. Persist all feature observations, configuration versions, weights, decisions, fills, and outcomes. Completed-trade outcomes are offline calibration data only; do not let one trade update production weights immediately.
+
+## Evaluation protocol
+Use the same signal code in paper, backtest, and any future live path. Replay events chronologically; split by time with purge and embargo; include realistic fees, spread, slippage, funding, market impact, and +50% cost stress. Compare against no-trade, simple linear/logistic, and buy-and-hold baselines. Report expectancy, profit factor, Sharpe/Sortino, drawdown, time under water, trade counts, regime splits, and bootstrap confidence intervals. Track every tried configuration and apply multiple-testing/deflated-Sharpe corrections.
+
+No profitability claim is valid until this protocol has been executed on unseen chronological data.

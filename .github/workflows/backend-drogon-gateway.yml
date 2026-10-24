@@ -1,0 +1,27 @@
+name: Qoin Drogon gateway
+on:
+  push:
+    branches: [main, backend, feat/mongodb-edge-strategy-map]
+    paths:
+      - "backend/drogon/**"
+      - ".github/workflows/drogon-gateway.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/drogon/**"
+      - ".github/workflows/drogon-gateway.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Drogon and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
+      - name: Configure gateway
+        run: cmake -S backend/drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
+      - name: Build gateway
+        run: cmake --build build/drogon --parallel 2

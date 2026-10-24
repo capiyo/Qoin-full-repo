@@ -1,0 +1,68 @@
+openapi: 3.0.3
+info:
+  title: Qoin Market Flow API
+  version: 0.1.0
+  description: Research-only event/state/vector API. No order submission endpoint is registered.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /health:
+    get:
+      summary: Health of gateway and Axum/MongoDB connection
+      responses:
+        '200': { description: Healthy }
+        '503': { description: Dependency unavailable }
+  /api/v1/events:
+    post:
+      summary: Ingest one market event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarketEvent'
+      responses:
+        '200': { description: Event accepted or duplicate ignored }
+        '400': { description: Invalid event }
+        '503': { description: Persistence failure }
+  /api/v1/state:
+    get:
+      summary: Get latest state estimate for a symbol
+      parameters:
+        - in: query
+          name: symbol
+          schema: { type: string, default: BTCUSDT }
+      responses:
+        '200': { description: Latest state }
+        '503': { description: Storage unavailable }
+  /api/v1/vector:
+    get:
+      summary: Get latest geometric vector decision
+      parameters:
+        - in: query
+          name: symbol
+          schema: { type: string, default: BTCUSDT }
+      responses:
+        '200': { description: Latest decision or abstain response }
+        '503': { description: Storage unavailable }
+components:
+  schemas:
+    MarketEvent:
+      type: object
+      required: [event_id, venue, symbol, event_type, ts_ms]
+      properties:
+        event_id: { type: string, minLength: 1 }
+        venue: { type: string, minLength: 1 }
+        symbol: { type: string, minLength: 1 }
+        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
+        ts_ms: { type: integer, minimum: 1 }
+        price: { type: number, nullable: true, minimum: 0 }
+        size: { type: number, nullable: true, minimum: 0 }
+        side: { type: string, nullable: true, enum: [buy, sell, unknown] }
+        bid: { type: number, nullable: true, minimum: 0 }
+        ask: { type: number, nullable: true, minimum: 0 }
+        bid_size: { type: number, nullable: true, minimum: 0 }
+        ask_size: { type: number, nullable: true, minimum: 0 }
+        funding_rate: { type: number, nullable: true }
+        open_interest: { type: number, nullable: true, minimum: 0 }
+        liquidation_side: { type: string, nullable: true, enum: [long, short] }
