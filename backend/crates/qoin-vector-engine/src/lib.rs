@@ -357,13 +357,13 @@ mod tests {
     #[test]
     fn missing_spread_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0.0).unwrap();
         assert_eq!(d.action, "wait");
     }
     #[test]
     fn decayed_event_intensity_below_floor_abstains() {
         let s = EdgeStrategy::baseline();
-        let d = s.decide("BTCUSDT", 0.9, None, Some(1.0), 0.001, 0.05, 0.0, None).unwrap();
+        let d = s.decide("BTCUSDT", 0.9, None, Some(1.0), 0.001, 0.05, 0.0).unwrap();
         assert_eq!(d.action, "wait");
         assert!(d.reason.contains("recent-evidence"));
     }
