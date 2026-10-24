@@ -11,7 +11,7 @@
 - Axum ingestion rejects event timestamps that do not advance per symbol and uses a unique venue/symbol/event ID index for duplicate detection.
 - Flow, event intensity, and liquidation pressure use explicit exponential half-life decay; book imbalance is stored separately from trade-flow accounting.
 - Entry signals require fresh price/book state, eligible event types, and three consecutive same-direction candidate ticks.
-- Strategy entries fail closed unless calibrated expected-edge, fee, spread, and slippage inputs pass the cost gate.
+- Strategy entries fail closed unless calibrated expected-edge, fee, spread, and slippage inputs pass the cost gate and a fresh bull/bear/range regime classification meets a separately configured confidence threshold.
 - Axum and Drogon write endpoints require separate bearer tokens (`QOIN_INGEST_TOKEN` and `QOIN_ADMIN_TOKEN`); empty tokens deny writes.
 - The independent risk module fails closed without portfolio context. The current API does not yet provide reconciled portfolio context, so candidate entries are vetoed.
 
