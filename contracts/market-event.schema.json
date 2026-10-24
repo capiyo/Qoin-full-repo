@@ -114,6 +114,10 @@
       ],
       "minimum": 0
     },
+    "basis": {
+      "type": ["number", "null"],
+      "description": "Basis observation, stored separately and aged independently."
+    },
     "liquidation_side": {
       "type": [
         "string",
