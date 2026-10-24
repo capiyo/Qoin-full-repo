@@ -39,6 +39,14 @@ class ReplayTests(unittest.TestCase):
         stressed = run_replay(items, strategy, ReplayConfig(total_cost_stress_multiplier=1.5))
         self.assertLess(stressed.final_equity, normal.final_equity)
 
+    def test_volatile_period_uses_four_x_slippage_and_cost_stress(self):
+        items = [event(1000, 1, 100), event(2000, 2, 101)]
+        items = [ReplayEvent(**{**item.__dict__, "volatility": 0.02}) for item in items]
+        strategy = lambda item: "buy" if item.event_ts_ms == 1000 else "close"
+        normal = run_replay(items, strategy, ReplayConfig(volatile_slippage_multiplier=1.0, total_cost_stress_multiplier=1.0))
+        stressed = run_replay(items, strategy, ReplayConfig(volatile_slippage_multiplier=4.0, total_cost_stress_multiplier=1.5))
+        self.assertLess(stressed.final_equity, normal.final_equity)
+
     def test_partial_fill_and_funding(self):
         items = [event(1000, 1, 100, fill=0.5), event(2000, 1, 100, kind="funding", funding=0.01)]
         result = run_replay(items, lambda item: "buy")
