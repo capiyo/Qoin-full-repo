@@ -5,6 +5,8 @@
 //! statistics by the caller. All coefficients are explicit baseline parameters,
 //! not trained weights and not evidence of an edge.
 
+pub mod strategy;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
