@@ -416,8 +416,10 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
                 }
             }
         }
-    } else if let Ok(mut pending) = s.pending_signals.write() {
-        pending.remove(&event.symbol);
+    } else if matches!(event.event_type.as_str(), "trade" | "book") {
+        if let Ok(mut pending) = s.pending_signals.write() {
+            pending.remove(&event.symbol);
+        }
     }
 
     // No reconciled equity/stop/exposure context is wired into this service yet.
