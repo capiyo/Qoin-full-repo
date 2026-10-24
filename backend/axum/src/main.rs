@@ -423,11 +423,21 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
-        Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
-            Err(e)=>panic!("stored edge strategy map is invalid: {e}")},
+        Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){
+            Ok(mut value)=>{
+                if value.migrate_legacy_features() {
+                    value.validate().expect("migrated edge strategy map must validate");
+                    let migrated=mongodb::bson::to_document(&value).expect("serialize migrated strategy map");
+                    strategies.update_one(doc!{"strategy_key":STRATEGY_KEY},doc!{"$set":migrated},None).await.expect("persist strategy map migration");
+                }
+                value.validate().expect("stored edge strategy must validate");
+                value
+            },
+            Err(e)=>panic!("stored edge strategy map is invalid: {e}")
+        },
         None=>{
             let d=mongodb::bson::to_document(&baseline).expect("serialize baseline strategy map");
-            strategies.insert_one(d,None).await.expect("seed baseline edge strategy map");
+            strategies.insert_one(d,None).await.expect("seed baseline strategy map");
             baseline
         }
     };
