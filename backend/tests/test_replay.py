@@ -1,5 +1,5 @@
 import unittest
-from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, deflated_sharpe_ratio, run_replay, walk_forward_splits
+from research.replay import ReplayConfig, ReplayEvent, baseline_strategies, deflated_sharpe_ratio, run_replay, walk_forward_parameter_sensitivity, walk_forward_splits
 
 def event(ts, seq, price, age=0, regime=True, fill=1.0, kind="trade", funding=0.0, expected_edge=100.0):
     return ReplayEvent(ts, ts + age, "BTCUSDT", kind, price, price - 0.01, price + 0.01,
@@ -55,6 +55,19 @@ class ReplayTests(unittest.TestCase):
     def test_deflated_sharpe_needs_enough_returns(self):
         self.assertIsNone(deflated_sharpe_ratio([0.1, 0.2]))
         self.assertIsNotNone(deflated_sharpe_ratio([0.1, -0.02, 0.05, 0.04], trials=1))
+
+    def test_parameter_sensitivity_selects_on_train_and_reports_later_test(self):
+        events = [event(1000 + i * 1000, i + 1, 100 + i * 0.01) for i in range(40)]
+        report = walk_forward_parameter_sensitivity(
+            events,
+            [{"threshold": 0.8}, {"threshold": 1.0}],
+            lambda params: (lambda item: "buy" if item.ofi > params["threshold"] else "wait"),
+            train_size=10, test_size=5, purge=2, embargo=2,
+        )
+        self.assertTrue(report)
+        self.assertGreaterEqual(report[0]["test_start_index"] - report[0]["train_end_index_exclusive"], 4)
+        self.assertIn("selected_parameters", report[0])
+        self.assertIn("test_total_return", report[0])
 
     def test_walk_forward_gap(self):
         splits = walk_forward_splits(100, 30, 10, purge=3, embargo=2)
