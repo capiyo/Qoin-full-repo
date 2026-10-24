@@ -47,7 +47,7 @@ struct SymbolState {
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
-    last_sequence: Option<i64>,
+    last_sequence_by_venue: HashMap<String, i64>,
     last_decay_ts_ms: Option<i64>,
     last_book_ts_ms: Option<i64>,
     book_imbalance: Option<f64>,
@@ -232,7 +232,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     }
     state.event_count += 1;
     state.last_event_ts_ms = Some(event.ts_ms);
-    if event.sequence.is_some() { state.last_sequence = event.sequence; }
+    if let Some(sequence) = event.sequence { state.last_sequence_by_venue.insert(event.venue.clone(), sequence); }
     state.order_flow_imbalance = if state.total_trade_size > f64::EPSILON {
         (state.signed_flow / state.total_trade_size).clamp(-1.0, 1.0)
     } else { 0.0 };
@@ -309,7 +309,7 @@ async fn ingest(State(s): State<AppState>, headers: HeaderMap, Json(event): Json
                 Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state recovery lookup failed"}))),
             }
         };
-        if let Err(message) = validate_sequence(current.as_ref().and_then(|state| state.last_sequence), event.sequence) {
+        if let Err(message) = validate_sequence(current.as_ref().and_then(|state| state.last_sequence_by_venue.get(&event.venue).copied()), event.sequence) {
             return (StatusCode::CONFLICT, Json(serde_json::json!({"error":message})));
         }
         if let Some(previous) = current.as_ref().and_then(|state| state.last_event_ts_ms) {
