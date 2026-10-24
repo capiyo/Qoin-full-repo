@@ -302,7 +302,8 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         # Mark remaining positions at the last known market price only in the equity curve;
         # do not fabricate a closing fill at end-of-sample.
         _ = position
-    return ReplayResult(config.initial_equity, equity, trades, wins, losses, fees_paid,
+    unrealized_final = sum(p.quantity * (last_prices.get(p.symbol, p.entry_price) - p.entry_price) * p.side for p in positions.values())
+    return ReplayResult(config.initial_equity, equity + unrealized_final, trades, wins, losses, fees_paid,
                         spread_cost, slippage_cost, funding_pnl, rejected, stale,
                         sequence_rejections, risk_vetoes, equity_curve, trade_pnls)
 
