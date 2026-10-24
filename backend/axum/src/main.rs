@@ -179,9 +179,6 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     let price_fresh = state.last_price_ts_ms.map(|ts| event.ts_ms.saturating_sub(ts) <= 2_000).unwrap_or(false);
     state.state_quality = (if book_fresh { 0.5 } else { 0.0 }) + (if price_fresh { 0.5 } else { 0.0 });
 }
-ize).clamp(-1.0,1.0);}
-    state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
-}
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let ok=s.events.count_documents(doc!{},None).await.is_ok();
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
