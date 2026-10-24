@@ -333,9 +333,9 @@ pub struct EdgeDecision {
     pub research_only: bool,
 }
 
-pub const EDGE_FEATURE_NAMES: [&str; 6] = [
-    "order_flow_imbalance", "funding_pressure", "liquidity_stress",
-    "volatility_shock", "event_intensity", "liquidation_pressure",
+pub const EDGE_FEATURE_NAMES: [&str; 9] = [
+    "order_flow_imbalance", "book_imbalance", "funding_pressure", "liquidity_stress",
+    "volatility_shock", "event_intensity", "liquidation_pressure", "open_interest_change", "basis",
 ];
 
 fn default_min_persistence_ticks() -> usize { 3 }
@@ -357,15 +357,15 @@ pub struct DecisionContext {
 
 impl EdgeStrategy {
     pub fn baseline() -> Self {
-        let bullish = [0.70, -0.15, -0.10, -0.08, 0.0, 0.10];
-        let bearish = [-0.70, 0.15, -0.10, -0.08, 0.0, -0.10];
+        let bullish = [0.70, 0.25, -0.15, -0.10, -0.08, 0.0, 0.10, 0.12, -0.08];
+        let bearish = [-0.70, -0.25, 0.15, -0.10, -0.08, 0.0, -0.10, -0.12, 0.08];
         let mut bullish_weights = BTreeMap::new();
         let mut bearish_weights = BTreeMap::new();
         let mut feature_scales = BTreeMap::new();
         for (i, name) in EDGE_FEATURE_NAMES.iter().enumerate() {
             bullish_weights.insert((*name).to_owned(), bullish[i]);
             bearish_weights.insert((*name).to_owned(), bearish[i]);
-            feature_scales.insert((*name).to_owned(), [1.0, 100.0, 500.0, 0.01, 10.0, 10.0][i]);
+            feature_scales.insert((*name).to_owned(), [1.0, 1.0, 100.0, 500.0, 0.01, 10.0, 10.0, 0.01, 100.0][i]);
         }
         Self {
             strategy_key: STRATEGY_KEY.to_owned(),
@@ -443,16 +443,39 @@ impl EdgeStrategy {
         last_liquidation_side: Option<&str>,
         context: &DecisionContext,
     ) -> Result<EdgeDecision, String> {
+        self.decide_with_forces(symbol, order_flow_imbalance, 0.0, funding_rate, spread_bps,
+            ewma_abs_return, event_intensity, liquidation_events, last_liquidation_side,
+            0.0, None, context)
+    }
+
+    pub fn decide_with_forces(
+        &self,
+        symbol: &str,
+        order_flow_imbalance: f64,
+        book_imbalance: f64,
+        funding_rate: Option<f64>,
+        spread_bps: Option<f64>,
+        ewma_abs_return: f64,
+        event_intensity: f64,
+        liquidation_events: f64,
+        last_liquidation_side: Option<&str>,
+        open_interest_change: f64,
+        basis: Option<f64>,
+        context: &DecisionContext,
+    ) -> Result<EdgeDecision, String> {
         self.validate()?;
         let scale = |name: &str| *self.feature_scales.get(name).expect("validated scale");
         let raw = [
             order_flow_imbalance,
+            book_imbalance,
             funding_rate.unwrap_or(0.0) * scale("funding_pressure"),
             spread_bps.unwrap_or(self.max_spread_bps * 4.0) / scale("liquidity_stress"),
             ewma_abs_return / scale("volatility_shock"),
             event_intensity / scale("event_intensity"),
             (liquidation_events / scale("liquidation_pressure"))
                 * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+            open_interest_change / scale("open_interest_change"),
+            basis.unwrap_or(0.0) * scale("basis"),
         ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
         let features_vec: Vec<f64> = raw.iter().enumerate().map(|(i, v)| {
