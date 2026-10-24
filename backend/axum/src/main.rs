@@ -439,6 +439,15 @@ async fn ingest(State(s):State<AppState>, headers: HeaderMap, Json(event):Json<M
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
     let mut risk_context = risk::RiskContext::default();
+    // Market-derived risk inputs must reach the independent gate as well as the
+    // signal engine. Account/exchange-owned fields remain absent until a trusted
+    // account-state adapter supplies them, so the gate continues to fail closed.
+    risk_context.spread_bps = fresh_spread;
+    risk_context.estimated_slippage_bps = context.slippage_bps;
+    risk_context.feed_age_ms = context.state_age_ms
+        .filter(|age| *age >= 0)
+        .map(|age| age as u64);
+    risk_context.state_quality = context.state_quality;
     risk_context.sequence_gap = !snapshot.sequence_valid;
     risk_context.duplicate_or_out_of_order = false;
     risk_context.kill_switch = env::var("QOIN_GLOBAL_KILL_SWITCH").map(|v| v != "false" && v != "0").unwrap_or(true);
