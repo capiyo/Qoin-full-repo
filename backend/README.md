@@ -36,7 +36,7 @@ Set `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_UR
 
 ## Strategy persistence and safety
 
-Axum seeds a validated versioned baseline in MongoDB's `edge_strategy` collection if no active strategy exists. Strategy changes are validated and persisted before activation, and decisions carry the strategy version. Coefficients remain a research baseline—not proof of profitability. Live order submission is disconnected and trading remains disabled by default.
+Axum seeds a validated versioned baseline in MongoDB's `edge_strategy` collection if no active strategy exists. Legacy maps are migrated to the expanded nine-force schema. Entries require sequence continuity, fresh state/spread, persistence, explicit regime approval, and expected edge above the configured cost multiple. Missing gates fail closed. The independent risk gate also fails closed until all owner-approved limits and account/exchange context exist. The `live-execution` feature only compiles the adapter; no signal invokes it. Live order submission remains disconnected and disabled.
 
 ## Branch policy
 
