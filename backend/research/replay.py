@@ -203,6 +203,12 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
         if event.arrival_ts_ms < last_arrival_ms:
             raise ValueError("arrival events must be replayed chronologically")
         last_arrival_ms = event.arrival_ts_ms
+        day_key = event.event_ts_ms // 86_400_000
+        week_key = event.event_ts_ms // (7 * 86_400_000)
+        if current_day is None or day_key != current_day:
+            current_day, daily_start_equity = day_key, equity
+        if current_week is None or week_key != current_week:
+            current_week, weekly_start_equity = week_key, equity
         last_prices[event.symbol] = event.mid_price
         key = (event.symbol, event.event_type)
         previous_event_time = last_event_times.get(key)
@@ -244,12 +250,6 @@ def run_replay(events: Iterable[ReplayEvent], strategy: Strategy, config: Replay
                 close_position(event, position)
                 stop_closed = True
 
-        day_key = event.event_ts_ms // 86_400_000
-        week_key = event.event_ts_ms // (7 * 86_400_000)
-        if current_day is None or day_key != current_day:
-            current_day, daily_start_equity = day_key, equity
-        if current_week is None or week_key != current_week:
-            current_week, weekly_start_equity = week_key, equity
         peak_equity = max(peak_equity, equity)
         daily_loss = max(0.0, (daily_start_equity - equity) / daily_start_equity) if daily_start_equity > 0 else 1.0
         weekly_loss = max(0.0, (weekly_start_equity - equity) / weekly_start_equity) if weekly_start_equity > 0 else 1.0
