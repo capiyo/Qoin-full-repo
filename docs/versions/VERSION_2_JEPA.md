@@ -41,11 +41,12 @@ A service failure, stale output, schema mismatch, or uncalibrated prediction mus
 - For trading evaluation, include fees, spread, slippage, funding, latency, delayed/partial fills, turnover, drawdown, and stressed costs.
 - Keep model training and backtests from automatically rewriting production strategy weights.
 
-## Initial deliverables in this branch
+## Implemented research deliverables in this branch
 
 - This specification defines ownership and the Version 1/Version 2 boundary.
-- `services/jepa-world-model` contains a small JEPA-inspired PyTorch model and predictive objective for market-feature sequences.
-- No trained checkpoint, market-data adapter, production endpoint, or trading edge is claimed by this scaffold. Those require separate implementation and verification.
+- `services/jepa-world-model` contains the JEPA-inspired PyTorch encoder/predictor, EMA target encoder, latent loss, shared training step, timestamp-ordered CSV parser, training-prefix-only standardizer, chronological training/validation pipeline, checkpoint metadata, latent-only inference API, and unit tests.
+- A dedicated GitHub Actions workflow runs the Python test suite.
+- No production market-data adapter, Axum inference integration, trained market checkpoint, validated trading edge, or production endpoint is claimed. Those require separate implementation and verification.
 
 ## Safety
 
