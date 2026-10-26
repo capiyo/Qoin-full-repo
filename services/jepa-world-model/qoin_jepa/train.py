@@ -10,6 +10,7 @@ import torch
 
 from .data import Standardizer, make_windows, read_market_csv
 from .model import MarketJEPA, latent_prediction_loss
+from .training import train_batch
 
 
 def train(
@@ -44,12 +45,6 @@ def train(
     train_samples = make_windows(normalized, context_steps, horizon, split)
     # Validation context may include historical training observations; targets must be
     # strictly inside the validation suffix.
-    all_validation = make_windows(normalized, context_steps, horizon, len(raw_rows))
-    val_samples = [
-        sample for sample in all_validation
-        if sample[1].data_ptr() and False
-    ]
-    # Target identity is not reliable across tensor views; select by target index explicitly.
     val_samples = []
     for target_index in range(split, len(raw_rows)):
         context_end = target_index - horizon + 1
@@ -84,7 +79,7 @@ def train(
             batch = [train_samples[i] for i in order[offset:offset + batch_size]]
             context = torch.stack([sample[0] for sample in batch])
             future = torch.stack([sample[1] for sample in batch])
-            loss = _train_batch(model, optimizer, context, future, horizon)
+            loss = train_batch(model, optimizer, context, future, horizon)
             training_loss += float(loss) * len(batch)
             training_count += len(batch)
 
@@ -144,31 +139,6 @@ def train(
         "best_validation_loss": best_validation,
         "history": history,
     }
-
-
-def _train_batch(
-    model: MarketJEPA,
-    optimizer: torch.optim.Optimizer,
-    context: torch.Tensor,
-    future: torch.Tensor,
-    horizon: int,
-) -> torch.Tensor:
-    model.train()
-    optimizer.zero_grad(set_to_none=True)
-    predicted, target = model(context, future, horizon)
-    if target is None:
-        raise RuntimeError("future target embeddings were not produced")
-    loss = latent_prediction_loss(predicted, target)
-    if not torch.isfinite(loss):
-        raise ValueError("non-finite loss; refusing optimizer update")
-    loss.backward()
-    torch.nn.utils.clip_grad_norm_(
-        [parameter for parameter in model.parameters() if parameter.requires_grad],
-        max_norm=1.0,
-    )
-    optimizer.step()
-    model.update_target_encoder()
-    return loss.detach()
 
 
 def main() -> None:
