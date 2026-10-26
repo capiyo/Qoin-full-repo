@@ -20,8 +20,9 @@ class FeatureEncoder(nn.Module):
         super().__init__()
         if feature_dim <= 0 or latent_dim <= 0 or hidden_dim <= 0:
             raise ValueError("feature_dim, latent_dim, and hidden_dim must be positive")
+        # Inputs are normalized causally by the dataset scaler. Avoid per-row
+        # feature normalization here because it would erase cross-feature magnitude.
         self.network = nn.Sequential(
-            nn.LayerNorm(feature_dim),
             nn.Linear(feature_dim, hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, latent_dim),
