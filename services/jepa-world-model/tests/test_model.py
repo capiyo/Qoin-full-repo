@@ -91,7 +91,7 @@ def test_temporal_context_uses_more_than_the_last_observation() -> None:
     model.eval()
     first = torch.zeros(1, 5, 4)
     second = first.clone()
-    second[:, 0, :] = 1.0
+    second[:, 0, 0] = 1.0
     first[:, -1, :] = 0.5
     second[:, -1, :] = 0.5
 
