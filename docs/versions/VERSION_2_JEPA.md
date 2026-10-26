@@ -5,7 +5,7 @@
 
 ## Objective
 
-Retain all Version 1 services and explicit vector decision logic, and add a learned latent-state model that predicts how market conditions may evolve. The model is intended to learn nonlinear interactions among observable market dimensions that hand-designed weights may miss. It does not prove who caused a move, reveal all private information, or guarantee profitable forecasts.
+Retain all Version 1 services and explicit vector decision logic, and add a learned latent-state model with a feature encoder and temporal GRU that predicts how market conditions may evolve. The model is intended to learn nonlinear interactions among observable market dimensions that hand-designed weights may miss. It does not prove who caused a move, reveal all private information, or guarantee profitable forecasts.
 
 This is JEPA-inspired, not a direct port of Meta's video JEPA/V-JEPA weights. Meta's published models are trained on visual data; Qoin requires its own causal, market-specific dataset and training/evaluation.
 
