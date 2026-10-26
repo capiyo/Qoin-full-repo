@@ -36,7 +36,7 @@ def test_loopback_handler_health_and_prediction(tmp_path: Path) -> None:
             assert health["status"] == "research_only"
         request = Request(
             f"{base}/predict",
-            data=json.dumps({"rows": [[float(i), float(i % 3)] for i in range(4)]}).encode(),
+            data=json.dumps({"feature_names": ["flow", "spread"], "rows": [[float(i), float(i % 3)] for i in range(4)]}).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
