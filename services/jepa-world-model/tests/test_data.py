@@ -43,3 +43,29 @@ def test_windows_do_not_include_future_target_in_context() -> None:
     assert torch.equal(context, rows[:3])
     assert torch.equal(future, rows[4])
     assert all(int(target[0]) < int(rows[8, 0]) for _, target in samples)
+
+
+def test_csv_orders_timestamps_by_utc_not_string_value(tmp_path: Path) -> None:
+    path = tmp_path / "market.csv"
+    path.write_text(
+        "timestamp,flow\n"
+        "2026-01-01T00:30:00+01:00,1\n"
+        "2026-01-01T00:00:00Z,2\n"
+        "2026-01-01T00:01:00Z,3\n",
+        encoding="utf-8",
+    )
+    _, rows = read_market_csv(path)
+    assert len(rows) == 3
+
+
+def test_csv_rejects_timezone_naive_timestamp(tmp_path: Path) -> None:
+    path = tmp_path / "market.csv"
+    path.write_text(
+        "timestamp,flow\n"
+        "2026-01-01T00:00:00,1\n"
+        "2026-01-02T00:00:00,2\n"
+        "2026-01-03T00:00:00,3\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        read_market_csv(path)
