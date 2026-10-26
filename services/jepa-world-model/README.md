@@ -51,7 +51,7 @@ python -m qoin_jepa.serve --checkpoint artifacts/qoin-jepa.pt --host 127.0.0.1 -
 ```
 
 - `GET /health` reports model metadata.
-- `POST /predict` accepts JSON with `rows` (the most recent `context_steps` feature rows in checkpoint feature order) and optional integer `horizon`.
+- `POST /predict` accepts JSON with `feature_names` (must exactly match the checkpoint feature order), `rows` (the most recent `context_steps` feature rows), and optional integer `horizon`.
 - The endpoint binds only to loopback, caps request bodies, rejects invalid input, and returns a latent representation only. It is not authenticated for public access, is not connected to Axum, and must not be exposed outside the local machine.
 - No decision or order endpoint exists. Axum remains the only authority for decisions and risk gates.
 
