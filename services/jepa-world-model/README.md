@@ -42,6 +42,19 @@ The scaler is fit only on the chronological training prefix. The checkpoint reco
 
 A lower latent loss is not proof of predictive utility or trading edge. Evaluate against persistence and Version 1 on untouched chronological periods with costs, regime slices, calibration, and realistic execution assumptions. Do not commit real market data if it contains credentials or private account information.
 
+## Loopback-only inference
+
+After training a checkpoint, start the local research endpoint:
+
+```sh
+python -m qoin_jepa.serve --checkpoint artifacts/qoin-jepa.pt --host 127.0.0.1 --port 8765
+```
+
+- `GET /health` reports model metadata.
+- `POST /predict` accepts JSON with `rows` (the most recent `context_steps` feature rows in checkpoint feature order) and optional integer `horizon`.
+- The endpoint binds only to loopback, caps request bodies, rejects invalid input, and returns a latent representation only. It is not authenticated for public access, is not connected to Axum, and must not be exposed outside the local machine.
+- No decision or order endpoint exists. Axum remains the only authority for decisions and risk gates.
+
 ## Integration boundary
 
 Axum remains authoritative for state, vector decisions, risk checks, and persistence. Do not let this service place orders or directly activate strategy-map changes. Until an authenticated, versioned inference contract and failure policy are implemented and tested, the service is not connected to the trading path.
