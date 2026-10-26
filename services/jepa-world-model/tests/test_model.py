@@ -84,3 +84,19 @@ def test_training_rejects_non_finite_input() -> None:
 
     with pytest.raises(ValueError):
         train_batch(model, optimizer, context, torch.randn(2, 3), horizon=1)
+
+
+def test_temporal_context_uses_more_than_the_last_observation() -> None:
+    model = MarketJEPA(feature_dim=4, latent_dim=8, hidden_dim=16, max_horizon=3)
+    model.eval()
+    first = torch.zeros(1, 5, 4)
+    second = first.clone()
+    second[:, 0, :] = 1.0
+    first[:, -1, :] = 0.5
+    second[:, -1, :] = 0.5
+
+    with torch.no_grad():
+        first_prediction, _ = model(first, horizon=1)
+        second_prediction, _ = model(second, horizon=1)
+
+    assert not torch.allclose(first_prediction, second_prediction)
