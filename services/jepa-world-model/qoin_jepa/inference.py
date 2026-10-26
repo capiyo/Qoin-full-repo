@@ -21,7 +21,6 @@ class MarketJEPAInference:
         config = checkpoint["model_config"]
         self.feature_names = tuple(config["feature_names"])
         self.context_steps = int(config["context_steps"])
-        self.horizon = int(config["max_horizon"])
         self.normalizer = Standardizer(
             tuple(float(x) for x in checkpoint["normalizer"]["means"]),
             tuple(float(x) for x in checkpoint["normalizer"]["scales"]),
@@ -49,6 +48,8 @@ class MarketJEPAInference:
         Input rows must follow checkpoint.feature_names order and represent only
         observations available at prediction time. No trading signal is returned.
         """
+        if isinstance(horizon, bool) or not isinstance(horizon, int):
+            raise ValueError("horizon must be an integer")
         if len(rows) != self.context_steps:
             raise ValueError(f"expected exactly {self.context_steps} context rows")
         normalized_rows = []
