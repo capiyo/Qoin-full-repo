@@ -178,7 +178,7 @@ impl JepaClient {
             .json()
             .await
             .map_err(|error| format!("JEPA response schema invalid: {error}"))?;
-        if prediction.feature_names.iter().map(String::as_str).collect::<Vec<_>>() != FEATURE_NAMES
+        if prediction.feature_names.iter().map(String::as_str).collect::<Vec<_>>() != FEATURE_NAMES.to_vec()
             || prediction.predicted_latent_state.is_empty()
             || prediction.predicted_latent_state.iter().any(|value| !value.is_finite())
         {
