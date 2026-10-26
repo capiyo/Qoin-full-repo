@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qoin-jepa-world-model"
+version = "0.1.0"
+description = "Research-only JEPA-inspired latent market-state predictor for Qoin Version 2"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.2",
+]
+
+[project.scripts]
+qoin-jepa-train = "qoin_jepa.train:main"
+qoin-jepa-serve = "qoin_jepa.serve:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qoin_jepa*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
