@@ -53,7 +53,7 @@ python -m qoin_jepa.serve --checkpoint artifacts/qoin-jepa.pt --host 127.0.0.1 -
 
 - `GET /health` reports model metadata.
 - `POST /predict` accepts JSON with `feature_names` (must exactly match the checkpoint feature order), `rows` (the most recent `context_steps` feature rows), and optional integer `horizon`.
-- The endpoint binds only to loopback, caps request bodies, rejects invalid input, and returns a latent representation only. It is not authenticated for public access, is not connected to Axum, and must not be exposed outside the local machine.
+- The endpoint binds only to loopback, caps request bodies, rejects invalid input, and returns a latent representation only. It is not authenticated for public access and must not be exposed outside the local machine. Axum's optional client uses it only for asynchronous research telemetry.
 - No decision or order endpoint exists. Axum remains the only authority for decisions and risk gates.
 
 ## Optional Axum research telemetry
@@ -70,4 +70,4 @@ Train the checkpoint with the exact feature columns above, in that order. The Ru
 
 ## Integration boundary
 
-Axum remains authoritative for state, vector decisions, risk checks, and persistence. Do not let this service place orders or directly activate strategy-map changes. Until an authenticated, versioned inference contract and failure policy are implemented and tested, the service is not connected to the trading path.
+Axum remains authoritative for state, vector decisions, risk checks, and persistence. Do not let this service place orders or directly activate strategy-map changes. The versioned feature contract and fail-soft Axum telemetry integration are implemented, but the sidecar is deliberately not connected to the trading decision path. No latent output can change BUY/SELL/WAIT decisions.
