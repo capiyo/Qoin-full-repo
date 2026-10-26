@@ -1,7 +1,7 @@
 """Leakage-agnostic training primitive for the JEPA research model.
 
-The caller is responsible for constructing chronological, non-overlapping
-context/future examples and fitting all scaling on past/training data only.
+The caller is responsible for constructing chronological context/future examples
+without future leakage and fitting all scaling on past/training data only.
 """
 
 from __future__ import annotations
