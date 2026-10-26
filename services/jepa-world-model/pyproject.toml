@@ -11,6 +11,10 @@ dependencies = [
   "torch>=2.2",
 ]
 
+[project.scripts]
+qoin-jepa-train = "qoin_jepa.train:main"
+qoin-jepa-serve = "qoin_jepa.serve:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
