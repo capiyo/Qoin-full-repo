@@ -15,7 +15,7 @@ This is a compact **JEPA-inspired market model**, not Meta's V-JEPA implementati
 
 ## Local research setup
 
-Python 3.11+ is recommended.
+Python 3.11+ is recommended. Install from this directory:
 
 ```sh
 python -m venv .venv
@@ -24,7 +24,23 @@ python -m pip install -e '.[dev]'
 python -m pytest
 ```
 
-Use chronological data windows, past-only normalization, and leakage-safe validation. The model cannot be evaluated meaningfully on synthetic examples alone. Do not commit data containing secrets or exchange credentials.
+## Train a research checkpoint
+
+Prepare a CSV with a strictly increasing ISO-8601 timestamp column first, followed by finite numeric feature columns. Example header:
+
+```csv
+timestamp,order_flow_imbalance,spread_bps,realized_volatility,funding_rate,open_interest_change,liquidation_pressure,basis_bps
+```
+
+Rows must be deduplicated, time-aligned, and limited to observations actually available at each timestamp. Then run:
+
+```sh
+python -m qoin_jepa.train --csv /path/to/causal-market-features.csv --output artifacts/qoin-jepa.pt --context-steps 32 --horizon 1 --epochs 10
+```
+
+The scaler is fit only on the chronological training prefix. The checkpoint records feature names, scaler values, split cutoff, training history, and model configuration. The validation suffix is not used to fit normalization. Training windows may be shuffled within the training partition; the chronological partition itself is never shuffled.
+
+A lower latent loss is not proof of predictive utility or trading edge. Evaluate against persistence and Version 1 on untouched chronological periods with costs, regime slices, calibration, and realistic execution assumptions. Do not commit real market data if it contains credentials or private account information.
 
 ## Integration boundary
 
