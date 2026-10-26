@@ -2,6 +2,13 @@
 
 A multi-client workspace for researching a present-centered crypto market-force algorithm. React web and React Native share API contracts. **Axum (Rust) is the authoritative ingestion, state, strategy-map, and vector-decision engine; Drogon (C++) is the HTTP gateway; MongoDB is the durable source of truth.** The current strategy is a research baseline, not a validated or proven profitable edge.
 
+## Versioned architecture tracks
+
+- **[Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)** — Preserves the existing repository architecture without JEPA additions.
+- **[Version 2 — JEPA world model](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)** — Retains the existing architecture and adds a research-only JEPA-inspired latent market-state predictor.
+
+Version 2 does not replace the Version 1 decision engine. Axum remains authoritative for decisions and risk; JEPA predictions are research evidence only. Both versions remain paper-only until every risk-policy gate is satisfied and live trading is explicitly approved in writing.
+
 
 ## Branch layout
 
