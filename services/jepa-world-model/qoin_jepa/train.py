@@ -121,6 +121,7 @@ def train(
         },
         "normalizer": {"means": scaler.means, "scales": scaler.scales},
         "training_metadata": {
+            "model_version": "qoin-jepa-latent-v1",
             "csv_path_name": Path(csv_path).name,
             "row_count": len(raw_rows),
             "train_cutoff_index": split,
