@@ -85,6 +85,8 @@ class MarketJEPA(nn.Module):
         if not 0.0 < ema_decay < 1.0:
             raise ValueError("ema_decay must be strictly between 0 and 1")
         self.encoder = FeatureEncoder(feature_dim, latent_dim, hidden_dim)
+        # Preserve temporal order and learn how recent latent states evolve.
+        self.temporal_encoder = nn.GRU(latent_dim, latent_dim, batch_first=True)
         self.target_encoder = copy.deepcopy(self.encoder)
         for parameter in self.target_encoder.parameters():
             parameter.requires_grad_(False)
@@ -99,7 +101,8 @@ class MarketJEPA(nn.Module):
         if context.shape[1] == 0:
             raise ValueError("context must contain at least one timestep")
         context_latents = self.encoder(context)
-        predicted = self.predictor(context_latents[:, -1, :], horizon)
+        temporal_latents, _ = self.temporal_encoder(context_latents)
+        predicted = self.predictor(temporal_latents[:, -1, :], horizon)
         if future is None:
             return predicted, None
         if future.ndim != 2 or future.shape[0] != context.shape[0]:
