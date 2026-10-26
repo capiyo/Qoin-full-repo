@@ -48,3 +48,40 @@ def test_target_encoder_is_updated_by_ema() -> None:
 
     assert any(not torch.equal(old, new) for old, new in zip(before, after, strict=True))
     assert all(not p.requires_grad for p in model.target_encoder.parameters())
+
+
+def test_training_step_updates_model_and_returns_finite_loss() -> None:
+    from qoin_jepa import train_batch
+
+    model = MarketJEPA(feature_dim=5, latent_dim=8, hidden_dim=16, max_horizon=3)
+    optimizer = torch.optim.Adam(model.encoder.parameters(), lr=1e-3)
+    # Predictor parameters also need training, so include all trainable parameters.
+    optimizer = torch.optim.Adam(
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
+        lr=1e-3,
+    )
+    loss = train_batch(
+        model,
+        optimizer,
+        torch.randn(4, 6, 5),
+        torch.randn(4, 5),
+        horizon=2,
+    )
+
+    assert loss.ndim == 0
+    assert torch.isfinite(loss)
+
+
+def test_training_rejects_non_finite_input() -> None:
+    from qoin_jepa import train_batch
+
+    model = MarketJEPA(feature_dim=3, latent_dim=4, hidden_dim=8)
+    optimizer = torch.optim.Adam(
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
+        lr=1e-3,
+    )
+    context = torch.randn(2, 4, 3)
+    context[0, 0, 0] = float("nan")
+
+    with pytest.raises(ValueError):
+        train_batch(model, optimizer, context, torch.randn(2, 3), horizon=1)
