@@ -226,6 +226,17 @@ mod tests {
     }
 
     #[test]
+    fn state_feature_vector_explicitly_marks_missing_values() {
+        let state = crate::SymbolState::default();
+        let row = features_from_state(&state);
+        assert_eq!(row.len(), FEATURE_NAMES.len());
+        assert_eq!(row[2], 1.0, "missing spread has a dedicated mask");
+        assert_eq!(row[5], 1.0, "missing funding has a dedicated mask");
+        assert_eq!(row[7], 1.0, "missing open interest has a dedicated mask");
+        assert!(row.iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
     fn client_rejects_non_loopback_service_urls() {
         assert!(JepaClient::new("http://example.com:8765", 32, 1000).is_err());
         assert!(JepaClient::new("https://127.0.0.1:8765", 32, 1000).is_err());
