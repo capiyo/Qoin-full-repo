@@ -15,8 +15,10 @@ use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tower_http::trace::TraceLayer;
 
 mod edge_strategy;
+mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +63,9 @@ struct AppState {
     states: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
+    jepa_predictions: Collection<Document>,
+    jepa_client: Option<JepaClient>,
+    jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
 }
@@ -122,7 +127,9 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
     (if ok {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
-       "mongodb":ok,"strategy_version":strategy_version,"live_order_submission":"not wired"})))
+       "mongodb":ok,"strategy_version":strategy_version,
+       "jepa_research_inference":if s.jepa_client.is_some(){"enabled"}else{"disabled"},
+       "live_order_submission":"not wired"})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
@@ -141,6 +148,55 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"state snapshot persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
+    // Optional JEPA sidecar is observational only. Failure or lag never blocks or
+    // changes the existing Version 1 vector decision.
+    let jepa_window = if let Some(client) = s.jepa_client.as_ref() {
+        match s.jepa_history.write() {
+            Ok(mut histories) => histories.entry(snapshot.symbol.clone()).or_default()
+                .push_if_due(event.ts_ms, jepa::features_from_state(&snapshot),
+                    client.context_steps(), client.min_interval_ms()),
+            Err(_) => {
+                tracing::warn!("JEPA history lock poisoned; skipping research prediction");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if let (Some(client), Some(rows)) = (s.jepa_client.clone(), jepa_window) {
+        let predictions = s.jepa_predictions.clone();
+        let symbol = snapshot.symbol.clone();
+        let event_ts_ms = event.ts_ms;
+        tokio::spawn(async move {
+            match client.predict(&rows).await {
+                Ok(prediction) => {
+                    let record = JepaPredictionRecord {
+                        symbol: symbol.clone(),
+                        event_ts_ms,
+                        predicted_at_ms: chrono::Utc::now().timestamp_millis(),
+                        model_version: prediction.model_version,
+                        horizon_steps: prediction.horizon_steps,
+                        feature_names: prediction.feature_names,
+                        predicted_latent_state: prediction.predicted_latent_state,
+                        note: prediction.note,
+                    };
+                    match mongodb::bson::to_document(&record) {
+                        Ok(document) => {
+                            if let Err(error) = predictions.insert_one(document, None).await {
+                                tracing::warn!(symbol=%symbol, error=%error,
+                                    "could not persist JEPA research prediction");
+                            }
+                        }
+                        Err(error) => tracing::warn!(symbol=%symbol, error=%error,
+                            "could not serialize JEPA research prediction"),
+                    }
+                }
+                Err(error) => tracing::warn!(symbol=%symbol, error=%error,
+                    "JEPA research prediction unavailable; vector decision unchanged"),
+            }
+        });
+    }
+
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     let decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
@@ -171,6 +227,30 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
+async fn get_jepa_prediction(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    if s.jepa_client.is_none() {
+        return (StatusCode::OK,Json(serde_json::json!({
+            "symbol":symbol,"status":"disabled","decision":null,
+            "note":"Set QOIN_JEPA_URL to enable optional loopback research inference."
+        })));
+    }
+    match s.jepa_predictions.find_one(doc!{"symbol":&symbol},
+        FindOneOptions::builder().sort(doc!{"event_ts_ms":-1}).build()).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            (StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(document)
+                .unwrap_or_default()))
+        }
+        Ok(None) => (StatusCode::OK,Json(serde_json::json!({
+            "symbol":symbol,"status":"warming_up","decision":null,
+            "note":"Waiting for a complete causal context window and successful model inference."
+        }))),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+            "error":"JEPA research prediction storage unavailable"
+        })))
+    }
+}
 async fn get_strategy(State(s):State<AppState>)->impl IntoResponse{
     match s.active_strategy.read(){Ok(v)=>(StatusCode::OK,Json(serde_json::to_value(&*v).unwrap_or_default())),
         Err(_)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))}
@@ -199,12 +279,16 @@ async fn main(){
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
+    let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
+    jepa_predictions.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"symbol":1,"event_ts_ms":-1}).build(),None).await
+        .expect("JEPA prediction lookup index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
         Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
@@ -216,9 +300,36 @@ async fn main(){
         }
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
-    let state=AppState{events,states,decisions,strategies,memory:Arc::new(RwLock::new(HashMap::new())),active_strategy:Arc::new(RwLock::new(active))};
+    let jepa_client = match env::var("QOIN_JEPA_URL") {
+        Ok(url) => {
+            let context_steps = env::var("QOIN_JEPA_CONTEXT_STEPS").ok()
+                .and_then(|value| value.parse::<usize>().ok()).unwrap_or(32);
+            let min_interval_ms = env::var("QOIN_JEPA_MIN_INTERVAL_MS").ok()
+                .and_then(|value| value.parse::<i64>().ok()).unwrap_or(1000);
+            match JepaClient::new(&url, context_steps, min_interval_ms) {
+                Ok(client) => {
+                    tracing::info!(context_steps=client.context_steps(),
+                        min_interval_ms=client.min_interval_ms(),
+                        "optional JEPA research sidecar configured; predictions will not affect vector decisions");
+                    Some(client)
+                }
+                Err(error) => {
+                    tracing::warn!(error=%error,"invalid JEPA sidecar configuration; leaving JEPA disabled");
+                    None
+                }
+            }
+        }
+        Err(_) => None,
+    };
+    let state=AppState{
+        events,states,decisions,strategies,jepa_predictions,jepa_client,
+        jepa_history:Arc::new(RwLock::new(HashMap::new())),
+        memory:Arc::new(RwLock::new(HashMap::new())),
+        active_strategy:Arc::new(RwLock::new(active))
+    };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());

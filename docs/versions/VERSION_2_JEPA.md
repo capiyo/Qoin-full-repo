@@ -46,7 +46,8 @@ A service failure, stale output, schema mismatch, or uncalibrated prediction mus
 - This specification defines ownership and the Version 1/Version 2 boundary.
 - `services/jepa-world-model` contains the JEPA-inspired PyTorch encoder/predictor, EMA target encoder, latent loss, shared training step, timestamp-ordered CSV parser, training-prefix-only standardizer, chronological training/validation pipeline, checkpoint metadata, latent-only inference API, and unit tests.
 - A dedicated GitHub Actions workflow runs the Python test suite.
-- No production market-data adapter, Axum inference integration, trained market checkpoint, validated trading edge, or production endpoint is claimed. Those require separate implementation and verification.
+- Axum now has an optional loopback-only client for asynchronous research inference, bounded per-symbol context windows, MongoDB prediction persistence, and an internal read endpoint. It does not use the latent output to change the Version 1 decision.
+- No trained real-market checkpoint, validated trading edge, or production-ready financial forecast is claimed. A matching, causally constructed dataset and out-of-sample evaluation are still required.
 
 ## Safety
 
