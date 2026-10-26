@@ -30,7 +30,7 @@ python -m pytest
 Prepare a CSV with a strictly increasing ISO-8601 timestamp column first, followed by finite numeric feature columns. Example header:
 
 ```csv
-timestamp,order_flow_imbalance,spread_bps,realized_volatility,funding_rate,open_interest_change,liquidation_pressure,basis_bps
+timestamp,order_flow_imbalance,spread_bps_value,spread_bps_missing,ewma_abs_return,funding_rate_value,funding_rate_missing,open_interest_value,open_interest_missing,event_intensity,liquidation_events,state_quality
 ```
 
 Rows must be deduplicated, time-aligned, and limited to observations actually available at each timestamp. Then run:
@@ -55,6 +55,18 @@ python -m qoin_jepa.serve --checkpoint artifacts/qoin-jepa.pt --host 127.0.0.1 -
 - `POST /predict` accepts JSON with `feature_names` (must exactly match the checkpoint feature order), `rows` (the most recent `context_steps` feature rows), and optional integer `horizon`.
 - The endpoint binds only to loopback, caps request bodies, rejects invalid input, and returns a latent representation only. It is not authenticated for public access, is not connected to Axum, and must not be exposed outside the local machine.
 - No decision or order endpoint exists. Axum remains the only authority for decisions and risk gates.
+
+## Optional Axum research telemetry
+
+The Rust engine can call this service only when configured with a loopback URL. Set:
+
+```sh
+QOIN_JEPA_URL=http://127.0.0.1:8765
+QOIN_JEPA_CONTEXT_STEPS=32
+QOIN_JEPA_MIN_INTERVAL_MS=1000
+```
+
+Train the checkpoint with the exact feature columns above, in that order. The Rust engine keeps a bounded, per-symbol context, emits a prediction request at most once per configured interval, and stores successful results in MongoDB's `jepa_predictions` collection. Query the latest stored observation through the internal `GET /internal/jepa?symbol=BTCUSDT` route. The sidecar call is asynchronous; failures are logged and do not block ingestion or alter Version 1 decisions. This is research telemetry, not a trading signal.
 
 ## Integration boundary
 
