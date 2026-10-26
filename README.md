@@ -5,7 +5,7 @@ A multi-client workspace for researching a present-centered crypto market-force 
 ## Versioned architecture tracks
 
 - **[Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)** — preserves the existing architecture as the comparison baseline.
-- **[Version 2 — JEPA world model](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)** — retains Version 1 and adds a research-only JEPA-inspired latent-state predictor.
+- **[Version 2 — JEPA world model](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)** — retains Version 1 and adds a research-only JEPA-inspired latent-state predictor plus optional loopback-only Axum telemetry.
 - **[Version map](https://github.com/capiyo/Qoin-full-repo/blob/main/docs/versions/README.md)** — architecture boundaries and evaluation rules.
 
 Version 2 predictions do not replace Axum's decision authority or bypass risk controls. Both versions remain paper-only until all risk-policy gates are independently verified and live trading is explicitly approved in writing.
