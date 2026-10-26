@@ -61,6 +61,8 @@ def make_handler(predictor: MarketJEPAInference) -> type[BaseHTTPRequestHandler]
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
                     raise ValueError("body must be an object containing rows")
+                if payload.get("feature_names") != list(predictor.feature_names):
+                    raise ValueError("feature_names must exactly match checkpoint feature order")
                 horizon = payload.get("horizon", 1)
                 if isinstance(horizon, bool) or not isinstance(horizon, int):
                     raise ValueError("horizon must be an integer")
