@@ -54,8 +54,7 @@ def test_training_step_updates_model_and_returns_finite_loss() -> None:
     from qoin_jepa import train_batch
 
     model = MarketJEPA(feature_dim=5, latent_dim=8, hidden_dim=16, max_horizon=3)
-    optimizer = torch.optim.Adam(model.encoder.parameters(), lr=1e-3)
-    # Predictor parameters also need training, so include all trainable parameters.
+    # Train the online encoder and predictor; the target encoder is EMA-only.
     optimizer = torch.optim.Adam(
         [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=1e-3,
