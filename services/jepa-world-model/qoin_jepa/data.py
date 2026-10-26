@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import math
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,25 +53,33 @@ def read_market_csv(path: str | Path) -> tuple[list[str], list[tuple[float, ...]
         fields = reader.fieldnames or []
         if len(fields) < 2 or fields[0].lower() != "timestamp":
             raise ValueError("CSV must start with timestamp and include numeric feature columns")
+        if len(set(fields)) != len(fields):
+            raise ValueError("CSV column names must be unique")
         feature_names = fields[1:]
-        timestamps: list[str] = []
+        timestamps: list[datetime] = []
         rows: list[tuple[float, ...]] = []
         for line_number, record in enumerate(reader, start=2):
             timestamp = (record.get(fields[0]) or "").strip()
             if not timestamp:
                 raise ValueError(f"missing timestamp at CSV line {line_number}")
             try:
+                parsed_timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                if parsed_timestamp.tzinfo is None or parsed_timestamp.utcoffset() is None:
+                    raise ValueError("timestamp must include a timezone")
+                timestamps.append(parsed_timestamp.astimezone(timezone.utc))
+            except ValueError as exc:
+                raise ValueError(f"invalid timezone-aware ISO-8601 timestamp at CSV line {line_number}") from exc
+            try:
                 row = tuple(float(record[name]) for name in feature_names)
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"invalid numeric feature at CSV line {line_number}") from exc
             if not all(math.isfinite(value) for value in row):
                 raise ValueError(f"non-finite feature at CSV line {line_number}")
-            timestamps.append(timestamp)
             rows.append(row)
     if len(rows) < 3:
         raise ValueError("at least three observations are required")
     if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
-        raise ValueError("timestamps must be strictly increasing; sort/deduplicate upstream")
+        raise ValueError("timestamps must be strictly increasing in UTC; sort/deduplicate upstream")
     return feature_names, rows
 
 
