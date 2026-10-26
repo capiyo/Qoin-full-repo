@@ -7,8 +7,9 @@ This is a compact **JEPA-inspired market model**, not Meta's V-JEPA implementati
 ## Model contract
 
 - Input: `context` shaped `[batch, time, feature_dim]`, built from timestamped observations available at prediction time.
-- Context encoder: maps each feature vector to latent embeddings.
-- Predictor: predicts future latent embeddings from context and a learned horizon embedding.
+- Feature encoder: maps each causally normalized feature vector to a latent embedding without erasing per-row magnitude.
+- Temporal GRU encoder: models ordered evolution across the context sequence.
+- Predictor: predicts future latent embeddings from the temporal context state and a learned horizon embedding.
 - Target encoder: supplies future-state embeddings during training; its parameters are updated with an exponential moving average and its outputs are detached from gradient updates.
 - Objective: latent prediction loss only; no raw-price reconstruction and no BUY/SELL output.
 - Output: predicted future latent state. A downstream, separately validated head or decision layer is required before it can influence any market decision.
