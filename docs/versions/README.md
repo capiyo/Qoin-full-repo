@@ -1,16 +1,23 @@
-# Qoin architecture versions
+# Qoin version map
 
-Qoin maintains two independently reviewable architecture tracks:
+Qoin has two explicitly separated architecture tracks:
 
-- **Version 1 — Vector baseline:** `version-1-vector-baseline`. The existing architecture, preserved as the reference baseline.
-- **Version 2 — JEPA world model:** `version-2-jepa-world-model`. Version 1's frontend, Drogon gateway, Axum decision authority, vector engine, MongoDB persistence, and risk boundaries remain in place. Version 2 adds a JEPA-inspired learned latent-state prediction service.
+## Version 1 — Vector baseline
 
-These are Git branches, not a destructive in-place rewrite. Version 2 predictions are additional evidence, never direct orders and never a bypass around the Version 1 decision/risk path.
+Branch: [`version-1-vector-baseline`](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)
 
-## Promotion rule
+The existing architecture preserved as the baseline: frontend clients, Drogon gateway, Axum-authoritative state/vector decisions, MongoDB persistence, and current research/risk boundaries. See [Version 1 specification](https://github.com/capiyo/Qoin-full-repo/blob/version-1-vector-baseline/docs/versions/VERSION_1.md).
 
-Version 2 must show reproducible, out-of-sample incremental value over Version 1 after fees, spread, slippage, funding, latency, and realistic fill assumptions. Training loss alone is not evidence of trading edge. Both tracks remain research/paper-only; live trading requires every gate in `docs/RISK_POLICY.md` plus explicit written user approval.
+## Version 2 — JEPA world model
 
-## Reference material
+Branch: [`version-2-jepa-world-model`](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)
 
-The JEPA design is inspired by latent-state prediction in Meta's JEPA/V-JEPA research, but Qoin's market-feature model is a separate research implementation—not a port of Meta's video model and not a pretrained financial model.
+Retains the Version 1 architecture and adds a separate JEPA-inspired PyTorch encoder/predictor for market-state latent prediction. It does not replace Axum, produce direct orders, or claim a validated trading edge. See the [Version 2 architecture specification](https://github.com/capiyo/Qoin-full-repo/blob/version-2-jepa-world-model/docs/versions/VERSION_2_JEPA.md) and [model scaffold](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model/services/jepa-world-model).
+
+## How to compare
+
+Use the same timestamped events, chronological splits, feature availability, risk budgets, and realistic execution costs. Compare Version 2 with Version 1 out of sample; do not promote based on training loss alone.
+
+## Safety
+
+Both versions remain research/paper-only. The existing `docs/RISK_POLICY.md` remains binding. Live trading requires every gate to be implemented and independently verified plus explicit written user approval.
