@@ -3,12 +3,12 @@ on:
   push:
     branches: [main, feat/mongodb-edge-strategy-map]
     paths:
-      - "services/drogon/**"
+      - "backend/cpp-drogon/**"
       - ".github/workflows/drogon-gateway.yml"
   pull_request:
     branches: [main]
     paths:
-      - "services/drogon/**"
+      - "backend/cpp-drogon/**"
       - ".github/workflows/drogon-gateway.yml"
   workflow_dispatch:
 
@@ -22,6 +22,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Configure gateway
-        run: cmake -S services/drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
       - name: Build gateway
         run: cmake --build build/drogon --parallel 2

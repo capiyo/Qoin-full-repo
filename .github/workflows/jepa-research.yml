@@ -3,13 +3,13 @@ name: Qoin JEPA research tests
 on:
   pull_request:
     paths:
-      - "services/jepa-world-model/**"
+      - "backend/jepa-world-model/**"
       - ".github/workflows/jepa-research.yml"
   push:
     branches:
       - version-2-jepa-world-model
     paths:
-      - "services/jepa-world-model/**"
+      - "backend/jepa-world-model/**"
       - ".github/workflows/jepa-research.yml"
 
 permissions:
@@ -20,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/jepa-world-model
+        working-directory: backend/jepa-world-model
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: services/jepa-world-model/pyproject.toml
+          cache-dependency-path: backend/jepa-world-model/pyproject.toml
       - name: Install package and test dependencies
         run: python -m pip install -e ".[dev]"
       - name: Run unit and pipeline tests
