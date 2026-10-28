@@ -455,7 +455,7 @@ mod tests {
     fn sell_angle_boundary_matches_alignment_boundary() {
         let mut config = EngineConfig::default();
         config.min_alignment = 0.15;
-        config.max_angle_radians = std::f64::consts::PI - config.min_alignment.acos();
+        config.max_angle_radians = config.min_alignment.acos();
         let input = ForceObservation {
             ofi: -2.0, liquidity: -1.0, volatility: 0.0, funding: 0.0,
             open_interest_change: -1.0, liquidation_pressure: 0.0, basis: 0.0,
