@@ -12,7 +12,6 @@ use tower_http::cors::CorsLayer;
 #[derive(Clone)]
 struct AppState {
     config: EngineConfig,
-    config_version: String,
 }
 
 #[derive(Serialize)]
@@ -34,8 +33,7 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // Every runtime parameter is explicit and tied to a config version.
-    // Invalid values fail startup rather than silently changing model behavior.
+    // Runtime parameters are explicit; invalid values fail startup.
     let mut config = EngineConfig::default();
     if let Ok(value) = std::env::var("QOIN_SIGNAL_THRESHOLD") {
         config.signal_threshold = value.parse().expect("QOIN_SIGNAL_THRESHOLD must be numeric");
@@ -52,15 +50,16 @@ async fn main() {
     if let Ok(value) = std::env::var("QOIN_MAX_ANGLE_RADIANS") {
         config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric");
     }
-    let config_version = std::env::var("QOIN_CONFIG_VERSION")
-        .unwrap_or_else(|_| "baseline-v2".to_owned());
-    // Validate configuration before opening the HTTP listener.
+    // Evaluate once before binding so invalid config cannot start the API.
     qoin_vector_engine::decide(
-        ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
-        &config, &config_version, false,
+        ForceObservation {
+            ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
+        },
+        &config,
+        false,
     ).expect("Qoin engine configuration must be valid");
-    let state = Arc::new(AppState { config, config_version });
+    let state = Arc::new(AppState { config });
     let cors = CorsLayer::new()
         .allow_origin([
             HeaderValue::from_static("http://localhost:5173"),
@@ -94,10 +93,9 @@ async fn signal(
     let result = decide(
         request.observation,
         &state.config,
-        &state.config_version,
         request.has_open_position,
     )
-    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
