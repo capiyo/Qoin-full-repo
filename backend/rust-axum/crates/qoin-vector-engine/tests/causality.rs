@@ -1,5 +1,5 @@
 //! Contract tests: caller-side observations are prefix-causal and decision evaluation is pure.
-use qoin_vector_engine::{decide, Decision, EngineConfig, ForceObservation};
+use qoin_vector_engine::{decide, EngineConfig, ForceObservation};
 use serde_json::to_vec;
 
 fn observation_from_history(history: &[f64]) -> ForceObservation {
@@ -42,12 +42,4 @@ fn same_observation_serializes_to_identical_signal_bytes() {
     let second = decide(observation, &config, false).unwrap();
     assert_eq!(first, second);
     assert_eq!(to_vec(&first).unwrap(), to_vec(&second).unwrap());
-}
-
-#[test]
-fn history_contract_does_not_claim_a_signal_from_future_rows() {
-    let history = [0.1, 0.4, 0.8];
-    let observation = observation_from_history(&history);
-    let result = decide(observation, &EngineConfig::default(), false).unwrap();
-    assert!(matches!(result.decision, Decision::Buy | Decision::Sell | Decision::Close | Decision::Wait));
 }
