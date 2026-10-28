@@ -1,10 +1,10 @@
 SHELL := /bin/bash
 .PHONY: test smoke axum gateway
 test:
-	python3 -m unittest discover -s tests -v
+	python3 -m unittest discover -s backend/tests -v
 smoke:
 	bash scripts/smoke.sh
 axum:
-	cd services/axum && cargo run
+	cd backend/rust-axum && cargo run
 gateway:
-	cmake -S services/drogon -B build/drogon && cmake --build build/drogon
+	cmake -S backend/cpp-drogon -B build/drogon && cmake --build build/drogon
