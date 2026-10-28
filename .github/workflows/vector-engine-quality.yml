@@ -1,0 +1,32 @@
+name: Qoin vector engine quality
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "backend/rust-axum/crates/qoin-vector-engine/**"
+      - "backend/rust-axum-api/**"
+      - ".github/workflows/vector-engine-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "backend/rust-axum/crates/qoin-vector-engine/**"
+      - "backend/rust-axum-api/**"
+      - ".github/workflows/vector-engine-quality.yml"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Test vector engine with all features
+        run: cargo test --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml --all-features
+      - name: Clippy vector engine with warnings denied
+        run: cargo clippy --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml --all-features -- -D warnings
