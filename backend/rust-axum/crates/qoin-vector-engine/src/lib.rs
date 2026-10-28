@@ -467,6 +467,29 @@ mod tests {
     }
 
     #[test]
+    fn doubled_interaction_can_cross_magnitude_gate_but_alignment_uses_same_vector() {
+        let input = ForceObservation {
+            ofi: 1.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 1.0, liquidation_pressure: 0.0, basis: 0.0,
+        };
+        let mut baseline = EngineConfig::default();
+        baseline.input_clip = 1.0;
+        baseline.signal_threshold = 0.46;
+        baseline.top_k = 7;
+        let baseline_signal = decide(input, &baseline, false).unwrap();
+
+        let mut doubled = baseline.clone();
+        doubled.interaction_coefficient *= 2.0;
+        let doubled_signal = decide(input, &doubled, false).unwrap();
+
+        assert_eq!(baseline_signal.decision, Decision::Wait);
+        assert_eq!(baseline_signal.reject_reason, Some(RejectReason::LowMagnitude));
+        assert_eq!(doubled_signal.decision, Decision::Buy);
+        assert!(doubled_signal.score > baseline_signal.score);
+        assert!(doubled_signal.alignment > baseline_signal.alignment);
+    }
+
+    #[test]
     fn observation_indices_are_stable() {
         let values = sample().values();
         assert_eq!(OFI_IDX, 0);
