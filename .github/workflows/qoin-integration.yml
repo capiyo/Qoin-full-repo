@@ -3,15 +3,15 @@ on:
   push:
     branches: [main, feat/mongodb-edge-strategy-map]
     paths:
-      - "services/axum/**"
-      - "services/drogon/**"
+      - "backend/rust-axum/**"
+      - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
   pull_request:
     branches: [main]
     paths:
-      - "services/axum/**"
-      - "services/drogon/**"
+      - "backend/rust-axum/**"
+      - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
   workflow_dispatch:
@@ -37,10 +37,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Build Axum
-        run: cargo build --manifest-path services/axum/Cargo.toml
+        run: cargo build --manifest-path backend/rust-axum/Cargo.toml
       - name: Build Drogon
         run: |
-          cmake -S services/drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
+          cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
           cmake --build build/drogon --parallel 2
       - name: Verify gateway, MongoDB strategy persistence, and event flow
         shell: bash
