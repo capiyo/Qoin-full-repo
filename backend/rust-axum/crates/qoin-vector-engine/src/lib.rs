@@ -461,6 +461,9 @@ mod tests {
             open_interest_change: -1.0, liquidation_pressure: 0.0, basis: 0.0,
         };
         let result = decide(input, &config, false).unwrap();
+        let angle_boundary = std::f64::consts::PI - config.max_angle_radians;
+        let alignment_boundary = (-config.min_alignment).acos();
+        assert!((angle_boundary - alignment_boundary).abs() < 1.0e-12);
         let angle_gate = (std::f64::consts::PI - result.angle_radians) <= config.max_angle_radians;
         let alignment_gate = result.alignment <= -config.min_alignment;
         assert_eq!(angle_gate, alignment_gate);
