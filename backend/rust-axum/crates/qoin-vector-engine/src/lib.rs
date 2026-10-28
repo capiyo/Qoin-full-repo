@@ -248,9 +248,9 @@ pub fn decide(
         }
     }
     let mut values = clipped;
-    for index in 0..INPUT_COUNT {
-        if !selected[index] {
-            values[index] = 0.0;
+    for (value, is_selected) in values.iter_mut().zip(selected.iter()) {
+        if !is_selected {
+            *value = 0.0;
         }
     }
     let active_force_count = selected.iter().filter(|selected| **selected).count();
@@ -264,10 +264,10 @@ pub fn decide(
     let mut dot = 0.0;
     let mut observed_norm_sq = 0.0;
     let mut template_norm_sq = 0.0;
-    for index in 0..INPUT_COUNT {
-        dot += effective_direction[index] * weights[index];
-        observed_norm_sq += effective_direction[index] * effective_direction[index];
-        template_norm_sq += weights[index] * weights[index];
+    for (direction, weight) in effective_direction.iter().zip(weights.iter()) {
+        dot += direction * weight;
+        observed_norm_sq += direction * direction;
+        template_norm_sq += weight * weight;
     }
     let observed_norm = observed_norm_sq.sqrt();
     let template_norm = template_norm_sq.sqrt();
