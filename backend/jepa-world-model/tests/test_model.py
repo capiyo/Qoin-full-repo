@@ -100,3 +100,26 @@ def test_temporal_context_uses_more_than_the_last_observation() -> None:
         second_prediction, _ = model(second, horizon=1)
 
     assert not torch.allclose(first_prediction, second_prediction)
+
+
+def test_regularized_loss_is_finite_and_differentiable() -> None:
+    predicted = torch.randn(8, 12, requires_grad=True)
+    target = torch.randn(8, 12)
+    loss = latent_prediction_loss(predicted, target)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert predicted.grad is not None
+    assert torch.isfinite(predicted.grad).all()
+
+
+def test_regularized_loss_rejects_negative_weights() -> None:
+    with pytest.raises(ValueError):
+        latent_prediction_loss(torch.randn(4, 8), torch.randn(4, 8), variance_weight=-0.1)
+
+
+def test_single_item_batch_falls_back_to_prediction_loss() -> None:
+    predicted = torch.randn(1, 8)
+    target = torch.randn(1, 8)
+    expected = torch.nn.functional.smooth_l1_loss(predicted, target)
+    actual = latent_prediction_loss(predicted, target)
+    assert torch.allclose(actual, expected)
