@@ -23,14 +23,21 @@ def train(
     epochs: int = 10,
     batch_size: int = 64,
     learning_rate: float = 1e-3,
+    weight_decay: float = 1e-4,
+    variance_weight: float = 0.05,
+    covariance_weight: float = 0.01,
+    max_grad_norm: float = 1.0,
+    patience: int = 4,
     latent_dim: int = 64,
     hidden_dim: int = 128,
     seed: int = 7,
 ) -> dict[str, object]:
     if not 0.5 <= train_fraction < 1.0:
         raise ValueError("train_fraction must be in [0.5, 1.0)")
-    if epochs <= 0 or batch_size <= 0 or learning_rate <= 0:
-        raise ValueError("epochs, batch_size, and learning_rate must be positive")
+    if epochs <= 0 or batch_size <= 0 or learning_rate <= 0 or patience <= 0:
+        raise ValueError("epochs, batch_size, learning_rate, and patience must be positive")
+    if weight_decay < 0 or variance_weight < 0 or covariance_weight < 0 or max_grad_norm <= 0:
+        raise ValueError("weight_decay and loss weights must be non-negative; max_grad_norm must be positive")
     random.seed(seed)
     torch.manual_seed(seed)
 
@@ -64,8 +71,14 @@ def train(
     optimizer = torch.optim.AdamW(
         [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=learning_rate,
+        weight_decay=weight_decay,
+    )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=max(1, patience // 2),
+        min_lr=learning_rate * 1e-3,
     )
     best_validation = float("inf")
+    epochs_without_improvement = 0
     best_state: dict[str, torch.Tensor] | None = None
     history: list[dict[str, float]] = []
 
@@ -79,7 +92,12 @@ def train(
             batch = [train_samples[i] for i in order[offset:offset + batch_size]]
             context = torch.stack([sample[0] for sample in batch])
             future = torch.stack([sample[1] for sample in batch])
-            loss = train_batch(model, optimizer, context, future, horizon)
+            loss = train_batch(
+                model, optimizer, context, future, horizon,
+                variance_weight=variance_weight,
+                covariance_weight=covariance_weight,
+                max_grad_norm=max_grad_norm,
+            )
             training_loss += float(loss) * len(batch)
             training_count += len(batch)
 
@@ -92,7 +110,11 @@ def train(
                 future = torch.stack([sample[1] for sample in batch])
                 predicted, target = model(context, future, horizon)
                 assert target is not None
-                validation_loss += float(latent_prediction_loss(predicted, target)) * len(batch)
+                validation_loss += float(latent_prediction_loss(
+                    predicted, target,
+                    variance_weight=variance_weight,
+                    covariance_weight=covariance_weight,
+                )) * len(batch)
         validation_loss /= len(val_samples)
         epoch_record = {
             "epoch": float(epoch + 1),
@@ -100,9 +122,15 @@ def train(
             "validation_loss": validation_loss,
         }
         history.append(epoch_record)
+        scheduler.step(validation_loss)
         if validation_loss < best_validation:
             best_validation = validation_loss
+            epochs_without_improvement = 0
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+        else:
+            epochs_without_improvement += 1
+        if epochs_without_improvement >= patience:
+            break
 
     if best_state is None:
         raise RuntimeError("training did not produce a checkpoint")
@@ -128,6 +156,17 @@ def train(
             "train_fraction": train_fraction,
             "horizon": horizon,
             "seed": seed,
+            "optimizer": "AdamW",
+            "learning_rate_initial": learning_rate,
+            "weight_decay": weight_decay,
+            "gradient_clip_norm": max_grad_norm,
+            "loss": {
+                "prediction": "smooth_l1_huber",
+                "variance_weight": variance_weight,
+                "covariance_weight": covariance_weight,
+                "variance_floor": 1.0,
+            },
+            "early_stopping_patience": patience,
             "history": history,
             "best_validation_loss": best_validation,
         },
@@ -152,6 +191,11 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--variance-weight", type=float, default=0.05)
+    parser.add_argument("--covariance-weight", type=float, default=0.01)
+    parser.add_argument("--max-grad-norm", type=float, default=1.0)
+    parser.add_argument("--patience", type=int, default=4)
     parser.add_argument("--latent-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--seed", type=int, default=7)
@@ -159,8 +203,10 @@ def main() -> None:
     result = train(
         args.csv, args.output, context_steps=args.context_steps, horizon=args.horizon,
         train_fraction=args.train_fraction, epochs=args.epochs, batch_size=args.batch_size,
-        learning_rate=args.learning_rate, latent_dim=args.latent_dim,
-        hidden_dim=args.hidden_dim, seed=args.seed,
+        learning_rate=args.learning_rate, weight_decay=args.weight_decay,
+        variance_weight=args.variance_weight, covariance_weight=args.covariance_weight,
+        max_grad_norm=args.max_grad_norm, patience=args.patience,
+        latent_dim=args.latent_dim, hidden_dim=args.hidden_dim, seed=args.seed,
     )
     print(json.dumps(result, indent=2))
 
