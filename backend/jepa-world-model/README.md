@@ -11,7 +11,7 @@ This is a compact **JEPA-inspired market model**, not Meta's V-JEPA implementati
 - Temporal GRU encoder: models ordered evolution across the context sequence.
 - Predictor: predicts future latent embeddings from the temporal context state and a learned horizon embedding.
 - Target encoder: supplies future-state embeddings during training; its parameters are updated with an exponential moving average and its outputs are detached from gradient updates.
-- Objective: latent prediction loss only; no raw-price reconstruction and no BUY/SELL output.
+- Objective: robust Huber latent prediction plus batch variance/covariance regularizers to discourage representation collapse; no raw-price reconstruction and no BUY/SELL output.
 - Output: predicted future latent state. A downstream, separately validated head or decision layer is required before it can influence any market decision.
 
 ## Local research setup
@@ -39,7 +39,7 @@ Rows must be deduplicated, time-aligned, and limited to observations actually av
 python -m qoin_jepa.train --csv /path/to/causal-market-features.csv --output artifacts/qoin-jepa.pt --context-steps 32 --horizon 1 --epochs 10
 ```
 
-The scaler is fit only on the chronological training prefix. The checkpoint records feature names, scaler values, split cutoff, training history, and model configuration. The validation suffix is not used to fit normalization. Training windows may be shuffled within the training partition; the chronological partition itself is never shuffled.
+The scaler is fit only on the chronological training prefix. Training uses AdamW with weight decay, finite-gradient clipping, validation-loss learning-rate reduction, and early stopping; the checkpoint records the selected best-validation state, feature names, scaler values, split cutoff, loss weights, optimizer settings, training history, and model configuration. Defaults are `--variance-weight 0.05`, `--covariance-weight 0.01`, `--weight-decay 0.0001`, `--max-grad-norm 1.0`, and `--patience 4`; tune them only on chronological training/validation data. The validation suffix is not used to fit normalization. Training windows may be shuffled within the training partition; the chronological partition itself is never shuffled.
 
 A lower latent loss is not proof of predictive utility or trading edge. Evaluate against persistence and Version 1 on untouched chronological periods with costs, regime slices, calibration, and realistic execution assumptions. Do not commit real market data if it contains credentials or private account information.
 
