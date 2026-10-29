@@ -26,7 +26,7 @@ Version 1 is the current architecture in this repository. It remains the baselin
 
 Use explicit, interpretable market dimensions: order-flow imbalance, liquidity/spread, volatility, funding, open-interest change, liquidation pressure, event intensity, and basis where reliable data is available. Evaluate direction, magnitude, persistence, regime, data quality, and estimated execution costs. WAIT is a valid outcome.
 
-The existing weights are hand-specified research values. They are not trained weights, a validated trading edge, or proof of informed/insider activity.
+The existing weights are hand-specified research values. They are not trained weights, a validated trading edge, or proof of informed/insider activity. The new `qoin_vector_engine::research` module adds an offline loss/evaluation objective: negative mean net return plus downside-RMS and turnover penalties, with estimated execution costs deducted on exposure changes. Its bounded threshold sweep returns a candidate config only; it never modifies the active strategy map or changes live decisions. Run threshold search only on a chronological training segment, then evaluate the selected candidate on a separate validation segment and finally an untouched test segment.
 
 ## Known limitations
 
@@ -39,3 +39,8 @@ The repository's root README and `docs/ARCHITECTURE.md` describe the current imp
 - Do not commit exchange credentials.
 - All research uses chronological splits and prevents future-data leakage.
 - No real-money trading until all `docs/RISK_POLICY.md` gates are implemented and independently verified and the user approves live trading in writing.
+
+
+## Offline loss and optimization
+
+The Version 1 objective is a **research selection criterion**, not a gradient loss on the deterministic engine. The candidate search currently sweeps the signal threshold while holding other coefficients fixed. Inputs must be timestamp-ordered and include forward realized returns and conservative round-trip cost estimates in decimal-return units. Use a separate chronological validation set to select among candidates; do not report training loss as expected performance. The module has no network, persistence, or order-submission behavior and does not automatically activate the selected configuration.
