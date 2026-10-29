@@ -7,6 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Offline research loss and hyperparameter evaluation; never changes live decisions.
+pub mod research;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
     pub ofi: f64,
