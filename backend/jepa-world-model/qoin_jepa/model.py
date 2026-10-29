@@ -127,8 +127,38 @@ class MarketJEPA(nn.Module):
             target_buffer.copy_(online_buffer)
 
 
-def latent_prediction_loss(predicted: Tensor, target: Tensor) -> Tensor:
-    """Smooth latent prediction loss; target embeddings are expected to be detached."""
+def latent_prediction_loss(
+    predicted: Tensor,
+    target: Tensor,
+    *,
+    variance_weight: float = 0.05,
+    covariance_weight: float = 0.01,
+    variance_floor: float = 1.0,
+) -> Tensor:
+    """Robust JEPA loss with anti-collapse regularization.
+
+    Huber prediction loss is the main objective. Batch-level variance and
+    off-diagonal covariance penalties discourage collapsed/redundant latents.
+    Regularizers are disabled automatically for batch size < 2 because batch
+    statistics are not meaningful there. Targets are always detached.
+    """
     if predicted.shape != target.shape:
         raise ValueError("predicted and target latent shapes must match")
-    return F.smooth_l1_loss(predicted, target.detach())
+    if predicted.ndim != 2 or predicted.shape[0] == 0 or predicted.shape[1] == 0:
+        raise ValueError("latent tensors must have shape [batch, latent_dim]")
+    if variance_weight < 0 or covariance_weight < 0 or variance_floor <= 0:
+        raise ValueError("regularization weights must be non-negative and variance_floor positive")
+    target = target.detach()
+    prediction = F.smooth_l1_loss(predicted, target)
+    if predicted.shape[0] < 2 or (variance_weight == 0 and covariance_weight == 0):
+        return prediction
+
+    centered = predicted - predicted.mean(dim=0, keepdim=True)
+    std = torch.sqrt(centered.var(dim=0, unbiased=False) + 1e-4)
+    variance_penalty = F.relu(variance_floor - std).pow(2).mean()
+
+    covariance = centered.T @ centered / max(predicted.shape[0] - 1, 1)
+    off_diagonal = covariance - torch.diag(torch.diagonal(covariance))
+    covariance_penalty = off_diagonal.pow(2).sum() / predicted.shape[1]
+
+    return prediction + variance_weight * variance_penalty + covariance_weight * covariance_penalty

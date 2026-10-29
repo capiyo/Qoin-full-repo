@@ -22,3 +22,6 @@ def test_train_writes_checkpoint_and_metadata(tmp_path: Path) -> None:
     checkpoint = torch.load(output, map_location="cpu", weights_only=True)
     assert checkpoint["model_config"]["feature_names"] == ["flow", "spread", "volatility"]
     assert checkpoint["training_metadata"]["train_cutoff_index"] == 60
+    assert checkpoint["training_metadata"]["optimizer"] == "AdamW"
+    assert checkpoint["training_metadata"]["loss"]["prediction"] == "smooth_l1_huber"
+    assert checkpoint["training_metadata"]["loss"]["variance_weight"] == 0.05
