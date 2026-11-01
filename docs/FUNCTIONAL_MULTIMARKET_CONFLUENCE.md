@@ -19,7 +19,7 @@ calculate_feature_vector assembles a canonical snapshot for crypto, forex, equit
 - Fibonacci: distance to the nearest 23.6%, 38.2%, 50%, 61.8%, or 78.6% retracement of a confirmed swing, decayed by a configured tolerance. Swing pivots must be confirmed before use.
 - FVG: three-candle displacement gap; subsequent bars measure mitigation and full traversal invalidates the zone. Bullish zones are positive, bearish zones negative.
 - Value Area: volume-at-price bins; POC is the maximum-volume bin and VAH/VAL expand from POC toward the larger adjacent bin until the configured fraction (normally 70%) is included. Candle volume alone is not an exact volume-at-price profile.
-- GEX: sum(gamma * OI * multiplier * spot^2 * 0.01 * dealerSign). Stored as gamma-regime context plus negative-gamma risk, not a standalone bullish/bearish vote. Requires a real options chain and a documented dealer-side sign assumption. It does not infer gamma flip from spot candles.
+- GEX: sum(gamma * OI * multiplier * spot^2 * 0.01 * dealerSign). Stored as gamma-regime context plus negative-gamma risk, not a standalone bullish/bearish vote; it contributes risk and coverage until a validated interaction model is fitted. Requires a real options chain and a documented dealer-side sign assumption. It does not infer gamma flip from spot candles.
 - Basis: spot/derivative price difference in basis points, scaled by an instrument-specific reference and retained as carry/dislocation context rather than an outright directional vote.
 
 Non-directional stress dimensions do not masquerade as sell signals. They can contribute to a separate risk level and to explicitly configured interactions.
