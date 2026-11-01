@@ -23,3 +23,18 @@ mod context_interaction_tests {
   assert!(result.risk_level>0.0);
  }
 }
+
+#[cfg(test)]
+mod regime_only_tests {
+ use super::*;
+ use crate::features::FeaturePoint;
+ #[test]
+ fn gamma_and_volatility_context_do_not_create_a_direction_alone() {
+  let gex=FeaturePoint::with_context("gex",0.0,1.0,0.8,-1.0);
+  let volatility=FeaturePoint::with_risk("volatility",0.0,1.0,0.8);
+  let result=calculate_confluence(&[gex,volatility],&ConfluenceConfig::default()).unwrap();
+  assert_eq!(result.pressure,0.0);
+  assert_eq!(result.action,"wait");
+  assert!(result.risk_level>0.0);
+ }
+}
