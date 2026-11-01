@@ -109,3 +109,37 @@ pub fn calculate_feature_vector(input: &FeatureInputs<'_>) -> MarketFeatureVecto
         points,
     }
 }
+
+
+#[cfg(test)]
+mod vector_builder_tests {
+    use super::*;
+    #[test]
+    fn builder_calculates_ten_market_points_and_marks_missing_sources() {
+        let candles = vec![
+            Candle{timestamp_ms:1,open:100.0,high:102.0,low:99.0,close:101.0,volume:10.0},
+            Candle{timestamp_ms:2,open:101.0,high:103.0,low:100.0,close:102.0,volume:12.0},
+            Candle{timestamp_ms:3,open:104.0,high:106.0,low:104.0,close:105.0,volume:15.0},
+        ];
+        let profile = vec![
+            VolumeAtPrice{price:100.0,volume:10.0},
+            VolumeAtPrice{price:101.0,volume:40.0},
+            VolumeAtPrice{price:102.0,volume:30.0},
+        ];
+        let input=FeatureInputs{
+            market:MarketKind::Crypto,instrument:"BTC-USD",timestamp_ms:3,
+            buy_volume:Some(80.0),sell_volume:Some(20.0),open_interest:Some((100.0,110.0)),
+            funding_rate:Some(0.0001),funding_neutral_band:0.001,spread_bps:Some(2.0),
+            reference_spread_bps:5.0,candles:&candles,volatility_window:2,current_price:105.0,
+            confirmed_swing:Some(ConfirmedSwing{low:90.0,high:110.0,direction:SwingDirection::Up,confirmed_at_ms:3}),
+            fibonacci_tolerance:0.03,volume_profile:&profile,value_area_fraction:0.7,
+            options_chain:&[],gex_spot:None,gex_normalization_usd:1_000_000.0,
+            spot_price:Some(105.0),derivative_price:Some(105.1),basis_reference_bps:10.0,
+        };
+        let vector=calculate_feature_vector(&input);
+        assert_eq!(vector.points.len(),10);
+        assert!(vector.points.iter().any(|p|p.name=="ofi"&&p.available));
+        assert!(vector.points.iter().any(|p|p.name=="gex"&&!p.available));
+        assert!(vector.points.iter().any(|p|p.name=="value_area"&&p.available));
+    }
+}
