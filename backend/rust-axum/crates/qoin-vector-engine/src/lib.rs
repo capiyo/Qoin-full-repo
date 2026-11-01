@@ -7,6 +7,15 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod features;
+pub mod confluence;
+pub mod portfolio;
+
+pub use confluence::{calculate_confluence, ConfluenceConfig, ConfluenceResult, PairInteraction};
+pub use features::{calculate_basis, calculate_event_intensity, calculate_feature_vector, calculate_fibonacci, calculate_funding_pressure, calculate_fvg, calculate_gex, calculate_liquidation_pressure, calculate_liquidity_stress, calculate_ofi, calculate_open_interest_pressure, calculate_open_interest_pressure_scaled, calculate_fvg_scaled, calculate_volatility_scaled, calculate_value_area, calculate_value_area_position, calculate_volatility, calculate_price_momentum, Candle, ConfirmedSwing, FeatureInputs, FeaturePoint, MarketFeatureVector, MarketKind, OptionExposure, SwingDirection, ValueArea, VolumeAtPrice};
+pub use portfolio::{calculate_correlation_matrix, calculate_covariance_matrix, calculate_portfolio_metrics, calculate_portfolio_returns, PortfolioMetrics};
+
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
     pub ofi: f64,
