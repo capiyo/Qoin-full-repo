@@ -115,6 +115,9 @@ pub fn calculate_feature_vector(input: &FeatureInputs<'_>) -> MarketFeatureVecto
     let points = vec![
         ofi,
         oi,
+        liquidation,
+        event_intensity,
+        calculate_price_momentum(input.candles, input.volatility_window, input.momentum_neutral_log_return),
         calculate_funding_pressure(input.funding_rate, input.funding_neutral_band),
         calculate_liquidity_stress(input.spread_bps, input.reference_spread_bps),
         calculate_volatility_scaled(input.candles, input.volatility_window, input.reference_volatility),
