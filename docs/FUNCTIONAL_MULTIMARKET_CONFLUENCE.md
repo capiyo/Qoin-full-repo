@@ -32,9 +32,9 @@ C = sum(i in A, w_i*c_i) / sum(all i, w_i)
 
 P0 = sum(i in A, w_i*c_i*x_i) / sum(i in A, w_i*c_i)
 
-Pair interactions add bounded, explicit confluence terms:
+Pair interactions add bounded, explicit confluence terms. Each point also carries non-directional risk and signed context (for example OI buildup or positive/negative gamma regime). For interactions, z_i is the directional value when nonzero, otherwise signed context when present, otherwise risk intensity:
 
-P = clip[-1,1](P0 + clip[-Imax,Imax](sum((i,j) in E, gamma_ij*c_ij*x_i*x_j)))
+P = clip[-1,1](P0 + clip[-Imax,Imax](sum((i,j) in E, gamma_ij*c_ij*z_i*z_j)))
 
 Agreement and contradiction are calculated separately from positive and negative weighted evidence. Low coverage, high contradiction, or excessive risk causes WAIT. The default coefficients cover thirteen dimensions and sum to one. They are transparent research starting values, not fitted parameters or proof of an edge. Correlated dimensions must be audited to prevent double-counting.
 
