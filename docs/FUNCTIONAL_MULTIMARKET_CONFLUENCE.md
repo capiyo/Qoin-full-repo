@@ -9,6 +9,9 @@ calculate_feature_vector assembles a canonical snapshot for crypto, forex, equit
 ## Individual calculations
 
 - OFI: (V_buy - V_sell) / (V_buy + V_sell).
+- Liquidation pressure: (short-liquidation volume - long-liquidation volume) / total liquidation volume; forced short closures create buy flow and forced long closures create sell flow.
+- Price momentum: rolling log-price change compressed by an instrument/timeframe-specific neutral return.
+- Event intensity: event count relative to an expected event rate, stored as non-directional risk intensity.
 - Open-interest change: relative change from previous to current OI, compressed by delta / (abs(delta) + 0.02), stored as positioning context rather than a standalone bullish/bearish vote.
 - Funding pressure: negative tanh(funding / neutralBand); positive funding is treated as crowded-long context.
 - Liquidity stress: spread relative to an instrument-specific reference spread. It is stored as risk intensity, not bearish direction.
@@ -33,7 +36,7 @@ Pair interactions add bounded, explicit confluence terms:
 
 P = clip[-1,1](P0 + clip[-Imax,Imax](sum((i,j) in E, gamma_ij*c_ij*x_i*x_j)))
 
-Agreement and contradiction are calculated separately from positive and negative weighted evidence. Low coverage, high contradiction, or excessive risk causes WAIT. The default coefficients are transparent research starting values, not fitted parameters or proof of an edge. Correlated dimensions must be audited to prevent double-counting.
+Agreement and contradiction are calculated separately from positive and negative weighted evidence. Low coverage, high contradiction, or excessive risk causes WAIT. The default coefficients cover thirteen dimensions and sum to one. They are transparent research starting values, not fitted parameters or proof of an edge. Correlated dimensions must be audited to prevent double-counting.
 
 ## Portfolio and cross-market calculations
 
