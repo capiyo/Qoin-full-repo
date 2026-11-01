@@ -33,3 +33,79 @@ pub fn calculate_basis(spot:f64,derivative:f64,reference_bps:f64)->FeaturePoint{
 #[test]fn gex_requires_options_chain(){assert!(!calculate_gex(100.0,&[],1e6).available);let o=[OptionExposure{gamma:0.02,open_interest:100.0,contract_multiplier:100.0,dealer_gamma_sign:1.0}];assert!(calculate_gex(100.0,&o,1e6).available)}
 #[test]fn rejects_out_of_order_candles(){assert!(!calculate_volatility(&[bar(2),bar(1),bar(3)],2).available)}
 }
+
+/// Inputs for one timestamped feature calculation. Slices are supplied by the
+/// venue adapter; every field is instrument/timeframe specific and past-only.
+pub struct FeatureInputs<'a> {
+    pub market: MarketKind,
+    pub instrument: &'a str,
+    pub timestamp_ms: i64,
+    pub buy_volume: Option<f64>,
+    pub sell_volume: Option<f64>,
+    pub open_interest: Option<(f64, f64)>,
+    pub funding_rate: Option<f64>,
+    pub funding_neutral_band: f64,
+    pub spread_bps: Option<f64>,
+    pub reference_spread_bps: f64,
+    pub candles: &'a [Candle],
+    pub volatility_window: usize,
+    pub current_price: f64,
+    pub confirmed_swing: Option<ConfirmedSwing>,
+    pub fibonacci_tolerance: f64,
+    pub volume_profile: &'a [VolumeAtPrice],
+    pub value_area_fraction: f64,
+    pub options_chain: &'a [OptionExposure],
+    pub gex_spot: Option<f64>,
+    pub gex_normalization_usd: f64,
+    pub spot_price: Option<f64>,
+    pub derivative_price: Option<f64>,
+    pub basis_reference_bps: f64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct MarketFeatureVector {
+    pub market: MarketKind,
+    pub instrument: String,
+    pub timestamp_ms: i64,
+    pub points: Vec<FeaturePoint>,
+}
+
+/// Calculate every configured vector point independently from the same
+/// timestamped market snapshot. Unsupported/missing market data stays unavailable.
+pub fn calculate_feature_vector(input: &FeatureInputs<'_>) -> MarketFeatureVector {
+    let ofi = match (input.buy_volume, input.sell_volume) {
+        (Some(buy), Some(sell)) => calculate_ofi(buy, sell),
+        _ => FeaturePoint::unavailable("ofi"),
+    };
+    let oi = match input.open_interest {
+        Some((previous, current)) => calculate_open_interest_pressure(previous, current),
+        None => FeaturePoint::unavailable("open_interest_change"),
+    };
+    let gex = match input.gex_spot {
+        Some(spot) => calculate_gex(spot, input.options_chain, input.gex_normalization_usd),
+        None => FeaturePoint::unavailable("gex"),
+    };
+    let basis = match (input.spot_price, input.derivative_price) {
+        (Some(spot), Some(derivative)) => calculate_basis(spot, derivative, input.basis_reference_bps),
+        _ => FeaturePoint::unavailable("basis"),
+    };
+    let area = calculate_value_area(input.volume_profile, input.value_area_fraction);
+    let points = vec![
+        ofi,
+        oi,
+        calculate_funding_pressure(input.funding_rate, input.funding_neutral_band),
+        calculate_liquidity_stress(input.spread_bps, input.reference_spread_bps),
+        calculate_volatility(input.candles, input.volatility_window),
+        calculate_fibonacci(input.current_price, input.confirmed_swing, input.fibonacci_tolerance),
+        calculate_fvg(input.candles, input.current_price),
+        calculate_value_area_position(input.current_price, area),
+        gex,
+        basis,
+    ];
+    MarketFeatureVector {
+        market: input.market,
+        instrument: input.instrument.to_owned(),
+        timestamp_ms: input.timestamp_ms,
+        points,
+    }
+}
