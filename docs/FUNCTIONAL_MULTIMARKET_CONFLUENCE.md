@@ -4,7 +4,7 @@
 
 Each vector point is an independently calculated observation. Feature calculations are pure functions: same inputs produce same outputs. Inputs must be timestamp-aligned and causal. FeaturePoint carries a signed normalized value, confidence, a separate non-directional risk intensity, and an availability flag. Missing inputs are unavailable; they are not imputed as neutral observations.
 
-calculate_feature_vector assembles a canonical snapshot for crypto, forex, equities, commodities, fixed income, or other instruments. Venue adapters remain responsible for supplying correctly timestamped source data, unit conventions, and provenance. The feature library does not assume every market has funding, open interest, options, or centralized order flow.
+calculate_feature_vector assembles a canonical snapshot for crypto, forex, equities, commodities, fixed income, or other instruments. Venue adapters remain responsible for supplying correctly timestamped source data, unit conventions, and provenance. Neutral-change, volatility-reference, spread-reference, FVG-distance and basis scales are configurable per instrument/timeframe; fixed defaults are convenience baselines only. The feature library does not assume every market has funding, open interest, options, or centralized order flow.
 
 ## Individual calculations
 
