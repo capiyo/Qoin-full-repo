@@ -12,7 +12,7 @@ pub mod confluence;
 pub mod portfolio;
 
 pub use confluence::{calculate_confluence, ConfluenceConfig, ConfluenceResult, PairInteraction};
-pub use features::{calculate_basis, calculate_fibonacci, calculate_funding_pressure, calculate_fvg, calculate_gex, calculate_liquidity_stress, calculate_ofi, calculate_open_interest_pressure, calculate_value_area, calculate_value_area_position, calculate_volatility, Candle, ConfirmedSwing, FeaturePoint, MarketKind, OptionExposure, SwingDirection, ValueArea, VolumeAtPrice};
+pub use features::{calculate_basis, calculate_feature_vector, calculate_fibonacci, calculate_funding_pressure, calculate_fvg, calculate_gex, calculate_liquidity_stress, calculate_ofi, calculate_open_interest_pressure, calculate_value_area, calculate_value_area_position, calculate_volatility, Candle, ConfirmedSwing, FeatureInputs, FeaturePoint, MarketFeatureVector, MarketKind, OptionExposure, SwingDirection, ValueArea, VolumeAtPrice};
 pub use portfolio::{calculate_correlation_matrix, calculate_covariance_matrix, calculate_portfolio_metrics, calculate_portfolio_returns, PortfolioMetrics};
 
 
