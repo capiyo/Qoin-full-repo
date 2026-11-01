@@ -28,6 +28,9 @@ pub fn calculate_value_area_position(price:f64,area:Option<ValueArea>)->FeatureP
 /// Dealer-signed GEX = Σ(gamma × OI × multiplier × spot² × 1% × dealer sign).
 /// Requires a real options chain and documented dealer-side sign assumptions.
 pub fn calculate_gex(spot:f64,options:&[OptionExposure],normalization_usd:f64)->FeaturePoint{if !spot.is_finite()||spot<=0.0||!normalization_usd.is_finite()||normalization_usd<=0.0||options.is_empty()||options.iter().any(|o|!o.gamma.is_finite()||o.gamma<0.0||!o.open_interest.is_finite()||o.open_interest<0.0||!o.contract_multiplier.is_finite()||o.contract_multiplier<=0.0||!o.dealer_gamma_sign.is_finite()||o.dealer_gamma_sign.abs()!=1.0){return FeaturePoint::unavailable("gex")}let x=options.iter().map(|o|o.gamma*o.open_interest*o.contract_multiplier*spot*spot*0.01*o.dealer_gamma_sign).sum::<f64>();if !x.is_finite(){return FeaturePoint::unavailable("gex")}FeaturePoint::with_context("gex",0.0,0.8,if x<0.0{(x.abs()/normalization_usd).tanh()}else{0.0},if x<0.0{-1.0}else if x>0.0{1.0}else{0.0})}
+pub fn calculate_liquidation_pressure(long_volume:f64,short_volume:f64)->FeaturePoint{if !long_volume.is_finite()||!short_volume.is_finite()||long_volume<0.0||short_volume<0.0||long_volume+short_volume<=f64::EPSILON{return FeaturePoint::unavailable("liquidation_pressure")}FeaturePoint::new("liquidation_pressure",(short_volume-long_volume)/(long_volume+short_volume),0.85)}
+pub fn calculate_event_intensity(event_count:f64,expected_rate:f64)->FeaturePoint{if !event_count.is_finite()||!expected_rate.is_finite()||event_count<0.0||expected_rate<=0.0{return FeaturePoint::unavailable("event_intensity")}FeaturePoint::with_risk("event_intensity",0.0,0.9,(event_count/expected_rate).ln_1p().tanh())}
+pub fn calculate_price_momentum(cs:&[Candle],window:usize,neutral_log_return:f64)->FeaturePoint{if window==0||cs.len()<window+1||!valid_candles(cs)||!neutral_log_return.is_finite()||neutral_log_return<=0.0{return FeaturePoint::unavailable("price_momentum")}let x=&cs[cs.len()-window-1..];let first=x[0].close;let last=x[x.len()-1].close;if first<=0.0||last<=0.0{return FeaturePoint::unavailable("price_momentum")}FeaturePoint::new("price_momentum",((last/first).ln()/neutral_log_return).tanh(),0.9)}
 pub fn calculate_basis(spot:f64,derivative:f64,reference_bps:f64)->FeaturePoint{if !spot.is_finite()||!derivative.is_finite()||!reference_bps.is_finite()||spot<=0.0||derivative<=0.0||reference_bps<=0.0{return FeaturePoint::unavailable("basis")}FeaturePoint::with_context("basis",0.0,0.9,0.0,(((derivative/spot-1.0)*10000.0)/reference_bps).tanh())}
 #[cfg(test)]mod tests{use super::*;fn bar(t:i64)->Candle{Candle{timestamp_ms:t,open:10.0,high:11.0,low:9.0,close:10.0,volume:1.0}}
 #[test]fn ofi_signed_and_missing_safe(){assert!((calculate_ofi(80.0,20.0).value-0.6).abs()<1e-9);assert!(!calculate_ofi(0.0,0.0).available)}
@@ -44,6 +47,9 @@ pub struct FeatureInputs<'a> {
     pub instrument: &'a str,
     pub timestamp_ms: i64,
     pub buy_volume: Option<f64>,
+    pub liquidation_volumes: Option<(f64, f64)>,
+    pub event_count: Option<f64>,
+    pub expected_event_rate: f64,
     pub sell_volume: Option<f64>,
     pub open_interest: Option<(f64, f64)>,
     pub open_interest_neutral_change: f64,
@@ -53,6 +59,7 @@ pub struct FeatureInputs<'a> {
     pub reference_spread_bps: f64,
     pub candles: &'a [Candle],
     pub volatility_window: usize,
+    pub momentum_neutral_log_return: f64,
     pub reference_volatility: f64,
     pub fvg_distance_fraction: f64,
     pub current_price: f64,
@@ -82,7 +89,7 @@ pub fn calculate_feature_vector(input: &FeatureInputs<'_>) -> MarketFeatureVecto
     if input.timestamp_ms <= 0 || input.instrument.trim().is_empty()
         || input.candles.iter().any(|c| c.timestamp_ms > input.timestamp_ms)
         || input.confirmed_swing.map(|s| s.confirmed_at_ms > input.timestamp_ms).unwrap_or(false) {
-        let names = ["ofi","open_interest_change","funding_pressure","liquidity_stress","volatility","fibonacci","fvg","value_area","gex","basis"];
+        let names = ["ofi","open_interest_change","liquidation_pressure","event_intensity","price_momentum","funding_pressure","liquidity_stress","volatility","fibonacci","fvg","value_area","gex","basis"];
         return MarketFeatureVector { market: input.market, instrument: input.instrument.to_owned(),
             timestamp_ms: input.timestamp_ms, points: names.iter().map(|n| FeaturePoint::unavailable(n)).collect() };
     }
@@ -98,6 +105,8 @@ pub fn calculate_feature_vector(input: &FeatureInputs<'_>) -> MarketFeatureVecto
         Some(spot) => calculate_gex(spot, input.options_chain, input.gex_normalization_usd),
         None => FeaturePoint::unavailable("gex"),
     };
+    let liquidation = match input.liquidation_volumes { Some((long, short)) => calculate_liquidation_pressure(long, short), None => FeaturePoint::unavailable("liquidation_pressure") };
+    let event_intensity = match input.event_count { Some(count) => calculate_event_intensity(count, input.expected_event_rate), None => FeaturePoint::unavailable("event_intensity") };
     let basis = match (input.spot_price, input.derivative_price) {
         (Some(spot), Some(derivative)) => calculate_basis(spot, derivative, input.basis_reference_bps),
         _ => FeaturePoint::unavailable("basis"),
@@ -141,16 +150,16 @@ mod vector_builder_tests {
         ];
         let input=FeatureInputs{
             market:MarketKind::Crypto,instrument:"BTC-USD",timestamp_ms:3,
-            buy_volume:Some(80.0),sell_volume:Some(20.0),open_interest:Some((100.0,110.0)),open_interest_neutral_change:0.02,
+            buy_volume:Some(80.0),liquidation_volumes:Some((30.0,70.0)),event_count:Some(10.0),expected_event_rate:5.0,sell_volume:Some(20.0),open_interest:Some((100.0,110.0)),open_interest_neutral_change:0.02,
             funding_rate:Some(0.0001),funding_neutral_band:0.001,spread_bps:Some(2.0),
-            reference_spread_bps:5.0,candles:&candles,volatility_window:2,reference_volatility:0.01,fvg_distance_fraction:0.002,current_price:105.0,
+            reference_spread_bps:5.0,candles:&candles,volatility_window:2,reference_volatility:0.01,momentum_neutral_log_return:0.01,fvg_distance_fraction:0.002,current_price:105.0,
             confirmed_swing:Some(ConfirmedSwing{low:90.0,high:110.0,direction:SwingDirection::Up,confirmed_at_ms:3}),
             fibonacci_tolerance:0.03,volume_profile:&profile,value_area_fraction:0.7,
             options_chain:&[],gex_spot:None,gex_normalization_usd:1_000_000.0,
             spot_price:Some(105.0),derivative_price:Some(105.1),basis_reference_bps:10.0,
         };
         let vector=calculate_feature_vector(&input);
-        assert_eq!(vector.points.len(),10);
+        assert_eq!(vector.points.len(),13);
         assert!(vector.points.iter().any(|p|p.name=="ofi"&&p.available));
         assert!(vector.points.iter().any(|p|p.name=="gex"&&!p.available));
         assert!(vector.points.iter().any(|p|p.name=="value_area"&&p.available));
