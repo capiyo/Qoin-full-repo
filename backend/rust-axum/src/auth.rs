@@ -56,3 +56,21 @@ pub async fn set_pin_for_user(State(s):State<AppState>,Path(user_id):Path<String
  if authenticated!=user_id{return Err(StatusCode::FORBIDDEN)}
  set_pin(State(s),headers,Json(payload)).await
 }
+
+#[cfg(test)]
+mod auth_validation_tests {
+ use super::*;
+ #[test] fn phone_numbers_normalize_without_losing_international_prefix(){
+  assert_eq!(normalize_phone("+254712345678"),"+254712345678");
+  assert_eq!(normalize_phone("00254712345678"),"+254712345678");
+  assert_eq!(normalize_phone("0712345678"),"0712345678");
+ }
+ #[test] fn usernames_follow_funspot_validation_rules(){
+  assert!(valid_username("AllanJeffry"));
+  assert!(!valid_username("admin"));
+  assert!(!valid_username("abc"));
+  assert!(!valid_username("allanfan123"));
+  assert!(!valid_username("ab"));
+  assert!(!valid_username("allanfan_with_underscores"));
+ }
+}
