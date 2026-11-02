@@ -243,6 +243,7 @@ async fn main(){
         .route("/api/notifications/unread-summary",get(notifications::unread_summary))
         .route("/api/notifications/mark-read",put(notifications::mark_read))
         .route("/api/notifications/preferences",get(notifications::get_preferences).put(notifications::update_preferences))
+        .route("/internal/notifications",post(notifications::send_internal))
         .route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
