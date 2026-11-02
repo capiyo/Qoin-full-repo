@@ -16,6 +16,8 @@ use tower_http::trace::TraceLayer;
 
 mod edge_strategy;
 mod vector_engine;
+mod auth;
+mod notifications;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -60,7 +62,9 @@ struct AppState {
     events: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
-    strategies: Collection<Document>,\n    users: Collection<Document>,\n    db: mongodb::Database,
+    strategies: Collection<Document>,
+    users: Collection<Document>,
+    db: mongodb::Database,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
 }
@@ -199,8 +203,13 @@ async fn main(){
     let events:Collection<Document>=db.collection("market_events");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
-    let strategies:Collection<Document>=db.collection("edge_strategy");\n    let users:Collection<Document>=db.collection("users");
-    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");\n    users.create_index(mongodb::IndexModel::builder().keys(doc!{"username":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique username index");\n    db.collection::<Document>("fcm_tokens").create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM token index");\n    db.collection::<Document>("notifications").create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("notification history index");\n    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
+    let strategies:Collection<Document>=db.collection("edge_strategy");
+    let users:Collection<Document>=db.collection("users");\n    let users:Collection<Document>=db.collection("users");
+    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");\n    users.create_index(mongodb::IndexModel::builder().keys(doc!{"username":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique username index");\n    db.collection::<Document>("fcm_tokens").create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM token index");\n    db.collection::<Document>("notifications").create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("notification history index");\n    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");
+    users.create_index(mongodb::IndexModel::builder().keys(doc!{"username":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique username index");
+    db.collection::<Document>("fcm_tokens").create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM token index");
+    db.collection::<Document>("notifications").create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("notification history index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
