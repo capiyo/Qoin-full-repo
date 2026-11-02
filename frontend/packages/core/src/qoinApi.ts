@@ -37,12 +37,10 @@ function getBaseUrl(): string {
   // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
   // Physical devices need a reachable host configured for the development environment.
   const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
     location?: { origin: string };
     document?: unknown;
   };
-  const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL;
+  const configured = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_QOIN_API_URL : undefined;
   const sameOrigin = typeof runtime.document !== "undefined" ? runtime.location?.origin : undefined;
   return (configured || sameOrigin || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
