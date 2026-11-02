@@ -4,6 +4,8 @@ import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {View,Pressable,Text,StyleSheet} from "react-native";
 import {SafeAreaProvider} from "react-native-safe-area-context";
 import {colors} from "./src/theme";
+import {signOut as signOutFirebase} from "@react-native-firebase/auth";
+import {firebaseAuth} from "./src/lib/firebase";
 import {LoginScreen} from "./src/screens/LoginScreen";
 import {DashboardScreen} from "./src/screens/DashboardScreen";
 import {PositionsScreen} from "./src/screens/PositionsScreen";
@@ -19,7 +21,8 @@ function TabBar({current,onChange}:{current:Tab;onChange:(tab:Tab)=>void}){
 }
 function MainTabs(){
  const [tab,setTab]=useState<Tab>("Dashboard");const {session,signOut}=useQoinAuth();
- return <View style={styles.main}><View style={styles.accountBar}><Text style={styles.brand}>QOIN</Text><Text style={styles.username}>{session?.user.username}</Text><Pressable onPress={()=>void signOut()}><Text style={styles.signOut}>Sign out</Text></Pressable></View><View style={styles.content}>
+ async function logout(){try{await signOutFirebase(firebaseAuth)}finally{await signOut()}}
+ return <View style={styles.main}><View style={styles.accountBar}><Text style={styles.brand}>QOIN</Text><Text style={styles.username}>{session?.user.username}</Text><Pressable onPress={()=>void logout()}><Text style={styles.signOut}>Sign out</Text></Pressable></View><View style={styles.content}>
  {tab==="Dashboard"&&<DashboardScreen/>}{tab==="Positions"&&<PositionsScreen/>}{tab==="Signal"&&<SignalScreen/>}{tab==="Notifications"&&<NotificationsScreen/>}{tab==="Settings"&&<SettingsScreen/>}
  </View><TabBar current={tab} onChange={setTab}/></View>
 }

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthPanel } from "./AuthPanel";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { AccountSecurityPanel } from "./AccountSecurityPanel";
-import { requestWebPushToken } from "./firebase";
+import { requestWebPushToken,getFirebaseAuth } from "./firebase";
+import { signOut as signOutFirebase } from "firebase/auth";
 import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
 import {
   evaluateQoinSignal,
@@ -92,7 +93,7 @@ export default function App() {
     <main className="shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">Q</span> QOIN</a>
-        <div className="status"><span className={health ? "dot online" : "dot"} />{health ? "API connected · research mode" : "API offline"}{user ? <><span>{user.username}</span><button className="text-button" onClick={() => { localStorage.removeItem("qoin_session"); setToken(null); setUser(null); }}>Sign out</button></> : <span>Guest</span>}</div>
+        <div className="status"><span className={health ? "dot online" : "dot"} />{health ? "API connected · research mode" : "API offline"}{user ? <><span>{user.username}</span><button className="text-button" onClick={() => { void signOutFirebase(getFirebaseAuth()).catch(() => {}).finally(() => { localStorage.removeItem("qoin_session"); setToken(null); setUser(null); }); }}>Sign out</button></> : <span>Guest</span>}</div>
       </header>
       {!token ? <AuthPanel onAuthenticated={authenticated} /> : !user ? <section className="panel"><p className="hint">Restoring your secure Qoin session…</p></section> : <>
         <section className="intro">
