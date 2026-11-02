@@ -15,7 +15,7 @@ pub struct InternalNotification { user_id:String, notification_type:String, titl
 struct ServiceAccountClaims { iss:String, scope:String, aud:String, iat:usize, exp:usize }
 #[derive(Deserialize)]
 struct OAuthToken { access_token:String }
-async fn send_fcm(project:&str,token:&str,title:&str,body:&str,kind:&str,data:&Value)->Result<(),()> {
+async fn send_fcm(project:&str,device_token:&str,title:&str,body:&str,kind:&str,data:&Value)->Result<(),()> {
  let email=env::var("FIREBASE_CLIENT_EMAIL").map_err(|_|())?;
  let private_key=env::var("FIREBASE_PRIVATE_KEY").map_err(|_|())?.replace("
 ","\n").trim_matches('"').to_owned();
@@ -25,10 +25,10 @@ async fn send_fcm(project:&str,token:&str,title:&str,body:&str,kind:&str,data:&V
  let client=reqwest::Client::new();
  let oauth=client.post("https://oauth2.googleapis.com/token").form(&[("grant_type","urn:ietf:params:oauth:grant-type:jwt-bearer"),("assertion",assertion.as_str())]).send().await.map_err(|_|())?;
  if !oauth.status().is_success(){return Err(())}
- let token:OAuthToken=oauth.json().await.map_err(|_|())?;
+ let oauth_token:OAuthToken=oauth.json().await.map_err(|_|())?;
  let endpoint=format!("https://fcm.googleapis.com/v1/projects/{project}/messages:send");
- let payload=json!({"message":{"token":token,"notification":{"title":title,"body":body},"data":{"type":kind,"payload":serde_json::to_string(data).unwrap_or_default()},"android":{"priority":"HIGH"},"apns":{"headers":{"apns-priority":"10"}}}});
- let response=client.post(endpoint).bearer_auth(token.access_token).json(&payload).send().await.map_err(|_|())?;
+ let payload=json!({"message":{"token":device_token,"notification":{"title":title,"body":body},"data":{"type":kind,"payload":serde_json::to_string(data).unwrap_or_default()},"android":{"priority":"HIGH"},"apns":{"headers":{"apns-priority":"10"}}}});
+ let response=client.post(endpoint).bearer_auth(oauth_token.access_token).json(&payload).send().await.map_err(|_|())?;
  if response.status().is_success(){Ok(())}else{Err(())}
 }
 pub async fn send_internal(State(s):State<AppState>,h:HeaderMap,Json(p):Json<InternalNotification>)->Result<Json<Value>,StatusCode>{
