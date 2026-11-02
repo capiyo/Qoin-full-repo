@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "frontend/apps/web/**"
+      - "frontend/apps/mobile/**"
       - "frontend/packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
@@ -29,3 +30,4 @@ jobs:
           node-version: 20
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm --filter @qoin/react-web build
+      - run: pnpm --filter @qoin/mobile typecheck
