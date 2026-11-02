@@ -12,6 +12,7 @@ on:
   pull_request:
     paths:
       - "frontend/apps/web/**"
+      - "frontend/apps/mobile/**"
       - "frontend/packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
