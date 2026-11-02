@@ -1,6 +1,7 @@
 #include <drogon/drogon.h>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace {
 std::string upstream() {
@@ -30,6 +31,36 @@ void proxyGet(const drogon::HttpRequestPtr&,
         callback(forwarded);
     });
 }
+
+void proxyRequest(const drogon::HttpRequestPtr& incoming,
+                  std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                  const std::string& path) {
+    auto client = drogon::HttpClient::newHttpClient(upstream());
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(incoming->method());
+    request->setPath(path);
+    request->setBody(std::string(incoming->body()));
+    request->setContentTypeCode(incoming->getContentType());
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    const auto internalKey = incoming->getHeader("x-qoin-internal-key");
+    if (!internalKey.empty()) request->addHeader("x-qoin-internal-key", internalKey);
+    client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
+        const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "Qoin API unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
+
 }
 int main() {
 
