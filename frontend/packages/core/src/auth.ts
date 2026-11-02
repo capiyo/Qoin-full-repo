@@ -14,3 +14,10 @@ export const getUnreadSummary=(token:string)=>qoinRequest<{notifications:number;
 export const markNotificationsRead=(token:string,notification_ids?:string[])=>qoinRequest("/api/notifications/mark-read",{method:"PUT",token,body:JSON.stringify({notification_ids})});
 export const getNotificationPreferences=(token:string)=>qoinRequest<NotificationPreferences>("/api/notifications/preferences",{token});
 export const updateNotificationPreferences=(token:string,preferences:NotificationPreferences)=>qoinRequest("/api/notifications/preferences",{method:"PUT",token,body:JSON.stringify(preferences)});
+
+export function checkQoinUser(phone: string): Promise<{success:boolean;exists:boolean;has_pin:boolean;user?:{id:string;username:string;phone:string}}> {
+  return qoinRequest(`/api/auth/check-user/${encodeURIComponent(phone)}`);
+}
+export async function isQoinUsernameTaken(username:string):Promise<boolean>{
+  try{const result=await qoinRequest<{success:boolean;user:{id:string;username:string}|null}>(`/api/auth/user/username/${encodeURIComponent(username)}`);return result.success&&result.user!==null}catch{return false}
+}
