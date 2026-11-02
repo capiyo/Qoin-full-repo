@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+import { getMessaging, getToken, isSupported, onMessage, type MessagePayload } from "firebase/messaging";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -23,4 +23,14 @@ export async function requestWebPushToken(): Promise<string | null> {
   const params = new URLSearchParams({ apiKey: config.apiKey, authDomain: config.authDomain, projectId: config.projectId, appId: config.appId, messagingSenderId: config.messagingSenderId });
   const registration = await navigator.serviceWorker.register(`/firebase-messaging-sw.js?${params.toString()}`);
   return (await getToken(getMessaging(app), { vapidKey: vapid, serviceWorkerRegistration: registration })) || null;
+}
+
+export function onForegroundMessage(callback:(payload:MessagePayload)=>void):()=>void {
+  if (typeof window === "undefined") return () => {};
+  try {
+    const app = getApps().length ? getApp() : initializeApp(config);
+    return onMessage(getMessaging(app), callback);
+  } catch {
+    return () => {};
+  }
 }

@@ -45,7 +45,7 @@ function getBaseUrl(): string {
 export async function qoinRequest<T>(path: string, init?: RequestInit & { token?: string }): Promise<T> {
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}), ...init?.headers },
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

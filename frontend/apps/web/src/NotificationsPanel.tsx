@@ -1,9 +1,10 @@
 import { useEffect,useState } from "react";
+import { onForegroundMessage } from "./firebase";
 import { getNotifications,getNotificationPreferences,getUnreadSummary,markNotificationsRead,updateNotificationPreferences,type QoinNotification,type NotificationPreferences } from "@qoin/core";
 export function NotificationsPanel({token,onEnablePush}:{token:string;onEnablePush:()=>void}){
  const [items,setItems]=useState<QoinNotification[]>([]),[count,setCount]=useState(0),[prefs,setPrefs]=useState<NotificationPreferences>({market_alerts:true,security_alerts:true,system_alerts:true}),[error,setError]=useState("");
  async function refresh(){try{const [n,u,p]=await Promise.all([getNotifications(token),getUnreadSummary(token),getNotificationPreferences(token)]);setItems(n.notifications);setCount(u.notifications);setPrefs(p);}catch(e){setError(e instanceof Error?e.message:"Notifications unavailable.");}}
- useEffect(()=>{void refresh();},[token]);
+ useEffect(()=>{void refresh();const unsubscribe=onForegroundMessage(payload=>{if(payload.notification&&Notification.permission==="granted"){new Notification(payload.notification.title??"Qoin alert",{body:payload.notification.body??""});}void refresh();});const interval=window.setInterval(()=>void refresh(),30000);return()=>{unsubscribe();window.clearInterval(interval)};},[token]);
  async function markAll(){try{await markNotificationsRead(token);await refresh();}catch(e){setError(e instanceof Error?e.message:"Could not mark notifications read.");}}
  async function save(next:NotificationPreferences){setPrefs(next);try{await updateNotificationPreferences(token,next);}catch(e){setError(e instanceof Error?e.message:"Could not save preferences.");}}
  return <section className="panel notifications-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNT ACTIVITY</p><h2>Notifications <span className="counter">{count} unread</span></h2></div><button className="text-button" onClick={markAll}>Mark all read</button></div>
