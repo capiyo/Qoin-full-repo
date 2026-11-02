@@ -36,6 +36,8 @@ function getBaseUrl(): string {
   // Physical devices need a reachable host configured for the development environment.
   const runtime = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };
+    location?: { origin: string };
+    document?: unknown;
   };
   const env = runtime.process?.env;
   const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL;
