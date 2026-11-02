@@ -6,6 +6,7 @@ on:
       - "frontend/apps/web/**"
       - "frontend/apps/mobile/**"
       - "frontend/packages/core/**"
+      - "frontend/packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/react-web.yml"
