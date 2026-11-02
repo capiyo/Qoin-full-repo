@@ -84,7 +84,8 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyRequest(req, std::move(cb), req->path());
     }, {drogon::Get});
-\n    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
+
+    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
