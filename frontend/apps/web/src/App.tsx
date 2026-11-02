@@ -48,13 +48,19 @@ export default function App() {
 
   useEffect(() => {
     if (!token) { setUser(null); return; }
-    getCurrentUser(token).then(({ user: current }) => setUser(current)).catch(() => {
-      localStorage.removeItem("qoin_session"); localStorage.removeItem("qoin_user"); setToken(null); setUser(null);
+    getCurrentUser(token).then(({ user: current }) => {
+      setUser(current); localStorage.setItem("qoin_user", JSON.stringify(current));
+    }).catch((e: unknown) => {
+      const message = e instanceof Error ? e.message : "";
+      if (message.includes("401") || message.includes("404")) {
+        localStorage.removeItem("qoin_session"); localStorage.removeItem("qoin_user"); setToken(null); setUser(null);
+      }
     });
   }, [token]);
 
   function authenticated(session: QoinSession) {
     localStorage.setItem("qoin_session", session.token);
+    localStorage.setItem("qoin_user", JSON.stringify(session.user));
     setToken(session.token);
     setUser(session.user);
   }
