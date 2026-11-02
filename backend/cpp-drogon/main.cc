@@ -32,7 +32,28 @@ void proxyGet(const drogon::HttpRequestPtr&,
 }
 }
 int main() {
-    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
+
+    const std::vector<std::pair<std::string, drogon::HttpMethod>> authRoutes = {
+        {"/api/auth/firebase-login", drogon::Post}, {"/api/auth/register", drogon::Post},
+        {"/api/auth/pin-login", drogon::Post}, {"/api/auth/set-pin", drogon::Post},
+        {"/api/auth/me", drogon::Get}, {"/api/notifications/register-token", drogon::Post},
+        {"/api/notifications", drogon::Get}, {"/api/notifications/unread-summary", drogon::Get},
+        {"/api/notifications/mark-read", drogon::Put}, {"/api/notifications/preferences", drogon::Get},
+        {"/api/notifications/preferences", drogon::Put}
+    };
+    for (const auto& route : authRoutes) {
+        const auto path = route.first;
+        const auto method = route.second;
+        drogon::app().registerHandler(path, [path](const drogon::HttpRequestPtr& req,
+            std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            proxyRequest(req, std::move(cb), path);
+        }, {method});
+    }
+    drogon::app().registerHandler("/api/auth/check-user/{1}", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyRequest(req, std::move(cb), req->path());
+    }, {drogon::Get});
+\n    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
