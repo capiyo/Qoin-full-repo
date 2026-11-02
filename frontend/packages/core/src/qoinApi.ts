@@ -38,14 +38,14 @@ function getBaseUrl(): string {
     process?: { env?: Record<string, string | undefined> };
   };
   const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
+  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL;
   return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function qoinRequest<T>(path: string, init?: RequestInit & { token?: string }): Promise<T> {
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers: { "content-type": "application/json", ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}), ...init?.headers },
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -55,12 +55,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getQoinHealth(): Promise<QoinHealth> {
-  return request<QoinHealth>("/health");
+  return qoinRequest<QoinHealth>("/health");
 }
 
 /** Returns a research signal only. This client never submits exchange orders. */
 export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal> {
-  return request<QoinSignal>("/v1/signal", {
+  return qoinRequest<QoinSignal>("/v1/signal", {
     method: "POST",
     body: JSON.stringify(input),
   });
