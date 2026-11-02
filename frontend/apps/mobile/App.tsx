@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -11,6 +10,8 @@ import { DashboardScreen } from "./src/screens/DashboardScreen";
 import { PositionsScreen } from "./src/screens/PositionsScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { SignalScreen } from "./src/screens/SignalScreen";
+import { NotificationsScreen } from "./src/screens/NotificationsScreen";
+import { AuthProvider, useQoinAuth } from "./src/lib/auth-context";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -19,13 +20,12 @@ export type RootStackParamList = {
   Settings: undefined;
 };
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 
 // Simple bottom tab bar hand-rolled to avoid an extra nav dependency;
 // swap for @react-navigation/bottom-tabs if you want native tab transitions.
-function TabBar({ current, onChange }: { current: "Dashboard" | "Positions" | "Signal" | "Settings"; onChange: (t: "Dashboard" | "Positions" | "Signal" | "Settings") => void }) {
-  const tabs: Array<"Dashboard" | "Positions" | "Signal" | "Settings"> = ["Dashboard", "Positions", "Signal", "Settings"];
+function TabBar({ current, onChange }: { current: "Dashboard" | "Positions" | "Signal" | "Notifications" | "Settings"; onChange: (t: "Dashboard" | "Positions" | "Signal" | "Settings") => void }) {
+  const tabs: Array<"Dashboard" | "Positions" | "Signal" | "Settings"> = ["Dashboard", "Positions", "Signal", "Notifications", "Settings"];
   return (
     <View style={styles.tabBar}>
       {tabs.map((t) => (
@@ -47,6 +47,7 @@ function MainTabs() {
         {tab === "Dashboard" && <DashboardScreen />}
         {tab === "Positions" && <PositionsScreen />}
         {tab === "Signal" && <SignalScreen />}
+        {tab === "Notifications" && <NotificationsScreen />}
         {tab === "Settings" && <SettingsScreen />}
       </View>
       <TabBar current={tab} onChange={setTab} />
@@ -54,17 +55,9 @@ function MainTabs() {
   );
 }
 
-export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
+function AppNavigator() {\n  const { session, ready } = useQoinAuth();\n  if (!ready) return <View style={{flex:1,backgroundColor:colors.bgPrimary,justifyContent:"center"}}><Text style={{color:colors.textMuted,textAlign:"center"}}>Restoring secure session…</Text></View>;\n  return (\n    <NavigationContainer>\n      <StatusBar style="light" backgroundColor={colors.bgPrimary} />\n      {session ? <MainTabs /> : <LoginScreen />}\n    </NavigationContainer>\n  );\n}\n\nexport default function App() {\n  return (\n    <AuthProvider>\n      <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <StatusBar style="light" backgroundColor={colors.bgPrimary} />
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Dashboard" component={MainTabs} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <AppNavigator />
       </SafeAreaProvider>
     </QueryClientProvider>
   );
