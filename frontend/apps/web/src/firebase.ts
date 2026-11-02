@@ -20,6 +20,6 @@ export async function requestWebPushToken(): Promise<string | null> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return null;
   const app = getApps().length ? getApp() : initializeApp(config);
-  const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+  const params = new URLSearchParams({ apiKey: config.apiKey, authDomain: config.authDomain, projectId: config.projectId, appId: config.appId, messagingSenderId: config.messagingSenderId });\n  const registration = await navigator.serviceWorker.register(`/firebase-messaging-sw.js?${params.toString()}`);
   return (await getToken(getMessaging(app), { vapidKey: vapid, serviceWorkerRegistration: registration })) || null;
 }
