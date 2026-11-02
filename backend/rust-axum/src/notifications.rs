@@ -17,8 +17,7 @@ struct ServiceAccountClaims { iss:String, scope:String, aud:String, iat:usize, e
 struct OAuthToken { access_token:String }
 async fn send_fcm(project:&str,device_token:&str,title:&str,body:&str,kind:&str,data:&Value)->Result<(),()> {
  let email=env::var("FIREBASE_CLIENT_EMAIL").map_err(|_|())?;
- let private_key=env::var("FIREBASE_PRIVATE_KEY").map_err(|_|())?.replace("
-","\n").trim_matches('"').to_owned();
+ let private_key=env::var("FIREBASE_PRIVATE_KEY").map_err(|_|())?.replace("\\n","\n").trim_matches('"').to_owned();
  let key=EncodingKey::from_rsa_pem(private_key.as_bytes()).map_err(|_|())?;
  let now=Utc::now().timestamp() as usize;
  let assertion=encode(&Header::new(Algorithm::RS256),&ServiceAccountClaims{iss:email,scope:"https://www.googleapis.com/auth/firebase.messaging".into(),aud:"https://oauth2.googleapis.com/token".into(),iat:now,exp:now+3600},&key).map_err(|_|())?;
