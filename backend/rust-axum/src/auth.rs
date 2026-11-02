@@ -19,7 +19,7 @@ pub async fn pin_login(State(s):State<AppState>,Json(p):Json<PinLoginRequest>)->
  let attempts=s.db.collection::<mongodb::bson::Document>("auth_pin_attempts");
  let now=DateTime::now();
  if let Some(record)=attempts.find_one(doc!{"phone":&phone},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?{
-  if let Ok(locked)=record.get_datetime("locked_until"){if locked.timestamp_millis()>now.timestamp_millis(){return Err(StatusCode::TOO_MANY_REQUESTS)}}
+  if let Ok(locked)=record.get_datetime("locked_until"){if locked.timestamp_millis()>now.timestamp_millis(){return Err(StatusCode::TOO_MANY_REQUESTS)}else{attempts.update_one(doc!{"phone":&phone},doc!{"$set":{"failed_count":0},"$unset":{"locked_until":""}},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;}}
  }
  let u=s.users.find_one(doc!{"phone":&phone},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?.ok_or(StatusCode::UNAUTHORIZED)?;
  let valid=u.get_str("pin_hash").ok().and_then(|stored|verify(&p.pin,stored).ok()).unwrap_or(false);
