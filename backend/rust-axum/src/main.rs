@@ -238,6 +238,8 @@ async fn main(){
         .route("/api/auth/set-pin",post(auth::set_pin))
         .route("/api/auth/me",get(auth::me))
         .route("/api/auth/check-user/:phone",get(auth::check_user))
+        .route("/api/auth/user/username/:username",get(auth::username_taken))
+        .route("/api/auth/set-pin/:user_id",post(auth::set_pin_for_user))
         .route("/api/notifications/register-token",post(notifications::register_token))
         .route("/api/notifications",get(notifications::list))
         .route("/api/notifications/unread-summary",get(notifications::unread_summary))
