@@ -19,8 +19,12 @@ Qoin ports Funspot's phone-first authentication experience and FCM notification 
 - `POST /api/auth/set-pin` — authenticated `{ "pin": "1234" }`
 - `GET /api/auth/me` — authenticated session and profile
 - `GET /api/auth/check-user/:phone` — existence/PIN fallback lookup
+- `GET /api/auth/user/username/:username` — username availability
+- `POST /api/auth/set-pin/:user_id` — authenticated compatibility alias; user ID must match the session
 
-The phone and username checks follow Funspot's validation pattern. An existing account can fall back to its PIN if OTP delivery fails; a new account or an account without a PIN must complete phone verification. PIN login is rate-limited after five failures with a 15-minute lockout.\n\n## Notification routes
+The phone and username checks follow Funspot's validation pattern. An existing account can fall back to its PIN if OTP delivery fails; a new account or an account without a PIN must complete phone verification. PIN login is rate-limited after five failures with a 15-minute lockout.
+
+## Notification routes
 
 - `POST /api/notifications/register-token` — authenticated FCM device registration
 - `GET /api/notifications` — authenticated 50-item history
