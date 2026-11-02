@@ -1,50 +1,16 @@
-import React, { useState } from "react";
-import { View, Text, Switch, StyleSheet } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { colors } from "../theme";
-
-export function SettingsScreen() {
-  const [riskWarnings, setRiskWarnings] = useState(true);
-  const [confirmOrders, setConfirmOrders] = useState(true);
-
-  return (
-    <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Settings</Text>
-      <View style={styles.card}>
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Risk limit warnings</Text>
-            <Text style={styles.hint}>Warn when a position nears its risk limit.</Text>
-          </View>
-          <Switch
-            value={riskWarnings}
-            onValueChange={setRiskWarnings}
-            trackColor={{ false: colors.border, true: colors.accentCyan }}
-            thumbColor={colors.white}
-          />
-        </View>
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Confirm before placing orders</Text>
-            <Text style={styles.hint}>Adds a confirmation step to orders.</Text>
-          </View>
-          <Switch
-            value={confirmOrders}
-            onValueChange={setConfirmOrders}
-            trackColor={{ false: colors.border, true: colors.accentCyan }}
-            thumbColor={colors.white}
-          />
-        </View>
-      </View>
-    </SafeAreaView>
-  );
+import React,{useState} from "react";
+import {View,Text,Switch,StyleSheet,TextInput,Pressable,ActivityIndicator} from "react-native";
+import {SafeAreaView} from "react-native-safe-area-context";
+import {setAccountPin} from "@qoin/core";
+import {useQoinAuth} from "../lib/auth-context";
+import {colors} from "../theme";
+export function SettingsScreen(){
+ const [riskWarnings,setRiskWarnings]=useState(true),[confirmOrders,setConfirmOrders]=useState(true),[pin,setPin]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+ const {session,signIn}=useQoinAuth();
+ async function savePin(){if(!session||pin.length!==4)return;setBusy(true);setMessage("");try{await signIn(await setAccountPin(session.token,pin));setPin("");setMessage("PIN saved. You can now use it as a sign-in fallback.")}catch(e){setMessage(e instanceof Error?e.message:"Could not save PIN.")}finally{setBusy(false)}}
+ return <SafeAreaView style={styles.screen}><Text style={styles.title}>Settings</Text><View style={styles.card}>
+ <View style={styles.row}><View style={{flex:1}}><Text style={styles.label}>Risk limit warnings</Text><Text style={styles.hint}>Warn when a position nears its risk limit.</Text></View><Switch value={riskWarnings} onValueChange={setRiskWarnings} trackColor={{false:colors.border,true:colors.accentCyan}} thumbColor={colors.white}/></View>
+ <View style={styles.row}><View style={{flex:1}}><Text style={styles.label}>Confirm before placing orders</Text><Text style={styles.hint}>Adds a confirmation step to orders.</Text></View><Switch value={confirmOrders} onValueChange={setConfirmOrders} trackColor={{false:colors.border,true:colors.accentCyan}} thumbColor={colors.white}/></View>
+ </View><View style={styles.card}><Text style={styles.label}>Set or change your 4-digit sign-in PIN</Text><Text style={styles.hint}>PINs are hashed by the backend. Phone verification remains your primary recovery method.</Text><TextInput style={styles.input} value={pin} onChangeText={v=>setPin(v.replace(/\D/g,"").slice(0,4))} keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.textMuted}/><Pressable style={styles.button} onPress={savePin} disabled={busy||pin.length!==4}>{busy?<ActivityIndicator color={colors.bgPrimary}/>:<Text style={styles.buttonText}>Save PIN</Text>}</Pressable>{!!message&&<Text style={styles.message}>{message}</Text>}</View></SafeAreaView>
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgPrimary, padding: 16 },
-  title: { color: colors.white, fontSize: 20, fontWeight: "700", marginBottom: 12 },
-  card: { backgroundColor: colors.bgSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16 },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
-  label: { color: colors.textPrimary, fontWeight: "600", fontSize: 14 },
-  hint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-});
+const styles=StyleSheet.create({screen:{flex:1,backgroundColor:colors.bgPrimary,padding:16},title:{color:colors.white,fontSize:20,fontWeight:"700",marginBottom:12},card:{backgroundColor:colors.bgSecondary,borderWidth:1,borderColor:colors.border,borderRadius:12,padding:16,marginBottom:12},row:{flexDirection:"row",alignItems:"center",paddingVertical:12},label:{color:colors.textPrimary,fontWeight:"600",fontSize:14},hint:{color:colors.textMuted,fontSize:12,marginTop:3,lineHeight:17},input:{backgroundColor:colors.bgPrimary,borderWidth:1,borderColor:colors.border,borderRadius:8,padding:11,color:colors.white,marginTop:12},button:{backgroundColor:colors.accentCyan,borderRadius:8,padding:12,alignItems:"center",marginTop:12},buttonText:{color:colors.bgPrimary,fontWeight:"800"},message:{color:colors.accentCyan,fontSize:11,marginTop:10}});

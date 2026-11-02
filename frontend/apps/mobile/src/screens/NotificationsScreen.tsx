@@ -1,12 +1,12 @@
 import React,{useEffect,useState} from "react";
-import {ScrollView,View,Text,Pressable,Switch,StyleSheet,ActivityIndicator,Platform} from "react-native";
+import {ScrollView,View,Text,Pressable,Switch,StyleSheet,ActivityIndicator,Platform,Alert} from "react-native";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {getNotifications,getNotificationPreferences,getUnreadSummary,markNotificationsRead,updateNotificationPreferences,registerPushToken,type QoinNotification,type NotificationPreferences} from "@qoin/core";
-import {requestDevicePushToken} from "../lib/firebase";import {useQoinAuth} from "../lib/auth-context";import {colors} from "../theme";
+import {requestDevicePushToken,listenForForegroundNotifications} from "../lib/firebase";import {useQoinAuth} from "../lib/auth-context";import {colors} from "../theme";
 export function NotificationsScreen(){
  const {session}=useQoinAuth();const token=session?.token??"";const [items,setItems]=useState<QoinNotification[]>([]),[unread,setUnread]=useState(0),[prefs,setPrefs]=useState<NotificationPreferences>({market_alerts:true,security_alerts:true,system_alerts:true}),[busy,setBusy]=useState(false),[error,setError]=useState("");
  async function refresh(){if(!token)return;try{const [n,u,p]=await Promise.all([getNotifications(token),getUnreadSummary(token),getNotificationPreferences(token)]);setItems(n.notifications);setUnread(u.notifications);setPrefs(p)}catch(e){setError(e instanceof Error?e.message:"Could not load notifications.")}}
- useEffect(()=>{void refresh()},[token]);
+ useEffect(()=>{void refresh();return listenForForegroundNotifications(message=>{const title=message.notification?.title??"Qoin alert";const body=message.notification?.body??"";Alert.alert(title,body);})},[token]);
  async function enablePush(){setBusy(true);setError("");try{const fcm=await requestDevicePushToken();if(fcm)await registerPushToken(token,fcm,Platform.OS==="ios"?"ios":"android");else setError("Notification permission was not granted.")}catch(e){setError(e instanceof Error?e.message:"Push setup failed.")}finally{setBusy(false)}}
  async function markAll(){try{await markNotificationsRead(token);await refresh()}catch(e){setError(e instanceof Error?e.message:"Could not mark notifications read.")}}
  async function save(key:keyof NotificationPreferences,value:boolean){const next={...prefs,[key]:value};setPrefs(next);try{await updateNotificationPreferences(token,next)}catch(e){setError(e instanceof Error?e.message:"Could not save preferences.")}}
