@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from "react";\nimport { AuthPanel } from "./AuthPanel";\nimport { NotificationsPanel } from "./NotificationsPanel";\nimport { requestWebPushToken } from "./firebase";\nimport { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
+import { useEffect, useMemo, useState } from "react";
+import { AuthPanel } from "./AuthPanel";
+import { NotificationsPanel } from "./NotificationsPanel";
+import { requestWebPushToken } from "./firebase";
+import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
+import { AuthPanel } from "./AuthPanel";
+import { NotificationsPanel } from "./NotificationsPanel";
+import { requestWebPushToken } from "./firebase";
+import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
 import {
   evaluateQoinSignal,
   getQoinHealth,
@@ -32,7 +40,9 @@ export default function App() {
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [signal, setSignal] = useState<QoinSignal | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");\n  const [token, setToken] = useState(() => localStorage.getItem("qoin_session"));\n  const [user, setUser] = useState<QoinUser | null>(null);
+  const [error, setError] = useState("");
+  const [token, setToken] = useState(() => localStorage.getItem("qoin_session"));
+  const [user, setUser] = useState<QoinUser | null>(null);
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
@@ -64,7 +74,8 @@ export default function App() {
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">Q</span> QOIN</a>
         <div className="status"><span className={health ? "dot online" : "dot"} />{health ? "API connected · research mode" : "API offline"}{user ? <><span>{user.username}</span><button className="text-button" onClick={() => { localStorage.removeItem("qoin_session"); setToken(null); setUser(null); }}>Sign out</button></> : <span>Guest</span>}</div>
       </header>
-      <section className="intro">\n        {!token && <AuthPanel onAuthenticated={authenticated} />}
+      <section className="intro">
+        {!token && <AuthPanel onAuthenticated={authenticated} />}
         <p className="eyebrow">MARKET-FORCE ENGINE / RESEARCH</p>
         <h1>Read the forces.<br /><span>Respect uncertainty.</span></h1>
         <p className="lede">A present-centered view of market pressure. Explore normalized inputs and request a deterministic research signal from the Rust engine.</p>
@@ -108,7 +119,8 @@ export default function App() {
           <div className="safety-note"><strong>Research only</strong><p>Signals are not orders. This UI cannot place trades. Live trading is disabled and profitability has not been established.</p></div>
         </aside>
       </div>
-      {token && <NotificationsPanel token={token} onEnablePush={enablePush} />}\n      <footer>QOIN / EXPERIMENTAL MARKET-FLOW SYSTEM <span>NO LIVE EXECUTION</span></footer>
+      {token && <NotificationsPanel token={token} onEnablePush={enablePush} />}
+      <footer>QOIN / EXPERIMENTAL MARKET-FLOW SYSTEM <span>NO LIVE EXECUTION</span></footer>
     </main>
   );
 }
