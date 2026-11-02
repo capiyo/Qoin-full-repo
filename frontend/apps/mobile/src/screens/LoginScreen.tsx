@@ -1,16 +1,16 @@
 import React,{useState} from "react";
-import {View,Text,TextInput,Pressable,StyleSheet,ActivityIndicator,Platform} from "react-native";
+import {View,Text,TextInput,Pressable,StyleSheet,ActivityIndicator} from "react-native";
 import {SafeAreaView} from "react-native-safe-area-context";
 import {signInWithPhoneNumber,type FirebaseAuthTypes} from "@react-native-firebase/auth";
-import {firebaseAuth,requestDevicePushToken} from "../lib/firebase";
-import {loginWithFirebaseToken,loginWithPin,registerWithFirebaseToken,registerPushToken,type QoinSession} from "@qoin/core";
+import {firebaseAuth} from "../lib/firebase";
+import {loginWithFirebaseToken,loginWithPin,registerWithFirebaseToken,type QoinSession} from "@qoin/core";
 import {useQoinAuth} from "../lib/auth-context";
 import {colors} from "../theme";
 type Step="phone"|"otp"|"username"|"pin";
 export function LoginScreen(){
  const {signIn}=useQoinAuth();const [step,setStep]=useState<Step>("phone"),[phone,setPhone]=useState("+254"),[otp,setOtp]=useState(""),[pin,setPin]=useState(""),[username,setUsername]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const [confirmation,setConfirmation]=useState<FirebaseAuthTypes.ConfirmationResult|null>(null);const [idToken,setIdToken]=useState("");
- async function finish(session:QoinSession){await signIn(session);try{const fcm=await requestDevicePushToken();if(fcm)await registerPushToken(session.token,fcm,Platform.OS==="ios"?"ios":"android")}catch{/* Push permission is optional. */}}
+ async function finish(session:QoinSession){await signIn(session)}
  async function sendOtp(){setBusy(true);setError("");try{setConfirmation(await signInWithPhoneNumber(firebaseAuth,phone.trim()));setStep("otp")}catch(e){setError(e instanceof Error?e.message:"Could not send phone verification code.")}finally{setBusy(false)}}
  async function verifyOtp(){if(!confirmation)return;setBusy(true);setError("");try{const credential=await confirmation.confirm(otp.trim());const token=await credential.user.getIdToken();setIdToken(token);try{await finish(await loginWithFirebaseToken(token))}catch(e){if(e instanceof Error&&e.message.includes("404"))setStep("username");else throw e}}catch(e){setError(e instanceof Error?e.message:"Phone verification failed.")}finally{setBusy(false)}}
  async function register(){setBusy(true);setError("");try{await finish(await registerWithFirebaseToken(idToken,username.trim()))}catch(e){setError(e instanceof Error?e.message:"Registration failed.")}finally{setBusy(false)}}
