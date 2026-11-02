@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AuthPanel } from "./AuthPanel";
 import { NotificationsPanel } from "./NotificationsPanel";
+import { AccountSecurityPanel } from "./AccountSecurityPanel";
 import { requestWebPushToken } from "./firebase";
 import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
 import {
@@ -138,7 +139,7 @@ export default function App() {
           <div className="safety-note"><strong>Research only</strong><p>Signals are not orders. This UI cannot place trades. Live trading is disabled and profitability has not been established.</p></div>
         </aside>
       </div>
-      {token && <NotificationsPanel token={token} onEnablePush={enablePush} />}
+      {token && <><AccountSecurityPanel token={token} /><NotificationsPanel token={token} onEnablePush={enablePush} /></>}
       <footer>QOIN / EXPERIMENTAL MARKET-FLOW SYSTEM <span>NO LIVE EXECUTION</span></footer>
     </main>
   );
