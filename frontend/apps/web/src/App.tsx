@@ -94,38 +94,30 @@ export default function App() {
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">Q</span> QOIN</a>
         <div className="status"><span className={health ? "dot online" : "dot"} />{health ? "API connected · research mode" : "API offline"}{user ? <><span>{user.username}</span><button className="text-button" onClick={() => { localStorage.removeItem("qoin_session"); setToken(null); setUser(null); }}>Sign out</button></> : <span>Guest</span>}</div>
       </header>
-      <section className="intro">
-        {!token && <AuthPanel onAuthenticated={authenticated} />}
-        <p className="eyebrow">MARKET-FORCE ENGINE / RESEARCH</p>
-        <h1>Read the forces.<br /><span>Respect uncertainty.</span></h1>
-        <p className="lede">A present-centered view of market pressure. Explore normalized inputs and request a deterministic research signal from the Rust engine.</p>
-      </section>
-      <div className="layout">
-        <section className="panel forces-panel">
-          <div className="panel-heading"><div><p className="eyebrow">INPUT VECTOR</p><h2>Market forces</h2></div><span className="counter">{activeForces} / 7 active</span></div>
-          <p className="hint">Use normalized values. This prototype does not fetch exchange data.</p>
-          <div className="force-list">
-            {fields.map(({ key, label, detail }) => (
-              <label className="force-row" key={key}>
-                <span className="force-copy"><strong>{label}</strong><small>{detail}</small></span>
-                <input
-                  aria-label={label}
-                  type="number"
-                  step="0.1"
-                  value={forces[key]}
-                  onChange={(event) => setForces((prev) => ({ ...prev, [key]: Number(event.target.value) }))}
-                />
-              </label>
-            ))}
-          </div>
-          <button className="primary" onClick={evaluate} disabled={busy}>{busy ? "Evaluating…" : "Evaluate research signal"}</button>
-          {error && <p className="error" role="alert">{error}</p>}
+      {!token ? <AuthPanel onAuthenticated={authenticated} /> : !user ? <section className="panel"><p className="hint">Restoring your secure Qoin session…</p></section> : <>
+        <section className="intro">
+          <p className="eyebrow">MARKET-FORCE ENGINE / RESEARCH</p>
+          <h1>Read the forces.<br /><span>Respect uncertainty.</span></h1>
+          <p className="lede">A present-centered view of market pressure. Explore normalized inputs and request a deterministic research signal from the Rust engine.</p>
         </section>
-        <aside className="panel signal-panel">
-          <p className="eyebrow">VECTOR CONVERGENCE</p>
-          <h2>Signal output</h2>
-          {signal ? (
-            <>
+        <div className="layout">
+          <section className="panel forces-panel">
+            <div className="panel-heading"><div><p className="eyebrow">INPUT VECTOR</p><h2>Market forces</h2></div><span className="counter">{activeForces} / 7 active</span></div>
+            <p className="hint">Use normalized values. This prototype does not fetch exchange data.</p>
+            <div className="force-list">
+              {fields.map(({ key, label, detail }) => (
+                <label className="force-row" key={key}>
+                  <span className="force-copy"><strong>{label}</strong><small>{detail}</small></span>
+                  <input aria-label={label} type="number" step="0.1" value={forces[key]} onChange={(event) => setForces((prev) => ({ ...prev, [key]: Number(event.target.value) }))} />
+                </label>
+              ))}
+            </div>
+            <button className="primary" onClick={evaluate} disabled={busy}>{busy ? "Evaluating…" : "Evaluate research signal"}</button>
+            {error && <p className="error" role="alert">{error}</p>}
+          </section>
+          <aside className="panel signal-panel">
+            <p className="eyebrow">VECTOR CONVERGENCE</p><h2>Signal output</h2>
+            {signal ? <>
               <div className={`signal-badge ${signal.decision.toLowerCase()}`}>{signal.decision}</div>
               <div className="score-line"><span>Directional score</span><strong>{signal.score.toFixed(3)}</strong></div>
               <div className="meter"><span style={{ width: `${Math.min(100, Math.abs(signal.score) * 100)}%` }} /></div>
@@ -134,12 +126,13 @@ export default function App() {
               <div className="score-line"><span>Active forces</span><strong>{signal.active_force_count} / 7</strong></div>
               <div className="score-line"><span>Configuration</span><strong>{signal.config_version}</strong></div>
               <p className="hint">{signal.rationale}</p>
-            </>
-          ) : <div className="empty"><div className="empty-orbit">↗</div><strong>Waiting for evaluation</strong><p>Adjust forces, then ask the engine for a signal.</p></div>}
-          <div className="safety-note"><strong>Research only</strong><p>Signals are not orders. This UI cannot place trades. Live trading is disabled and profitability has not been established.</p></div>
-        </aside>
-      </div>
-      {token && <><AccountSecurityPanel token={token} /><NotificationsPanel token={token} onEnablePush={enablePush} /></>}
+            </> : <div className="empty"><div className="empty-orbit">↗</div><strong>Waiting for evaluation</strong><p>Adjust forces, then ask the engine for a signal.</p></div>}
+            <div className="safety-note"><strong>Research only</strong><p>Signals are not orders. This UI cannot place trades. Live trading is disabled and profitability has not been established.</p></div>
+          </aside>
+        </div>
+        <AccountSecurityPanel token={token} />
+        <NotificationsPanel token={token} onEnablePush={enablePush} />
+      </>}
       <footer>QOIN / EXPERIMENTAL MARKET-FLOW SYSTEM <span>NO LIVE EXECUTION</span></footer>
     </main>
   );
