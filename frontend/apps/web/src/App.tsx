@@ -3,10 +3,6 @@ import { AuthPanel } from "./AuthPanel";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { requestWebPushToken } from "./firebase";
 import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
-import { AuthPanel } from "./AuthPanel";
-import { NotificationsPanel } from "./NotificationsPanel";
-import { requestWebPushToken } from "./firebase";
-import { getCurrentUser, registerPushToken, type QoinSession, type QoinUser } from "@qoin/core";
 import {
   evaluateQoinSignal,
   getQoinHealth,
@@ -47,6 +43,29 @@ export default function App() {
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
+
+  useEffect(() => {
+    if (!token) { setUser(null); return; }
+    getCurrentUser(token).then(({ user: current }) => setUser(current)).catch(() => {
+      localStorage.removeItem("qoin_session"); setToken(null); setUser(null);
+    });
+  }, [token]);
+
+  function authenticated(session: QoinSession) {
+    localStorage.setItem("qoin_session", session.token);
+    setToken(session.token);
+    setUser(session.user);
+  }
+
+  async function enablePush() {
+    if (!token) return;
+    try {
+      const fcmToken = await requestWebPushToken();
+      if (fcmToken) await registerPushToken(token, fcmToken, "web");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Push notifications could not be enabled.");
+    }
+  }
 
   const activeForces = useMemo(
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
