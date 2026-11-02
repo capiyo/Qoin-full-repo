@@ -20,7 +20,7 @@ Qoin ports Funspot's phone-first authentication experience and FCM notification 
 - `GET /api/auth/me` — authenticated session and profile
 - `GET /api/auth/check-user/:phone` — existence/PIN fallback lookup
 
-## Notification routes
+The phone and username checks follow Funspot's validation pattern. An existing account can fall back to its PIN if OTP delivery fails; a new account or an account without a PIN must complete phone verification. PIN login is rate-limited after five failures with a 15-minute lockout.\n\n## Notification routes
 
 - `POST /api/notifications/register-token` — authenticated FCM device registration
 - `GET /api/notifications` — authenticated 50-item history
@@ -32,7 +32,7 @@ Qoin ports Funspot's phone-first authentication experience and FCM notification 
 
 ## Required runtime configuration
 
-Backend: `QOIN_JWT_SECRET` (32+ random chars), `QOIN_FIREBASE_PROJECT_ID`, `QOIN_INTERNAL_API_KEY` (32+ random chars), `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` (service-account PEM).
+Backend: `QOIN_JWT_SECRET` (32+ random chars), `QOIN_INTERNAL_API_KEY` (32+ random chars), `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` (service-account PEM). `QOIN_FIREBASE_PROJECT_ID` defaults to the Funspot Firebase project `funzy-d56d7`; override only if the web/native Firebase apps and service account are moved together.
 
 Web uses the Funspot Firebase web app configuration and VAPID key as defaults (`funzy-d56d7`); set `VITE_FIREBASE_*` and `VITE_FIREBASE_VAPID_KEY` to override them. The web client uses the same-origin gateway; native builds set `EXPO_PUBLIC_QOIN_API_URL` to the reachable Drogon URL.
 
