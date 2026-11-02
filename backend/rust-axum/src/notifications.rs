@@ -41,6 +41,11 @@ pub async fn send_internal(State(s):State<AppState>,h:HeaderMap,Json(p):Json<Int
  let now=DateTime::now();
  let record=doc!{"user_id":&p.user_id,"notification_type":&p.notification_type,"title":&p.title,"body":&p.body,"data":mongodb::bson::to_bson(&p.data).map_err(|_|StatusCode::BAD_REQUEST)?,"is_read":false,"created_at":now};
  s.db.collection::<mongodb::bson::Document>("notifications").insert_one(record,None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;
+ let user_oid=mongodb::bson::oid::ObjectId::parse_str(&p.user_id).map_err(|_|StatusCode::BAD_REQUEST)?;
+ let user=s.users.find_one(doc!{"_id":user_oid},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?.ok_or(StatusCode::NOT_FOUND)?;
+ let preferences=user.get_document("notification_preferences").ok();
+ let preference_key=match p.notification_type.as_str(){"market"|"market_alert"=>"market_alerts","security"|"security_alert"=>"security_alerts",_=>"system_alerts"};
+ if preferences.and_then(|v|v.get_bool(preference_key).ok()).is_some_and(|enabled|!enabled){return Ok(Json(json!({"success":true,"stored":true,"attempted":0,"delivered":0,"push_suppressed":true})))}
  let tokens=s.db.collection::<mongodb::bson::Document>("fcm_tokens");
  let mut cursor=tokens.find(doc!{"user_id":&p.user_id},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;
  use futures_util::TryStreamExt;
