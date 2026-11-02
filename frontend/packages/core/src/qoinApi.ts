@@ -31,6 +31,8 @@ export type QoinHealth = {
   live_trading: false;
 };
 
+declare const process: { env: { EXPO_PUBLIC_QOIN_API_URL?: string } } | undefined;
+
 function getBaseUrl(): string {
   // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
   // Physical devices need a reachable host configured for the development environment.

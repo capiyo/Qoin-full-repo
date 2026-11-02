@@ -34,7 +34,7 @@ Qoin ports Funspot's phone-first authentication experience and FCM notification 
 
 Backend: `QOIN_JWT_SECRET` (32+ random chars), `QOIN_FIREBASE_PROJECT_ID`, `QOIN_INTERNAL_API_KEY` (32+ random chars), `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` (service-account PEM).
 
-Web uses the Funspot Firebase web app configuration and VAPID key as defaults (`funzy-d56d7`); set `VITE_FIREBASE_*` and `VITE_FIREBASE_VAPID_KEY` to override them. `VITE_QOIN_API_URL` is optional when the API is served through the same-origin gateway.
+Web uses the Funspot Firebase web app configuration and VAPID key as defaults (`funzy-d56d7`); set `VITE_FIREBASE_*` and `VITE_FIREBASE_VAPID_KEY` to override them. The web client uses the same-origin gateway; native builds set `EXPO_PUBLIC_QOIN_API_URL` to the reachable Drogon URL.
 
 Native builds require matching Firebase app files at `frontend/apps/mobile/google-services.json` and `frontend/apps/mobile/GoogleService-Info.plist`, provided through the deployment secret/configuration process. Configure phone sign-in, authorized domains, APNs credentials, and FCM in Firebase Console.
 
