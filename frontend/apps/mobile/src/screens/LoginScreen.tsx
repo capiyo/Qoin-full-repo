@@ -1,51 +1,26 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { colors } from "../theme";
-import type { RootStackParamList } from "../../App";
-
-type Props = NativeStackScreenProps<RootStackParamList, "Login">;
-
-export function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.card}>
-        <Text style={styles.brand}>Qoin</Text>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor={colors.textMuted}
-        />
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor={colors.textMuted}
-        />
-        <Pressable style={styles.button} onPress={() => navigation.replace("Dashboard")}>
-          <Text style={styles.buttonText}>Sign in</Text>
-        </Pressable>
-      </View>
-    </SafeAreaView>
-  );
+import React,{useState} from "react";
+import {View,Text,TextInput,Pressable,StyleSheet,ActivityIndicator} from "react-native";
+import {SafeAreaView} from "react-native-safe-area-context";
+import {signInWithPhoneNumber,signOut as signOutFirebase,type FirebaseAuthTypes} from "@react-native-firebase/auth";
+import {firebaseAuth} from "../lib/firebase";
+import {loginWithFirebaseToken,loginWithPin,registerWithFirebaseToken,checkQoinUser,isQoinUsernameTaken,validatePhone,validateUsername,validatePin,buildE164,type QoinSession} from "@qoin/core";
+import {useQoinAuth} from "../lib/auth-context";
+import {colors} from "../theme";
+type Step="phone"|"otp"|"username"|"pin";
+export function LoginScreen(){
+ const {signIn}=useQoinAuth();const [step,setStep]=useState<Step>("phone"),[phone,setPhone]=useState("+254"),[otp,setOtp]=useState(""),[pin,setPin]=useState(""),[username,setUsername]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[acceptedTerms,setAcceptedTerms]=useState(false),[verifiedPhone,setVerifiedPhone]=useState("");
+ const [confirmation,setConfirmation]=useState<FirebaseAuthTypes.ConfirmationResult|null>(null);const [idToken,setIdToken]=useState("");
+ async function finish(session:QoinSession){await signIn(session)}
+ async function pinFallback(e164:string,message:string){try{const found=await checkQoinUser(e164);if(found.exists&&found.has_pin){setVerifiedPhone(e164);setStep("pin");setError("Phone verification is unavailable. Sign in with your existing PIN.");}else{setError(message+" New accounts and accounts without a PIN must complete phone verification.");}}catch{setError(message)}finally{setBusy(false)}}
+ async function sendOtp(){const invalid=validatePhone(phone,"+254");if(invalid){setError(invalid);return}if(!acceptedTerms){setError("Please accept the Terms and Conditions.");return}const e164=buildE164(phone,"+254");setVerifiedPhone(e164);setBusy(true);setError("");try{await signOutFirebase(firebaseAuth).catch(()=>{});setConfirmation(await signInWithPhoneNumber(firebaseAuth,e164));setStep("otp")}catch(e){await pinFallback(e164,e instanceof Error?e.message:"Could not send phone verification code.")}finally{setBusy(false)}}
+ async function verifyOtp(){if(!confirmation)return;setBusy(true);setError("");try{const credential=await confirmation.confirm(otp.trim());if(!credential)throw new Error("Phone verification did not return a user credential.");const token=await credential.user.getIdToken();setIdToken(token);try{await finish(await loginWithFirebaseToken(token))}catch(e){if(e instanceof Error&&e.message.includes("404"))setStep("username");else throw e}}catch(e){await pinFallback(verifiedPhone,e instanceof Error?e.message:"Phone verification failed.")}finally{setBusy(false)}}
+ async function register(){const invalid=validateUsername(username);if(invalid){setError(invalid);return}setBusy(true);setError("");try{if(await isQoinUsernameTaken(username.trim())){setError("Username already taken");return}await finish(await registerWithFirebaseToken(idToken,username.trim()))}catch(e){setError(e instanceof Error?e.message:"Registration failed.")}finally{setBusy(false)}}
+ async function pinLogin(){if(!acceptedTerms){setError("Please accept the Terms and Conditions and Privacy Policy.");return}const invalid=validatePin(pin);if(invalid){setError(invalid);return}setBusy(true);setError("");try{await finish(await loginWithPin(verifiedPhone||buildE164(phone,"+254"),pin))}catch(e){setError(e instanceof Error?e.message:"PIN login failed.")}finally{setBusy(false)}}
+ return <SafeAreaView style={styles.screen}><View style={styles.card}><Text style={styles.kicker}>QOIN / ACCOUNT ACCESS</Text><Text style={styles.brand}>Welcome back.</Text><Text style={styles.subtitle}>Secure access to your market workspace.</Text>
+ {step==="phone"&&<><Text style={styles.label}>Phone number · international format</Text><TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+2547…" placeholderTextColor={colors.textMuted}/><Text style={styles.hint}>Include your country code, for example +254 7XX XXX XXX.</Text><Pressable onPress={()=>setAcceptedTerms(v=>!v)} style={styles.terms}><View style={[styles.checkbox,acceptedTerms&&styles.checkboxOn]}><Text style={styles.checkmark}>{acceptedTerms?"✓":""}</Text></View><Text style={styles.termsText}>I agree to the Terms and Conditions and Privacy Policy</Text></Pressable><Pressable style={styles.button} disabled={busy||phone.trim().length<8} onPress={sendOtp}>{busy?<ActivityIndicator color={colors.bgPrimary}/>:<Text style={styles.buttonText}>Continue with phone</Text>}</Pressable><Pressable onPress={()=>{if(!acceptedTerms){setError("Please accept the Terms and Conditions and Privacy Policy.");return}setStep("pin")}}><Text style={styles.link}>Use my 4-digit PIN</Text></Pressable><Pressable onPress={()=>setStep("phone")}><Text style={styles.link}>Use a different number</Text></Pressable></>}
+ {step==="otp"&&<><Text style={styles.label}>6-digit verification code</Text><TextInput style={styles.input} value={otp} onChangeText={v=>setOtp(v.replace(/\D/g,"").slice(0,6))} keyboardType="number-pad" placeholder="000000" placeholderTextColor={colors.textMuted}/><Pressable style={styles.button} disabled={busy||otp.length!==6} onPress={verifyOtp}>{busy?<ActivityIndicator color={colors.bgPrimary}/>:<Text style={styles.buttonText}>Verify phone</Text>}</Pressable><Pressable onPress={()=>setStep("phone")}><Text style={styles.link}>Use a different number</Text></Pressable></>}
+ {step==="username"&&<><Text style={styles.label}>Choose a username</Text><TextInput style={styles.input} value={username} onChangeText={v=>setUsername(v.replace(/[^a-zA-Z0-9_]/g,"").slice(0,20))} placeholder="3–20 letters" placeholderTextColor={colors.textMuted}/><Pressable style={styles.button} disabled={busy||username.length<3} onPress={register}>{busy?<ActivityIndicator color={colors.bgPrimary}/>:<Text style={styles.buttonText}>Create account</Text>}</Pressable></>}
+ {step==="pin"&&<><Text style={styles.label}>Phone number</Text><TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholderTextColor={colors.textMuted}/><Text style={styles.label}>4-digit PIN</Text><TextInput style={styles.input} value={pin} onChangeText={v=>setPin(v.replace(/\D/g,"").slice(0,4))} secureTextEntry keyboardType="number-pad" placeholder="••••" placeholderTextColor={colors.textMuted}/><Pressable style={styles.button} disabled={busy||pin.length!==4} onPress={pinLogin}>{busy?<ActivityIndicator color={colors.bgPrimary}/>:<Text style={styles.buttonText}>Sign in with PIN</Text>}</Pressable><Pressable onPress={()=>setStep("phone")}><Text style={styles.link}>Verify with phone instead</Text></Pressable></>}
+ {!!error&&<Text style={styles.error}>{error}</Text>}<Text style={styles.foot}>Your market entitlements are verified by Qoin's backend. Research signals only; no live order execution.</Text></View></SafeAreaView>
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bgPrimary, justifyContent: "center", padding: 20 },
-  card: { backgroundColor: colors.bgSecondary, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 20 },
-  brand: { color: colors.white, fontSize: 24, fontWeight: "700", textAlign: "center", marginBottom: 24 },
-  label: { color: colors.textMuted, fontSize: 12, marginTop: 12, marginBottom: 4 },
-  input: { backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, color: colors.textPrimary },
-  button: { backgroundColor: colors.accentCyan, borderRadius: 8, padding: 12, alignItems: "center", marginTop: 20 },
-  buttonText: { color: colors.bgPrimary, fontWeight: "700" },
-});
+const styles=StyleSheet.create({screen:{flex:1,backgroundColor:colors.bgPrimary,justifyContent:"center",padding:20},card:{backgroundColor:colors.bgSecondary,borderWidth:1,borderColor:colors.border,borderRadius:16,padding:22},kicker:{color:colors.accentCyan,fontSize:10,fontWeight:"800",letterSpacing:1.5},brand:{color:colors.white,fontSize:30,fontWeight:"800",marginTop:12},subtitle:{color:colors.textMuted,fontSize:13,marginTop:6,marginBottom:20},label:{color:colors.textMuted,fontSize:12,marginTop:12,marginBottom:6},input:{backgroundColor:colors.bgPrimary,borderWidth:1,borderColor:colors.border,borderRadius:8,padding:12,color:colors.white},button:{backgroundColor:colors.accentCyan,borderRadius:8,padding:14,alignItems:"center",marginTop:20,minHeight:48,justifyContent:"center"},buttonText:{color:colors.bgPrimary,fontWeight:"800"},terms:{flexDirection:"row",alignItems:"center",gap:9,marginTop:14},checkbox:{width:18,height:18,borderWidth:1,borderColor:colors.border,borderRadius:4,alignItems:"center",justifyContent:"center"},checkboxOn:{backgroundColor:colors.accentCyan,borderColor:colors.accentCyan},checkmark:{color:colors.bgPrimary,fontWeight:"900",fontSize:12},termsText:{color:colors.textMuted,fontSize:11,flex:1},hint:{color:colors.textMuted,fontSize:10,marginTop:6},link:{color:colors.accentCyan,textAlign:"center",padding:14,fontSize:12},error:{color:colors.bearish,fontSize:12,marginTop:12},foot:{color:colors.textMuted,fontSize:10,lineHeight:15,marginTop:18}});

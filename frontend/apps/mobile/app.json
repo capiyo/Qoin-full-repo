@@ -11,10 +11,19 @@
     "splash": {
       "backgroundColor": "#0B0E14"
     },
-    "ios": { "supportsTablet": true },
+    "ios": {
+      "supportsTablet": true,
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
     "android": {
       "package": "co.qoin.app",
-      "adaptiveIcon": { "backgroundColor": "#0B0E14" }
-    }
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0E14"
+      },
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      "@react-native-firebase/app"
+    ]
   }
 }
