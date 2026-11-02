@@ -40,7 +40,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [token, setToken] = useState(() => localStorage.getItem("qoin_session"));
-  const [user, setUser] = useState<QoinUser | null>(null);
+  const [user, setUser] = useState<QoinUser | null>(() => { const cached = localStorage.getItem("qoin_user"); if (!cached) return null; try { return JSON.parse(cached) as QoinUser; } catch { return null; } });
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
@@ -49,7 +49,7 @@ export default function App() {
   useEffect(() => {
     if (!token) { setUser(null); return; }
     getCurrentUser(token).then(({ user: current }) => setUser(current)).catch(() => {
-      localStorage.removeItem("qoin_session"); setToken(null); setUser(null);
+      localStorage.removeItem("qoin_session"); localStorage.removeItem("qoin_user"); setToken(null); setUser(null);
     });
   }, [token]);
 
