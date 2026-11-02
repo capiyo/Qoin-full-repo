@@ -41,7 +41,8 @@ function getBaseUrl(): string {
   };
   const env = runtime.process?.env;
   const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL;
-  return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
+  const sameOrigin = typeof runtime.document !== "undefined" ? runtime.location?.origin : undefined;
+  return (configured || sameOrigin || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
 export async function qoinRequest<T>(path: string, init?: RequestInit & { token?: string }): Promise<T> {
