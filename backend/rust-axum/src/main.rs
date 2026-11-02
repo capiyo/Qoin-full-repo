@@ -204,8 +204,8 @@ async fn main(){
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
-    let users:Collection<Document>=db.collection("users");\n    let users:Collection<Document>=db.collection("users");
-    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");\n    users.create_index(mongodb::IndexModel::builder().keys(doc!{"username":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique username index");\n    db.collection::<Document>("fcm_tokens").create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM token index");\n    db.collection::<Document>("notifications").create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("notification history index");\n    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");
+    let users:Collection<Document>=db.collection("users");
+    users.create_index(mongodb::IndexModel::builder().keys(doc!{"phone":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique user phone index");
     users.create_index(mongodb::IndexModel::builder().keys(doc!{"username":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique username index");
     db.collection::<Document>("fcm_tokens").create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM token index");
     db.collection::<Document>("notifications").create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("notification history index");
@@ -231,7 +231,19 @@ async fn main(){
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
-    let app=Router::new().route("/health",get(health))\n        .route("/api/auth/firebase-login",post(auth::firebase_login))\n        .route("/api/auth/register",post(auth::register))\n        .route("/api/auth/pin-login",post(auth::pin_login))\n        .route("/api/auth/set-pin",post(auth::set_pin))\n        .route("/api/auth/me",get(auth::me))\n        .route("/api/auth/check-user/:phone",get(auth::check_user))\n        .route("/api/notifications/register-token",post(notifications::register_token))\n        .route("/api/notifications",get(notifications::list))\n        .route("/api/notifications/unread-summary",get(notifications::unread_summary))\n        .route("/api/notifications/mark-read",put(notifications::mark_read))\n        .route("/api/notifications/preferences",get(notifications::get_preferences).put(notifications::update_preferences))\n        .route("/internal/events",post(ingest))
+    let app=Router::new().route("/health",get(health))
+        .route("/api/auth/firebase-login",post(auth::firebase_login))
+        .route("/api/auth/register",post(auth::register))
+        .route("/api/auth/pin-login",post(auth::pin_login))
+        .route("/api/auth/set-pin",post(auth::set_pin))
+        .route("/api/auth/me",get(auth::me))
+        .route("/api/auth/check-user/:phone",get(auth::check_user))
+        .route("/api/notifications/register-token",post(notifications::register_token))
+        .route("/api/notifications",get(notifications::list))
+        .route("/api/notifications/unread-summary",get(notifications::unread_summary))
+        .route("/api/notifications/mark-read",put(notifications::mark_read))
+        .route("/api/notifications/preferences",get(notifications::get_preferences).put(notifications::update_preferences))
+        .route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
