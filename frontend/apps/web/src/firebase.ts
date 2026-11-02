@@ -3,11 +3,11 @@ import { getAuth } from "firebase/auth";
 import { getMessaging, getToken, isSupported, onMessage, type MessagePayload } from "firebase/messaging";
 
 const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCWMGz6AIRXgu7GVZiJWlkvO6tVZADf5tY",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "funzy-d56d7.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "funzy-d56d7",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:661929781606:web:3f306a659ae64ac7f780a7",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "661929781606",
 };
 export function getFirebaseAuth() {
   if (!config.apiKey || !config.projectId || !config.appId) throw new Error("Firebase phone authentication is not configured. Set the VITE_FIREBASE_* environment variables.");
@@ -15,7 +15,7 @@ export function getFirebaseAuth() {
   return getAuth(app);
 }
 export async function requestWebPushToken(): Promise<string | null> {
-  const vapid = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+  const vapid = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BIvcsdfnoQ07A2PAEiXvHfjLPOfyga-fiPB-JLJfdr7NbXxwWJMr6fNT-71RzUVP-WZcL76W_sN137Fs9wMhi90";
   if (!vapid || !("Notification" in window) || !(await isSupported())) return null;
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return null;

@@ -50,7 +50,7 @@ pub async fn send_internal(State(s):State<AppState>,h:HeaderMap,Json(p):Json<Int
  let mut cursor=tokens.find(doc!{"user_id":&p.user_id},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;
  use futures_util::TryStreamExt;
  let mut attempted=0usize;let mut delivered=0usize;
- let project=env::var("QOIN_FIREBASE_PROJECT_ID").map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;
+ let project=env::var("QOIN_FIREBASE_PROJECT_ID").unwrap_or_else(|_|"funzy-d56d7".to_owned());
  while let Some(device)=cursor.try_next().await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?{
   let device_token=device.get_str("fcm_token").unwrap_or("");
   if device_token.is_empty(){continue}attempted+=1;
