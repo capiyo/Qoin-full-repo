@@ -1,4 +1,7 @@
-use axum::{http::{HeaderMap,StatusCode},extract::State,Json};use mongodb::bson::{doc,DateTime};use serde::{Deserialize,Serialize};\nuse jsonwebtoken::{encode,Algorithm,EncodingKey,Header};\nuse chrono::Utc;\nuse std::env;use serde_json::{json,Value};use crate::{auth::authenticated_user,AppState};
+use axum::{http::{HeaderMap,StatusCode},extract::State,Json};use mongodb::bson::{doc,DateTime};use serde::{Deserialize,Serialize};
+use jsonwebtoken::{encode,Algorithm,EncodingKey,Header};
+use chrono::Utc;
+use std::env;use serde_json::{json,Value};use crate::{auth::authenticated_user,AppState};
 #[derive(Deserialize)]pub struct RegisterToken{fcm_token:String,platform:String}
 #[derive(Deserialize)]pub struct MarkRead{notification_ids:Option<Vec<String>>}
 #[derive(Deserialize,serde::Serialize)]pub struct Preferences{market_alerts:bool,security_alerts:bool,system_alerts:bool}
