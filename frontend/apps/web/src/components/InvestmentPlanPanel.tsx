@@ -30,6 +30,12 @@ export function InvestmentPlanPanel({ user }: Props) {
       setYears("10");
       return () => { active = false; };
     }
+    setSaved(false);
+    setGoal("");
+    setMonthly("");
+    setTarget("");
+    setYears("10");
+    setMessage(null);
     setLoading(true);
     void user.getIdToken()
       .then(getQoinInvestmentPlan)
