@@ -243,3 +243,26 @@ async fn signal(
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::validate_symbols;
+
+    #[test]
+    fn portfolio_symbols_are_normalized_and_deduplicated() {
+        let symbols = validate_symbols(vec![
+            " btc/usd ".to_owned(),
+            "BTC/USD".to_owned(),
+            "aapl".to_owned(),
+        ]).unwrap();
+        assert_eq!(symbols, vec!["BTC/USD", "AAPL"]);
+    }
+
+    #[test]
+    fn portfolio_symbols_reject_invalid_input() {
+        assert!(validate_symbols(vec!["BTC/USD;DROP".to_owned()]).is_err());
+        assert!(validate_symbols(vec!["".to_owned()]).is_err());
+        assert!(validate_symbols(vec!["a".repeat(33)]).is_err());
+    }
+}
