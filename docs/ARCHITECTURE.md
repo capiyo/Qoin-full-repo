@@ -2,7 +2,7 @@
 
 ## Ownership
 - **Axum (Rust)** is the sole authority for event validation, bounded state estimation, feature construction, vector/attention decisions, strategy-map validation, and MongoDB writes.
-- **Drogon (C++)** is the HTTP gateway. It forwards event, state, vector, and edge-strategy requests to Axum; it contains no independent model, risk, or order logic.
+- **Drogon (C++)** is the HTTP gateway. It forwards event, state, vector, and edge-strategy requests to the integrated flow-engine Axum service on `127.0.0.1:8081`, and forwards `/v1/signal` to the isolated research-signal Axum service on `127.0.0.1:8082`. Both upstream addresses are configurable; the gateway contains no independent model, risk, or order logic.
 - **MongoDB** is the durable source of truth for raw market events, state snapshots, vector decisions, and the versioned active edge-strategy map.
 
 ## Edge strategy map in MongoDB
