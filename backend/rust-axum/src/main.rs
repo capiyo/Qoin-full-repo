@@ -48,6 +48,7 @@ struct MarketEvent {
 #[derive(Debug, Clone, Serialize, Default)]
 struct SymbolState {
     symbol: String,
+    asset_class: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
     last_price: Option<f64>,
@@ -73,7 +74,7 @@ struct AppState {
     active_strategy: Arc<RwLock<EdgeStrategy>>,
 }
 #[derive(Deserialize)]
-struct SymbolQuery { symbol: Option<String> }
+struct SymbolQuery { symbol: Option<String>, asset_class: Option<String> }
 #[derive(Deserialize)]
 struct MarketHorizonQuery { symbol: Option<String>, asset_class: Option<String>, min_events: Option<usize> }
 #[derive(Deserialize)]
@@ -107,6 +108,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.symbol = event.symbol.clone();
+    state.asset_class = event.asset_class.clone().unwrap_or_else(|| "unclassified".to_owned());
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
             state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
@@ -154,7 +156,8 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let memory_key = format!("{}:{}", event.asset_class.as_deref().unwrap_or("unclassified"), event.symbol);
+        let state=guard.entry(memory_key).or_default(); apply(state,&event); state.clone()
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
@@ -168,6 +171,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
+    decision_doc.insert("asset_class", event.asset_class.clone().unwrap_or_else(|| "unclassified".to_owned()));
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
@@ -304,18 +308,22 @@ async fn evaluate_horizons(Json(inputs): Json<Vec<HorizonInput>>) -> impl IntoRe
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
-    match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let asset_class=q.asset_class.unwrap_or_else(||"unclassified".into());
+    let memory_key=format!("{asset_class}:{symbol}");
+    if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&memory_key){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
+    let filter=doc!{"symbol":&symbol,"asset_class":&asset_class};
+    match s.states.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"asset_class":asset_class,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state storage unavailable"})))
     }
 }
 async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    match s.decisions.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let asset_class=q.asset_class.unwrap_or_else(||"unclassified".into());
+    match s.decisions.find_one(doc!{"symbol":&symbol,"asset_class":&asset_class},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"action":"wait","reason":"no decision available"}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"asset_class":asset_class,"action":"wait","reason":"no decision available"}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
