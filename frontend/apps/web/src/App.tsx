@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   evaluateQoinSignal,
   getQoinHealth,
+  getQoinInstruments,
   getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinHealth,
@@ -38,6 +39,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [assetClass, setAssetClass] = useState<QoinAssetClass>("crypto");
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
   const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
   const [marketBusy, setMarketBusy] = useState(false);
   const [marketError, setMarketError] = useState("");
@@ -45,6 +47,12 @@ export default function App() {
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
+
+  useEffect(() => {
+    getQoinInstruments(assetClass)
+      .then((catalogue) => setAvailableSymbols(catalogue.symbols))
+      .catch(() => setAvailableSymbols([]));
+  }, [assetClass]);
 
   const activeForces = useMemo(
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
@@ -92,10 +100,10 @@ export default function App() {
       </section>
       <section className="panel market-panel">
         <div className="panel-heading"><div><p className="eyebrow">STORED MARKET DATA</p><h2>Multi-horizon research</h2></div><span className="counter">1m → 1w</span></div>
-        <p className="hint">Builds separate trailing observations from ingested trade, order-book, funding, open-interest and liquidation events. It does not use the demo values below.</p>
+        <p className="hint">Builds separate trailing observations from ingested trade, order-book, funding, open-interest and liquidation events. {availableSymbols.length} {assetClass} instruments currently have ingested events.</p>
         <div className="market-controls">
           <label>Asset class <select aria-label="Asset class" value={assetClass} onChange={(event) => setAssetClass(event.target.value as QoinAssetClass)}><option value="forex">Forex</option><option value="crypto">Crypto</option><option value="stock">Stocks</option></select></label>
-          <label>Instrument <input aria-label="Instrument symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} maxLength={64} /></label>
+          <label>Instrument <input aria-label="Instrument symbol" list="qoin-symbols" value={symbol} onChange={(event) => setSymbol(event.target.value)} maxLength={64} /><datalist id="qoin-symbols">{availableSymbols.map((item) => <option key={item} value={item} />)}</datalist></label>
           <button className="secondary" onClick={loadMarketHorizons} disabled={marketBusy || !symbol.trim()}>{marketBusy ? "Loading…" : "Load market horizons"}</button>
         </div>
         {marketError && <p className="error" role="alert">{marketError}</p>}
