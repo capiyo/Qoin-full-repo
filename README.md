@@ -35,7 +35,6 @@ Qoin-full-repo/
 2. C++ Drogon is the HTTP gateway and forwards market events and queries to Axum. It must not duplicate strategy, vector, or risk logic.
 3. Rust Axum owns event ingestion, state estimation, vector decisions and strategy state.
 4. MongoDB is the durable persistence layer.
-5. The active architecture uses the deterministic vector/strategy path only; no JEPA/world-model service or inference path is part of this repository branch.
 
 The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
 
