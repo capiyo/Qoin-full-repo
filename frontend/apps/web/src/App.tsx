@@ -75,15 +75,15 @@ function App() {
       }
     })).then((catalogues) => {
       if (!active) return;
-      const byIdentity = new Map<string, InstrumentAsset>(
-        starterAssets.map((asset) => [`${asset.category}:${asset.symbol}`, asset]),
-      );
+      const byIdentity = new Map<string, InstrumentAsset>();
+      starterAssets.forEach((asset) => byIdentity.set(`${asset.category}:${asset.symbol}`, asset));
       for (const catalogue of catalogues) {
         if (!catalogue) continue;
         const category = catalogue.asset_class === "forex" ? "Forex" :
           catalogue.asset_class === "crypto" ? "Crypto" : "Stocks";
-        for (const symbol of catalogue.symbols) {
-          if (!isValidInstrumentSymbol(symbol)) continue;
+        for (const rawSymbol of catalogue.symbols) {
+          if (!isValidInstrumentSymbol(rawSymbol)) continue;
+          const symbol = rawSymbol.toUpperCase();
           byIdentity.set(`${category}:${symbol}`, {
             symbol,
             name: symbol,
@@ -220,7 +220,7 @@ function App() {
                 <p className="eyebrow">YOUR MARKET UNIVERSE</p>
                 <h1>Discover. Understand. <span>Compose.</span></h1>
                 <p className="workspace-description">
-                  Explore instruments, follow market intelligence and build the basket your Qoin algorithms manage.
+                  Explore instruments, follow market intelligence and build the basket Qoin's research engines evaluate.
                 </p>
               </div>
             </section>
@@ -240,7 +240,7 @@ function App() {
                   <div>
                     <p className="eyebrow">INSTRUMENT LIBRARY</p>
                     <h2>Archive</h2>
-                    <p className="section-copy">Your saved and available trading instruments.</p>
+                    <p className="section-copy">Explore investment instruments across supported markets.</p>
                   </div>
                   <span className="result-count">{catalogueLoading ? "Updating catalogue…" : `${assets.length} available instruments`}</span>
                 </div>
@@ -253,7 +253,7 @@ function App() {
                 </div>
                 <div className="instrument-list">
                   {visibleAssets.length ? visibleAssets.map((asset) => (
-                    <button className="instrument-row" key={asset.symbol} onClick={() => setSelectedAsset(asset.symbol)}>
+                    <button className="instrument-row" key={`${asset.category}:${asset.symbol}`} onClick={() => setSelectedAsset(asset.symbol)}>
                       <span className="asset-mark">{asset.symbol.split("/")[0].slice(0, 1)}</span>
                       <span className="asset-identity">
                         <strong>{asset.name}</strong>
@@ -329,7 +329,7 @@ function App() {
             )}
             <div className="portfolio-summary">
               <div><span>Selected instruments</span><strong>{basket.length}</strong></div>
-              <div><span>Portfolio allocation</span><strong>Algorithm-managed</strong></div>
+              <div><span>Research evaluation</span><strong>Not connected</strong></div>
               <div><span>Execution</span><strong>Not enabled</strong></div>
             </div>
             <InvestmentPlanPanel user={authUser} />
@@ -361,7 +361,7 @@ function FeedView({ assets, onOpenAsset, basket, onToggleBasket }: {
             <p>Explore the available instruments below. Open an instrument to inspect its vector workspace, then add it to your portfolio basket when it matches your investment intent.</p>
             <div className="feed-asset-grid">
               {assets.map((asset) => (
-                <div className="feed-asset" key={asset.symbol}>
+                <div className="feed-asset" key={`${asset.category}:${asset.symbol}`}>
                   <button className="feed-asset-main" onClick={() => onOpenAsset(asset.symbol)}>
                     <span className="asset-mark">{asset.symbol.split("/")[0].slice(0, 1)}</span>
                     <span><strong>{asset.name}</strong><small>{asset.symbol}</small></span>
