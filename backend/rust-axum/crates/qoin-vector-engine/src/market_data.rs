@@ -195,7 +195,7 @@ impl MarketEvent {
     fn numeric_values_are_finite(&self) -> bool {
         [
             self.price, self.size, self.bid, self.ask, self.bid_size, self.ask_size,
-            self.funding_rate, self.open_interest,
+            self.funding_rate, self.open_interest, self.basis,
         ].into_iter().flatten().all(f64::is_finite)
     }
 }
