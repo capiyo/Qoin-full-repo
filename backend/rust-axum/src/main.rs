@@ -16,6 +16,7 @@ use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tower_http::trace::TraceLayer;
 
 mod edge_strategy;
+#[cfg(test)]
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{
