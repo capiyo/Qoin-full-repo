@@ -142,9 +142,14 @@ pub fn aggregate_horizon(
     let liquidation_pressure = if total_liquidations > 0.0 {
         signed_liquidations / total_liquidations
     } else { 0.0 };
+    // Explicit research normalization scales: 1% realized move, 10 bps funding,
+    // 1% OI change, and 10 bps spot/perpetual basis map to unit magnitude.
     let volatility = if return_count > 0 {
-        absolute_returns / (return_count as f64).sqrt()
+        (absolute_returns / (return_count as f64).sqrt() / 0.01).clamp(0.0, 3.0)
     } else { 0.0 };
+    let funding_force = (latest_funding.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
+    let open_interest_force = (open_interest_change / 0.01).clamp(-3.0, 3.0);
+    let basis_force = (latest_basis.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
 
     let event_count = rows.len();
     let mut reasons = Vec::new();
@@ -175,10 +180,10 @@ pub fn aggregate_horizon(
             ofi,
             liquidity: book_imbalance,
             volatility,
-            funding: latest_funding.unwrap_or(0.0),
-            open_interest_change,
+            funding: funding_force,
+            open_interest_change: open_interest_force,
             liquidation_pressure,
-            basis: latest_basis.unwrap_or(0.0),
+            basis: basis_force,
         },
         event_count,
         trade_count,
@@ -264,8 +269,8 @@ mod tests {
             Horizon::OneHour, 200_000, 1,
         );
         assert_eq!(result.observation.liquidity, 0.5);
-        assert!((result.observation.open_interest_change - 0.1).abs() < 1e-12);
-        assert_eq!(result.observation.funding, 0.001);
+        assert!((result.observation.open_interest_change - 3.0).abs() < 1e-12);
+        assert_eq!(result.observation.funding, 1.0);
         assert_eq!(result.observation.liquidation_pressure, 1.0);
         assert!(result.ready);
     }
@@ -275,7 +280,7 @@ mod tests {
         let mut basis = event(100_000, "basis");
         basis.basis = Some(0.0025);
         let result = aggregate_horizon(&[basis], Horizon::OneHour, 100_000, 1);
-        assert_eq!(result.observation.basis, 0.0025);
+        assert_eq!(result.observation.basis, 2.5);
         assert!(!result.reasons.iter().any(|reason| reason.contains("basis unavailable")));
     }
 
