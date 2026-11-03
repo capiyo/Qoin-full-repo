@@ -39,6 +39,19 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/state" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto minEvents = req->getParameter("min_events");
+        std::string path = "/internal/market-horizons";
+        if (!symbol.empty() || !minEvents.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !minEvents.empty()) path += "&";
+            if (!minEvents.empty()) path += "min_events=" + drogon::utils::urlEncode(minEvents);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/vector", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
