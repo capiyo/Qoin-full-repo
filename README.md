@@ -36,7 +36,7 @@ Qoin-full-repo/
 3. Rust Axum owns event ingestion, state estimation, vector decisions and strategy state.
 4. MongoDB is the durable persistence layer.
 
-The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
+The separate `backend/rust-axum-api` owns compatibility research signals and Firebase-authenticated user portfolio persistence; it is not a second owner of integrated event-flow endpoints.
 
 ## Version track
 
@@ -71,7 +71,7 @@ cmake --build build/drogon
 ./build/drogon/qoin-gateway
 ```
 
-The default gateway binds to loopback at `127.0.0.1:8080`; the integrated flow-engine Axum service binds to `127.0.0.1:8081`; the isolated research-signal Axum service binds to `127.0.0.1:8082`. The gateway forwards `/v1/signal` to the research service. Do not expose either Axum service directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, `QOIN_RESEARCH_API_ADDR` and `QOIN_RESEARCH_API_URL` as required.
+The default gateway binds to loopback at `127.0.0.1:8080`; the integrated flow-engine Axum service binds to `127.0.0.1:8081`; the isolated research-signal Axum service binds to `127.0.0.1:8082`. The gateway forwards `/v1/signal` and `/v1/portfolio` to the research service. The portfolio endpoints require a Firebase ID token in the `Authorization: Bearer` header; the server validates the token signature against Google's rotating Secure Token JWKs and checks the issuer, audience, expiry and subject. Set `QOIN_FIREBASE_PROJECT_ID` to the ID of Qoin's own Firebase project and configure MongoDB before enabling authenticated portfolio persistence. Do not reuse Funspot Firebase credentials or expose either Axum service directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_FIREBASE_PROJECT_ID`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, `QOIN_RESEARCH_API_ADDR` and `QOIN_RESEARCH_API_URL` as required.
 
 ## Frontend commands
 
