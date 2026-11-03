@@ -162,6 +162,7 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
       <Modal visible={portfolioOpen} transparent animationType="slide" onRequestClose={() => setPortfolioOpen(false)}>
         <Pressable style={s.backdrop} onPress={() => setPortfolioOpen(false)}>
           <Pressable style={s.sheet} onPress={() => undefined}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{paddingBottom:12}}>
             <View style={s.handle}/>
             <View style={s.sheetHead}><View><Text style={s.eyebrow}>YOUR ASSET BASKET</Text><Text style={s.sectionTitle}>My portfolio</Text></View><Pressable onPress={() => setPortfolioOpen(false)}><Text style={s.close}>×</Text></Pressable></View>
             <Text style={s.muted}>Choose the instruments you want Qoin to evaluate. {authUser ? "Your basket synchronizes to your Qoin account when the API is configured." : "Your basket is saved on this device until you sign in."} Adding an asset does not place an order.</Text>
@@ -170,6 +171,7 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
             <View style={s.summary}><View style={s.summaryRow}><Text style={s.muted}>Selected instruments</Text><Text style={s.assetName}>{basket.length}</Text></View><View style={s.summaryRow}><Text style={s.muted}>Management</Text><Text style={s.assetName}>Algorithm-managed</Text></View><View style={s.summaryRow}><Text style={s.muted}>Execution</Text><Text style={s.assetName}>Not enabled</Text></View></View>
             <InvestmentPlanPanel user={authUser} />
             <Text style={s.disclaimer}>Automated management requires verified market data, risk controls and explicit authorization.</Text>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
