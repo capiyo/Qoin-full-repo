@@ -1,32 +1,41 @@
 # Qoin implementation progress
 
-Updated: 2026-10-23
+Updated: 2026-11-04
 
-## Verified in the available audited snapshot
-- Python reference-model and vector-model tests: 12/12 passed in GitHub Actions (including causal vector kinematics, regularized pairwise interactions, and Pareto top-k selection).
-- JSON event schema parses successfully.
-- OpenAPI YAML parses successfully (6 paths in the audited snapshot).
-- Smoke script passes shell syntax validation.
-- Architecture, dependency inventory, risk-policy, runbook, experiment-log, and state-of-repository notes are documented.
+## Completed on the active feature branch
 
-## Present in this integration branch
-- Rust Axum service manifest, event/state/vector API source, deterministic vector baseline, and isolated gated Binance adapter source.
-- Research-only causal position/velocity/acceleration and Pareto top-k helpers; example versioned parameter contract at `config/vector-model-v1.example.json` (not loaded by runtime).
-- C++ Drogon gateway proxy source and CMake configuration.
-- MongoDB development compose file and .env.example with loopback bindings and live mode disabled.
-- Architecture and risk documentation.
+- Web Archive + Feed experience and mobile equivalent.
+- Firebase email/password identity flows for web and React Native.
+- Server-side Firebase RS256 token verification using Google's rotating signing keys.
+- MongoDB persistence for the authenticated user's instrument basket, keyed by verified Firebase UID.
+- Shared TypeScript API methods for authenticated portfolio persistence.
+- User-authored investment-intention API and web/mobile panels:
+  - goal label;
+  - currency (KES, USD, EUR or GBP);
+  - monthly contribution stored in minor units;
+  - optional target amount stored in minor units;
+  - time horizon in months.
+- Investment-plan data is stored in a separate MongoDB collection and cannot be used as an order or allocation instruction.
+- Drogon gateway route forwards authenticated investment-plan GET/PUT requests to the private Axum research API.
+- Input validation and unit tests for goal length, currency, contribution/target bounds and time horizon.
+- Product README and investment-platform regulatory-boundary documentation.
+- JEPA removed from the active branch as previously instructed.
 
-## Not verified here
-- Rust compilation and unit tests: GitHub Actions passed `cargo test`; 3 Rust unit tests passed.
-- Drogon/C++ compilation: Drogon development package unavailable.
-- MongoDB integration and restart recovery.
-- Real market-data feed, testnet, event-driven backtesting, walk-forward validation, and shadow-mode comparison.
-- Profitability, live reliability, or safe production readiness.
+## CI verification
 
-## Next required milestones
-1. Run CI with pinned toolchains and lockfiles; fix every native build/test failure.
-2. Add full state replay and data-quality/time-order guards.
-3. Implement versioned model configuration and past-only normalization.
-4. Build an event-driven backtester that uses the exact production signal code; include fees, spread, slippage, funding, and +50% cost stress.
-5. Add an independent risk gate, protective stops, reconciliation, circuit breakers, and recovery before even testnet execution.
-6. Keep real-money execution disabled pending explicit human approval.
+The latest implementation has triggered GitHub Actions for the Rust workspace, Axum/Drogon/MongoDB integration, Drogon gateway, React web and React Native mobile. Consult the run status for the current branch head before treating any of these changes as fully verified. Earlier runs passed the web production build, Drogon gateway build and Rust workspace tests; the full investment-plan integration run is still required.
+
+## Outstanding work
+
+1. Complete CI and integration verification for authenticated investment-plan persistence.
+2. Replace the crypto-only starter list with a provider-backed Forex/Crypto/Stocks catalogue.
+3. Connect real market-data adapters, venue normalization, explicit asset-class metadata and freshness/quality checks.
+4. Build instrument-specific multi-horizon research and causality-safe historical evaluation across supported asset classes.
+5. Add user-facing risk explanations, portfolio concentration/correlation diagnostics and transparent research history.
+6. Integrate licensed investment product providers, advisers/managers, brokers and custodians only after legal review and written agreements.
+7. Add provider-linked holdings, valuation and independent custody reconciliation.
+8. Complete production security hardening: rate limits, audit logs, key/secret management, monitoring, backups, recovery drills, privacy review and penetration testing.
+
+## Non-negotiable boundary
+
+Qoin is not a retail trading terminal. The research engine does not place orders. Qoin does not hold customer investment money. No live execution or public investment-product distribution is enabled by this implementation.
