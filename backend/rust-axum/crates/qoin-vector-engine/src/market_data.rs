@@ -284,19 +284,19 @@ mod tests {
 
     #[test]
     fn derives_book_imbalance_oi_funding_and_liquidation_pressure() {
-        let mut trade = event(100_000, "trade");
+        let mut trade = event(160_000, "trade");
         trade.size = Some(4.0);
         trade.side = Some("buy".into());
-        let mut book = event(110_000, "book");
+        let mut book = event(145_000, "book");
         book.bid_size = Some(3.0);
         book.ask_size = Some(1.0);
-        let mut oi_a = event(120_000, "open_interest");
+        let mut oi_a = event(165_000, "open_interest");
         oi_a.open_interest = Some(100.0);
-        let mut oi_b = event(130_000, "open_interest");
+        let mut oi_b = event(155_000, "open_interest");
         oi_b.open_interest = Some(110.0);
-        let mut funding = event(140_000, "funding");
+        let mut funding = event(160_000, "funding");
         funding.funding_rate = Some(0.001);
-        let mut liquidation = event(150_000, "liquidation");
+        let mut liquidation = event(165_000, "liquidation");
         liquidation.size = Some(5.0);
         liquidation.liquidation_side = Some("short".into());
 
