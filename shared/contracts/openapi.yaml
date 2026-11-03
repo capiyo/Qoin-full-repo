@@ -28,6 +28,21 @@ paths:
       responses:
         '200': { description: Per-horizon signals and descriptive consensus }
         '400': { description: Empty input, duplicate horizon, invalid configuration, or invalid observation }
+  /api/v1/market-horizons:
+    get:
+      summary: Derive research signals from the latest stored market events for one symbol
+      description: Aggregates trailing, causal event windows for each supported horizon. A horizon without sufficient trade and book evidence is reported as not ready and emits no signal. No orders are created.
+      parameters:
+        - in: query
+          name: symbol
+          schema: { type: string, default: BTCUSDT, maxLength: 64 }
+        - in: query
+          name: min_events
+          schema: { type: integer, minimum: 5, maximum: 10000, default: 20 }
+      responses:
+        '200': { description: Per-horizon observations, readiness diagnostics, and available research signals }
+        '400': { description: Invalid symbol or event threshold }
+        '503': { description: Market event storage unavailable }
   /api/v1/events:
     post:
       summary: Ingest one market event
@@ -63,6 +78,32 @@ paths:
         '503': { description: Storage unavailable }
 components:
   schemas:
+    HorizonObservation:
+      type: object
+      required: [horizon, observation, event_count, trade_count, book_count, data_quality, ready, reasons]
+      properties:
+        horizon: { type: string, enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week] }
+        observation:
+          type: object
+          required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+          properties:
+            ofi: { type: number }
+            liquidity: { type: number, description: Average signed bid/ask depth imbalance }
+            volatility: { type: number, description: Sum of absolute log returns scaled by square root of return count }
+            funding: { type: number }
+            open_interest_change: { type: number }
+            liquidation_pressure: { type: number }
+            basis: { type: number, description: Zero until a basis feed is added; see reasons and response note }
+        event_count: { type: integer }
+        trade_count: { type: integer }
+        book_count: { type: integer }
+        first_event_ts_ms: { type: integer, nullable: true }
+        last_event_ts_ms: { type: integer, nullable: true }
+        data_quality: { type: number, minimum: 0, maximum: 1 }
+        ready: { type: boolean }
+        reasons:
+          type: array
+          items: { type: string }
     HorizonInput:
       type: object
       required: [horizon, observation, config, config_version, has_open_position]
