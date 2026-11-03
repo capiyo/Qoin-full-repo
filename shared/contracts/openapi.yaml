@@ -44,7 +44,7 @@ paths:
   /api/v1/market-horizons:
     get:
       summary: Derive research signals from the latest stored market events for one symbol
-      description: Aggregates trailing, causal event windows for each supported horizon. A horizon without sufficient trade and book evidence is reported as not ready and emits no signal. No orders are created.
+      description: Requires asset_class to isolate instruments with overlapping symbols. Aggregates trailing, causal event windows for each supported horizon. A horizon without sufficient signed-trade and book evidence is reported as not ready and emits no signal. If the 50,000-event safety cap is reached, all signals are suppressed because older window data may be truncated. No orders are created.
       parameters:
         - in: query
           name: symbol
@@ -54,10 +54,11 @@ paths:
           schema: { type: integer, minimum: 5, maximum: 10000, default: 20 }
         - in: query
           name: asset_class
+          required: true
           schema: { type: string, enum: [forex, crypto, stock] }
       responses:
         '200': { description: Per-horizon observations, readiness diagnostics, and available research signals }
-        '400': { description: Invalid symbol or event threshold }
+        '400': { description: Missing or unsupported asset class, invalid symbol, or event threshold }
         '503': { description: Market event storage unavailable }
   /api/v1/events:
     post:
