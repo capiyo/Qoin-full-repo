@@ -36,6 +36,7 @@ pub struct HorizonObservation {
     pub first_event_ts_ms: Option<i64>,
     pub last_event_ts_ms: Option<i64>,
     pub data_quality: f64,
+    pub coverage_ratio: f64,
     pub ready: bool,
     pub reasons: Vec<String>,
 }
@@ -165,9 +166,27 @@ pub fn aggregate_horizon(
     let basis_force = (latest_basis.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
 
     let event_count = rows.len();
+    let first_event_ts_ms = rows.first().map(|event| event.ts_ms);
+    let last_event_ts_ms = rows.last().map(|event| event.ts_ms);
+    let observed_span_ms = match (first_event_ts_ms, last_event_ts_ms) {
+        (Some(first), Some(last)) => last.saturating_sub(first).max(0) as f64,
+        _ => 0.0,
+    };
+    // Require evidence distributed across at least 15% of the target window.
+    // This is a conservative completeness gate, not a performance parameter.
+    const MIN_WINDOW_COVERAGE_RATIO: f64 = 0.15;
+    let coverage_ratio = (observed_span_ms
+        / (horizon.duration_seconds() as f64 * 1_000.0))
+        .clamp(0.0, 1.0);
     let mut reasons = Vec::new();
     if event_count < min_events {
         reasons.push(format!("requires at least {min_events} events; observed {event_count}"));
+    }
+    if coverage_ratio < MIN_WINDOW_COVERAGE_RATIO {
+        reasons.push(format!(
+            "window coverage {:.1}% is below the 15% minimum",
+            coverage_ratio * 100.0,
+        ));
     }
     if trade_count == 0 {
         reasons.push("no signed trade-flow observations in this window".to_owned());
@@ -201,10 +220,14 @@ pub fn aggregate_horizon(
         event_count,
         trade_count,
         book_count,
-        first_event_ts_ms: rows.first().map(|event| event.ts_ms),
-        last_event_ts_ms: rows.last().map(|event| event.ts_ms),
+        first_event_ts_ms,
+        last_event_ts_ms,
         data_quality,
-        ready: event_count >= min_events && trade_count > 0 && book_count > 0,
+        coverage_ratio,
+        ready: event_count >= min_events
+            && trade_count > 0
+            && book_count > 0
+            && coverage_ratio >= MIN_WINDOW_COVERAGE_RATIO,
         reasons,
     }
 }
@@ -279,7 +302,7 @@ mod tests {
 
         let result = aggregate_horizon(
             &[trade, book, oi_a, oi_b, funding, liquidation],
-            Horizon::OneHour, 200_000, 1,
+            Horizon::OneMinute, 200_000, 1,
         );
         assert_eq!(result.observation.liquidity, 0.5);
         assert!((result.observation.open_interest_change - 3.0).abs() < 1e-12);
@@ -305,6 +328,26 @@ mod tests {
         let result = aggregate_horizon(&[trade], Horizon::FiveMinutes, 100_000, 1);
         assert!(!result.ready);
         assert!(result.reasons.iter().any(|reason| reason.contains("order-book")));
+    }
+
+    #[test]
+    fn long_horizon_requires_events_spread_across_its_window() {
+        let mut trade = event(100_000, "trade");
+        trade.size = Some(1.0);
+        trade.side = Some("buy".into());
+        let mut book = event(120_000, "book");
+        book.bid_size = Some(2.0);
+        book.ask_size = Some(1.0);
+
+        let result = aggregate_horizon(
+            &[trade, book],
+            Horizon::OneDay,
+            130_000,
+            2,
+        );
+        assert!(result.coverage_ratio < 0.15);
+        assert!(!result.ready);
+        assert!(result.reasons.iter().any(|reason| reason.contains("window coverage")));
     }
 
     #[test]
@@ -348,7 +391,7 @@ mod tests {
 
         let result = aggregate_horizon(
             &[buy, unknown, book],
-            Horizon::OneHour,
+            Horizon::OneMinute,
             130_000,
             2,
         );
