@@ -223,7 +223,7 @@ async fn evaluate_market_horizons(
     let decision_ts_ms = chrono::Utc::now().timestamp_millis();
     let cutoff_ts_ms = decision_ts_ms - (Horizon::OneWeek.duration_seconds() as i64 * 1_000);
     let options = FindOptions::builder()
-        .sort(doc!{"ts_ms": 1})
+        .sort(doc!{"ts_ms": -1})
         .limit(50_000)
         .build();
     let filter = if let Some(asset_class) = query.asset_class.as_deref() {
