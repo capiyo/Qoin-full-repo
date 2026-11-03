@@ -22,6 +22,7 @@ Qoin's deterministic vector engine is a research and measurement system. Signals
 - Expo / React Native mobile client.
 - Shared TypeScript API contracts.
 - Archive and Feed product navigation.
+- Archive filters for Forex, Crypto and Stocks; it loads symbols observed in explicitly asset-classed market events, while retaining the small crypto starter list.
 - User instrument basket with local persistence and authenticated server synchronization.
 - Firebase email/password sign-in and account creation on web and mobile.
 - Investment-intention panel on web and mobile: user-authored goal, currency, monthly contribution, optional target amount and time horizon.
@@ -29,7 +30,7 @@ Qoin's deterministic vector engine is a research and measurement system. Signals
 - Synthetic chart fixtures are labelled as development data; no fixture is presented as a live exchange feed.
 
 ### Backend
-- Rust/Axum owns market event ingestion, state estimation, deterministic vector decisions and strategy-map persistence.
+- Rust/Axum owns market event ingestion, state estimation, deterministic vector decisions, strategy-map persistence and the observed instrument catalogue. Market events accept optional explicit `asset_class` metadata (forex/crypto/stocks); `GET /api/v1/instruments` returns observed symbols by class.
 - C++/Drogon is the HTTP gateway; the Axum services bind to loopback by default.
 - MongoDB persists market events, state, decisions, strategy maps, authenticated user baskets and investment plans.
 - Firebase ID tokens are verified server-side against Google's rotating RS256 signing keys, with issuer, audience, expiry and subject checks.
@@ -39,7 +40,7 @@ Qoin's deterministic vector engine is a research and measurement system. Signals
 
 ## Known gaps — not production-ready
 
-- The visible starter catalogue is currently crypto-only. Forex and stock asset classes are not yet backed by complete provider catalogues.
+- The instrument catalogue is intentionally incomplete: it contains the small crypto starter list plus symbols explicitly observed in ingested events. Forex and stock filters are wired, but they remain empty until their data providers publish classified events.
 - No production market-data provider adapters or verified real-time quotes are connected.
 - No production portfolio valuations, corporate-action handling, currency conversion, dividend/interest accounting or authoritative holdings reconciliation.
 - No licensed fund-manager, broker, custodian or investment-adviser integrations are connected.
@@ -47,7 +48,7 @@ Qoin's deterministic vector engine is a research and measurement system. Signals
 - No customer money is held by Qoin; no live execution route is enabled.
 - Authentication and persistence have a functional foundation, but rate limiting, security monitoring, privacy review, access-control review, backup/restore drills and independent penetration testing remain required.
 - The investment-plan API has unit-level input validation; its full end-to-end authenticated persistence flow still requires CI/integration verification.
-- Provider-driven instrument metadata, asset-class-aware catalogue search and a complete cross-asset research pipeline remain outstanding.
+- Production provider-driven instrument metadata, venue-aware stable instrument identifiers, catalogue search/pagination and a complete cross-asset research pipeline remain outstanding.
 
 ## Next implementation sequence
 
