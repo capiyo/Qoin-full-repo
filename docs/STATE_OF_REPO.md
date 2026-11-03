@@ -4,9 +4,10 @@ The repository uses React web and React Native clients, a Rust/Axum authoritativ
 
 ## Multi-horizon implementation
 - Eight horizons are supported: 1m, 5m, 15m, 30m, 1h, 4h, 1d and 1w.
+- Market events accept `forex`, `crypto` and `stock` asset classes; the market-horizon query can isolate a class to prevent cross-class symbol collisions.
 - Each horizon is derived from its own trailing event window using events no later than the decision timestamp.
 - The market-backed endpoint reads up to 50,000 events from the preceding week and requires both trade and order-book evidence plus a configurable minimum event count before emitting a signal.
-- Missing funding and open-interest values are explicitly identified in diagnostics and treated as neutral by the current baseline; basis remains unavailable until a basis feed is added.
+- Missing funding, open-interest and basis values are explicitly identified in diagnostics and treated as neutral by the current baseline; dedicated basis events are supported.
 - Web and mobile research screens can request horizon observations for a selected instrument.
 
 ## Verified status
