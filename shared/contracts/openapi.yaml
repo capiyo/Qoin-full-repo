@@ -110,6 +110,29 @@ paths:
       responses:
         '200': { description: Latest decision or abstain response }
         '503': { description: Storage unavailable }
+  /api/v1/instruments:
+    get:
+      summary: List instruments observed in the ingested event catalogue
+      parameters:
+        - in: query
+          name: asset_class
+          required: true
+          schema: { type: string, enum: [forex, crypto, stocks] }
+      responses:
+        '200':
+          description: Observed instrument symbols; this is not a complete market-wide catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_class, symbols, source, complete]
+                properties:
+                  asset_class: { type: string, enum: [forex, crypto, stocks] }
+                  symbols: { type: array, items: { type: string } }
+                  source: { type: string, enum: [ingested_market_events] }
+                  complete: { type: boolean, enum: [false] }
+        '400': { description: Missing or invalid asset class }
+        '503': { description: Instrument catalogue unavailable }
 components:
   securitySchemes:
     FirebaseBearer:
@@ -124,6 +147,7 @@ components:
         event_id: { type: string, minLength: 1 }
         venue: { type: string, minLength: 1 }
         symbol: { type: string, minLength: 1 }
+        asset_class: { type: string, nullable: true, enum: [forex, crypto, stocks] }
         event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
         ts_ms: { type: integer, minimum: 1 }
         price: { type: number, nullable: true, minimum: 0 }
