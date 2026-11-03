@@ -2,7 +2,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use mongodb::{
@@ -240,7 +240,7 @@ async fn evaluate_market_horizons(
         "asset_class": asset_class,
         "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}
     };
-    let mut cursor = match s.events.find(filter, Some(options)).await {
+    let cursor = match s.events.find(filter, Some(options)).await {
         Ok(cursor) => cursor,
         Err(error) => {
             tracing::error!(symbol=%symbol, error=%error, "multi-horizon event query failed");
