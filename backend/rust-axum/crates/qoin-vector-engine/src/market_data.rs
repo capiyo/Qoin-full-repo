@@ -59,7 +59,7 @@ pub fn aggregate_horizon(
     let mut classified_trade_size = 0.0;
     let mut book_imbalance_sum = 0.0;
     let mut book_count = 0usize;
-    let mut absolute_returns = 0.0;
+    let mut squared_log_returns = 0.0;
     let mut return_count = 0usize;
     let mut previous_price: Option<f64> = None;
     let mut first_oi: Option<f64> = None;
@@ -91,7 +91,8 @@ pub fn aggregate_horizon(
                 }
                 if let Some(price) = event.price.filter(|price| *price > 0.0) {
                     if let Some(previous) = previous_price.filter(|previous| *previous > 0.0) {
-                        absolute_returns += (price / previous).ln().abs();
+                        let log_return = (price / previous).ln();
+                        squared_log_returns += log_return * log_return;
                         return_count += 1;
                     }
                     previous_price = Some(price);
@@ -157,7 +158,7 @@ pub fn aggregate_horizon(
     // Explicit research normalization scales: 1% realized move, 10 bps funding,
     // 1% OI change, and 10 bps spot/perpetual basis map to unit magnitude.
     let volatility = if return_count > 0 {
-        (absolute_returns / (return_count as f64).sqrt() / 0.01).clamp(0.0, 3.0)
+        (squared_log_returns.sqrt() / 0.01).clamp(0.0, 3.0)
     } else { 0.0 };
     let funding_force = (latest_funding.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
     let open_interest_force = (open_interest_change / 0.01).clamp(-3.0, 3.0);
@@ -304,6 +305,33 @@ mod tests {
         let result = aggregate_horizon(&[trade], Horizon::FiveMinutes, 100_000, 1);
         assert!(!result.ready);
         assert!(result.reasons.iter().any(|reason| reason.contains("order-book")));
+    }
+
+    #[test]
+    fn volatility_uses_root_sum_squared_log_returns() {
+        let mut first = event(100_000, "trade");
+        first.price = Some(100.0);
+        first.size = Some(1.0);
+        first.side = Some("buy".into());
+        let mut second = event(110_000, "trade");
+        second.price = Some(101.0);
+        second.size = Some(1.0);
+        second.side = Some("buy".into());
+        let mut third = event(120_000, "trade");
+        third.price = Some(100.0);
+        third.size = Some(1.0);
+        third.side = Some("sell".into());
+
+        let result = aggregate_horizon(
+            &[first, second, third],
+            Horizon::OneHour,
+            130_000,
+            1,
+        );
+        let expected = (((101.0_f64 / 100.0).ln().powi(2)
+            + (100.0_f64 / 101.0).ln().powi(2)).sqrt() / 0.01)
+            .clamp(0.0, 3.0);
+        assert!((result.observation.volatility - expected).abs() < 1e-12);
     }
 
     #[test]
