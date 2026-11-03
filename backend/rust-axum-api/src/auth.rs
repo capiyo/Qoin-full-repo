@@ -43,13 +43,7 @@ impl FirebaseVerifier {
         Ok(Self { project_id, issuer, http, cache: RwLock::new(None) })
     }
 
-    async fn jwks(&self) -> Result<Arc<JwkSet>, String> {
-        if let Some(cached) = self.cache.read().await.as_ref() {
-            if cached.expires_at > Instant::now() {
-                return Ok(Arc::clone(&cached.keys));
-            }
-        }
-
+    async fn fetch_jwks(&self) -> Result<Arc<JwkSet>, String> {
         let response = self.http.get(FIREBASE_JWKS_URL).send().await
             .map_err(|_| "identity provider key service unavailable".to_owned())?
             .error_for_status()
@@ -72,13 +66,27 @@ impl FirebaseVerifier {
         Ok(keys)
     }
 
+    async fn jwks(&self) -> Result<Arc<JwkSet>, String> {
+        if let Some(cached) = self.cache.read().await.as_ref() {
+            if cached.expires_at > Instant::now() {
+                return Ok(Arc::clone(&cached.keys));
+            }
+        }
+        self.fetch_jwks().await
+    }
+
     pub async fn verify(&self, token: &str) -> Result<AuthenticatedUser, String> {
         let header = decode_header(token).map_err(|_| "invalid bearer token".to_owned())?;
         if header.alg != Algorithm::RS256 {
             return Err("unsupported bearer token algorithm".to_owned());
         }
         let kid = header.kid.ok_or_else(|| "bearer token has no signing key id".to_owned())?;
-        let keys = self.jwks().await?;
+        let mut keys = self.jwks().await?;
+        if keys.find(&kid).is_none() {
+            // Google rotates signing keys. Refresh once on an unknown kid rather
+            // than rejecting newly issued tokens until the old cache expires.
+            keys = self.fetch_jwks().await?;
+        }
         let jwk = keys.find(&kid).ok_or_else(|| "bearer token signing key is unknown".to_owned())?;
         let key = DecodingKey::from_jwk(jwk)
             .map_err(|_| "bearer token signing key is invalid".to_owned())?;
