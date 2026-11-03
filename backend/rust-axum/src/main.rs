@@ -219,6 +219,11 @@ async fn evaluate_market_horizons(
     if symbol.trim().is_empty() || symbol.len() > 64 {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol must contain 1 to 64 characters"})));
     }
+    let asset_class = match query.asset_class.as_deref() {
+        Some(value @ ("forex" | "crypto" | "stock")) => value,
+        Some(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class must be forex, crypto, or stock"}))),
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class is required to isolate market observations"}))),
+    };
     let min_events = query.min_events.unwrap_or(20);
     if !(5..=10_000).contains(&min_events) {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"min_events must be between 5 and 10000"})));
@@ -230,13 +235,10 @@ async fn evaluate_market_horizons(
         .sort(doc!{"ts_ms": -1})
         .limit(50_000)
         .build();
-    let filter = if let Some(asset_class) = query.asset_class.as_deref() {
-        if !matches!(asset_class, "forex" | "crypto" | "stock") {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class must be forex, crypto, or stock"})));
-        }
-        doc!{"symbol": &symbol, "asset_class": asset_class, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}}
-    } else {
-        doc!{"symbol": &symbol, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}}
+    let filter = doc!{
+        "symbol": &symbol,
+        "asset_class": asset_class,
+        "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}
     };
     let mut cursor = match s.events.find(filter, Some(options)).await {
         Ok(cursor) => cursor,
@@ -262,9 +264,20 @@ async fn evaluate_market_horizons(
         Horizon::ThirtyMinutes, Horizon::OneHour, Horizon::FourHours,
         Horizon::OneDay, Horizon::OneWeek,
     ];
-    let observations: Vec<_> = horizons.iter()
+    let mut observations: Vec<_> = horizons.iter()
         .map(|horizon| aggregate_horizon(&events, *horizon, decision_ts_ms, min_events))
         .collect();
+    // The query is sorted newest-first and capped. If the cap is reached, the
+    // oldest portion of one or more windows may be missing; suppress every
+    // signal rather than presenting a potentially truncated sample as complete.
+    if event_limit_reached {
+        for observation in &mut observations {
+            observation.ready = false;
+            observation.reasons.push(
+                "50,000-event query safety cap reached; signal suppressed because the historical window may be truncated".to_owned(),
+            );
+        }
+    }
     let config = EngineConfig::default();
     let inputs: Vec<HorizonInput> = observations.iter()
         .filter(|item| item.ready)
@@ -290,7 +303,7 @@ async fn evaluate_market_horizons(
 
     (StatusCode::OK, Json(serde_json::json!({
         "symbol": symbol,
-        "asset_class": query.asset_class,
+        "asset_class": asset_class,
         "decision_ts_ms": decision_ts_ms,
         "events_loaded": events.len(),
         "event_limit_reached": event_limit_reached,
