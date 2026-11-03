@@ -22,6 +22,7 @@ struct AppState {
     config: EngineConfig,
     config_version: String,
     portfolios: Option<Collection<Document>>,
+    investment_plans: Option<Collection<Document>>,
     firebase: Option<Arc<FirebaseVerifier>>,
 }
 
@@ -34,6 +35,45 @@ struct Portfolio {
 #[derive(Deserialize)]
 struct PortfolioRequest {
     symbols: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InvestmentPlan {
+    goal: String,
+    currency: String,
+    monthly_contribution_minor: u64,
+    target_amount_minor: Option<u64>,
+    horizon_months: u16,
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InvestmentPlanRequest {
+    goal: String,
+    currency: String,
+    monthly_contribution_minor: u64,
+    target_amount_minor: Option<u64>,
+    horizon_months: u16,
+}
+
+fn validate_investment_plan(request: InvestmentPlanRequest) -> Result<InvestmentPlanRequest, String> {
+    let goal = request.goal.trim();
+    if goal.is_empty() || goal.chars().count() > 80 {
+        return Err("goal must contain between 1 and 80 characters".to_owned());
+    }
+    if !matches!(request.currency.as_str(), "KES" | "USD" | "EUR" | "GBP") {
+        return Err("currency must be one of KES, USD, EUR, or GBP".to_owned());
+    }
+    if request.monthly_contribution_minor > 100_000_000_000 {
+        return Err("monthly contribution exceeds the supported limit".to_owned());
+    }
+    if request.target_amount_minor.is_some_and(|amount| amount == 0 || amount > 10_000_000_000_000) {
+        return Err("target amount must be positive and within the supported limit".to_owned());
+    }
+    if !(1..=600).contains(&request.horizon_months) {
+        return Err("investment horizon must be between 1 and 600 months".to_owned());
+    }
+    Ok(InvestmentPlanRequest { goal: goal.to_owned(), ..request })
 }
 
 fn validate_symbols(symbols: Vec<String>) -> Result<Vec<String>, String> {
@@ -124,6 +164,62 @@ async fn put_portfolio(
     Ok(Json(Portfolio { symbols, updated_at: Some(updated.to_string()) }))
 }
 
+async fn get_investment_plan(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Option<InvestmentPlan>>, (StatusCode, String)> {
+    let uid = authenticated_uid(&state, &headers).await?;
+    let collection = state.investment_plans.as_ref()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "investment-plan storage is not configured".to_owned()))?;
+    let stored = collection.find_one(doc! { "uid": &uid }, None).await
+        .map_err(|error| {
+            tracing::error!(%error, "investment-plan read failed");
+            (StatusCode::SERVICE_UNAVAILABLE, "investment-plan storage unavailable".to_owned())
+        })?;
+    let plan = stored.and_then(|document| {
+        mongodb::bson::from_document::<InvestmentPlan>(document).ok()
+    });
+    Ok(Json(plan))
+}
+
+async fn put_investment_plan(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<InvestmentPlanRequest>,
+) -> Result<Json<InvestmentPlan>, (StatusCode, String)> {
+    let uid = authenticated_uid(&state, &headers).await?;
+    let collection = state.investment_plans.as_ref()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "investment-plan storage is not configured".to_owned()))?;
+    let request = validate_investment_plan(request)
+        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
+    let updated = mongodb::bson::DateTime::now();
+    let update = doc! { "$set": {
+        "uid": &uid,
+        "goal": &request.goal,
+        "currency": &request.currency,
+        "monthly_contribution_minor": request.monthly_contribution_minor as i64,
+        "target_amount_minor": request.target_amount_minor.map(|value| value as i64),
+        "horizon_months": i32::from(request.horizon_months),
+        "updated_at": updated,
+    }};
+    collection.update_one(
+        doc! { "uid": &uid },
+        update,
+        Some(UpdateOptions::builder().upsert(true).build()),
+    ).await.map_err(|error| {
+        tracing::error!(%error, "investment-plan write failed");
+        (StatusCode::SERVICE_UNAVAILABLE, "investment-plan storage unavailable".to_owned())
+    })?;
+    Ok(Json(InvestmentPlan {
+        goal: request.goal,
+        currency: request.currency,
+        monthly_contribution_minor: request.monthly_contribution_minor,
+        target_amount_minor: request.target_amount_minor,
+        horizon_months: request.horizon_months,
+        updated_at: Some(updated.to_string()),
+    }))
+}
+
 #[derive(Serialize)]
 struct Health {
     status: &'static str,
@@ -199,7 +295,23 @@ async fn main() {
             None
         }
     };
-    let state = Arc::new(AppState { config, config_version, portfolios, firebase });
+    let investment_plans = match env::var("QOIN_MONGODB_URI") {
+        Ok(uri) if !uri.trim().is_empty() => {
+            let client = Client::with_uri_str(&uri).await.expect("connect investment-plan MongoDB client");
+            let database = client.database(&env::var("QOIN_MONGODB_DATABASE").unwrap_or_else(|_| "qoin".to_owned()));
+            let collection: Collection<Document> = database.collection("user_investment_plans");
+            collection.create_index(
+                mongodb::IndexModel::builder()
+                    .keys(doc! { "uid": 1 })
+                    .options(IndexOptions::builder().unique(true).build())
+                    .build(),
+                None,
+            ).await.expect("create unique investment-plan index");
+            Some(collection)
+        }
+        _ => None,
+    };
+    let state = Arc::new(AppState { config, config_version, portfolios, investment_plans, firebase });
     let mut allowed_origins = vec![
         HeaderValue::from_static("http://localhost:5173"),
         HeaderValue::from_static("http://127.0.0.1:5173"),
@@ -223,6 +335,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/v1/signal", post(signal))
         .route("/v1/portfolio", get(get_portfolio).put(put_portfolio))
+        .route("/v1/investment-plan", get(get_investment_plan).put(put_investment_plan))
         .layer(cors)
         .with_state(state);
 
@@ -269,6 +382,40 @@ mod tests {
             "aapl".to_owned(),
         ]).unwrap();
         assert_eq!(symbols, vec!["BTC/USD", "AAPL"]);
+    }
+
+    #[test]
+    fn investment_plan_validation_accepts_a_teacher_savings_goal() {
+        let plan = super::validate_investment_plan(super::InvestmentPlanRequest {
+            goal: "Long-term financial security".to_owned(),
+            currency: "KES".to_owned(),
+            monthly_contribution_minor: 300_000,
+            target_amount_minor: Some(36_000_000),
+            horizon_months: 120,
+        }).unwrap();
+        assert_eq!(plan.goal, "Long-term financial security");
+        assert_eq!(plan.monthly_contribution_minor, 300_000);
+        assert_eq!(plan.horizon_months, 120);
+    }
+
+    #[test]
+    fn investment_plan_validation_rejects_invalid_currency_and_horizon() {
+        let invalid_currency = super::validate_investment_plan(super::InvestmentPlanRequest {
+            goal: "Security".to_owned(),
+            currency: "XXX".to_owned(),
+            monthly_contribution_minor: 10_000,
+            target_amount_minor: None,
+            horizon_months: 12,
+        });
+        assert!(invalid_currency.is_err());
+        let invalid_horizon = super::validate_investment_plan(super::InvestmentPlanRequest {
+            goal: "Security".to_owned(),
+            currency: "KES".to_owned(),
+            monthly_contribution_minor: 10_000,
+            target_amount_minor: None,
+            horizon_months: 0,
+        });
+        assert!(invalid_horizon.is_err());
     }
 
     #[test]
