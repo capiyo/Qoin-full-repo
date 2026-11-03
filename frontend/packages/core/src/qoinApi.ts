@@ -31,6 +31,11 @@ export type QoinHealth = {
   live_trading: false;
 };
 
+export type QoinPortfolio = {
+  symbols: string[];
+  updated_at: string | null;
+};
+
 function getBaseUrl(): string {
   // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
   // Physical devices need a reachable host configured for the development environment.
@@ -42,10 +47,13 @@ function getBaseUrl(): string {
   return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, idToken?: string): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "application/json");
+  if (idToken) headers.set("authorization", `Bearer ${idToken}`);
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers,
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -64,4 +72,20 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+
+/** Reads the authenticated user's server-side portfolio. The UID is derived from the verified token. */
+export function getQoinPortfolio(idToken: string): Promise<QoinPortfolio> {
+  if (!idToken.trim()) return Promise.reject(new Error("A Firebase ID token is required"));
+  return request<QoinPortfolio>("/v1/portfolio", undefined, idToken);
+}
+
+/** Replaces the authenticated user's selected instrument basket. */
+export function saveQoinPortfolio(symbols: string[], idToken: string): Promise<QoinPortfolio> {
+  if (!idToken.trim()) return Promise.reject(new Error("A Firebase ID token is required"));
+  return request<QoinPortfolio>("/v1/portfolio", {
+    method: "PUT",
+    body: JSON.stringify({ symbols }),
+  }, idToken);
 }
