@@ -200,7 +200,7 @@ async fn put_investment_plan(
         "monthly_contribution_minor": request.monthly_contribution_minor as i64,
         "target_amount_minor": request.target_amount_minor.map(|value| value as i64),
         "horizon_months": i32::from(request.horizon_months),
-        "updated_at": updated,
+        "updated_at": updated.to_string(),
     }};
     collection.update_one(
         doc! { "uid": &uid },
