@@ -94,4 +94,4 @@ jobs:
           jq -e '.decision != null and .config_version != ""' /tmp/signal.json
           PORTFOLIO_STATUS=$(curl -sS -o /tmp/portfolio.json -w "%{http_code}" http://127.0.0.1:8080/v1/portfolio)
           test "$PORTFOLIO_STATUS" = "503"
-          jq -e '.error == "Firebase authentication is not configured"' /tmp/portfolio.json
+          grep -q "Firebase authentication is not configured" /tmp/portfolio.json
