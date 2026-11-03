@@ -33,7 +33,6 @@ export function LoginScreen({ navigation }: Props) {
       } else {
         await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
       }
-      navigation.replace("Dashboard");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Authentication failed. Try again.");
     } finally {
