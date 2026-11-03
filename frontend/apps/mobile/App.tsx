@@ -11,6 +11,7 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { firebaseAuth } from "./src/firebaseAuth";
 import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { InvestmentPlanPanel } from "./src/components/InvestmentPlanPanel";
 import { useMarketFeed } from "./src/useMarketFeed";
 
 export type RootStackParamList = { Login: undefined; Dashboard: undefined };
@@ -167,6 +168,7 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
             {!basketHydrated ? <Text style={s.pending}>RESTORING SAVED BASKET…</Text> : null}
             {basket.length ? basket.map((symbol) => <View key={symbol} style={s.drawerRow}><View style={s.assetInfo}><Text style={s.assetName}>{names[symbol] ?? symbol}</Text><Text style={s.muted}>{symbol}</Text></View><Pressable disabled={!basketHydrated} onPress={() => toggle(symbol)}><Text style={s.remove}>{basketHydrated ? "Remove" : "Loading…"}</Text></Pressable></View>) : <View style={s.empty}><Text style={s.assetName}>Your basket is waiting</Text><Text style={s.muted}>Explore Archive or Feed and add instruments to begin.</Text></View>}
             <View style={s.summary}><View style={s.summaryRow}><Text style={s.muted}>Selected instruments</Text><Text style={s.assetName}>{basket.length}</Text></View><View style={s.summaryRow}><Text style={s.muted}>Management</Text><Text style={s.assetName}>Algorithm-managed</Text></View><View style={s.summaryRow}><Text style={s.muted}>Execution</Text><Text style={s.assetName}>Not enabled</Text></View></View>
+            <InvestmentPlanPanel user={authUser} />
             <Text style={s.disclaimer}>Automated management requires verified market data, risk controls and explicit authorization.</Text>
           </Pressable>
         </Pressable>
