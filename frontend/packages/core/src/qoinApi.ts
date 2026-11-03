@@ -68,7 +68,7 @@ function getBaseUrl(): string {
 
 async function request<T>(path: string, init?: RequestInit, idToken?: string): Promise<T> {
   const headers = new Headers(init?.headers);
-  headers.set("content-type", "application/json");
+  if (init?.body !== undefined) headers.set("content-type", "application/json");
   if (idToken) headers.set("authorization", `Bearer ${idToken}`);
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
