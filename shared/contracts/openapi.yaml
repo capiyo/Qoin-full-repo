@@ -54,9 +54,10 @@ paths:
           content:
             application/json:
               schema:
+                type: object
+                nullable: true
                 allOf:
                   - $ref: '#/components/schemas/InvestmentPlan'
-                nullable: true
         '401': { description: Missing or invalid Firebase ID token }
         '503': { description: Authentication or investment-plan storage unavailable }
     put:
