@@ -65,3 +65,66 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
     body: JSON.stringify(input),
   });
 }
+export type QoinHorizon =
+  | "one_minute"
+  | "five_minutes"
+  | "fifteen_minutes"
+  | "thirty_minutes"
+  | "one_hour"
+  | "four_hours"
+  | "one_day"
+  | "one_week";
+
+export type QoinEngineConfig = {
+  signal_threshold: number;
+  input_clip: number;
+  score_clip: number;
+  top_k: number;
+  min_alignment: number;
+  max_angle_radians: number;
+  volatility_dampener: number;
+  interaction_coefficient: number;
+};
+
+export type QoinHorizonInput = {
+  horizon: QoinHorizon;
+  observation: MarketForceObservation;
+  config: QoinEngineConfig;
+  config_version: string;
+  has_open_position: boolean;
+};
+
+export type QoinHorizonSignal = {
+  horizon: QoinHorizon;
+  duration_seconds: number;
+  signal: QoinSignal;
+};
+
+export type QoinHorizonConsensus = {
+  relationship: "aligned_buy" | "aligned_sell" | "divergent" | "no_directional_consensus";
+  buy_count: number;
+  sell_count: number;
+  wait_count: number;
+  close_count: number;
+  directional_count: number;
+  unanimous_direction: QoinDecision | null;
+};
+
+export type QoinMultiHorizonSignal = {
+  horizons: QoinHorizonSignal[];
+  consensus: QoinHorizonConsensus;
+};
+
+/**
+ * Evaluates separately constructed, causal observations for each selected
+ * horizon. The result is descriptive research output, never an order.
+ */
+export function evaluateQoinMultiHorizon(
+  inputs: QoinHorizonInput[],
+): Promise<QoinMultiHorizonSignal> {
+  return request<QoinMultiHorizonSignal>("/api/v1/multi-horizon", {
+    method: "POST",
+    body: JSON.stringify(inputs),
+  });
+}
+
