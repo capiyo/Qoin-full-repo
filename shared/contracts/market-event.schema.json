@@ -114,6 +114,14 @@
         "short",
         null
       ]
+    },
+    "asset_class": {
+      "type": "string",
+      "enum": [
+        "forex",
+        "crypto",
+        "stocks"
+      ]
     }
   }
 }
