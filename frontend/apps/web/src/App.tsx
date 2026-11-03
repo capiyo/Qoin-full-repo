@@ -5,6 +5,7 @@ import {
   getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinHealth,
+  type QoinAssetClass,
   type QoinSignal,
   type QoinMarketHorizonsResponse,
 } from "@qoin/core";
@@ -36,6 +37,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("BTCUSDT");
+  const [assetClass, setAssetClass] = useState<QoinAssetClass>("crypto");
   const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
   const [marketBusy, setMarketBusy] = useState(false);
   const [marketError, setMarketError] = useState("");
@@ -53,7 +55,7 @@ export default function App() {
     setMarketBusy(true);
     setMarketError("");
     try {
-      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase()));
+      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase(), assetClass));
     } catch (e) {
       setMarketError(e instanceof Error ? e.message : "Unable to load market observations");
       setMarketHorizons(null);
@@ -92,6 +94,7 @@ export default function App() {
         <div className="panel-heading"><div><p className="eyebrow">STORED MARKET DATA</p><h2>Multi-horizon research</h2></div><span className="counter">1m → 1w</span></div>
         <p className="hint">Builds separate trailing observations from ingested trade, order-book, funding, open-interest and liquidation events. It does not use the demo values below.</p>
         <div className="market-controls">
+          <label>Asset class <select aria-label="Asset class" value={assetClass} onChange={(event) => setAssetClass(event.target.value as QoinAssetClass)}><option value="forex">Forex</option><option value="crypto">Crypto</option><option value="stock">Stocks</option></select></label>
           <label>Instrument <input aria-label="Instrument symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} maxLength={64} /></label>
           <button className="secondary" onClick={loadMarketHorizons} disabled={marketBusy || !symbol.trim()}>{marketBusy ? "Loading…" : "Load market horizons"}</button>
         </div>
@@ -110,7 +113,7 @@ export default function App() {
                 </div>;
               })}
             </div>
-            <p className="hint">Loaded {marketHorizons.events_loaded} events for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "The 50,000-event retrieval cap was reached; older records may be omitted." : "Only events at or before the decision timestamp were considered."}</p>
+            <p className="hint">Loaded {marketHorizons.events_loaded} {marketHorizons.asset_class ?? assetClass} events for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "The 50,000-event retrieval cap was reached; older records may be omitted." : "Only events at or before the decision timestamp were considered."}</p>
             {marketHorizons.signals && <p className="consensus-line">Horizon relationship: <strong>{marketHorizons.signals.consensus.relationship.replaceAll("_", " ")}</strong> · BUY {marketHorizons.signals.consensus.buy_count} · SELL {marketHorizons.signals.consensus.sell_count}</p>}
           </>
         ) : <p className="empty-market">No market-backed horizon result loaded. Ingest real venue events first; the evaluator will abstain where trade or book evidence is missing.</p>}
