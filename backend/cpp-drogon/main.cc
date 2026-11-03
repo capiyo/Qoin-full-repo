@@ -110,28 +110,30 @@ void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
 int main() {
     drogon::app().registerHandler("/v1/portfolio", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Options) {
+            corsOptions(req, std::move(cb));
+            return;
+        }
         proxyResearchPortfolio(req, std::move(cb));
-    }, {drogon::Get, drogon::Put});
-    drogon::app().registerHandler("/v1/portfolio", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        corsOptions(req, std::move(cb));
-    }, {drogon::Options});
+    }, {drogon::Get, drogon::Put, drogon::Options});
 
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Options) {
+            corsOptions(req, std::move(cb));
+            return;
+        }
         proxyResearchPost(req, std::move(cb));
-    }, {drogon::Post});
-    drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        corsOptions(req, std::move(cb));
-    }, {drogon::Options});
-    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        corsOptions(req, std::move(cb));
-    }, {drogon::Options});
+    }, {drogon::Post, drogon::Options});
 
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Options) {
+            corsOptions(req, std::move(cb));
+            return;
+        }
+        proxyGet(req, std::move(cb), "/health");
+    }, {drogon::Get, drogon::Options});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
