@@ -105,11 +105,11 @@ components:
           properties:
             ofi: { type: number }
             liquidity: { type: number, description: Average signed bid/ask depth imbalance }
-            volatility: { type: number, description: Sum of absolute log returns scaled by square root of return count }
-            funding: { type: number }
-            open_interest_change: { type: number }
+            volatility: { type: number, description: Realized absolute log-return measure normalized by 1 percent and clipped to [0, 3] }
+            funding: { type: number, description: Fractional funding rate normalized by 0.1 percent and clipped to [-3, 3] }
+            open_interest_change: { type: number, description: Fractional OI change normalized by 1 percent and clipped to [-3, 3] }
             liquidation_pressure: { type: number }
-            basis: { type: number, description: Latest spot-perpetual basis event in the horizon window; zero when unavailable }
+            basis: { type: number, description: Fractional spot-perpetual basis normalized by 0.1 percent and clipped to [-3, 3]; zero when unavailable }
         event_count: { type: integer }
         trade_count: { type: integer }
         book_count: { type: integer }
