@@ -18,6 +18,7 @@ mod edge_strategy;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use qoin_vector_engine::multi_horizon::{evaluate_multi_horizon, HorizonInput};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -210,6 +211,12 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
+async fn evaluate_horizons(Json(inputs): Json<Vec<HorizonInput>>) -> impl IntoResponse {
+    match evaluate_multi_horizon(&inputs) {
+        Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": error.to_string()}))),
+    }
+}
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
@@ -328,7 +335,7 @@ async fn main(){
         active_strategy:Arc::new(RwLock::new(active))
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
-        .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/state",get(get_state)).route("/internal/multi-horizon",post(evaluate_horizons)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
