@@ -100,7 +100,12 @@ jobs:
           test "$PORTFOLIO_PUT_STATUS" = "401"
           PREFLIGHT=$(curl -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:8080/v1/portfolio -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
           printf '%s\\n' "$PREFLIGHT"
-          if ! grep -Fqi 'access-control-allow-origin: *' <<<"$PREFLIGHT" || ! grep -qi 'PUT' <<<"$PREFLIGHT"; then
+          if ! grep -Fqi 'access-control-allow-origin: http://localhost:5173' <<<"$PREFLIGHT" || ! grep -qi 'PUT' <<<"$PREFLIGHT" || ! grep -qi 'authorization,content-type' <<<"$PREFLIGHT"; then
             cat /tmp/qoin-drogon.log
+            exit 1
+          fi
+          BLOCKED_PREFLIGHT=$(curl -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:8080/v1/portfolio -H 'Origin: https://untrusted.example' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
+          if grep -qi 'access-control-allow-origin:' <<<"$BLOCKED_PREFLIGHT"; then
+            echo "Untrusted browser origin unexpectedly received CORS access"
             exit 1
           fi
