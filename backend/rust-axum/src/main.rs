@@ -252,6 +252,7 @@ async fn evaluate_market_horizons(
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event retrieval failed"})));
         }
     };
+    let event_limit_reached = documents.len() >= 50_000;
     let events: Vec<MarketEventRecord> = documents.into_iter()
         .filter_map(|document| mongodb::bson::from_document(document).ok())
         .collect();
@@ -292,7 +293,7 @@ async fn evaluate_market_horizons(
         "asset_class": query.asset_class,
         "decision_ts_ms": decision_ts_ms,
         "events_loaded": events.len(),
-        "event_limit_reached": events.len() >= 50_000,
+        "event_limit_reached": event_limit_reached,
         "mode": "research_only",
         "observations": observations,
         "signals": signals,
