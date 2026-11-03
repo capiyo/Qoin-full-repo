@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { getQoinHealth, getQoinPortfolio, saveQoinPortfolio, type QoinHealth } from "@qoin/core";
+import { getQoinHealth, getQoinInstruments, getQoinPortfolio, saveQoinPortfolio, type QoinAssetClass, type QoinHealth } from "@qoin/core";
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { firebaseAuth, isFirebaseConfigured } from "./firebaseAuth";
 import { WATCHLIST } from "@qoin/core";
 import { InvestmentPlanPanel } from "./components/InvestmentPlanPanel";
 
 type PrimaryTab = "archive" | "feed";
-type AssetClass = "All" | "Forex" | "Crypto" | "Stocks" | "Options";
+type AssetClass = "All" | "Forex" | "Crypto" | "Stocks";
+type InstrumentAsset = {
+  symbol: string;
+  name: string;
+  category: Exclude<AssetClass, "All">;
+  venue: string;
+};
+
+function isValidInstrumentSymbol(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 32 &&
+    /^[A-Z0-9/_.-]+$/i.test(value);
+}
 
 const PORTFOLIO_STORAGE_KEY = "qoin.portfolio.v1";
 
@@ -15,21 +26,20 @@ function readSavedBasket(): string[] {
   try {
     const stored: unknown = JSON.parse(window.localStorage.getItem(PORTFOLIO_STORAGE_KEY) ?? "[]");
     if (!Array.isArray(stored)) return [];
-    const allowed = new Set<string>(WATCHLIST);
-    return [...new Set(stored.filter((item): item is string => typeof item === "string" && allowed.has(item)))];
+    return [...new Set(stored.filter(isValidInstrumentSymbol).map((item) => item.toUpperCase()))];
   } catch {
     return [];
   }
 }
 
-const assets = WATCHLIST.map((symbol) => ({
+const starterAssets: InstrumentAsset[] = WATCHLIST.map((symbol) => ({
   symbol,
   name: symbol.split("/")[0] === "BTC" ? "Bitcoin" :
     symbol.split("/")[0] === "ETH" ? "Ethereum" :
     symbol.split("/")[0] === "SOL" ? "Solana" :
     symbol.split("/")[0] === "AVAX" ? "Avalanche" : symbol,
   category: "Crypto" as const,
-  venue: "Digital assets",
+  venue: "Starter universe",
 }));
 
 function App() {
@@ -38,6 +48,8 @@ function App() {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [basket, setBasket] = useState<string[]>(readSavedBasket);
+  const [assets, setAssets] = useState<InstrumentAsset[]>(starterAssets);
+  const [catalogueLoading, setCatalogueLoading] = useState(true);
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(firebaseAuth?.currentUser ?? null);
   const [serverBasketOwnerUid, setServerBasketOwnerUid] = useState<string | null>(null);
@@ -50,6 +62,41 @@ function App() {
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const classes: QoinAssetClass[] = ["forex", "crypto", "stocks"];
+    void Promise.all(classes.map(async (assetClass) => {
+      try {
+        return await getQoinInstruments(assetClass);
+      } catch {
+        return null;
+      }
+    })).then((catalogues) => {
+      if (!active) return;
+      const byIdentity = new Map<string, InstrumentAsset>(
+        starterAssets.map((asset) => [`${asset.category}:${asset.symbol}`, asset]),
+      );
+      for (const catalogue of catalogues) {
+        if (!catalogue) continue;
+        const category = catalogue.asset_class === "forex" ? "Forex" :
+          catalogue.asset_class === "crypto" ? "Crypto" : "Stocks";
+        for (const symbol of catalogue.symbols) {
+          if (!isValidInstrumentSymbol(symbol)) continue;
+          byIdentity.set(`${category}:${symbol}`, {
+            symbol,
+            name: symbol,
+            category,
+            venue: "Observed market feed",
+          });
+        }
+      }
+      setAssets([...byIdentity.values()]);
+    }).finally(() => {
+      if (active) setCatalogueLoading(false);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -66,9 +113,8 @@ function App() {
     setServerBasketOwnerUid(null);
     void authUser.getIdToken().then(getQoinPortfolio).then((portfolio) => {
       if (!active) return;
-      const allowed = new Set<string>(WATCHLIST);
       if (portfolio.symbols.length > 0) {
-        setBasket([...new Set(portfolio.symbols.filter((symbol) => allowed.has(symbol)))]);
+        setBasket([...new Set(portfolio.symbols.filter(isValidInstrumentSymbol).map((symbol) => symbol.toUpperCase()))]);
       }
       // An empty server portfolio is a first-login state: preserve the local
       // basket so the first successful sync seeds the account instead of erasing it.
@@ -117,7 +163,7 @@ function App() {
 
   const visibleAssets = useMemo(
     () => assets.filter((asset) => filter === "All" || asset.category === filter),
-    [filter],
+    [assets, filter],
   );
   const selected = assets.find((asset) => asset.symbol === selectedAsset);
 
@@ -196,10 +242,10 @@ function App() {
                     <h2>Archive</h2>
                     <p className="section-copy">Your saved and available trading instruments.</p>
                   </div>
-                  <span className="result-count">{assets.length} instruments in starter universe</span>
+                  <span className="result-count">{catalogueLoading ? "Updating catalogue…" : `${assets.length} available instruments`}</span>
                 </div>
                 <div className="filter-row" role="group" aria-label="Filter instruments">
-                  {(["All", "Forex", "Crypto", "Stocks", "Options"] as AssetClass[]).map((item) => (
+                  {(["All", "Forex", "Crypto", "Stocks"] as AssetClass[]).map((item) => (
                     <button key={item} className={filter === item ? "filter-chip selected" : "filter-chip"} onClick={() => setFilter(item)}>
                       {item}
                     </button>
@@ -220,14 +266,14 @@ function App() {
                     <div className="empty-state">
                       <span className="empty-symbol">⌁</span>
                       <strong>No instruments in this category yet</strong>
-                      <p>The current connected starter universe contains crypto instruments. Additional market universes will appear when their data providers are connected.</p>
+                      <p>No instruments have been ingested for this category yet. Symbols appear here when a verified market-data source publishes them.</p>
                     </div>
                   )}
                 </div>
-                <p className="data-disclaimer">The current instrument list is the repository's starter watchlist. Market quotes and live factor vectors are not yet supplied by a production market-data provider.</p>
+                <p className="data-disclaimer">The catalogue combines the small crypto starter list with symbols observed in ingested market events. It is not a complete market-wide list; production quotes and vectors are not connected.</p>
               </section>
             ) : (
-              <FeedView onOpenAsset={setSelectedAsset} basket={basket} onToggleBasket={toggleBasket} />
+              <FeedView assets={assets} onOpenAsset={setSelectedAsset} basket={basket} onToggleBasket={toggleBasket} />
             )}
           </>
         )}
@@ -296,7 +342,8 @@ function App() {
   );
 }
 
-function FeedView({ onOpenAsset, basket, onToggleBasket }: {
+function FeedView({ assets, onOpenAsset, basket, onToggleBasket }: {
+  assets: InstrumentAsset[];
   onOpenAsset: (symbol: string) => void;
   basket: string[];
   onToggleBasket: (symbol: string) => void;
@@ -325,7 +372,7 @@ function FeedView({ onOpenAsset, basket, onToggleBasket }: {
                 </div>
               ))}
             </div>
-            <div className="feed-card-footer"><span>Starter universe · Crypto</span><span>Instrument catalogue</span></div>
+            <div className="feed-card-footer"><span>Observed instruments · Multiple asset classes</span><span>Incomplete catalogue</span></div>
           </article>
           <article className="feed-card feed-placeholder">
             <div className="feed-card-meta"><span className="feed-avatar muted">◎</span><span><strong>Market news and community</strong><small>Intelligence stream</small></span><span className="feed-tag muted-tag">CONNECTING</span></div>
@@ -345,7 +392,7 @@ function FeedView({ onOpenAsset, basket, onToggleBasket }: {
 }
 
 function InstrumentSpace({ asset, inBasket, onBack, onToggleBasket }: {
-  asset: (typeof assets)[number];
+  asset: InstrumentAsset;
   inBasket: boolean;
   onBack: () => void;
   onToggleBasket: () => void;
