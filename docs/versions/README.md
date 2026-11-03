@@ -1,23 +1,13 @@
 # Qoin version map
 
-Qoin has two explicitly separated architecture tracks:
+Qoin currently follows one authoritative strategy path: the deterministic Rust vector baseline, extended with independent multi-horizon observations.
 
-## Version 1 — Vector baseline
+## Vector baseline and multi-horizon extension
 
-Branch: [`version-1-vector-baseline`](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)
+The engine evaluates separately constructed causal observations at 1m, 5m, 15m, 30m, 1h, 4h, 1d and 1w. Each horizon retains its own decision and configuration. The agreement/divergence summary is descriptive metadata only; it does not average signals, allocate capital, or create orders.
 
-The existing architecture preserved as the baseline: frontend clients, Drogon gateway, Axum-authoritative state/vector decisions, MongoDB persistence, and current research/risk boundaries. See [Version 1 specification](https://github.com/capiyo/Qoin-full-repo/blob/version-1-vector-baseline/docs/versions/VERSION_1.md).
-
-## Version 2 — JEPA world model
-
-Branch: [`version-2-jepa-world-model`](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)
-
-Retains the Version 1 architecture and adds a JEPA-inspired PyTorch encoder/predictor plus optional loopback-only Axum telemetry. Latent predictions are persisted separately as research observations; they do not replace the vector engine, produce direct orders, or claim a validated trading edge. See the [Version 2 architecture specification](https://github.com/capiyo/Qoin-full-repo/blob/version-2-jepa-world-model/docs/versions/VERSION_2_JEPA.md) and [model scaffold](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model/services/jepa-world-model).
-
-## How to compare
-
-Use the same timestamped events, chronological splits, feature availability, risk budgets, and realistic execution costs. Compare Version 2 with Version 1 out of sample; do not promote based on training loss alone.
+See [multi-horizon research specification](../MULTI_HORIZON_RESEARCH.md), [architecture](../ARCHITECTURE.md), and [risk policy](../RISK_POLICY.md).
 
 ## Safety
 
-Both versions remain research/paper-only. The existing `docs/RISK_POLICY.md` remains binding. Live trading requires every gate to be implemented and independently verified plus explicit written user approval.
+All strategies remain research/paper-only. Live trading requires every risk gate to be implemented and independently verified plus explicit written approval. No profitability or predictive edge is claimed.
