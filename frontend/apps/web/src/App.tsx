@@ -71,7 +71,7 @@ function App() {
         <div className="topbar-right">
           <span className="connection-status">
             <span className={health ? "status-dot online" : "status-dot"} />
-            {health ? "Research engine connected" : "Research engine unavailable"}
+            {health ? "API reachable" : "API unavailable"}
           </span>
           <button
             className="portfolio-trigger"
