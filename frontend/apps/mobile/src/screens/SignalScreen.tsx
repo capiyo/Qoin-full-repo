@@ -155,6 +155,7 @@ export function SignalScreen() {
                       </View>
                       <Text style={styles.horizonDecision}>{horizonSignal?.decision ?? "—"}</Text>
                       <Text style={styles.horizonMeta}>{item.event_count} events · {item.trade_count} trades · {item.book_count} books</Text>
+                      <Text style={styles.horizonMeta}>Window coverage {(item.coverage_ratio * 100).toFixed(1)}%</Text>
                       <Text style={styles.horizonMeta}>OFI {item.observation.ofi.toFixed(2)} · OI Δ {item.observation.open_interest_change.toFixed(3)}</Text>
                       {!item.ready ? <Text style={styles.horizonReason}>{item.reasons[0] ?? "More market data required"}</Text> : null}
                     </View>
