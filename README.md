@@ -73,6 +73,12 @@ cmake --build build/drogon
 
 The default gateway binds to loopback at `127.0.0.1:8080`; the integrated flow-engine Axum service binds to `127.0.0.1:8081`; the isolated research-signal Axum service binds to `127.0.0.1:8082`. The gateway forwards `/v1/signal` and `/v1/portfolio` to the research service. The portfolio endpoints require a Firebase ID token in the `Authorization: Bearer` header; the server validates the token signature against Google's rotating Secure Token JWKs and checks the issuer, audience, expiry and subject. Set `QOIN_FIREBASE_PROJECT_ID` to the ID of Qoin's own Firebase project and configure MongoDB before enabling authenticated portfolio persistence. Do not reuse Funspot Firebase credentials or expose either Axum service directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_FIREBASE_PROJECT_ID`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, `QOIN_RESEARCH_API_ADDR` and `QOIN_RESEARCH_API_URL` as required.
 
+## Firebase identity setup
+
+Create a Firebase project owned by Qoin and enable the Email/Password provider in Firebase Authentication. Set `QOIN_FIREBASE_PROJECT_ID` on the research API and set the corresponding `VITE_FIREBASE_*` and `EXPO_PUBLIC_FIREBASE_*` client values for the web and mobile build environments. All three project IDs must match. Client API keys are public Firebase app identifiers, not server credentials; never place service-account private keys in either client. If the project settings are absent, clients remain in research-preview mode and server portfolio routes stay unavailable. The mobile Firebase Auth client uses AsyncStorage-backed persistence.
+
+The web and mobile clients can now sign in/create an account and synchronize the instrument basket through the authenticated `/v1/portfolio` API. A deployment still needs its own Firebase project, enabled Email/Password provider, and reachable MongoDB database before this path is operational.
+
 ## Frontend commands
 
 ```bash
