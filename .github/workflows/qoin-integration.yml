@@ -56,6 +56,7 @@ jobs:
           export QOIN_DROGON_PORT=8080
           export QOIN_RESEARCH_API_ADDR=127.0.0.1:8082
           export QOIN_RESEARCH_API_URL=http://127.0.0.1:8082
+          export QOIN_FIREBASE_PROJECT_ID=qoin-ci
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
           ./target/debug/qoin-axum-api >/tmp/qoin-research-api.log 2>&1 &
@@ -93,5 +94,5 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data "$SIGNAL" >/tmp/signal.json
           jq -e '.decision != null and .config_version != ""' /tmp/signal.json
           PORTFOLIO_STATUS=$(curl -sS -o /tmp/portfolio.json -w "%{http_code}" http://127.0.0.1:8080/v1/portfolio)
-          test "$PORTFOLIO_STATUS" = "503"
-          grep -q "Firebase authentication is not configured" /tmp/portfolio.json
+          test "$PORTFOLIO_STATUS" = "401"
+          grep -q "bearer token required" /tmp/portfolio.json
