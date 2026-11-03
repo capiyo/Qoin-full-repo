@@ -100,7 +100,7 @@ jobs:
           test "$PORTFOLIO_PUT_STATUS" = "401"
           PREFLIGHT=$(curl -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:8080/v1/portfolio -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
           printf '%s\\n' "$PREFLIGHT"
-          if ! grep -Fqi 'access-control-allow-origin: http://localhost:5173' <<<"$PREFLIGHT" || ! grep -qi 'PUT' <<<"$PREFLIGHT" || ! grep -qi 'authorization,content-type' <<<"$PREFLIGHT"; then
+          if ! grep -Fqi 'access-control-allow-origin: http://localhost:5173' <<<"$PREFLIGHT" || ! grep -qi 'PUT' <<<"$PREFLIGHT" || ! grep -qi 'authorization, content-type' <<<"$PREFLIGHT"; then
             cat /tmp/qoin-drogon.log
             exit 1
           fi
