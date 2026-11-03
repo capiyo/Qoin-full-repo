@@ -41,6 +41,14 @@ function App() {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(basket));
+    } catch {
+      // Storage may be unavailable in private browsing or restricted contexts.
+    }
+  }, [basket]);
+
   const visibleAssets = useMemo(
     () => assets.filter((asset) => filter === "All" || asset.category === filter),
     [filter],
