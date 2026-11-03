@@ -76,6 +76,8 @@ struct AppState {
 struct SymbolQuery { symbol: Option<String> }
 #[derive(Deserialize)]
 struct MarketHorizonQuery { symbol: Option<String>, asset_class: Option<String>, min_events: Option<usize> }
+#[derive(Deserialize)]
+struct InstrumentQuery { asset_class: Option<String> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -173,6 +175,38 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
+async fn get_instruments(
+    State(s): State<AppState>,
+    Query(query): Query<InstrumentQuery>,
+) -> impl IntoResponse {
+    let Some(asset_class) = query.asset_class.as_deref() else {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class is required"})));
+    };
+    if !matches!(asset_class, "forex" | "crypto" | "stock") {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class must be forex, crypto, or stock"})));
+    }
+    match s.events.distinct("symbol", doc!{"asset_class": asset_class}, None).await {
+        Ok(values) => {
+            let mut symbols: Vec<String> = values.into_iter().filter_map(|value| match value {
+                mongodb::bson::Bson::String(symbol) => Some(symbol),
+                _ => None,
+            }).collect();
+            symbols.sort();
+            symbols.dedup();
+            (StatusCode::OK, Json(serde_json::json!({
+                "asset_class": asset_class,
+                "count": symbols.len(),
+                "symbols": symbols,
+                "source": "ingested_market_events"
+            })))
+        }
+        Err(error) => {
+            tracing::error!(asset_class=%asset_class, error=%error, "instrument catalogue query failed");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"instrument catalogue unavailable"})))
+        }
+    }
+}
+
 async fn evaluate_market_horizons(
     State(s): State<AppState>,
     Query(query): Query<MarketHorizonQuery>,
@@ -336,7 +370,7 @@ async fn main(){
         active_strategy:Arc::new(RwLock::new(active))
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
-        .route("/internal/state",get(get_state)).route("/internal/market-horizons",get(evaluate_market_horizons)).route("/internal/multi-horizon",post(evaluate_horizons)).route("/internal/vector",get(get_vector))
+        .route("/internal/state",get(get_state)).route("/internal/instruments",get(get_instruments)).route("/internal/market-horizons",get(evaluate_market_horizons)).route("/internal/multi-horizon",post(evaluate_horizons)).route("/internal/vector",get(get_vector))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
