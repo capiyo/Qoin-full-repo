@@ -85,13 +85,14 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
     });
 }
 void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
-                              std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+                              std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                              const std::string& path) {
     const char* configured = std::getenv("QOIN_RESEARCH_API_URL");
     const std::string target = configured ? std::string(configured) : "http://127.0.0.1:8082";
     auto client = drogon::HttpClient::newHttpClient(target);
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(incoming->method());
-    request->setPath("/v1/portfolio");
+    request->setPath(path);
     request->addHeader("accept", "application/json");
     const auto authorization = incoming->getHeader("authorization");
     if (!authorization.empty()) request->addHeader("authorization", authorization);
@@ -138,7 +139,15 @@ int main() {
             corsOptions(req, std::move(cb));
             return;
         }
-        proxyResearchPortfolio(req, std::move(cb));
+        proxyResearchPortfolio(req, std::move(cb), "/v1/portfolio");
+    }, {drogon::Get, drogon::Put, drogon::Options});
+    drogon::app().registerHandler("/v1/investment-plan", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Options) {
+            corsOptions(req, std::move(cb));
+            return;
+        }
+        proxyResearchPortfolio(req, std::move(cb), "/v1/investment-plan");
     }, {drogon::Get, drogon::Put, drogon::Options});
 
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
