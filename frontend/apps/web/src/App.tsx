@@ -3,6 +3,7 @@ import { getQoinHealth, getQoinPortfolio, saveQoinPortfolio, type QoinHealth } f
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { firebaseAuth, isFirebaseConfigured } from "./firebaseAuth";
 import { WATCHLIST } from "@qoin/core";
+import { InvestmentPlanPanel } from "./components/InvestmentPlanPanel";
 
 type PrimaryTab = "archive" | "feed";
 type AssetClass = "All" | "Forex" | "Crypto" | "Stocks" | "Options";
@@ -285,6 +286,7 @@ function App() {
               <div><span>Portfolio allocation</span><strong>Algorithm-managed</strong></div>
               <div><span>Execution</span><strong>Not enabled</strong></div>
             </div>
+            <InvestmentPlanPanel user={authUser} />
             <p className="data-disclaimer">Portfolio analytics and automated execution remain unavailable until their respective data, risk and broker integrations are connected and authorized.</p>
           </aside>
         </div>
