@@ -42,6 +42,7 @@ struct MarketEvent {
     #[serde(default)] funding_rate: Option<f64>,
     #[serde(default)] open_interest: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
+    #[serde(default)] basis: Option<f64>,
 }
 #[derive(Debug, Clone, Serialize, Default)]
 struct SymbolState {
@@ -82,7 +83,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
-        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
+        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest),("basis",e.basis)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
     }
     if let (Some(bid),Some(ask))=(e.bid,e.ask) {
