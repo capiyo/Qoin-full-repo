@@ -64,7 +64,7 @@ fn validate_investment_plan(request: InvestmentPlanRequest) -> Result<Investment
     if !matches!(request.currency.as_str(), "KES" | "USD" | "EUR" | "GBP") {
         return Err("currency must be one of KES, USD, EUR, or GBP".to_owned());
     }
-    if request.monthly_contribution_minor > 100_000_000_000 {
+    if request.monthly_contribution_minor == 0 || request.monthly_contribution_minor > 100_000_000_000 {
         return Err("monthly contribution exceeds the supported limit".to_owned());
     }
     if request.target_amount_minor.is_some_and(|amount| amount == 0 || amount > 10_000_000_000_000) {
