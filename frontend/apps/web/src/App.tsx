@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { getQoinHealth, type QoinHealth } from "@qoin/core";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { getQoinHealth, getQoinPortfolio, saveQoinPortfolio, type QoinHealth } from "@qoin/core";
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
+import { firebaseAuth, isFirebaseConfigured } from "./firebaseAuth";
 import { WATCHLIST } from "@qoin/core";
 
 type PrimaryTab = "archive" | "feed";
@@ -36,10 +38,70 @@ function App() {
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [basket, setBasket] = useState<string[]>(readSavedBasket);
   const [health, setHealth] = useState<QoinHealth | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(firebaseAuth?.currentUser ?? null);
+  const [serverBasketOwnerUid, setServerBasketOwnerUid] = useState<string | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
+
+  useEffect(() => {
+    if (!firebaseAuth) return undefined;
+    return onAuthStateChanged(firebaseAuth, setAuthUser);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!basketHydrated) return () => { active = false; };
+    if (!authUser) {
+      setServerBasketOwnerUid(null);
+      return () => { active = false; };
+    }
+    setServerBasketOwnerUid(null);
+    void authUser.getIdToken().then(getQoinPortfolio).then((portfolio) => {
+      if (!active) return;
+      const allowed = new Set<string>(WATCHLIST);
+      setBasket([...new Set(portfolio.symbols.filter((symbol) => allowed.has(symbol)))]);
+    }).catch(() => {
+      // The local basket remains usable when server auth/storage is unavailable.
+    }).finally(() => {
+      if (active) setServerBasketOwnerUid(authUser.uid);
+    });
+    return () => { active = false; };
+  }, [authUser, basketHydrated]);
+
+  useEffect(() => {
+    if (!authUser || serverBasketOwnerUid !== authUser.uid) return;
+    void authUser.getIdToken().then((token) => saveQoinPortfolio(basket, token)).catch(() => {
+      // Local state remains available if the API has not been configured.
+    });
+  }, [authUser, basket, serverBasketOwnerUid]);
+
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!firebaseAuth) return;
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      if (creatingAccount) {
+        await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+      } else {
+        await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+      }
+      setAuthOpen(false);
+      setPassword("");
+    } catch (reason) {
+      setAuthError(reason instanceof Error ? reason.message : "Authentication failed. Please try again.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
 
   useEffect(() => {
     try {
@@ -73,6 +135,13 @@ function App() {
             <span className={health ? "status-dot online" : "status-dot"} />
             {health ? "API reachable" : "API unavailable"}
           </span>
+          {authUser ? (
+            <button className="account-trigger" onClick={() => { if (firebaseAuth) void signOut(firebaseAuth); }}>Sign out</button>
+          ) : isFirebaseConfigured ? (
+            <button className="account-trigger" onClick={() => setAuthOpen(true)}>Sign in</button>
+          ) : (
+            <span className="preview-account">Preview mode</span>
+          )}
           <button
             className="portfolio-trigger"
             onClick={() => setPortfolioOpen(true)}
@@ -160,6 +229,28 @@ function App() {
         )}
       </div>
 
+      {authOpen && (
+        <div className="drawer-backdrop" role="presentation" onClick={() => setAuthOpen(false)}>
+          <section className="auth-dialog" role="dialog" aria-modal="true" aria-label="Qoin account" onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-heading">
+              <div><p className="eyebrow">QOIN IDENTITY</p><h2>{creatingAccount ? "Create account" : "Sign in"}</h2></div>
+              <button className="icon-button" onClick={() => setAuthOpen(false)} aria-label="Close sign in">×</button>
+            </div>
+            <p className="drawer-copy">Your account is authenticated by Qoin's Firebase project. The API verifies your ID token before loading or saving your portfolio.</p>
+            <form className="auth-form" onSubmit={(event) => void submitAuth(event)}>
+              <label htmlFor="qoin-email">Email address</label>
+              <input id="qoin-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+              <label htmlFor="qoin-password">Password</label>
+              <input id="qoin-password" type="password" minLength={6} autoComplete={creatingAccount ? "new-password" : "current-password"} required value={password} onChange={(event) => setPassword(event.target.value)} />
+              {authError ? <p className="auth-error" role="alert">{authError}</p> : null}
+              <button className="primary-action" type="submit" disabled={authBusy}>{authBusy ? "Please wait…" : creatingAccount ? "Create account" : "Sign in"}</button>
+            </form>
+            <button className="auth-switch" onClick={() => { setCreatingAccount((value) => !value); setAuthError(null); }}>{creatingAccount ? "Already have an account? Sign in" : "New to Qoin? Create an account"}</button>
+            <p className="data-disclaimer">Enable Email/Password in Qoin's Firebase Console. Do not reuse credentials from another project.</p>
+          </section>
+        </div>
+      )}
+
       {portfolioOpen && (
         <div className="drawer-backdrop" role="presentation" onClick={() => setPortfolioOpen(false)}>
           <aside className="portfolio-drawer" role="dialog" aria-modal="true" aria-label="My portfolio" onClick={(event) => event.stopPropagation()}>
@@ -167,7 +258,7 @@ function App() {
               <div><p className="eyebrow">YOUR ASSET BASKET</p><h2>My portfolio</h2></div>
               <button className="icon-button" onClick={() => setPortfolioOpen(false)} aria-label="Close portfolio">×</button>
             </div>
-            <p className="drawer-copy">Choose the instruments you want Qoin to evaluate. Your basket is saved on this device; account synchronization will be added with authenticated portfolio storage. This basket does not place orders.</p>
+            <p className="drawer-copy">Choose the instruments you want Qoin to evaluate. {authUser ? "Your basket is synchronized to your Qoin account when the API is configured." : "Your basket is saved on this device until you sign in."} This basket does not place orders.</p>
             {basket.length ? (
               <div className="drawer-assets">
                 {basket.map((symbol) => {
