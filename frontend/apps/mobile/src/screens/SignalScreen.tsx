@@ -47,7 +47,7 @@ export function SignalScreen() {
   const [marketError, setMarketError] = useState("");
 
   useEffect(() => {
-    getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
+    getQoinHealth().then((health) => setApiOnline(health.status === "ok" && health.live_order_submission === "not wired"))
       .catch(() => setApiOnline(false));
   }, []);
 
