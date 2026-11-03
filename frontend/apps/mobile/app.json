@@ -7,14 +7,17 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0E14",
-    "icon": "./assets/icon.png",
     "splash": {
       "backgroundColor": "#0B0E14"
     },
-    "ios": { "supportsTablet": true },
+    "ios": {
+      "supportsTablet": true
+    },
     "android": {
       "package": "co.qoin.app",
-      "adaptiveIcon": { "backgroundColor": "#0B0E14" }
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0E14"
+      }
     }
   }
 }
