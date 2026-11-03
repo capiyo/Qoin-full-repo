@@ -182,3 +182,46 @@ export function getQoinInstruments(
   );
 }
 
+export type QoinMarketEventType =
+  | "trade"
+  | "book"
+  | "funding"
+  | "open_interest"
+  | "liquidation"
+  | "basis";
+
+export type QoinMarketEvent = {
+  event_id: string;
+  venue: string;
+  symbol: string;
+  asset_class: QoinAssetClass;
+  event_type: QoinMarketEventType;
+  ts_ms: number;
+  price?: number | null;
+  size?: number | null;
+  side?: "buy" | "sell" | "unknown" | null;
+  bid?: number | null;
+  ask?: number | null;
+  bid_size?: number | null;
+  ask_size?: number | null;
+  funding_rate?: number | null;
+  open_interest?: number | null;
+  liquidation_side?: "long" | "short" | null;
+  basis?: number | null;
+};
+
+export type QoinIngestResult = {
+  status: "accepted" | "duplicate_ignored";
+  event_id: string;
+};
+
+/** Submit one normalized, asset-class-tagged market event to the research ingestion path. */
+export function ingestQoinMarketEvent(
+  event: QoinMarketEvent,
+): Promise<QoinIngestResult> {
+  return request<QoinIngestResult>("/api/v1/events", {
+    method: "POST",
+    body: JSON.stringify(event),
+  });
+}
+
