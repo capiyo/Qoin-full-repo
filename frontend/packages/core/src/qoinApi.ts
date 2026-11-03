@@ -65,6 +65,8 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
     body: JSON.stringify(input),
   });
 }
+export type QoinAssetClass = "forex" | "crypto" | "stock";
+
 export type QoinHorizon =
   | "one_minute"
   | "five_minutes"
@@ -143,6 +145,7 @@ export type QoinHorizonObservation = {
 
 export type QoinMarketHorizonsResponse = {
   symbol: string;
+  asset_class: QoinAssetClass | null;
   decision_ts_ms: number;
   events_loaded: number;
   event_limit_reached: boolean;
@@ -155,12 +158,11 @@ export type QoinMarketHorizonsResponse = {
 /** Builds causal horizon-specific observations from events already ingested by Qoin. */
 export function getQoinMarketHorizons(
   symbol: string,
+  assetClass?: QoinAssetClass,
   minEvents = 20,
 ): Promise<QoinMarketHorizonsResponse> {
-  const params = new URLSearchParams({
-    symbol,
-    min_events: String(minEvents),
-  });
-  return request<QoinMarketHorizonsResponse>(`/api/v1/market-horizons?${params.toString()}`);
+  const params = `symbol=${encodeURIComponent(symbol)}&min_events=${minEvents}`
+    + (assetClass ? `&asset_class=${assetClass}` : "");
+  return request<QoinMarketHorizonsResponse>(`/api/v1/market-horizons?${params}`);
 }
 
