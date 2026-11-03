@@ -89,6 +89,8 @@ pub enum MultiHorizonError {
     Empty,
     #[error("each horizon may appear only once")]
     DuplicateHorizon,
+    #[error("every horizon requires a non-empty configuration version")]
+    EmptyConfigVersion,
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
@@ -110,6 +112,9 @@ pub fn evaluate_multi_horizon(
     for input in inputs {
         if !seen.insert(input.horizon) {
             return Err(MultiHorizonError::DuplicateHorizon);
+        }
+        if input.config_version.trim().is_empty() {
+            return Err(MultiHorizonError::EmptyConfigVersion);
         }
 
         let signal = decide(
@@ -232,6 +237,16 @@ mod tests {
         assert_eq!(
             evaluate_multi_horizon(&duplicate).unwrap_err(),
             MultiHorizonError::DuplicateHorizon
+        );
+    }
+
+    #[test]
+    fn rejects_empty_configuration_versions() {
+        let mut invalid = input(Horizon::FiveMinutes, bullish());
+        invalid.config_version = "  ".to_owned();
+        assert_eq!(
+            evaluate_multi_horizon(&[invalid]).unwrap_err(),
+            MultiHorizonError::EmptyConfigVersion
         );
     }
 
