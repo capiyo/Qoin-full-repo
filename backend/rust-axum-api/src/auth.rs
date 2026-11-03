@@ -112,3 +112,16 @@ impl FirebaseVerifier {
         Ok(AuthenticatedUser { uid: claims.sub })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn malformed_tokens_are_rejected_before_network_access() {
+        let verifier = FirebaseVerifier::new("qoin-test-project".to_owned()).unwrap();
+        let result = verifier.verify("not-a-jwt").await;
+        assert!(matches!(result, Err(message) if message == "invalid bearer token"));
+    }
+}
