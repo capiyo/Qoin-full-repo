@@ -1,9 +1,10 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map]
+    branches: [main, feat/mongodb-edge-strategy-map, feat/funspot-inspired-archive-feed-portfolio-ui]
     paths:
       - "backend/rust-axum/**"
+      - "backend/rust-axum-api/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
@@ -38,6 +39,8 @@ jobs:
           sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Build Axum
         run: cargo build --manifest-path backend/rust-axum/Cargo.toml
+      - name: Build research API
+        run: cargo build --manifest-path backend/rust-axum-api/Cargo.toml
       - name: Build Drogon
         run: |
           cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
@@ -51,11 +54,15 @@ jobs:
           export QOIN_AXUM_ADDR=127.0.0.1:8081
           export QOIN_AXUM_URL=http://127.0.0.1:8081
           export QOIN_DROGON_PORT=8080
+          export QOIN_RESEARCH_API_ADDR=127.0.0.1:8082
+          export QOIN_RESEARCH_API_URL=http://127.0.0.1:8082
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
+          ./target/debug/qoin-axum-api >/tmp/qoin-research-api.log 2>&1 &
+          RESEARCH_PID=$!
           ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
           DROGON_PID=$!
-          cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
+          cleanup() { kill "$DROGON_PID" "$AXUM_PID" "$RESEARCH_PID" 2>/dev/null || true; }
           trap cleanup EXIT
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
@@ -65,7 +72,9 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
-          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
+          STRATEGY_GATEWAY_STATUS=$(curl -sS -o /tmp/strategy-gateway-put.json -w "%{http_code}" -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$STRATEGY_GATEWAY_STATUS" = "404" -o "$STRATEGY_GATEWAY_STATUS" = "405"
+          curl -fsS -X PUT http://127.0.0.1:8081/internal/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
           jq -e '.status == "strategy_updated" and .strategy.version == "edge-map-ci-smoke-v2"' /tmp/strategy-put.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
@@ -80,3 +89,6 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
+          SIGNAL='{"observation":{"ofi":0.2,"liquidity":0.4,"volatility":0.1,"funding":0.0,"open_interest_change":0.1,"liquidation_pressure":0.0,"basis":0.0},"has_open_position":false}'
+          curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data "$SIGNAL" >/tmp/signal.json
+          jq -e '.decision != null and .config_version != ""' /tmp/signal.json
