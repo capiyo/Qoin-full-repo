@@ -27,7 +27,7 @@ function MainTabs() {
   const [basketHydrated, setBasketHydrated] = useState(false);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(firebaseAuth?.currentUser ?? null);
-  const [serverBasketHydrated, setServerBasketHydrated] = useState(false);
+  const [serverBasketOwnerUid, setServerBasketOwnerUid] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const assets = useMemo(() => WATCHLIST.map((symbol) => ({ symbol, name: names[symbol] ?? symbol, quote: quotes[symbol] })), [quotes]);
@@ -70,10 +70,10 @@ function MainTabs() {
     let active = true;
     if (!basketHydrated) return () => { active = false; };
     if (!authUser) {
-      setServerBasketHydrated(true);
+      setServerBasketOwnerUid(null);
       return () => { active = false; };
     }
-    setServerBasketHydrated(false);
+    setServerBasketOwnerUid(null);
     void authUser.getIdToken().then(getQoinPortfolio).then((portfolio) => {
       if (!active) return;
       const allowed = new Set<string>(WATCHLIST);
@@ -81,17 +81,17 @@ function MainTabs() {
     }).catch(() => {
       // A missing server Firebase configuration leaves the device basket intact.
     }).finally(() => {
-      if (active) setServerBasketHydrated(true);
+      if (active) setServerBasketOwnerUid(authUser.uid);
     });
     return () => { active = false; };
   }, [authUser, basketHydrated]);
 
   useEffect(() => {
-    if (!authUser || !basketHydrated || !serverBasketHydrated) return;
+    if (!authUser || !basketHydrated || serverBasketOwnerUid !== authUser.uid) return;
     void authUser.getIdToken().then((token) => saveQoinPortfolio(basket, token)).catch(() => {
       // Keep the local basket usable when server persistence is unavailable.
     });
-  }, [authUser, basket, basketHydrated, serverBasketHydrated]);
+  }, [authUser, basket, basketHydrated, serverBasketOwnerUid]);
 
   function toggle(symbol: string) {
     if (!basketHydrated) return;
