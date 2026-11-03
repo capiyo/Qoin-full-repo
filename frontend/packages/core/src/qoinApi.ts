@@ -128,3 +128,39 @@ export function evaluateQoinMultiHorizon(
   });
 }
 
+export type QoinHorizonObservation = {
+  horizon: QoinHorizon;
+  observation: MarketForceObservation;
+  event_count: number;
+  trade_count: number;
+  book_count: number;
+  first_event_ts_ms: number | null;
+  last_event_ts_ms: number | null;
+  data_quality: number;
+  ready: boolean;
+  reasons: string[];
+};
+
+export type QoinMarketHorizonsResponse = {
+  symbol: string;
+  decision_ts_ms: number;
+  events_loaded: number;
+  event_limit_reached: boolean;
+  mode: "research_only";
+  observations: QoinHorizonObservation[];
+  signals: QoinMultiHorizonSignal | null;
+  note: string;
+};
+
+/** Builds causal horizon-specific observations from events already ingested by Qoin. */
+export function getQoinMarketHorizons(
+  symbol: string,
+  minEvents = 20,
+): Promise<QoinMarketHorizonsResponse> {
+  const params = new URLSearchParams({
+    symbol,
+    min_events: String(minEvents),
+  });
+  return request<QoinMarketHorizonsResponse>(`/api/v1/market-horizons?${params.toString()}`);
+}
+
