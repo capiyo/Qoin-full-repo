@@ -9,6 +9,7 @@ Updated: 2026-11-04
 - Server-side Firebase RS256 token verification using Google's rotating signing keys.
 - MongoDB persistence for the authenticated user's instrument basket, keyed by verified Firebase UID.
 - Shared TypeScript API methods for authenticated portfolio persistence.
+- Explicit asset-class metadata on ingested market events, MongoDB observed-instrument catalogue, and public `/api/v1/instruments?asset_class=...` route through Drogon. The list is event-observed and explicitly marked incomplete; it does not pretend to be a full market universe.
 - User-authored investment-intention API and web/mobile panels:
   - goal label;
   - currency (KES, USD, EUR or GBP);
@@ -28,7 +29,7 @@ The latest implementation has triggered GitHub Actions for the Rust workspace, A
 ## Outstanding work
 
 1. Complete CI and integration verification for authenticated investment-plan persistence.
-2. Replace the crypto-only starter list with a provider-backed Forex/Crypto/Stocks catalogue.
+2. Connect production provider adapters so the observed Forex/Crypto/Stocks catalogue becomes broad, venue-aware and continuously refreshed; keep the incomplete status visible until coverage is proven.
 3. Connect real market-data adapters, venue normalization, explicit asset-class metadata and freshness/quality checks.
 4. Build instrument-specific multi-horizon research and causality-safe historical evaluation across supported asset classes.
 5. Add user-facing risk explanations, portfolio concentration/correlation diagnostics and transparent research history.
