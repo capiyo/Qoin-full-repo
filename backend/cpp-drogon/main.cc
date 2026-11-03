@@ -112,14 +112,23 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyResearchPortfolio(req, std::move(cb));
     }, {drogon::Get, drogon::Put});
-    drogon::app().registerHandler("/v1/portfolio", corsOptions, {drogon::Options});
+    drogon::app().registerHandler("/v1/portfolio", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        corsOptions(req, std::move(cb));
+    }, {drogon::Options});
 
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyResearchPost(req, std::move(cb));
     }, {drogon::Post});
-    drogon::app().registerHandler("/v1/signal", corsOptions, {drogon::Options});
-    drogon::app().registerHandler("/health", corsOptions, {drogon::Options});
+    drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        corsOptions(req, std::move(cb));
+    }, {drogon::Options});
+    drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        corsOptions(req, std::move(cb));
+    }, {drogon::Options});
 
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
