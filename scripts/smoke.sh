@@ -3,12 +3,14 @@ set -euo pipefail
 BASE_URL="${QOIN_GATEWAY_URL:-http://127.0.0.1:8080}"
 curl --fail --silent --show-error "$BASE_URL/health"
 printf '\n'
-EVENT="{\"event_id\":\"smoke-$(date +%s)\",\"venue\":\"smoke\",\"symbol\":\"BTCUSDT\",\"event_type\":\"trade\",\"ts_ms\":$(date +%s%3N),\"price\":65000,\"size\":0.001,\"side\":\"buy\"}"
+EVENT="{\"event_id\":\"smoke-$(date +%s)\",\"venue\":\"smoke\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"trade\",\"ts_ms\":$(date +%s%3N),\"price\":65000,\"size\":0.001,\"side\":\"buy\"}"
 curl --fail --silent --show-error -H 'content-type: application/json' -d "$EVENT" "$BASE_URL/api/v1/events"
 printf '\n'
 curl --fail --silent --show-error "$BASE_URL/api/v1/state?symbol=BTCUSDT"
 printf '\n'
 curl --fail --silent --show-error "$BASE_URL/api/v1/vector?symbol=BTCUSDT"
+printf '\n'
+curl --fail --silent --show-error "$BASE_URL/api/v1/instruments?asset_class=crypto"
 printf '\n'
 SIGNAL='{"observation":{"ofi":0.2,"liquidity":0.4,"volatility":0.1,"funding":0.0,"open_interest_change":0.1,"liquidation_pressure":0.0,"basis":0.0},"has_open_position":false}'
 curl --fail --silent --show-error -H 'content-type: application/json' -d "$SIGNAL" "$BASE_URL/v1/signal"
