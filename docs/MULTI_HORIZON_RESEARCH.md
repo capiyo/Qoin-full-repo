@@ -62,3 +62,24 @@ perform portfolio allocation, calculate order size, submit orders, or establish
 profitability. All horizons remain paper/research-only until chronological
 backtesting, walk-forward and out-of-sample evaluation, realistic cost simulation,
 and the existing independent risk gates have passed.
+
+
+## Current observation normalization
+
+The first market-event adapter contract normalizes the following inputs before they
+reach the vector engine:
+
+- OFI: signed aggressive trade volume divided by total classified trade volume.
+- Liquidity: mean signed bid/ask displayed-depth imbalance.
+- Volatility: absolute log-return sum divided by square-root return count, then
+  scaled by 1% and clipped to [0, 3].
+- Funding: fractional funding rate divided by 0.1% and clipped to [-3, 3].
+- Open-interest change: fractional change divided by 1% and clipped to [-3, 3].
+- Liquidation pressure: signed liquidation size divided by total liquidation size.
+- Basis: fractional spot/perpetual basis divided by 0.1% and clipped to [-3, 3].
+
+These are explicit initial scales, not fitted parameters or evidence of predictive
+value. They must be calibrated chronologically by asset class and venue before
+performance comparisons. The current market-backed endpoint uses the default
+research engine configuration for every horizon; independent per-horizon
+calibration remains a subsequent research task.
