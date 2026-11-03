@@ -24,6 +24,7 @@ struct MarketEvent {
     event_id: String,
     venue: String,
     symbol: String,
+    #[serde(default)] asset_class: Option<String>,
     event_type: String,
     ts_ms: i64,
     #[serde(default)] price: Option<f64>,
@@ -60,12 +61,15 @@ struct AppState {
     events: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
+    instruments: Collection<Document>,
     strategies: Collection<Document>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
+#[derive(Deserialize)]
+struct InstrumentQuery { asset_class: Option<String> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -73,6 +77,9 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if e.asset_class.as_deref().is_some_and(|class| !matches!(class, "forex" | "crypto" | "stocks")) {
+        return Err("asset_class must be forex, crypto, or stocks".into());
+    }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
         ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
@@ -127,6 +134,20 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
     if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
+    if let Some(asset_class) = event.asset_class.as_deref() {
+        let observed_at = mongodb::bson::DateTime::now();
+        let catalogue_update = doc! {
+            "$set": { "asset_class": asset_class, "last_seen_at": observed_at },
+            "$setOnInsert": { "venue": &event.venue, "symbol": &event.symbol, "first_seen_at": observed_at }
+        };
+        if let Err(error) = s.instruments.update_one(
+            doc! { "venue": &event.venue, "symbol": &event.symbol },
+            catalogue_update,
+            Some(UpdateOptions::builder().upsert(true).build()),
+        ).await {
+            tracing::warn!(%error, symbol=%event.symbol, "instrument catalogue update failed");
+        }
+    }
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
@@ -172,6 +193,38 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
+async fn get_instruments(
+    State(s): State<AppState>,
+    Query(q): Query<InstrumentQuery>,
+) -> impl IntoResponse {
+    let Some(asset_class) = q.asset_class else {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class query parameter is required"})));
+    };
+    if !matches!(asset_class.as_str(), "forex" | "crypto" | "stocks") {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class must be forex, crypto, or stocks"})));
+    }
+    let values = match s.instruments.distinct("symbol", Some(doc! { "asset_class": &asset_class }), None).await {
+        Ok(values) => values,
+        Err(error) => {
+            tracing::error!(%error, "instrument catalogue read failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"instrument catalogue unavailable"})));
+        }
+    };
+    let mut symbols: Vec<String> = values.into_iter().filter_map(|value| match value {
+        mongodb::bson::Bson::String(symbol) => Some(symbol),
+        _ => None,
+    }).collect();
+    symbols.sort_unstable();
+    symbols.dedup();
+    symbols.truncate(500);
+    (StatusCode::OK, Json(serde_json::json!({
+        "asset_class": asset_class,
+        "symbols": symbols,
+        "source": "ingested_market_events",
+        "complete": false
+    })))
+}
+
 async fn get_strategy(State(s):State<AppState>)->impl IntoResponse{
     match s.active_strategy.read(){Ok(v)=>(StatusCode::OK,Json(serde_json::to_value(&*v).unwrap_or_default())),
         Err(_)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))}
@@ -201,11 +254,15 @@ async fn main(){
     let events:Collection<Document>=db.collection("market_events");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
+    let instruments:Collection<Document>=db.collection("instrument_catalogue");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    instruments.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("instrument identity index");
+    instruments.create_index(mongodb::IndexModel::builder().keys(doc!{"asset_class":1,"symbol":1}).build(),None).await.expect("instrument catalogue lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
@@ -220,12 +277,13 @@ async fn main(){
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
     let state=AppState{
-        events,states,decisions,strategies,
+        events,states,decisions,instruments,strategies,
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/instruments",get(get_instruments))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
