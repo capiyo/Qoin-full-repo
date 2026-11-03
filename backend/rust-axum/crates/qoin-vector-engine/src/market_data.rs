@@ -271,6 +271,15 @@ mod tests {
     }
 
     #[test]
+    fn basis_event_is_carried_into_the_horizon_force_vector() {
+        let mut basis = event(100_000, "basis");
+        basis.basis = Some(0.0025);
+        let result = aggregate_horizon(&[basis], Horizon::OneHour, 100_000, 1);
+        assert_eq!(result.observation.basis, 0.0025);
+        assert!(!result.reasons.iter().any(|reason| reason.contains("basis unavailable")));
+    }
+
+    #[test]
     fn insufficient_or_missing_book_data_is_not_ready() {
         let mut trade = event(100_000, "trade");
         trade.size = Some(1.0);
