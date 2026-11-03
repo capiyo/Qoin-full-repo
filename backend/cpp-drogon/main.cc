@@ -18,8 +18,8 @@ bool isAllowedOrigin(const std::string& origin) {
         const auto end = origins.find(',', start);
         const auto length = end == std::string::npos ? std::string::npos : end - start;
         const auto raw = origins.substr(start, length);
-        const auto first = raw.find_first_not_of(" \\t");
-        const auto last = raw.find_last_not_of(" \\t");
+        const auto first = raw.find_first_not_of(" \t");
+        const auto last = raw.find_last_not_of(" \t");
         if (first != std::string::npos && raw.substr(first, last - first + 1) == origin) {
             return true;
         }
@@ -120,12 +120,12 @@ int main() {
     // not cookie credentials.
     drogon::app().registerPreSendingAdvice([](const drogon::HttpRequestPtr& request,
                                                const drogon::HttpResponsePtr& response) {
-        const auto origin = request->getHeader("origin");
-        if (origin.empty() || !isAllowedOrigin(origin)) return;
         response->removeHeader("Access-Control-Allow-Origin");
         response->removeHeader("Access-Control-Allow-Methods");
         response->removeHeader("Access-Control-Allow-Headers");
         response->removeHeader("Access-Control-Max-Age");
+        const auto origin = request->getHeader("origin");
+        if (origin.empty() || !isAllowedOrigin(origin)) return;
         response->addHeader("Access-Control-Allow-Origin", origin);
         response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
         response->addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
