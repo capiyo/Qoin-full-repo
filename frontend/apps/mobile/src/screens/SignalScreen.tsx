@@ -4,8 +4,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   evaluateQoinSignal,
   getQoinHealth,
+  getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinSignal,
+  type QoinMarketHorizonsResponse,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -35,6 +37,10 @@ export function SignalScreen() {
   const [apiOnline, setApiOnline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
+  const [marketBusy, setMarketBusy] = useState(false);
+  const [marketError, setMarketError] = useState("");
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
@@ -45,6 +51,19 @@ export function SignalScreen() {
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
     [forces],
   );
+
+  async function loadMarketHorizons() {
+    setMarketBusy(true);
+    setMarketError("");
+    try {
+      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase()));
+    } catch (err) {
+      setMarketError(err instanceof Error ? err.message : "Could not load market observations.");
+      setMarketHorizons(null);
+    } finally {
+      setMarketBusy(false);
+    }
+  }
 
   async function evaluate() {
     setBusy(true);
@@ -76,6 +95,51 @@ export function SignalScreen() {
           </View>
         </View>
         <Text style={styles.subtitle}>Explore current normalized forces and evaluate a versioned signal. This screen never submits orders.</Text>
+
+        <View style={styles.panel}>
+          <Text style={styles.kicker}>STORED MARKET DATA</Text>
+          <Text style={styles.panelTitle}>Multi-horizon research</Text>
+          <Text style={styles.fieldHelp}>Separate trailing windows from ingested trade, order-book, funding, OI and liquidation events. No demo inputs are used here.</Text>
+          <View style={styles.marketControls}>
+            <TextInput
+              accessibilityLabel="Instrument symbol"
+              value={symbol}
+              onChangeText={setSymbol}
+              autoCapitalize="characters"
+              maxLength={64}
+              style={styles.symbolInput}
+              placeholder="BTCUSDT"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Pressable onPress={loadMarketHorizons} disabled={marketBusy || !symbol.trim()} style={[styles.smallButton, (marketBusy || !symbol.trim()) && styles.disabled]}>
+              <Text style={styles.smallButtonText}>{marketBusy ? "Loading…" : "Load horizons"}</Text>
+            </Pressable>
+          </View>
+          {marketError ? <Text accessibilityRole="alert" style={styles.error}>{marketError}</Text> : null}
+          {marketHorizons ? (
+            <>
+              <View style={styles.horizonGrid}>
+                {marketHorizons.observations.map((item) => {
+                  const horizonSignal = marketHorizons.signals?.horizons.find((entry) => entry.horizon === item.horizon)?.signal;
+                  return (
+                    <View key={item.horizon} style={styles.horizonCard}>
+                      <View style={styles.horizonHeader}>
+                        <Text style={styles.horizonTitle}>{item.horizon.replaceAll("_", " ")}</Text>
+                        <Text style={[styles.horizonStatus, { color: item.ready ? colors.bullish : colors.warning }]}>{item.ready ? "READY" : "WAIT"}</Text>
+                      </View>
+                      <Text style={styles.horizonDecision}>{horizonSignal?.decision ?? "—"}</Text>
+                      <Text style={styles.horizonMeta}>{item.event_count} events · {item.trade_count} trades · {item.book_count} books</Text>
+                      <Text style={styles.horizonMeta}>OFI {item.observation.ofi.toFixed(2)} · OI Δ {item.observation.open_interest_change.toFixed(3)}</Text>
+                      {!item.ready ? <Text style={styles.horizonReason}>{item.reasons[0] ?? "More market data required"}</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={styles.fieldHelp}>{marketHorizons.events_loaded} events loaded for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "Retrieval cap reached." : "Future events excluded."}</Text>
+              {marketHorizons.signals ? <Text style={styles.consensus}>Relationship: {marketHorizons.signals.consensus.relationship.replaceAll("_", " ")} · BUY {marketHorizons.signals.consensus.buy_count} · SELL {marketHorizons.signals.consensus.sell_count}</Text> : null}
+            </>
+          ) : <Text style={styles.empty}>No market-backed result loaded. Ingest real venue events first; horizons without enough trade and book evidence abstain.</Text>}
+        </View>
 
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
@@ -139,6 +203,20 @@ export function SignalScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary },
+  marketControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 12 },
+  symbolInput: { flex: 1, minWidth: 0, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 10, fontSize: 12 },
+  smallButton: { backgroundColor: colors.accentCyan, borderRadius: 7, paddingHorizontal: 12, paddingVertical: 11 },
+  smallButtonText: { color: colors.bgPrimary, fontSize: 11, fontWeight: "800" },
+  horizonGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
+  horizonCard: { width: "48%", flexGrow: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 },
+  horizonHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
+  horizonTitle: { color: colors.textPrimary, fontSize: 10, fontWeight: "800", textTransform: "capitalize" },
+  horizonStatus: { fontSize: 8, fontWeight: "900" },
+  horizonDecision: { color: colors.white, fontSize: 19, fontWeight: "900", marginVertical: 7 },
+  horizonMeta: { color: colors.textMuted, fontSize: 9, lineHeight: 14 },
+  horizonReason: { color: colors.warning, fontSize: 9, lineHeight: 13, marginTop: 5 },
+  consensus: { color: colors.accentCyan, fontSize: 10, fontWeight: "700", marginTop: 10 },
+
   content: { padding: 16, paddingBottom: 28 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 },
   kicker: { color: colors.accentCyan, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 6 },
