@@ -13,9 +13,10 @@ The `edge_strategy` collection stores one active document keyed by `strategy_key
 2. Axum validates and deduplicates the event by venue + symbol + event_id.
 3. The event is persisted to `market_events` and updates the current symbol state.
 4. A state snapshot is written to `market_states`; the active MongoDB-backed edge map computes a vector decision, which is written to `trade_decisions`.
-5. `GET /api/v1/market-horizons?symbol=BTCUSDT` reads at most the latest 50,000 events from the preceding week and builds independent trailing windows for 1m through 1w.
-6. A horizon emits a signal only when its window has the minimum event count plus both trade-flow and book-depth evidence. Agreement/divergence is descriptive and never merged into a trade instruction.
-7. Consumers query `/api/v1/state`, `/api/v1/vector`, `/api/v1/strategy`, and `/api/v1/market-horizons` through Drogon.
+5. `GET /api/v1/instruments?asset_class=crypto` lists symbols already present in ingested events; it is not a full vendor/exchange universe.
+6. `GET /api/v1/market-horizons?symbol=BTCUSDT&asset_class=crypto` reads at most the latest 50,000 matching events from the preceding week and builds independent trailing windows for 1m through 1w.
+7. A horizon emits a signal only when its window has the minimum event count plus both trade-flow and book-depth evidence. Agreement/divergence is descriptive and never merged into a trade instruction.
+8. Consumers query `/api/v1/state`, `/api/v1/vector`, `/api/v1/strategy`, and `/api/v1/market-horizons` through Drogon.
 
 
 ## Explicit limitations
