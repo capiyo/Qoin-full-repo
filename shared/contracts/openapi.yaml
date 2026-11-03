@@ -12,6 +12,70 @@ paths:
       responses:
         '200': { description: Healthy }
         '503': { description: Dependency unavailable }
+  /v1/portfolio:
+    get:
+      summary: Read the authenticated user's instrument basket
+      security: [{ FirebaseBearer: [] }]
+      responses:
+        '200':
+          description: User portfolio
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portfolio' }
+        '401': { description: Missing or invalid Firebase ID token }
+        '503': { description: Authentication or portfolio storage unavailable }
+    put:
+      summary: Replace the authenticated user's instrument basket
+      security: [{ FirebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbols]
+              properties:
+                symbols:
+                  type: array
+                  maxItems: 500
+                  items: { type: string, maxLength: 32 }
+      responses:
+        '200': { description: Portfolio saved }
+        '400': { description: Invalid instrument symbols }
+        '401': { description: Missing or invalid Firebase ID token }
+        '503': { description: Portfolio storage unavailable }
+  /v1/investment-plan:
+    get:
+      summary: Read the authenticated user's own investment intention
+      security: [{ FirebaseBearer: [] }]
+      responses:
+        '200':
+          description: Saved plan, or null when the user has not created one
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/InvestmentPlan'
+                nullable: true
+        '401': { description: Missing or invalid Firebase ID token }
+        '503': { description: Authentication or investment-plan storage unavailable }
+    put:
+      summary: Save the authenticated user's own investment intention
+      security: [{ FirebaseBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvestmentPlanInput' }
+      responses:
+        '200':
+          description: Investment intention saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvestmentPlan' }
+        '400': { description: Invalid goal, currency, contribution, target or horizon }
+        '401': { description: Missing or invalid Firebase ID token }
+        '503': { description: Investment-plan storage unavailable }
   /api/v1/events:
     post:
       summary: Ingest one market event
@@ -46,6 +110,11 @@ paths:
         '200': { description: Latest decision or abstain response }
         '503': { description: Storage unavailable }
 components:
+  securitySchemes:
+    FirebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     MarketEvent:
       type: object
@@ -66,3 +135,29 @@ components:
         funding_rate: { type: number, nullable: true }
         open_interest: { type: number, nullable: true, minimum: 0 }
         liquidation_side: { type: string, nullable: true, enum: [long, short] }
+
+    Portfolio:
+      type: object
+      required: [symbols, updated_at]
+      properties:
+        symbols:
+          type: array
+          maxItems: 500
+          items: { type: string }
+        updated_at: { type: string, nullable: true }
+    InvestmentPlanInput:
+      type: object
+      required: [goal, currency, monthly_contribution_minor, horizon_months]
+      properties:
+        goal: { type: string, minLength: 1, maxLength: 80 }
+        currency: { type: string, enum: [KES, USD, EUR, GBP] }
+        monthly_contribution_minor: { type: integer, format: int64, minimum: 1, maximum: 100000000000 }
+        target_amount_minor: { type: integer, format: int64, nullable: true, minimum: 1, maximum: 10000000000000 }
+        horizon_months: { type: integer, minimum: 1, maximum: 600 }
+    InvestmentPlan:
+      allOf:
+        - $ref: '#/components/schemas/InvestmentPlanInput'
+        - type: object
+          required: [updated_at]
+          properties:
+            updated_at: { type: string, nullable: true }
