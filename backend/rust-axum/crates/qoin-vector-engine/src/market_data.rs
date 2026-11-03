@@ -203,8 +203,11 @@ pub fn aggregate_horizon(
     if latest_basis.is_none() {
         reasons.push("spot-perpetual basis unavailable; treated as neutral".to_owned());
     }
+    let evidence_completeness =
+        (trade_count > 0) as u8 as f64 * 0.5 + (book_count > 0) as u8 as f64 * 0.5;
     let data_quality = (event_count as f64 / min_events.max(1) as f64).min(1.0)
-        * ((trade_count > 0) as u8 as f64 * 0.5 + (book_count > 0) as u8 as f64 * 0.5);
+        * evidence_completeness
+        * coverage_ratio;
 
     HorizonObservation {
         horizon,
