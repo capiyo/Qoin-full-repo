@@ -7,6 +7,7 @@ import {
   getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinSignal,
+  type QoinAssetClass,
   type QoinMarketHorizonsResponse,
 } from "@qoin/core";
 import { colors } from "../theme";
@@ -38,6 +39,7 @@ export function SignalScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("BTCUSDT");
+  const [assetClass, setAssetClass] = useState<QoinAssetClass>("crypto");
   const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
   const [marketBusy, setMarketBusy] = useState(false);
   const [marketError, setMarketError] = useState("");
@@ -56,7 +58,7 @@ export function SignalScreen() {
     setMarketBusy(true);
     setMarketError("");
     try {
-      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase()));
+      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase(), assetClass));
     } catch (err) {
       setMarketError(err instanceof Error ? err.message : "Could not load market observations.");
       setMarketHorizons(null);
@@ -100,6 +102,13 @@ export function SignalScreen() {
           <Text style={styles.kicker}>STORED MARKET DATA</Text>
           <Text style={styles.panelTitle}>Multi-horizon research</Text>
           <Text style={styles.fieldHelp}>Separate trailing windows from ingested trade, order-book, funding, OI and liquidation events. No demo inputs are used here.</Text>
+          <View style={styles.assetClassRow}>
+            {(["forex", "crypto", "stock"] as const).map((item) => (
+              <Pressable key={item} onPress={() => setAssetClass(item)} style={[styles.assetClassChip, assetClass === item && styles.assetClassChipActive]}>
+                <Text style={[styles.assetClassText, assetClass === item && styles.assetClassTextActive]}>{item === "stock" ? "Stocks" : item === "forex" ? "Forex" : "Crypto"}</Text>
+              </Pressable>
+            ))}
+          </View>
           <View style={styles.marketControls}>
             <TextInput
               accessibilityLabel="Instrument symbol"
@@ -135,7 +144,7 @@ export function SignalScreen() {
                   );
                 })}
               </View>
-              <Text style={styles.fieldHelp}>{marketHorizons.events_loaded} events loaded for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "Retrieval cap reached." : "Future events excluded."}</Text>
+              <Text style={styles.fieldHelp}>{marketHorizons.events_loaded} {marketHorizons.asset_class ?? assetClass} events loaded for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "Retrieval cap reached." : "Future events excluded."}</Text>
               {marketHorizons.signals ? <Text style={styles.consensus}>Relationship: {marketHorizons.signals.consensus.relationship.replaceAll("_", " ")} · BUY {marketHorizons.signals.consensus.buy_count} · SELL {marketHorizons.signals.consensus.sell_count}</Text> : null}
             </>
           ) : <Text style={styles.empty}>No market-backed result loaded. Ingest real venue events first; horizons without enough trade and book evidence abstain.</Text>}
@@ -203,7 +212,12 @@ export function SignalScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary },
-  marketControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 12 },
+  assetClassRow: { flexDirection: "row", gap: 7, marginTop: 14 },
+  assetClassChip: { borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7 },
+  assetClassChipActive: { borderColor: colors.accentCyan, backgroundColor: colors.bgPrimary },
+  assetClassText: { color: colors.textMuted, fontSize: 10, fontWeight: "700" },
+  assetClassTextActive: { color: colors.accentCyan },
+  marketControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 12 },
   symbolInput: { flex: 1, minWidth: 0, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 10, fontSize: 12 },
   smallButton: { backgroundColor: colors.accentCyan, borderRadius: 7, paddingHorizontal: 12, paddingVertical: 11 },
   smallButtonText: { color: colors.bgPrimary, fontSize: 11, fontWeight: "800" },
