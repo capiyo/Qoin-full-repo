@@ -137,6 +137,7 @@ components:
         first_event_ts_ms: { type: integer, nullable: true }
         last_event_ts_ms: { type: integer, nullable: true }
         data_quality: { type: number, minimum: 0, maximum: 1 }
+        coverage_ratio: { type: number, minimum: 0, maximum: 1, description: "Observed event time span divided by horizon duration; minimum readiness threshold is 0.15" }
         ready: { type: boolean }
         reasons:
           type: array
