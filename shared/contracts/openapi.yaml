@@ -39,6 +39,9 @@ paths:
         - in: query
           name: min_events
           schema: { type: integer, minimum: 5, maximum: 10000, default: 20 }
+        - in: query
+          name: asset_class
+          schema: { type: string, enum: [forex, crypto, stock] }
       responses:
         '200': { description: Per-horizon observations, readiness diagnostics, and available research signals }
         '400': { description: Invalid symbol or event threshold }
@@ -143,6 +146,7 @@ components:
         event_id: { type: string, minLength: 1 }
         venue: { type: string, minLength: 1 }
         symbol: { type: string, minLength: 1 }
+        asset_class: { type: string, enum: [forex, crypto, stock], nullable: true }
         event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation, basis] }
         ts_ms: { type: integer, minimum: 1 }
         price: { type: number, nullable: true, minimum: 0 }
