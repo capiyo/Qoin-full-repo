@@ -177,6 +177,17 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/vector" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/instruments", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto assetClass = req->getParameter("asset_class");
+        if (assetClass.empty()) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "asset_class query parameter is required"}});
+            error->setStatusCode(drogon::k400BadRequest);
+            cb(error);
+            return;
+        }
+        proxyGet(req, std::move(cb), "/internal/instruments?asset_class=" + drogon::utils::urlEncode(assetClass));
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) {
