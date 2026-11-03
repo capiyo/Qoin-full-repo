@@ -6,7 +6,7 @@ import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet, ScrollView, Modal } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { getQoinPortfolio, saveQoinPortfolio, WATCHLIST } from "@qoin/core";
+import { getQoinInstruments, getQoinPortfolio, saveQoinPortfolio, WATCHLIST, type QoinAssetClass } from "@qoin/core";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { firebaseAuth } from "./src/firebaseAuth";
 import { colors } from "./src/theme";
@@ -16,6 +16,11 @@ import { useMarketFeed } from "./src/useMarketFeed";
 
 export type RootStackParamList = { Login: undefined; Dashboard: undefined };
 type Tab = "Archive" | "Feed";
+type AssetClass = "All" | "Forex" | "Crypto" | "Stocks";
+type InstrumentAsset = { symbol: string; name: string; category: Exclude<AssetClass, "All">; venue: string };
+function isValidInstrumentSymbol(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 32 && /^[A-Z0-9/_.-]+$/i.test(value);
+}
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 const PORTFOLIO_STORAGE_KEY = "qoin.portfolio.v1";
@@ -30,13 +35,49 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
   const [authUser, setAuthUser] = useState<User | null>(firebaseAuth?.currentUser ?? null);
   const [serverBasketOwnerUid, setServerBasketOwnerUid] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [filter, setFilter] = useState("All");
-  const assets = useMemo(() => WATCHLIST.map((symbol) => ({ symbol, name: names[symbol] ?? symbol, quote: quotes[symbol] })), [quotes]);
-  const visible = filter === "All" || filter === "Crypto" ? assets : [];
+  const [filter, setFilter] = useState<AssetClass>("All");
+  const [catalogueItems, setCatalogueItems] = useState<InstrumentAsset[]>([]);
+  const assets = useMemo(() => {
+    const byIdentity = new Map<string, InstrumentAsset>();
+    WATCHLIST.forEach((symbol) => byIdentity.set(`Crypto:${symbol}`, {
+      symbol, name: names[symbol] ?? symbol, category: "Crypto", venue: "Starter universe",
+    }));
+    catalogueItems.forEach((asset) => byIdentity.set(`${asset.category}:${asset.symbol}`, asset));
+    return [...byIdentity.values()];
+  }, [catalogueItems]);
+  const visible = assets.filter((asset) => filter === "All" || asset.category === filter);
+  const selectedAsset = assets.find((asset) => asset.symbol === selected);
 
   useEffect(() => {
     if (!firebaseAuth) return undefined;
     return onAuthStateChanged(firebaseAuth, setAuthUser);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const classes: QoinAssetClass[] = ["forex", "crypto", "stocks"];
+    void Promise.all(classes.map(async (assetClass) => {
+      try {
+        return await getQoinInstruments(assetClass);
+      } catch {
+        return null;
+      }
+    })).then((catalogues) => {
+      if (!active) return;
+      const discovered: InstrumentAsset[] = [];
+      for (const catalogue of catalogues) {
+        if (!catalogue) continue;
+        const category = catalogue.asset_class === "forex" ? "Forex" :
+          catalogue.asset_class === "crypto" ? "Crypto" : "Stocks";
+        for (const rawSymbol of catalogue.symbols) {
+          if (!isValidInstrumentSymbol(rawSymbol)) continue;
+          const symbol = rawSymbol.toUpperCase();
+          discovered.push({ symbol, name: names[symbol] ?? symbol, category, venue: "Observed market feed" });
+        }
+      }
+      setCatalogueItems(discovered);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -47,8 +88,7 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
         if (!stored) return;
         const parsed: unknown = JSON.parse(stored);
         if (!Array.isArray(parsed)) return;
-        const allowed = new Set<string>(WATCHLIST);
-        const restored = [...new Set(parsed.filter((item): item is string => typeof item === "string" && allowed.has(item)))];
+        const restored = [...new Set(parsed.filter(isValidInstrumentSymbol).map((item) => item.toUpperCase()))];
         if (active) setBasket(restored);
       } catch {
         // A corrupt or inaccessible local snapshot must not block the app.
@@ -77,9 +117,8 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
     setServerBasketOwnerUid(null);
     void authUser.getIdToken().then(getQoinPortfolio).then((portfolio) => {
       if (!active) return;
-      const allowed = new Set<string>(WATCHLIST);
       if (portfolio.symbols.length > 0) {
-        setBasket([...new Set(portfolio.symbols.filter((symbol) => allowed.has(symbol)))]);
+        setBasket([...new Set(portfolio.symbols.filter(isValidInstrumentSymbol).map((symbol) => symbol.toUpperCase()))]);
       }
       // An empty server portfolio is a first-login state: preserve the local
       // basket so the first successful sync seeds the account instead of erasing it.
@@ -118,8 +157,8 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
         <ScrollView contentContainerStyle={s.content}>
           <Pressable onPress={() => setSelected(null)}><Text style={s.back}>‹ Back to Archive</Text></Pressable>
           <Text style={s.eyebrow}>INDIVIDUAL VECTOR SPACE</Text>
-          <Text style={s.title}>{names[selected] ?? selected}</Text>
-          <Text style={s.muted}>{selected} · Crypto instrument</Text>
+          <Text style={s.title}>{selectedAsset?.name ?? names[selected] ?? selected}</Text>
+          <Text style={s.muted}>{selected} · {selectedAsset?.category ?? "Instrument"}</Text>
           <View style={s.card}>
             <Text style={s.eyebrow}>FACTOR SPACE</Text><Text style={s.cardTitle}>Instrument vector</Text>
             <View style={s.vector}><View style={s.axisX}/><View style={s.axisY}/><View style={s.axisZ}/><View style={s.origin}/><Text style={s.vectorHint}>Verified factor data will determine vector position</Text></View>
@@ -138,9 +177,17 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
             {tab === "Archive" ? (
               <>
                 <View style={s.sectionHead}><View><Text style={s.eyebrow}>INSTRUMENT LIBRARY</Text><Text style={s.sectionTitle}>Archive</Text></View><Text style={s.muted}>{assets.length} instruments</Text></View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filters}>{["All","Forex","Crypto","Stocks","Options"].map((item) => <Pressable key={item} onPress={() => setFilter(item)} style={[s.chip, filter === item && s.chipActive]}><Text style={[s.chipText, filter === item && s.chipTextActive]}>{item}</Text></Pressable>)}</ScrollView>
-                {visible.length ? visible.map((asset) => <Pressable key={asset.symbol} style={s.assetRow} onPress={() => setSelected(asset.symbol)}><View style={s.assetIcon}><Text style={s.assetIconText}>{asset.symbol[0]}</Text></View><View style={s.assetInfo}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol} · Crypto</Text></View><View style={s.quote}><Text style={s.assetName}>{"$"}{asset.quote.price.toLocaleString(undefined,{maximumFractionDigits:2})}</Text><Text style={[s.change,{color:asset.quote.changePct24h>=0?colors.bullish:colors.bearish}]}>{asset.quote.changePct24h>=0?"+":""}{asset.quote.changePct24h.toFixed(2)}%</Text></View><Text style={s.chevron}>›</Text></Pressable>) : <View style={s.empty}><Text style={s.assetName}>No instruments in this category yet</Text><Text style={s.muted}>The connected starter universe currently contains crypto instruments.</Text></View>}
-                <Text style={s.disclaimer}>Illustrative data from the repository's mock feed, not exchange-sourced live pricing.</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filters}>{(["All","Forex","Crypto","Stocks"] as AssetClass[]).map((item) => <Pressable key={item} onPress={() => setFilter(item)} style={[s.chip, filter === item && s.chipActive]}><Text style={[s.chipText, filter === item && s.chipTextActive]}>{item}</Text></Pressable>)}</ScrollView>
+                {visible.length ? visible.map((asset) => {
+                  const quote = quotes[asset.symbol];
+                  return <Pressable key={`${asset.category}:${asset.symbol}`} style={s.assetRow} onPress={() => setSelected(asset.symbol)}>
+                    <View style={s.assetIcon}><Text style={s.assetIconText}>{asset.symbol[0]}</Text></View>
+                    <View style={s.assetInfo}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol} · {asset.category}</Text></View>
+                    {quote ? <View style={s.quote}><Text style={s.assetName}>{"$"}{quote.price.toLocaleString(undefined,{maximumFractionDigits:2})}</Text><Text style={[s.change,{color:quote.changePct24h>=0?colors.bullish:colors.bearish}]}>{quote.changePct24h>=0?"+":""}{quote.changePct24h.toFixed(2)}%</Text></View> : <Text style={s.pending}>DATA PENDING</Text>}
+                    <Text style={s.chevron}>›</Text>
+                  </Pressable>;
+                }) : <View style={s.empty}><Text style={s.assetName}>No instruments in this category yet</Text><Text style={s.muted}>Symbols appear when a verified market-data source publishes them.</Text></View>}
+                <Text style={s.disclaimer}>The crypto starter list uses illustrative prices. Other instruments show no price until verified market data is connected.</Text>
               </>
             ) : (
               <>
@@ -148,8 +195,8 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
                 <View style={s.feedCard}>
                   <View style={s.feedMeta}><View style={s.feedAvatar}><Text style={s.feedAvatarText}>Q</Text></View><View style={s.feedMetaText}><Text style={s.assetName}>Qoin Intelligence</Text><Text style={s.muted}>Instrument discovery</Text></View><Text style={s.feedTag}>DISCOVERY</Text></View>
                   <Text style={s.cardTitle}>Build your market universe</Text><Text style={s.feedCopy}>Inspect available instruments and add assets that match your investment intent.</Text>
-                  {assets.map((asset) => <View key={asset.symbol} style={s.feedAsset}><Pressable style={s.assetInfo} onPress={() => setSelected(asset.symbol)}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol}</Text></Pressable><Pressable disabled={!basketHydrated} onPress={() => toggle(asset.symbol)} style={s.addButton}><Text style={s.addText}>{basket.includes(asset.symbol) ? "In basket ✓" : "+ Add"}</Text></Pressable></View>)}
-                  <Text style={s.disclaimer}>Starter universe · Crypto</Text>
+                  {assets.map((asset) => <View key={`${asset.category}:${asset.symbol}`} style={s.feedAsset}><Pressable style={s.assetInfo} onPress={() => setSelected(asset.symbol)}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol} · {asset.category}</Text></Pressable><Pressable disabled={!basketHydrated} onPress={() => toggle(asset.symbol)} style={s.addButton}><Text style={s.addText}>{basket.includes(asset.symbol) ? "In basket ✓" : "+ Add"}</Text></Pressable></View>)}
+                  <Text style={s.disclaimer}>Observed instruments · Catalogue is incomplete</Text>
                 </View>
                 <View style={s.feedCard}><View style={s.feedMeta}><View style={s.feedAvatar}><Text style={s.feedAvatarText}>◎</Text></View><View style={s.feedMetaText}><Text style={s.assetName}>News and community</Text><Text style={s.muted}>Financial discovery stream</Text></View><Text style={s.pending}>CONNECTING</Text></View><Text style={s.cardTitle}>Your intelligence feed</Text><Text style={s.feedCopy}>Verified news, research and community discussions will appear when those services are integrated. No sample headlines are presented as real news.</Text></View>
               </>
