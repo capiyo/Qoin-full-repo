@@ -198,14 +198,24 @@ async fn main() {
         }
     };
     let state = Arc::new(AppState { config, config_version, portfolios, firebase });
+    let mut allowed_origins = vec![
+        HeaderValue::from_static("http://localhost:5173"),
+        HeaderValue::from_static("http://127.0.0.1:5173"),
+        HeaderValue::from_static("http://localhost:3000"),
+        HeaderValue::from_static("http://127.0.0.1:3000"),
+    ];
+    if let Ok(configured) = env::var("QOIN_WEB_ORIGINS") {
+        for origin in configured.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+            match HeaderValue::from_str(origin) {
+                Ok(value) => allowed_origins.push(value),
+                Err(_) => panic!("QOIN_WEB_ORIGINS contains an invalid origin"),
+            }
+        }
+    }
     let cors = CorsLayer::new()
-        .allow_origin([
-            HeaderValue::from_static("http://localhost:5173"),
-            HeaderValue::from_static("http://127.0.0.1:5173"),
-            HeaderValue::from_static("http://localhost:3000"),
-            HeaderValue::from_static("http://127.0.0.1:3000"),
-        ])
-        .allow_methods([Method::GET, Method::POST])
+        .allow_origin(allowed_origins)
+        // Portfolio writes use PUT; omitting it makes browser preflight fail.
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
         .allow_headers([CONTENT_TYPE, AUTHORIZATION]);
     let app = Router::new()
         .route("/health", get(health))
