@@ -12,6 +12,20 @@ paths:
       responses:
         '200': { description: Healthy }
         '503': { description: Dependency unavailable }
+  /api/v1/signal:
+    post:
+      summary: Evaluate one manually supplied normalized observation
+      description: Uses the deterministic research baseline and returns BUY, SELL, CLOSE, or WAIT. It does not fetch data, size positions, or submit orders.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignalRequest'
+      responses:
+        '200': { description: Research signal }
+        '400': { description: Invalid or non-finite observation }
+        '503': { description: Research engine unavailable }
   /api/v1/multi-horizon:
     post:
       summary: Evaluate independent causal observations across trading horizons
@@ -127,6 +141,22 @@ components:
         reasons:
           type: array
           items: { type: string }
+    SignalRequest:
+      type: object
+      required: [observation, has_open_position]
+      properties:
+        observation:
+          type: object
+          required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+          properties:
+            ofi: { type: number }
+            liquidity: { type: number }
+            volatility: { type: number }
+            funding: { type: number }
+            open_interest_change: { type: number }
+            liquidation_pressure: { type: number }
+            basis: { type: number }
+        has_open_position: { type: boolean }
     HorizonInput:
       type: object
       required: [horizon, observation, config, config_version, has_open_position]
