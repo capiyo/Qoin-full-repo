@@ -53,6 +53,7 @@ Node.js and pnpm 9; Rust stable/Cargo; MongoDB 7 or compatible; C++17, CMake and
 
 ```bash
 cp .env.example .env
+# Edit .env with your Qoin Firebase project and local service settings.
 docker compose up -d mongodb
 cargo run --manifest-path backend/rust-axum/Cargo.toml
 ```

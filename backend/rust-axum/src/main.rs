@@ -191,6 +191,8 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
 }
 #[tokio::main]
 async fn main(){
+    // Load local development configuration; process environment still takes precedence.
+    let _ = dotenvy::dotenv();
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
     let uri=env::var("QOIN_MONGODB_URI").unwrap_or_else(|_|"mongodb://127.0.0.1:27017".into());
     let client=Client::with_uri_str(&uri).await.expect("connect to MongoDB");
