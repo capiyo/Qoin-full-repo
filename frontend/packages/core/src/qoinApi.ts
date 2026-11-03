@@ -166,3 +166,19 @@ export function getQoinMarketHorizons(
   return request<QoinMarketHorizonsResponse>(`/api/v1/market-horizons?${params}`);
 }
 
+export type QoinInstrumentCatalogue = {
+  asset_class: QoinAssetClass;
+  count: number;
+  symbols: string[];
+  source: "ingested_market_events";
+};
+
+/** Lists only symbols for which this deployment has already ingested market events. */
+export function getQoinInstruments(
+  assetClass: QoinAssetClass,
+): Promise<QoinInstrumentCatalogue> {
+  return request<QoinInstrumentCatalogue>(
+    `/api/v1/instruments?asset_class=${assetClass}`,
+  );
+}
+
