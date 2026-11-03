@@ -57,7 +57,42 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
         callback(forwarded);
     });
 }
+void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
+                              std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    const char* configured = std::getenv("QOIN_RESEARCH_API_URL");
+    const std::string target = configured ? std::string(configured) : "http://127.0.0.1:8082";
+    auto client = drogon::HttpClient::newHttpClient(target);
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(incoming->method());
+    request->setPath("/v1/portfolio");
+    request->addHeader("accept", "application/json");
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    if (incoming->method() == drogon::Put) {
+        request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        request->setBody(std::string(incoming->getBody()));
+    }
+    client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
+        const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "portfolio service unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
 int main() {
+    drogon::app().registerHandler("/v1/portfolio", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyResearchPortfolio(req, std::move(cb));
+    }, {drogon::Get, drogon::Put});
+
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyResearchPost(req, std::move(cb));
