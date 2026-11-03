@@ -11,9 +11,12 @@ The `edge_strategy` collection stores one active document keyed by `strategy_key
 ## Flow
 1. A market-data adapter submits an event to `POST /api/v1/events` on the local Drogon gateway.
 2. Axum validates and deduplicates the event by venue + symbol + event_id.
-3. The event updates current symbol state and is persisted to `market_events`.
+3. The event is persisted to `market_events` and updates the current symbol state.
 4. A state snapshot is written to `market_states`; the active MongoDB-backed edge map computes a vector decision, which is written to `trade_decisions`.
-5. Consumers query `/api/v1/state?symbol=BTCUSDT`, `/api/v1/vector?symbol=BTCUSDT`, and `/api/v1/strategy`.
+5. `GET /api/v1/market-horizons?symbol=BTCUSDT` reads at most the latest 50,000 events from the preceding week and builds independent trailing windows for 1m through 1w.
+6. A horizon emits a signal only when its window has the minimum event count plus both trade-flow and book-depth evidence. Agreement/divergence is descriptive and never merged into a trade instruction.
+7. Consumers query `/api/v1/state`, `/api/v1/vector`, `/api/v1/strategy`, and `/api/v1/market-horizons` through Drogon.
+
 
 ## Explicit limitations
 This is an early research baseline, not an exchange-ready trading system. State is currently held in memory after process start and is not fully replayed from MongoDB after restart. Feature normalization is simple clipping/scaling, not yet robust past-only rolling normalization. The strategy map is configurable and versioned, but its weights are hand-specified and are not evidence of an exploitable or profitable edge. A signal is not an order; live order submission remains disconnected and disabled.
