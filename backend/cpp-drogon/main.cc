@@ -7,18 +7,31 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
-void addCors(const drogon::HttpResponsePtr& response) {
-    // Bearer-token endpoints do not use cookies; authorization remains enforced by Axum.
-    response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
-    response->addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-    response->addHeader("Access-Control-Max-Age", "600");
+bool isAllowedOrigin(const std::string& origin) {
+    const char* configured = std::getenv("QOIN_WEB_ORIGINS");
+    if (!configured || !*configured) {
+        return origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173";
+    }
+    const std::string origins(configured);
+    std::size_t start = 0;
+    while (start <= origins.size()) {
+        const auto end = origins.find(',', start);
+        const auto length = end == std::string::npos ? std::string::npos : end - start;
+        const auto raw = origins.substr(start, length);
+        const auto first = raw.find_first_not_of(" \\t");
+        const auto last = raw.find_last_not_of(" \\t");
+        if (first != std::string::npos && raw.substr(first, last - first + 1) == origin) {
+            return true;
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return false;
 }
 void corsOptions(const drogon::HttpRequestPtr&,
                  std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
     auto response = drogon::HttpResponse::newHttpResponse();
     response->setStatusCode(drogon::k204NoContent);
-    addCors(response);
     callback(response);
 }
 void proxyGet(const drogon::HttpRequestPtr&,
@@ -34,7 +47,6 @@ void proxyGet(const drogon::HttpRequestPtr&,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
-            addCors(error);
             callback(error);
             return;
         }
@@ -42,7 +54,6 @@ void proxyGet(const drogon::HttpRequestPtr&,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
-        addCors(forwarded);
         callback(forwarded);
     });
 }
@@ -63,7 +74,6 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "research signal service unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
-            addCors(error);
             callback(error);
             return;
         }
@@ -71,7 +81,6 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
-        addCors(forwarded);
         callback(forwarded);
     });
 }
@@ -95,7 +104,6 @@ void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "portfolio service unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
-            addCors(error);
             callback(error);
             return;
         }
@@ -103,11 +111,27 @@ void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
-        addCors(forwarded);
         callback(forwarded);
     });
 }
 int main() {
+    // Apply CORS after Drogon has generated the response, including its automatic
+    // OPTIONS responses. Restrict browser origins; this API uses bearer tokens,
+    // not cookie credentials.
+    drogon::app().registerPreSendingAdvice([](const drogon::HttpRequestPtr& request,
+                                               const drogon::HttpResponsePtr& response) {
+        const auto origin = request->getHeader("origin");
+        if (origin.empty() || !isAllowedOrigin(origin)) return;
+        response->removeHeader("Access-Control-Allow-Origin");
+        response->removeHeader("Access-Control-Allow-Methods");
+        response->removeHeader("Access-Control-Allow-Headers");
+        response->removeHeader("Access-Control-Max-Age");
+        response->addHeader("Access-Control-Allow-Origin", origin);
+        response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+        response->addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        response->addHeader("Access-Control-Max-Age", "600");
+        response->addHeader("Vary", "Origin");
+    });
     drogon::app().registerHandler("/v1/portfolio", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Options) {
