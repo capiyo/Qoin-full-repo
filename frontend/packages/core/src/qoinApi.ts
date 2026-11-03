@@ -51,6 +51,14 @@ export type QoinInvestmentPlan = {
 
 export type QoinInvestmentPlanInput = Omit<QoinInvestmentPlan, "updated_at">;
 
+export type QoinAssetClass = "forex" | "crypto" | "stocks";
+export type QoinInstrumentCatalogue = {
+  asset_class: QoinAssetClass;
+  symbols: string[];
+  source: "ingested_market_events";
+  complete: false;
+};
+
 function getBaseUrl(): string {
   // Vite injects the web URL; Expo statically inlines its public mobile URL.
   const viteConfigured = typeof __QOIN_VITE_API_URL__ !== "undefined" ? __QOIN_VITE_API_URL__ : undefined;
@@ -71,6 +79,10 @@ async function request<T>(path: string, init?: RequestInit, idToken?: string): P
     throw new Error(`Qoin API ${response.status}: ${detail || response.statusText}`);
   }
   return response.json() as Promise<T>;
+}
+
+export function getQoinInstruments(assetClass: QoinAssetClass): Promise<QoinInstrumentCatalogue> {
+  return request<QoinInstrumentCatalogue>(`/api/v1/instruments?asset_class=${encodeURIComponent(assetClass)}`);
 }
 
 export function getQoinHealth(): Promise<QoinHealth> {
