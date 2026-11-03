@@ -77,6 +77,9 @@ paths:
       summary: Get latest state estimate for a symbol
       parameters:
         - in: query
+          name: asset_class
+          schema: { type: string, enum: [forex, crypto, stock] }
+        - in: query
           name: symbol
           schema: { type: string, default: BTCUSDT }
       responses:
@@ -86,6 +89,9 @@ paths:
     get:
       summary: Get latest geometric vector decision
       parameters:
+        - in: query
+          name: asset_class
+          schema: { type: string, enum: [forex, crypto, stock] }
         - in: query
           name: symbol
           schema: { type: string, default: BTCUSDT }
