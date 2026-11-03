@@ -23,7 +23,11 @@ observation, engine configuration, configuration version, and open-position flag
 ## API
 
 The gateway exposes `POST /api/v1/multi-horizon`; Drogon forwards the request to
-Axum's internal `POST /internal/multi-horizon` handler. The request is a non-empty
+Axum's internal `POST /internal/multi-horizon` handler. The stored-market-data
+endpoint is `GET /api/v1/market-horizons` and requires both `symbol` and
+`asset_class` so identically named forex, crypto, and stock instruments cannot
+contaminate one another. The manually supplied single-observation endpoint is
+`POST /api/v1/signal`. The request is a non-empty
 array of `HorizonInput` objects. Every object includes:
 
 - A unique horizon identifier.
@@ -69,7 +73,7 @@ and the existing independent risk gates have passed.
 The first market-event adapter contract normalizes the following inputs before they
 reach the vector engine:
 
-- OFI: signed aggressive trade volume divided by total classified trade volume.
+- OFI: signed aggressive trade volume divided by classified buy-plus-sell trade volume; unknown-side trades are excluded from both numerator and denominator and do not count as signed-flow evidence.
 - Liquidity: mean signed bid/ask displayed-depth imbalance.
 - Volatility: absolute log-return sum divided by square-root return count, then
   scaled by 1% and clipped to [0, 3].
@@ -102,3 +106,16 @@ does not publish them. Do not relabel quote changes or tick volume as true OFI.
 The instrument catalogue is derived from symbols already present in
 `market_events`. Complete exchange/venue discovery and provider-specific adapters
 are not implemented in this branch.
+
+## Query completeness and signal suppression
+
+The stored-market-data endpoint currently loads at most 50,000 recent events per
+symbol and asset class. When that safety cap is reached, all horizon signals are
+suppressed for that response because one or more trailing windows may be missing
+older records. The UI reports the condition and must not display the partial
+observations as actionable signals. A future paginated/window-partitioned query
+should replace this conservative cap before high-volume instruments are evaluated.
+
+The endpoint requires an explicit asset class. Queries without it are rejected
+rather than mixing events for symbols that collide across markets. The same
+asset-class key is included in the event index used by the query.
