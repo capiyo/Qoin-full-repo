@@ -291,3 +291,44 @@ async fn main(){
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_event, MarketEvent};
+
+    fn event(asset_class: Option<&str>) -> MarketEvent {
+        MarketEvent {
+            event_id: "catalogue-test".to_owned(),
+            venue: "test-venue".to_owned(),
+            symbol: "EURUSD".to_owned(),
+            asset_class: asset_class.map(str::to_owned),
+            event_type: "trade".to_owned(),
+            ts_ms: 1_800_000_000_000,
+            price: Some(1.08),
+            size: Some(1.0),
+            side: Some("buy".to_owned()),
+            bid: None,
+            ask: None,
+            bid_size: None,
+            ask_size: None,
+            funding_rate: None,
+            open_interest: None,
+            liquidation_side: None,
+        }
+    }
+
+    #[test]
+    fn supported_asset_classes_are_accepted() {
+        for asset_class in ["forex", "crypto", "stocks"] {
+            assert!(validate_event(&event(Some(asset_class))).is_ok());
+        }
+        assert!(validate_event(&event(None)).is_ok());
+    }
+
+    #[test]
+    fn unknown_asset_classes_are_rejected() {
+        assert!(validate_event(&event(Some("commodities"))).is_err());
+        assert!(validate_event(&event(Some("Forex"))).is_err());
+    }
+}
