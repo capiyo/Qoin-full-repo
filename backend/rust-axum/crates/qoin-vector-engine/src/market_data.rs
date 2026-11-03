@@ -23,6 +23,7 @@ pub struct MarketEvent {
     pub funding_rate: Option<f64>,
     pub open_interest: Option<f64>,
     pub liquidation_side: Option<String>,
+    pub basis: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -64,6 +65,7 @@ pub fn aggregate_horizon(
     let mut first_oi: Option<f64> = None;
     let mut last_oi: Option<f64> = None;
     let mut latest_funding: Option<f64> = None;
+    let mut latest_basis: Option<f64> = None;
     let mut signed_liquidations = 0.0;
     let mut total_liquidations = 0.0;
     let mut trade_count = 0usize;
@@ -101,6 +103,11 @@ pub fn aggregate_horizon(
             "funding" => {
                 if event.funding_rate.is_some() {
                     latest_funding = event.funding_rate;
+                }
+            }
+            "basis" => {
+                if event.basis.is_some() {
+                    latest_basis = event.basis;
                 }
             }
             "open_interest" => {
@@ -156,6 +163,9 @@ pub fn aggregate_horizon(
     if latest_funding.is_none() {
         reasons.push("funding unavailable; treated as neutral".to_owned());
     }
+    if latest_basis.is_none() {
+        reasons.push("spot-perpetual basis unavailable; treated as neutral".to_owned());
+    }
     let data_quality = (event_count as f64 / min_events.max(1) as f64).min(1.0)
         * ((trade_count > 0) as u8 as f64 * 0.5 + (book_count > 0) as u8 as f64 * 0.5);
 
@@ -168,8 +178,7 @@ pub fn aggregate_horizon(
             funding: latest_funding.unwrap_or(0.0),
             open_interest_change,
             liquidation_pressure,
-            // No basis feed is part of the current MarketEvent contract.
-            basis: 0.0,
+            basis: latest_basis.unwrap_or(0.0),
         },
         event_count,
         trade_count,
@@ -209,6 +218,7 @@ mod tests {
             funding_rate: None,
             open_interest: None,
             liquidation_side: None,
+            basis: None,
         }
     }
 
