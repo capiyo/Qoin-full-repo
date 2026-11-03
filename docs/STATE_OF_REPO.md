@@ -1,17 +1,64 @@
 # State of repository
 
-This branch integrates a first research-engine foundation into `capiyo/qoin_frontend-monorepo`. It adds Axum event/state/vector endpoints, a deterministic geometric baseline, an isolated Binance adapter source, a Drogon proxy, MongoDB development configuration, reference models, tests, and risk/architecture notes.
+Updated: 2026-11-04
 
-## Current verified status
-GitHub Actions passed the Python reference suite (12 tests) and Rust `cargo test` (3 vector-engine unit tests) on this branch. The event JSON schema parses in CI. The earlier audited snapshot also passed OpenAPI YAML parsing and smoke-script syntax validation.
+## Product direction
 
-## Current limitations
-- Rust compilation and its three vector-engine unit tests pass in GitHub Actions. Drogon compilation remains unverified because its development package was unavailable in the audit environment.
-- No lockfile or CI workflow is included yet.
-- State is currently held in memory and is not fully reconstructed from MongoDB after restart.
-- Model scales, weights, thresholds, and version are hardcoded; there is no versioned config contract consumed by runtime.
-- No production market-data adapters, event-driven backtester, walk-forward results, shadow mode, testnet validation, or profitability evidence.
-- No live-order route is registered. The gated Binance adapter source is deliberately isolated and not called by the signal path.
-- Authentication/authorization, rate limiting, risk engine, protective stops, position/order reconciliation, kill switch, and crash recovery are incomplete.
+Qoin is being built as an investment-intelligence platform for ordinary people. Customers browse instruments, build a basket and state their own goals and contribution plans. They should not need to operate a retail trading terminal or monitor short-duration market moves.
 
-Keep this system research/paper-only. Do not claim production readiness or profitability.
+Qoin's deterministic vector engine is a research and measurement system. Signals do not submit orders, choose customer allocations or promise returns. Live execution remains disconnected.
+
+## Active implementation branch
+
+- Branch: `feat/funspot-inspired-archive-feed-portfolio-ui`
+- Base: `main`
+- Active branch is ahead of `main`; it contains the current web/mobile product work, Firebase identity, user portfolio persistence and JEPA removal.
+- Do not merge without reviewing the complete branch diff and all required checks.
+
+## Implemented
+
+### Frontend
+- React + TypeScript + Vite web client.
+- Expo / React Native mobile client.
+- Shared TypeScript API contracts.
+- Archive and Feed product navigation.
+- User instrument basket with local persistence and authenticated server synchronization.
+- Firebase email/password sign-in and account creation on web and mobile.
+- Investment-intention panel on web and mobile: user-authored goal, currency, monthly contribution, optional target amount and time horizon.
+- The investment plan is not used to generate recommendations or transactions.
+- Synthetic chart fixtures are labelled as development data; no fixture is presented as a live exchange feed.
+
+### Backend
+- Rust/Axum owns market event ingestion, state estimation, deterministic vector decisions and strategy-map persistence.
+- C++/Drogon is the HTTP gateway; the Axum services bind to loopback by default.
+- MongoDB persists market events, state, decisions, strategy maps, authenticated user baskets and investment plans.
+- Firebase ID tokens are verified server-side against Google's rotating RS256 signing keys, with issuer, audience, expiry and subject checks.
+- User portfolio and investment-plan records are scoped by the UID extracted from the verified token; clients cannot choose the owner UID.
+- The public gateway forwards authenticated portfolio and investment-plan requests to the private research API.
+- JEPA model, sidecar, active dependencies, routes and active-branch documentation were removed as previously directed.
+
+## Known gaps — not production-ready
+
+- The visible starter catalogue is currently crypto-only. Forex and stock asset classes are not yet backed by complete provider catalogues.
+- No production market-data provider adapters or verified real-time quotes are connected.
+- No production portfolio valuations, corporate-action handling, currency conversion, dividend/interest accounting or authoritative holdings reconciliation.
+- No licensed fund-manager, broker, custodian or investment-adviser integrations are connected.
+- Qoin is not yet licensed to distribute products or provide regulated advice/management; the exact Kenyan licence perimeter must be confirmed before launch.
+- No customer money is held by Qoin; no live execution route is enabled.
+- Authentication and persistence have a functional foundation, but rate limiting, security monitoring, privacy review, access-control review, backup/restore drills and independent penetration testing remain required.
+- The investment-plan API has unit-level input validation; its full end-to-end authenticated persistence flow still requires CI/integration verification.
+- Provider-driven instrument metadata, asset-class-aware catalogue search and a complete cross-asset research pipeline remain outstanding.
+
+## Next implementation sequence
+
+1. Verify the latest Rust, Axum/MongoDB integration, Drogon, web and mobile CI runs after the investment-plan changes.
+2. Build a provider-backed instrument catalogue for Forex, Crypto and Stocks. Do not invent instruments or label an incomplete list as the full market universe.
+3. Connect normalized market-data adapters and explicit asset-class metadata to the event pipeline.
+4. Extend the user portfolio from a symbol basket to transparent provider-linked holdings only after licensed partner/custody integration exists.
+5. Add market and portfolio risk diagnostics with auditable explanations; do not convert research signals into automatic customer transactions.
+6. Complete Kenyan legal/regulatory review and partner agreements before public investment distribution.
+7. Complete production security, privacy, resilience and operational reviews.
+
+## Safety status
+
+Research preview only. No live order submission, customer-fund custody, guaranteed returns or production investment-management claim is permitted. Keep all live execution disabled until the relevant licensing, partner, risk, testing and explicit written-approval gates are satisfied.
