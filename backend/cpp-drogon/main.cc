@@ -110,32 +110,13 @@ int main() {
             cb(forwarded);
         });
     }, {drogon::Post});
+    // Strategy mutation is intentionally not exposed through the public gateway.
+    // Keep administrative writes on the loopback-only Axum service until an
+    // authenticated operator identity and authorization policy are implemented.
     drogon::app().registerHandler("/api/v1/strategy", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        if (req->method() == drogon::Get) {
-            proxyGet(req, std::move(cb), "/internal/strategy");
-            return;
-        }
-        auto client = drogon::HttpClient::newHttpClient(upstream());
-        auto request = drogon::HttpRequest::newHttpRequest();
-        request->setMethod(drogon::Put);
-        request->setPath("/internal/strategy");
-        request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        request->setBody(std::string(req->getBody()));
-        client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
-            if (result != drogon::ReqResult::Ok || !response) {
-                auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
-                error->setStatusCode(drogon::k503ServiceUnavailable);
-                cb(error);
-                return;
-            }
-            auto forwarded = drogon::HttpResponse::newHttpResponse();
-            forwarded->setStatusCode(response->getStatusCode());
-            forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(std::string(response->getBody()));
-            cb(forwarded);
-        });
-    }, {drogon::Get, drogon::Put});
+        proxyGet(req, std::move(cb), "/internal/strategy");
+    }, {drogon::Get});
     const char* portEnv = std::getenv("QOIN_DROGON_PORT");
     const auto port = portEnv ? std::stoi(portEnv) : 8080;
     drogon::app().addListener("127.0.0.1", static_cast<uint16_t>(port));
