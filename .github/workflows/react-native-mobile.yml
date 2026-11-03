@@ -32,3 +32,5 @@ jobs:
       - run: pnpm install --no-frozen-lockfile
       - name: Type-check React Native app
         run: pnpm --filter @qoin/mobile exec tsc --noEmit
+      - name: Bundle Expo app for Android and iOS
+        run: pnpm --filter @qoin/mobile exec expo export --platform all --output-dir /tmp/qoin-mobile-export
