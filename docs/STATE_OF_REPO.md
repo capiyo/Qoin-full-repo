@@ -50,10 +50,10 @@ Completed GitHub Actions validations on recent commits include:
 - React Native strict TypeScript check: passed.
 - Python reference tests and market-event JSON schema validation: passed.
 
-The latest head includes subsequent changes to configuration-version validation,
-Vite API URL injection, and data-quality display/calculation. GitHub Actions
-reruns for that latest head are in progress; do not treat the earlier passing
-runs as validation of every final-head change.
+The latest code validation completed successfully on commit
+`655c677df0cd0ae0ff4412a103a86f2b8470a435`. All six relevant GitHub Actions
+checks passed, including the Axum/Drogon/MongoDB end-to-end run. Subsequent
+changes to this file are documentation-only.
 
 ## Limitations
 
