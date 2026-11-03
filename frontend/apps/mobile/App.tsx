@@ -11,7 +11,7 @@ import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { useMarketFeed } from "./src/useMarketFeed";
 
-type RootStackParamList = { Login: undefined; Dashboard: undefined };
+export type RootStackParamList = { Login: undefined; Dashboard: undefined };
 type Tab = "Archive" | "Feed";
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
