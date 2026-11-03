@@ -83,3 +83,22 @@ value. They must be calibrated chronologically by asset class and venue before
 performance comparisons. The current market-backed endpoint uses the default
 research engine configuration for every horizon; independent per-horizon
 calibration remains a subsequent research task.
+
+
+## Asset-class data requirements
+
+The event contract classifies instruments as `forex`, `crypto`, or `stock`, and
+the API/UI can isolate and select symbols by that class. This is not equivalent to
+having a complete market universe or a connected vendor feed.
+
+The current signal-readiness gate deliberately requires both classified trade
+prints and order-book depth in a horizon. Consequently, a forex or equity instrument
+whose provider supplies only candles or top-of-book quotes will remain not-ready
+until an adapter supplies the required trade and depth evidence (or a separately
+reviewed asset-class feature contract is implemented). Funding, OI, liquidations
+and basis are optional and must remain explicitly unavailable where the market
+does not publish them. Do not relabel quote changes or tick volume as true OFI.
+
+The instrument catalogue is derived from symbols already present in
+`market_events`. Complete exchange/venue discovery and provider-specific adapters
+are not implemented in this branch.
