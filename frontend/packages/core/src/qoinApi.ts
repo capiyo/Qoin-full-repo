@@ -141,6 +141,7 @@ export type QoinHorizonObservation = {
   first_event_ts_ms: number | null;
   last_event_ts_ms: number | null;
   data_quality: number;
+  coverage_ratio: number;
   ready: boolean;
   reasons: string[];
 };
