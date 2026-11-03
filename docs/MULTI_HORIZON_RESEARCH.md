@@ -75,7 +75,7 @@ reach the vector engine:
 
 - OFI: signed aggressive trade volume divided by classified buy-plus-sell trade volume; unknown-side trades are excluded from both numerator and denominator and do not count as signed-flow evidence.
 - Liquidity: mean signed bid/ask displayed-depth imbalance.
-- Volatility: absolute log-return sum divided by square-root return count, then
+- Volatility: square root of summed squared log returns (realized volatility),
   scaled by 1% and clipped to [0, 3].
 - Funding: fractional funding rate divided by 0.1% and clipped to [-3, 3].
 - Open-interest change: fractional change divided by 1% and clipped to [-3, 3].
