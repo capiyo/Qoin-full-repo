@@ -60,7 +60,7 @@ export function getQoinHealth(): Promise<QoinHealth> {
 
 /** Returns a research signal only. This client never submits exchange orders. */
 export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal> {
-  return request<QoinSignal>("/v1/signal", {
+  return request<QoinSignal>("/api/v1/signal", {
     method: "POST",
     body: JSON.stringify(input),
   });
