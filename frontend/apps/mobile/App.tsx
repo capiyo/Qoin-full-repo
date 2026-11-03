@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet, ScrollView, Modal } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -20,7 +20,7 @@ const queryClient = new QueryClient();
 const PORTFOLIO_STORAGE_KEY = "qoin.portfolio.v1";
 const names: Record<string, string> = { "BTC/USD": "Bitcoin", "ETH/USD": "Ethereum", "SOL/USD": "Solana", "AVAX/USD": "Avalanche" };
 
-function MainTabs() {
+function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Dashboard">) {
   const { quotes } = useMarketFeed();
   const [tab, setTab] = useState<Tab>("Archive");
   const [basket, setBasket] = useState<string[]>([]);
@@ -104,7 +104,7 @@ function MainTabs() {
       <View style={s.header}>
         <View style={s.brandRow}><View style={s.brandMark}><Text style={s.brandMarkText}>Q</Text></View><Text style={s.brand}>QOIN</Text></View>
         <View style={s.headerActions}>
-          {authUser ? <Pressable onPress={() => { void signOut(firebaseAuth!); }}><Text style={s.signOut}>Sign out</Text></Pressable> : null}
+          {authUser ? <Pressable onPress={() => { if (firebaseAuth) void signOut(firebaseAuth); }}><Text style={s.signOut}>Sign out</Text></Pressable> : firebaseAuth ? <Pressable onPress={() => navigation.replace("Login")}><Text style={s.signOut}>Sign in</Text></Pressable> : null}
           <Pressable style={s.portfolioButton} onPress={() => setPortfolioOpen(true)}><Text style={s.portfolioIcon}>◈</Text><Text style={s.portfolioLabel}>Portfolio</Text><Text style={s.count}>{basketHydrated ? basket.length : "…"}</Text></Pressable>
         </View>
       </View>
