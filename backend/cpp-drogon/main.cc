@@ -79,6 +79,28 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/signal", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        auto client = drogon::HttpClient::newHttpClient(upstream());
+        auto request = drogon::HttpRequest::newHttpRequest();
+        request->setMethod(drogon::Post);
+        request->setPath("/internal/signal");
+        request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        request->setBody(std::string(req->getBody()));
+        client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+            if (result != drogon::ReqResult::Ok || !response) {
+                auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
+                error->setStatusCode(drogon::k503ServiceUnavailable);
+                cb(error);
+                return;
+            }
+            auto forwarded = drogon::HttpResponse::newHttpResponse();
+            forwarded->setStatusCode(response->getStatusCode());
+            forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            forwarded->setBody(std::string(response->getBody()));
+            cb(forwarded);
+        });
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/multi-horizon", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         auto client = drogon::HttpClient::newHttpClient(upstream());
