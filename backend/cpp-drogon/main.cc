@@ -56,13 +56,22 @@ int main() {
     drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
+        const auto assetClass = req->getParameter("asset_class");
         const auto minEvents = req->getParameter("min_events");
         std::string path = "/internal/market-horizons";
-        if (!symbol.empty() || !minEvents.empty()) {
-            path += "?";
-            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
-            if (!symbol.empty() && !minEvents.empty()) path += "&";
-            if (!minEvents.empty()) path += "min_events=" + drogon::utils::urlEncode(minEvents);
+        bool hasParameter = false;
+        if (!symbol.empty()) {
+            path += "?symbol=" + drogon::utils::urlEncode(symbol);
+            hasParameter = true;
+        }
+        if (!assetClass.empty()) {
+            path += hasParameter ? "&" : "?";
+            path += "asset_class=" + drogon::utils::urlEncode(assetClass);
+            hasParameter = true;
+        }
+        if (!minEvents.empty()) {
+            path += hasParameter ? "&" : "?";
+            path += "min_events=" + drogon::utils::urlEncode(minEvents);
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
