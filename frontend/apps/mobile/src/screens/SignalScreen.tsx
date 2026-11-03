@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   evaluateQoinSignal,
   getQoinHealth,
+  getQoinInstruments,
   getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinSignal,
@@ -40,6 +41,7 @@ export function SignalScreen() {
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [assetClass, setAssetClass] = useState<QoinAssetClass>("crypto");
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
   const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
   const [marketBusy, setMarketBusy] = useState(false);
   const [marketError, setMarketError] = useState("");
@@ -48,6 +50,12 @@ export function SignalScreen() {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
   }, []);
+
+  useEffect(() => {
+    getQoinInstruments(assetClass)
+      .then((catalogue) => setAvailableSymbols(catalogue.symbols))
+      .catch(() => setAvailableSymbols([]));
+  }, [assetClass]);
 
   const activeCount = useMemo(
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
@@ -109,6 +117,15 @@ export function SignalScreen() {
               </Pressable>
             ))}
           </View>
+          {availableSymbols.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.symbolList}>
+              {availableSymbols.map((item) => (
+                <Pressable key={item} onPress={() => setSymbol(item)} style={[styles.symbolChip, symbol === item && styles.symbolChipActive]}>
+                  <Text style={[styles.symbolChipText, symbol === item && styles.symbolChipTextActive]}>{item}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : <Text style={styles.fieldHelp}>No {assetClass} instruments have been ingested yet. Add venue events with an asset_class field to populate this list.</Text>}
           <View style={styles.marketControls}>
             <TextInput
               accessibilityLabel="Instrument symbol"
@@ -217,6 +234,11 @@ const styles = StyleSheet.create({
   assetClassChipActive: { borderColor: colors.accentCyan, backgroundColor: colors.bgPrimary },
   assetClassText: { color: colors.textMuted, fontSize: 10, fontWeight: "700" },
   assetClassTextActive: { color: colors.accentCyan },
+  symbolList: { flexGrow: 0, marginTop: 10 },
+  symbolChip: { borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7, marginRight: 6 },
+  symbolChipActive: { borderColor: colors.accentCyan },
+  symbolChipText: { color: colors.textMuted, fontSize: 10, fontWeight: "700" },
+  symbolChipTextActive: { color: colors.accentCyan },
   marketControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 12 },
   symbolInput: { flex: 1, minWidth: 0, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 10, fontSize: 12 },
   smallButton: { backgroundColor: colors.accentCyan, borderRadius: 7, paddingHorizontal: 12, paddingVertical: 11 },
