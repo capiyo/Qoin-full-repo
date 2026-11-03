@@ -17,6 +17,3 @@ The `edge_strategy` collection stores one active document keyed by `strategy_key
 
 ## Explicit limitations
 This is an early research baseline, not an exchange-ready trading system. State is currently held in memory after process start and is not fully replayed from MongoDB after restart. Feature normalization is simple clipping/scaling, not yet robust past-only rolling normalization. The strategy map is configurable and versioned, but its weights are hand-specified and are not evidence of an exploitable or profitable edge. A signal is not an order; live order submission remains disconnected and disabled.
-
-## Model boundary
-The active architecture uses the deterministic, explicitly versioned vector/strategy path. It does not contain a JEPA service, latent-state model, prediction telemetry, or model-training sidecar. Do not add a second predictive model to the event pipeline without a separately approved architecture and validation plan.
