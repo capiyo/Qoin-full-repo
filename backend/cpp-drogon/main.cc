@@ -7,6 +7,20 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
+void addCors(const drogon::HttpResponsePtr& response) {
+    // Bearer-token endpoints do not use cookies; authorization remains enforced by Axum.
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
+    response->addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    response->addHeader("Access-Control-Max-Age", "600");
+}
+void corsOptions(const drogon::HttpRequestPtr&,
+                 std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setStatusCode(drogon::k204NoContent);
+    addCors(response);
+    callback(response);
+}
 void proxyGet(const drogon::HttpRequestPtr&,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
@@ -20,6 +34,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
+            addCors(error);
             callback(error);
             return;
         }
@@ -27,6 +42,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
+        addCors(forwarded);
         callback(forwarded);
     });
 }
@@ -47,6 +63,7 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "research signal service unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
+            addCors(error);
             callback(error);
             return;
         }
@@ -54,6 +71,7 @@ void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
+        addCors(forwarded);
         callback(forwarded);
     });
 }
@@ -77,6 +95,7 @@ void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "portfolio service unavailable"}});
             error->setStatusCode(drogon::k503ServiceUnavailable);
+            addCors(error);
             callback(error);
             return;
         }
@@ -84,6 +103,7 @@ void proxyResearchPortfolio(const drogon::HttpRequestPtr& incoming,
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
         forwarded->setBody(std::string(response->getBody()));
+        addCors(forwarded);
         callback(forwarded);
     });
 }
@@ -92,11 +112,14 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyResearchPortfolio(req, std::move(cb));
     }, {drogon::Get, drogon::Put});
+    drogon::app().registerHandler("/v1/portfolio", corsOptions, {drogon::Options});
 
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyResearchPost(req, std::move(cb));
     }, {drogon::Post});
+    drogon::app().registerHandler("/v1/signal", corsOptions, {drogon::Options});
+    drogon::app().registerHandler("/health", corsOptions, {drogon::Options});
 
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
