@@ -1,3 +1,6 @@
+declare const __QOIN_VITE_API_URL__: string | undefined;
+declare const process: { env: { EXPO_PUBLIC_QOIN_API_URL?: string } };
+
 export type MarketForceObservation = {
   ofi: number;
   liquidity: number;
@@ -37,14 +40,10 @@ export type QoinPortfolio = {
 };
 
 function getBaseUrl(): string {
-  // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
-  // Physical devices need a reachable host configured for the development environment.
-  const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  };
-  const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
-  return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
+  // Vite injects the web URL; Expo statically inlines its public mobile URL.
+  const viteConfigured = typeof __QOIN_VITE_API_URL__ !== "undefined" ? __QOIN_VITE_API_URL__ : undefined;
+  const expoConfigured = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_QOIN_API_URL : undefined;
+  return (viteConfigured || expoConfigured || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
 async function request<T>(path: string, init?: RequestInit, idToken?: string): Promise<T> {
