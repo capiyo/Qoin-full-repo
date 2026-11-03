@@ -31,7 +31,38 @@ void proxyGet(const drogon::HttpRequestPtr&,
     });
 }
 }
+void proxyResearchPost(const drogon::HttpRequestPtr& incoming,
+                        std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    const char* configured = std::getenv("QOIN_RESEARCH_API_URL");
+    const std::string target = configured ? std::string(configured) : "http://127.0.0.1:8082";
+    auto client = drogon::HttpClient::newHttpClient(target);
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    request->setPath("/v1/signal");
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->addHeader("accept", "application/json");
+    request->setBody(std::string(incoming->getBody()));
+    client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
+        const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "research signal service unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
 int main() {
+    drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyResearchPost(req, std::move(cb));
+    }, {drogon::Post});
+
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
