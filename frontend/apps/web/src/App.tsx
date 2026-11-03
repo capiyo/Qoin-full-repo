@@ -116,7 +116,7 @@ export default function App() {
                   <div className="horizon-title"><strong>{item.horizon.replace("_", " ")}</strong><span className={item.ready ? "ready" : "not-ready"}>{item.ready ? "READY" : "WAITING FOR DATA"}</span></div>
                   <div className="horizon-signal">{signal?.decision ?? "—"}</div>
                   <div className="horizon-meta">{item.event_count} events · {item.trade_count} trades · {item.book_count} books</div>
-                  <div className="horizon-meta">Window coverage {(item.coverage_ratio * 100).toFixed(1)}%</div>
+                  <div className="horizon-meta">Window coverage {(item.coverage_ratio * 100).toFixed(1)}% · Data quality {(item.data_quality * 100).toFixed(0)}%</div>
                   <div className="horizon-meta">OFI {item.observation.ofi.toFixed(2)} · OI Δ {item.observation.open_interest_change.toFixed(3)}</div>
                   {!item.ready && <p className="horizon-reason">{item.reasons.slice(0, 2).join("; ")}</p>}
                 </div>;
