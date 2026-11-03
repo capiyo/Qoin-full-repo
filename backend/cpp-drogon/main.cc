@@ -39,6 +39,12 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/state" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/instruments", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto assetClass = req->getParameter("asset_class");
+        const std::string path = "/internal/instruments?asset_class=" + drogon::utils::urlEncode(assetClass);
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
