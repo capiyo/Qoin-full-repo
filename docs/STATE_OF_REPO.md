@@ -11,7 +11,16 @@ The repository uses React web and React Native clients, a Rust/Axum authoritativ
 - Web and mobile research screens can request horizon observations for a selected instrument.
 
 ## Verified status
-GitHub Actions results are being checked against the latest pull-request commit. Do not treat an in-progress workflow as a pass. The Rust workspace, Axum/Drogon integration, gateway build, and frontend builds must all complete successfully before this change is considered validated.
+
+GitHub Actions passed on code commit `34bda6f`:
+- Rust workspace `cargo test --workspace`.
+- Axum + Drogon + MongoDB integration, including service restart, strategy persistence, event ingestion, instrument discovery, market-horizon readiness and asset-class state retrieval.
+- Drogon gateway build.
+- React web production build.
+- React Native strict TypeScript check.
+- Python reference tests and market-event JSON schema validation.
+
+A subsequent documentation-only commit updated the asset-class feed requirements. CI reruns for the latest head are also being monitored; no live deployment or profitability claim is made.
 
 ## Limitations
 - Market-data adapters for complete forex, crypto and stock universes are not yet wired to this endpoint. The API aggregates events already ingested; it does not fetch exchange/vendor data itself.
