@@ -28,6 +28,19 @@ paths:
       responses:
         '200': { description: Per-horizon signals and descriptive consensus }
         '400': { description: Empty input, duplicate horizon, invalid configuration, or invalid observation }
+  /api/v1/instruments:
+    get:
+      summary: List instruments with ingested events for an asset class
+      description: Returns symbols observed in the market_events collection. This is an availability catalogue, not a complete exchange universe or a market-data provider.
+      parameters:
+        - in: query
+          name: asset_class
+          required: true
+          schema: { type: string, enum: [forex, crypto, stock] }
+      responses:
+        '200': { description: Sorted symbols with ingested market events }
+        '400': { description: Missing or unsupported asset class }
+        '503': { description: Market event storage unavailable }
   /api/v1/market-horizons:
     get:
       summary: Derive research signals from the latest stored market events for one symbol
