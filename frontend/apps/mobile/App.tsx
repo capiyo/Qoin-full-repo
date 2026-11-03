@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -14,17 +15,47 @@ type RootStackParamList = { Login: undefined; Dashboard: undefined };
 type Tab = "Archive" | "Feed";
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
+const PORTFOLIO_STORAGE_KEY = "qoin.portfolio.v1";
 const names: Record<string, string> = { "BTC/USD": "Bitcoin", "ETH/USD": "Ethereum", "SOL/USD": "Solana", "AVAX/USD": "Avalanche" };
 
 function MainTabs() {
   const { quotes } = useMarketFeed();
   const [tab, setTab] = useState<Tab>("Archive");
   const [basket, setBasket] = useState<string[]>([]);
+  const [basketHydrated, setBasketHydrated] = useState(false);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const assets = useMemo(() => WATCHLIST.map((symbol) => ({ symbol, name: names[symbol] ?? symbol, quote: quotes[symbol] })), [quotes]);
   const visible = filter === "All" || filter === "Crypto" ? assets : [];
+
+  useEffect(() => {
+    let active = true;
+    async function restoreBasket() {
+      try {
+        const stored = await AsyncStorage.getItem(PORTFOLIO_STORAGE_KEY);
+        if (!stored) return;
+        const parsed: unknown = JSON.parse(stored);
+        if (!Array.isArray(parsed)) return;
+        const allowed = new Set<string>(WATCHLIST);
+        const restored = [...new Set(parsed.filter((item): item is string => typeof item === "string" && allowed.has(item)))];
+        if (active) setBasket(restored);
+      } catch {
+        // A corrupt or inaccessible local snapshot must not block the app.
+      } finally {
+        if (active) setBasketHydrated(true);
+      }
+    }
+    void restoreBasket();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!basketHydrated) return;
+    AsyncStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(basket)).catch(() => {
+      // Device storage can be unavailable; portfolio remains usable in memory.
+    });
+  }, [basket, basketHydrated]);
 
   function toggle(symbol: string) {
     setBasket((items) => items.includes(symbol) ? items.filter((item) => item !== symbol) : [...items, symbol]);
@@ -88,7 +119,7 @@ function MainTabs() {
           <Pressable style={s.sheet} onPress={() => undefined}>
             <View style={s.handle}/>
             <View style={s.sheetHead}><View><Text style={s.eyebrow}>YOUR ASSET BASKET</Text><Text style={s.sectionTitle}>My portfolio</Text></View><Pressable onPress={() => setPortfolioOpen(false)}><Text style={s.close}>×</Text></Pressable></View>
-            <Text style={s.muted}>Choose the instruments you want Qoin to evaluate. Adding an asset does not place an order.</Text>
+            <Text style={s.muted}>Choose the instruments you want Qoin to evaluate. Your basket is saved on this device; account synchronization will follow authenticated portfolio storage. Adding an asset does not place an order.</Text>
             {basket.length ? basket.map((symbol) => <View key={symbol} style={s.drawerRow}><View style={s.assetInfo}><Text style={s.assetName}>{names[symbol] ?? symbol}</Text><Text style={s.muted}>{symbol}</Text></View><Pressable onPress={() => toggle(symbol)}><Text style={s.remove}>Remove</Text></Pressable></View>) : <View style={s.empty}><Text style={s.assetName}>Your basket is waiting</Text><Text style={s.muted}>Explore Archive or Feed and add instruments to begin.</Text></View>}
             <View style={s.summary}><View style={s.summaryRow}><Text style={s.muted}>Selected instruments</Text><Text style={s.assetName}>{basket.length}</Text></View><View style={s.summaryRow}><Text style={s.muted}>Management</Text><Text style={s.assetName}>Algorithm-managed</Text></View><View style={s.summaryRow}><Text style={s.muted}>Execution</Text><Text style={s.assetName}>Not enabled</Text></View></View>
             <Text style={s.disclaimer}>Automated management requires verified market data, risk controls and explicit authorization.</Text>
