@@ -7,10 +7,11 @@ use axum::{
 };
 use mongodb::{
     bson::{doc, Document},
-    options::{FindOneOptions, IndexOptions, UpdateOptions},
+    options::{FindOneOptions, FindOptions, IndexOptions, UpdateOptions},
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
+use futures_util::TryStreamExt;
 use std::{collections::HashMap, env, sync::{Arc, RwLock}};
 use tower_http::trace::TraceLayer;
 
@@ -18,7 +19,11 @@ mod edge_strategy;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
-use qoin_vector_engine::multi_horizon::{evaluate_multi_horizon, HorizonInput};
+use qoin_vector_engine::{
+    market_data::{aggregate_horizon, MarketEvent as MarketEventRecord},
+    multi_horizon::{evaluate_multi_horizon, Horizon, HorizonInput},
+    EngineConfig,
+};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -72,6 +77,8 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
+#[derive(Deserialize)]
+struct MarketHorizonQuery { symbol: Option<String>, min_events: Option<usize> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -211,6 +218,89 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
+async fn evaluate_market_horizons(
+    State(s): State<AppState>,
+    Query(query): Query<MarketHorizonQuery>,
+) -> impl IntoResponse {
+    let symbol = query.symbol.unwrap_or_else(|| "BTCUSDT".to_owned());
+    if symbol.trim().is_empty() || symbol.len() > 64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol must contain 1 to 64 characters"})));
+    }
+    let min_events = query.min_events.unwrap_or(20);
+    if !(5..=10_000).contains(&min_events) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"min_events must be between 5 and 10000"})));
+    }
+
+    let decision_ts_ms = chrono::Utc::now().timestamp_millis();
+    let cutoff_ts_ms = decision_ts_ms - (Horizon::OneWeek.duration_seconds() as i64 * 1_000);
+    let options = FindOptions::builder()
+        .sort(doc!{"ts_ms": 1})
+        .limit(50_000)
+        .build();
+    let mut cursor = match s.events.find(
+        doc!{"symbol": &symbol, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}},
+        Some(options),
+    ).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(symbol=%symbol, error=%error, "multi-horizon event query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event storage unavailable"})));
+        }
+    };
+    let documents: Vec<Document> = match cursor.try_collect().await {
+        Ok(documents) => documents,
+        Err(error) => {
+            tracing::error!(symbol=%symbol, error=%error, "multi-horizon event cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event retrieval failed"})));
+        }
+    };
+    let events: Vec<MarketEventRecord> = documents.into_iter()
+        .filter_map(|document| mongodb::bson::from_document(document).ok())
+        .collect();
+
+    let horizons = [
+        Horizon::OneMinute, Horizon::FiveMinutes, Horizon::FifteenMinutes,
+        Horizon::ThirtyMinutes, Horizon::OneHour, Horizon::FourHours,
+        Horizon::OneDay, Horizon::OneWeek,
+    ];
+    let observations: Vec<_> = horizons.iter()
+        .map(|horizon| aggregate_horizon(&events, *horizon, decision_ts_ms, min_events))
+        .collect();
+    let config = EngineConfig::default();
+    let inputs: Vec<HorizonInput> = observations.iter()
+        .filter(|item| item.ready)
+        .map(|item| HorizonInput {
+            horizon: item.horizon,
+            observation: item.observation,
+            config: config.clone(),
+            config_version: "multi-horizon-market-data-v1".to_owned(),
+            has_open_position: false,
+        })
+        .collect();
+    let signals = if inputs.is_empty() {
+        None
+    } else {
+        match evaluate_multi_horizon(&inputs) {
+            Ok(result) => Some(result),
+            Err(error) => {
+                tracing::error!(symbol=%symbol, error=%error, "multi-horizon signal evaluation failed");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"signal evaluation failed"})));
+            }
+        }
+    };
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "symbol": symbol,
+        "decision_ts_ms": decision_ts_ms,
+        "events_loaded": events.len(),
+        "event_limit_reached": events.len() >= 50_000,
+        "mode": "research_only",
+        "observations": observations,
+        "signals": signals,
+        "note": "Each horizon uses its own trailing event window. Missing book or trade evidence prevents that horizon from producing a signal. Missing funding, open interest, and basis are reported as neutral or unavailable; they are not fabricated."
+    })))
+}
+
 async fn evaluate_horizons(Json(inputs): Json<Vec<HorizonInput>>) -> impl IntoResponse {
     match evaluate_multi_horizon(&inputs) {
         Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
@@ -335,7 +425,7 @@ async fn main(){
         active_strategy:Arc::new(RwLock::new(active))
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
-        .route("/internal/state",get(get_state)).route("/internal/multi-horizon",post(evaluate_horizons)).route("/internal/vector",get(get_vector))
+        .route("/internal/state",get(get_state)).route("/internal/market-horizons",get(evaluate_market_horizons)).route("/internal/multi-horizon",post(evaluate_horizons)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
