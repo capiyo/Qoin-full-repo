@@ -77,7 +77,10 @@ async fn main() {
         .with_state(state);
 
     // Loopback binding keeps this research API local by default.
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let addr: SocketAddr = std::env::var("QOIN_RESEARCH_API_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:8082".to_owned())
+        .parse()
+        .expect("QOIN_RESEARCH_API_ADDR must be a valid socket address");
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind API listener");
     tracing::info!(%addr, "Qoin research API listening; live trading is disabled");
     axum::serve(listener, app).await.expect("serve API");
