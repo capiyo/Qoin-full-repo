@@ -10,3 +10,6 @@ curl --fail --silent --show-error "$BASE_URL/api/v1/state?symbol=BTCUSDT"
 printf '\n'
 curl --fail --silent --show-error "$BASE_URL/api/v1/vector?symbol=BTCUSDT"
 printf '\n'
+SIGNAL='{"observation":{"ofi":0.2,"liquidity":0.4,"volatility":0.1,"funding":0.0,"open_interest_change":0.1,"liquidation_pressure":0.0,"basis":0.0},"has_open_position":false}'
+curl --fail --silent --show-error -H 'content-type: application/json' -d "$SIGNAL" "$BASE_URL/v1/signal"
+printf '\n'
