@@ -145,7 +145,7 @@ export type QoinHorizonObservation = {
 
 export type QoinMarketHorizonsResponse = {
   symbol: string;
-  asset_class: QoinAssetClass | null;
+  asset_class: QoinAssetClass;
   decision_ts_ms: number;
   events_loaded: number;
   event_limit_reached: boolean;
@@ -158,11 +158,16 @@ export type QoinMarketHorizonsResponse = {
 /** Builds causal horizon-specific observations from events already ingested by Qoin. */
 export function getQoinMarketHorizons(
   symbol: string,
-  assetClass?: QoinAssetClass,
+  assetClass: QoinAssetClass,
   minEvents = 20,
 ): Promise<QoinMarketHorizonsResponse> {
-  const params = `symbol=${encodeURIComponent(symbol)}&min_events=${minEvents}`
-    + (assetClass ? `&asset_class=${assetClass}` : "");
+  if (!symbol.trim() || symbol.length > 64) {
+    return Promise.reject(new Error("symbol must contain 1 to 64 characters"));
+  }
+  if (!Number.isInteger(minEvents) || minEvents < 5 || minEvents > 10_000) {
+    return Promise.reject(new Error("minEvents must be an integer between 5 and 10000"));
+  }
+  const params = `symbol=${encodeURIComponent(symbol)}&asset_class=${assetClass}&min_events=${minEvents}`;
   return request<QoinMarketHorizonsResponse>(`/api/v1/market-horizons?${params}`);
 }
 
