@@ -77,7 +77,11 @@ function MainTabs({ navigation }: NativeStackScreenProps<RootStackParamList, "Da
     void authUser.getIdToken().then(getQoinPortfolio).then((portfolio) => {
       if (!active) return;
       const allowed = new Set<string>(WATCHLIST);
-      setBasket([...new Set(portfolio.symbols.filter((symbol) => allowed.has(symbol)))]);
+      if (portfolio.symbols.length > 0) {
+        setBasket([...new Set(portfolio.symbols.filter((symbol) => allowed.has(symbol)))]);
+      }
+      // An empty server portfolio is a first-login state: preserve the local
+      // basket so the first successful sync seeds the account instead of erasing it.
     }).catch(() => {
       // A missing server Firebase configuration leaves the device basket intact.
     }).finally(() => {
