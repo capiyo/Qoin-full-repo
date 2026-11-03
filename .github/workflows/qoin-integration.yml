@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set -x
           export QOIN_MONGODB_URI=mongodb://127.0.0.1:27017
           export QOIN_MONGODB_DATABASE=qoin_ci
           export QOIN_AXUM_ADDR=127.0.0.1:8081
@@ -55,7 +56,16 @@ jobs:
           AXUM_PID=$!
           ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
           DROGON_PID=$!
-          cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
+          cleanup() {
+            local exit_status=$?
+            if [[ $exit_status -ne 0 ]]; then
+              echo "---- Axum diagnostics ----"
+              cat /tmp/qoin-axum.log /tmp/qoin-axum-restarted.log 2>/dev/null || true
+              echo "---- Drogon diagnostics ----"
+              cat /tmp/qoin-drogon.log 2>/dev/null || true
+            fi
+            kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true
+          }
           trap cleanup EXIT
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
@@ -77,6 +87,23 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
-          jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
+          NOW_MS=$(($(date +%s%3N) - 30000))
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-book-1\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"book\",\"ts_ms\":$NOW_MS,\"bid\":100,\"ask\":100.01,\"bid_size\":4,\"ask_size\":3}" >/tmp/book-1.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-trade-1\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"trade\",\"ts_ms\":$((NOW_MS + 5000)),\"price\":100.01,\"size\":1,\"side\":\"buy\"}" >/tmp/trade-1.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-book-2\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"book\",\"ts_ms\":$((NOW_MS + 10000)),\"bid\":100.01,\"ask\":100.02,\"bid_size\":5,\"ask_size\":2}" >/tmp/book-2.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-trade-2\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"trade\",\"ts_ms\":$((NOW_MS + 15000)),\"price\":100.02,\"size\":2,\"side\":\"buy\"}" >/tmp/trade-2.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-trade-3\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"asset_class\":\"crypto\",\"event_type\":\"trade\",\"ts_ms\":$((NOW_MS + 20000)),\"price\":100.00,\"size\":0.5,\"side\":\"sell\"}" >/tmp/trade-3.json
+          jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade-3.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/instruments?asset_class=crypto' >/tmp/instruments.json
+          jq -e '.symbols | index("BTCUSDT") != null' /tmp/instruments.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/market-horizons?symbol=BTCUSDT&asset_class=crypto&min_events=5' >/tmp/horizons.json
+          jq -e '.mode == "research_only" and .asset_class == "crypto" and (.observations[] | select(.horizon == "one_minute") | .ready == true)' /tmp/horizons.json
+          jq -e '(.observations[] | select(.horizon == "one_hour") | .ready == false) and (.observations[] | select(.horizon == "one_hour") | .coverage_ratio < 0.15)' /tmp/horizons.json
+          MISSING_CLASS_STATUS=$(curl -sS -o /tmp/missing-asset-class.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/market-horizons?symbol=BTCUSDT&min_events=5')
+          test "$MISSING_CLASS_STATUS" = "400"
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' >/tmp/signal.json
+          jq -e '.decision == "BUY" and .config_version == "qoin-vector-baseline-v1"' /tmp/signal.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/multi-horizon -H 'content-type: application/json' --data '[{"horizon":"five_minutes","observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"config":{"signal_threshold":0.65,"input_clip":3.0,"score_clip":1.0,"top_k":5,"min_alignment":0.15,"max_angle_radians":1.42,"volatility_dampener":0.15,"interaction_coefficient":0.025},"config_version":"ci-v1","has_open_position":false},{"horizon":"one_day","observation":{"ofi":-2.0,"liquidity":-1.0,"volatility":0.2,"funding":0.5,"open_interest_change":-1.0,"liquidation_pressure":-0.5,"basis":0.0},"config":{"signal_threshold":0.65,"input_clip":3.0,"score_clip":1.0,"top_k":5,"min_alignment":0.15,"max_angle_radians":1.42,"volatility_dampener":0.15,"interaction_coefficient":0.025},"config_version":"ci-v1","has_open_position":false}]' >/tmp/multi-horizon.json
+          jq -e '.consensus.relationship == "divergent" and .consensus.buy_count == 1 and .consensus.sell_count == 1' /tmp/multi-horizon.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/state?symbol=BTCUSDT&asset_class=crypto' >/tmp/asset-state.json
+          jq -e '.asset_class == "crypto"' /tmp/asset-state.json
