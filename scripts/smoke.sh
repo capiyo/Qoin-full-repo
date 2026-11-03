@@ -13,3 +13,12 @@ printf '\n'
 SIGNAL='{"observation":{"ofi":0.2,"liquidity":0.4,"volatility":0.1,"funding":0.0,"open_interest_change":0.1,"liquidation_pressure":0.0,"basis":0.0},"has_open_position":false}'
 curl --fail --silent --show-error -H 'content-type: application/json' -d "$SIGNAL" "$BASE_URL/v1/signal"
 printf '\n'
+# The route must exist but must never return a user's plan without identity.
+# In an unconfigured local environment the API returns 503; with Firebase
+# configured and no bearer token it returns 401.
+PLAN_STATUS="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$BASE_URL/v1/investment-plan")"
+if [[ "$PLAN_STATUS" != "401" && "$PLAN_STATUS" != "503" ]]; then
+  echo "investment-plan route did not fail closed (HTTP $PLAN_STATUS)" >&2
+  exit 1
+fi
+printf 'investment-plan route is gated (HTTP %s)\n' "$PLAN_STATUS"
