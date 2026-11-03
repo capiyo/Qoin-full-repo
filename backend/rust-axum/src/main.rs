@@ -357,6 +357,7 @@ async fn main(){
     let strategies:Collection<Document>=db.collection("edge_strategy");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"asset_class":1,"symbol":1,"ts_ms":-1}).build(),None).await.expect("asset-class horizon event index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"asset_class":1,"symbol":1,"stored_at":-1}).build(),None).await.expect("asset-class state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"asset_class":1,"symbol":1,"stored_at":-1}).build(),None).await.expect("asset-class decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
