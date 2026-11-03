@@ -58,7 +58,6 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    if (!basketHydrated) return () => { active = false; };
     if (!authUser) {
       setServerBasketOwnerUid(null);
       return () => { active = false; };
@@ -74,7 +73,7 @@ function App() {
       if (active) setServerBasketOwnerUid(authUser.uid);
     });
     return () => { active = false; };
-  }, [authUser, basketHydrated]);
+  }, [authUser]);
 
   useEffect(() => {
     if (!authUser || serverBasketOwnerUid !== authUser.uid) return;
