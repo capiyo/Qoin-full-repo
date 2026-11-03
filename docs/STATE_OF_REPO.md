@@ -38,7 +38,7 @@ market-event aggregation path.
 
 Completed GitHub Actions validations on recent commits include:
 
-- Rust workspace tests: 18 tests passed, 0 failed, including horizon divergence,
+- Rust workspace tests: 19 tests passed, 0 failed, including horizon divergence,
   empty/duplicate horizon rejection, causal window filtering, temporal coverage,
   unknown-side OFI handling and realized-volatility calculation.
 - Axum + Drogon + MongoDB integration: passed, including service restart,
