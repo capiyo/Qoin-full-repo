@@ -65,7 +65,7 @@ cmake --build build/drogon
 ./build/drogon/qoin-gateway
 ```
 
-The default gateway binds to loopback at `127.0.0.1:8080`; Axum binds to `127.0.0.1:8081`. Do not expose Axum directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL` and `QOIN_DROGON_PORT` as required.
+The default gateway binds to loopback at `127.0.0.1:8080`; the integrated flow-engine Axum service binds to `127.0.0.1:8081`; the isolated research-signal Axum service binds to `127.0.0.1:8082`. The gateway forwards `/v1/signal` to the research service. Do not expose either Axum service directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL`, `QOIN_DROGON_PORT`, `QOIN_RESEARCH_API_ADDR` and `QOIN_RESEARCH_API_URL` as required.
 
 ## Frontend commands
 
