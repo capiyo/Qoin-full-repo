@@ -58,6 +58,7 @@ function MainTabs() {
   }, [basket, basketHydrated]);
 
   function toggle(symbol: string) {
+    if (!basketHydrated) return;
     setBasket((items) => items.includes(symbol) ? items.filter((item) => item !== symbol) : [...items, symbol]);
   }
 
@@ -66,7 +67,7 @@ function MainTabs() {
       <StatusBar style="light" backgroundColor={colors.bgPrimary} />
       <View style={s.header}>
         <View style={s.brandRow}><View style={s.brandMark}><Text style={s.brandMarkText}>Q</Text></View><Text style={s.brand}>QOIN</Text></View>
-        <Pressable style={s.portfolioButton} onPress={() => setPortfolioOpen(true)}><Text style={s.portfolioIcon}>◈</Text><Text style={s.portfolioLabel}>Portfolio</Text><Text style={s.count}>{basket.length}</Text></Pressable>
+        <Pressable style={s.portfolioButton} onPress={() => setPortfolioOpen(true)}><Text style={s.portfolioIcon}>◈</Text><Text style={s.portfolioLabel}>Portfolio</Text><Text style={s.count}>{basketHydrated ? basket.length : "…"}</Text></Pressable>
       </View>
 
       {selected ? (
@@ -80,7 +81,7 @@ function MainTabs() {
             <View style={s.vector}><View style={s.axisX}/><View style={s.axisY}/><View style={s.axisZ}/><View style={s.origin}/><Text style={s.vectorHint}>Verified factor data will determine vector position</Text></View>
             <Text style={s.disclaimer}>Coordinate-space scaffold only. No live or simulated vector is shown. The complete factor vector remains canonical.</Text>
             {["Return / momentum","Volatility","Market beta","Liquidity / depth","Order-flow imbalance","Funding / basis","Open-interest change"].map((label) => <View key={label} style={s.factor}><Text style={s.muted}>{label}</Text><Text style={s.factorValue}>—</Text></View>)}
-            <Pressable style={s.primary} onPress={() => toggle(selected)}><Text style={s.primaryText}>{basket.includes(selected) ? "Remove from portfolio" : "+ Add to portfolio"}</Text></Pressable>
+            <Pressable style={s.primary} disabled={!basketHydrated} onPress={() => toggle(selected)}><Text style={s.primaryText}>{basket.includes(selected) ? "Remove from portfolio" : "+ Add to portfolio"}</Text></Pressable>
           </View>
         </ScrollView>
       ) : (
@@ -103,7 +104,7 @@ function MainTabs() {
                 <View style={s.feedCard}>
                   <View style={s.feedMeta}><View style={s.feedAvatar}><Text style={s.feedAvatarText}>Q</Text></View><View style={s.feedMetaText}><Text style={s.assetName}>Qoin Intelligence</Text><Text style={s.muted}>Instrument discovery</Text></View><Text style={s.feedTag}>DISCOVERY</Text></View>
                   <Text style={s.cardTitle}>Build your market universe</Text><Text style={s.feedCopy}>Inspect available instruments and add assets that match your investment intent.</Text>
-                  {assets.map((asset) => <View key={asset.symbol} style={s.feedAsset}><Pressable style={s.assetInfo} onPress={() => setSelected(asset.symbol)}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol}</Text></Pressable><Pressable onPress={() => toggle(asset.symbol)} style={s.addButton}><Text style={s.addText}>{basket.includes(asset.symbol) ? "In basket ✓" : "+ Add"}</Text></Pressable></View>)}
+                  {assets.map((asset) => <View key={asset.symbol} style={s.feedAsset}><Pressable style={s.assetInfo} onPress={() => setSelected(asset.symbol)}><Text style={s.assetName}>{asset.name}</Text><Text style={s.muted}>{asset.symbol}</Text></Pressable><Pressable disabled={!basketHydrated} onPress={() => toggle(asset.symbol)} style={s.addButton}><Text style={s.addText}>{basket.includes(asset.symbol) ? "In basket ✓" : "+ Add"}</Text></Pressable></View>)}
                   <Text style={s.disclaimer}>Starter universe · Crypto</Text>
                 </View>
                 <View style={s.feedCard}><View style={s.feedMeta}><View style={s.feedAvatar}><Text style={s.feedAvatarText}>◎</Text></View><View style={s.feedMetaText}><Text style={s.assetName}>News and community</Text><Text style={s.muted}>Financial discovery stream</Text></View><Text style={s.pending}>CONNECTING</Text></View><Text style={s.cardTitle}>Your intelligence feed</Text><Text style={s.feedCopy}>Verified news, research and community discussions will appear when those services are integrated. No sample headlines are presented as real news.</Text></View>
@@ -120,7 +121,8 @@ function MainTabs() {
             <View style={s.handle}/>
             <View style={s.sheetHead}><View><Text style={s.eyebrow}>YOUR ASSET BASKET</Text><Text style={s.sectionTitle}>My portfolio</Text></View><Pressable onPress={() => setPortfolioOpen(false)}><Text style={s.close}>×</Text></Pressable></View>
             <Text style={s.muted}>Choose the instruments you want Qoin to evaluate. Your basket is saved on this device; account synchronization will follow authenticated portfolio storage. Adding an asset does not place an order.</Text>
-            {basket.length ? basket.map((symbol) => <View key={symbol} style={s.drawerRow}><View style={s.assetInfo}><Text style={s.assetName}>{names[symbol] ?? symbol}</Text><Text style={s.muted}>{symbol}</Text></View><Pressable onPress={() => toggle(symbol)}><Text style={s.remove}>Remove</Text></Pressable></View>) : <View style={s.empty}><Text style={s.assetName}>Your basket is waiting</Text><Text style={s.muted}>Explore Archive or Feed and add instruments to begin.</Text></View>}
+            {!basketHydrated ? <Text style={s.pending}>RESTORING SAVED BASKET…</Text> : null}
+            {basket.length ? basket.map((symbol) => <View key={symbol} style={s.drawerRow}><View style={s.assetInfo}><Text style={s.assetName}>{names[symbol] ?? symbol}</Text><Text style={s.muted}>{symbol}</Text></View><Pressable disabled={!basketHydrated} onPress={() => toggle(symbol)}><Text style={s.remove}>{basketHydrated ? "Remove" : "Loading…"}</Text></Pressable></View>) : <View style={s.empty}><Text style={s.assetName}>Your basket is waiting</Text><Text style={s.muted}>Explore Archive or Feed and add instruments to begin.</Text></View>}
             <View style={s.summary}><View style={s.summaryRow}><Text style={s.muted}>Selected instruments</Text><Text style={s.assetName}>{basket.length}</Text></View><View style={s.summaryRow}><Text style={s.muted}>Management</Text><Text style={s.assetName}>Algorithm-managed</Text></View><View style={s.summaryRow}><Text style={s.muted}>Execution</Text><Text style={s.assetName}>Not enabled</Text></View></View>
             <Text style={s.disclaimer}>Automated management requires verified market data, risk controls and explicit authorization.</Text>
           </Pressable>
