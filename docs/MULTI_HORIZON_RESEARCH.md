@@ -127,7 +127,10 @@ minimum event count. The adapter measures the timestamp span between the first
 and last usable events and divides it by the horizon duration. The initial
 readiness policy requires at least 15% temporal coverage, in addition to the
 minimum event count, classified trade evidence, and book-depth evidence.
-Coverage is exposed as `coverage_ratio` in the API and UI.
+Coverage is exposed as `coverage_ratio` in the API and UI. The accompanying
+`data_quality` score multiplies event-count completeness, trade/book evidence
+completeness, and temporal coverage; it is a feed-quality diagnostic, not a
+probability of a correct signal.
 
 The 15% threshold is a conservative completeness guard, not a calibrated
 predictive parameter. It is a rolling wall-clock coverage proxy, not a full
