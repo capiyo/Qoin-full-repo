@@ -6,11 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet, ScrollView, Modal } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WATCHLIST } from "@qoin/core";
-const colors = {
-  bgPrimary: "#171522", bgSecondary: "#211e2d", accentCyan: "#c6b7ff",
-  white: "#f3eff8", textPrimary: "#f3eff8", textMuted: "#a79db4",
-  border: "#393346", bullish: "#a8d7bd", bearish: "#efa7a7", warning: "#f0b98b",
-};
+import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { useMarketFeed } from "./src/useMarketFeed";
 
