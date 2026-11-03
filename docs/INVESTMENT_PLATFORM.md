@@ -8,7 +8,7 @@ The product must not imply that investing guarantees a return. Contributions can
 
 ## Product experience
 
-- **Archive** is the instrument universe. Customers browse available instruments across supported asset classes and add instruments to a personal basket.
+- **Archive** is the instrument universe. Customers browse available instruments across Forex, Crypto and Stocks and add instruments to a personal basket. The current endpoint lists symbols explicitly observed in ingested market events and marks the catalogue incomplete; it is not yet a full global universe.
 - **Feed** is the intelligence stream: verified market developments, research notes, portfolio context and explanations. It must not present synthetic fixtures as live news or market data.
 - **Portfolio** contains the user's selected basket and their own investment intention, such as a goal, contribution amount, base currency and time horizon.
 - Qoin's vector engine measures market conditions and portfolio relationships. It produces research observations and diagnostics; a signal is not an order.
@@ -67,7 +67,7 @@ Implemented on the active feature branch:
 - web and mobile plan-entry interfaces.
 
 Not yet implemented or verified:
-- production market-data provider adapters and a complete instrument catalogue;
+- production market-data provider adapters and a complete instrument catalogue; the current observed-event catalogue and class filters are only the first layer;
 - instrument-level asset-class and venue metadata across all providers;
 - verified live portfolio valuations and custody reconciliation;
 - regulated provider onboarding, suitability/advice boundary and transaction workflows;
