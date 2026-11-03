@@ -23,6 +23,7 @@ export function InvestmentPlanPanel({ user }: { user: User | null }) {
   useEffect(() => {
     let active = true;
     if (!user) {
+      setLoading(false);
       setSaved(false);
       setGoal("");
       setMonthly("");
