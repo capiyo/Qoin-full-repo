@@ -57,7 +57,13 @@ docker compose up -d mongodb
 cargo run --manifest-path backend/rust-axum/Cargo.toml
 ```
 
-In another terminal:
+In a second terminal, start the isolated research-signal API:
+
+```bash
+cargo run --manifest-path backend/rust-axum-api/Cargo.toml
+```
+
+In a third terminal, start the gateway:
 
 ```bash
 cmake -S backend/cpp-drogon -B build/drogon
@@ -81,7 +87,7 @@ pnpm --filter @qoin/react-web build
 ```bash
 cargo test --workspace
 python3 -m unittest discover -s backend/tests -v
-bash scripts/smoke.sh
+bash scripts/smoke.sh  # includes gateway-to-research /v1/signal forwarding
 ```
 
 Do not switch from paper/research operation to live execution without satisfying every risk gate and receiving explicit written approval.
