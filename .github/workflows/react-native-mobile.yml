@@ -1,0 +1,35 @@
+name: Qoin React Native mobile
+on:
+  push:
+    branches: [main, feat/funspot-inspired-archive-feed-portfolio-ui]
+    paths:
+      - "frontend/apps/mobile/**"
+      - "frontend/packages/core/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/react-native-mobile.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/apps/mobile/**"
+      - "frontend/packages/core/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/react-native-mobile.yml"
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      - name: Type-check React Native app
+        run: pnpm --filter @qoin/mobile exec tsc --noEmit
