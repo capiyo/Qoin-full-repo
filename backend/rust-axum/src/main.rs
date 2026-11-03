@@ -30,6 +30,7 @@ struct MarketEvent {
     event_id: String,
     venue: String,
     symbol: String,
+    #[serde(default)] asset_class: Option<String>,
     event_type: String,
     ts_ms: i64,
     #[serde(default)] price: Option<f64>,
@@ -74,7 +75,7 @@ struct AppState {
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
 #[derive(Deserialize)]
-struct MarketHorizonQuery { symbol: Option<String>, min_events: Option<usize> }
+struct MarketHorizonQuery { symbol: Option<String>, asset_class: Option<String>, min_events: Option<usize> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -82,6 +83,11 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if let Some(asset_class) = e.asset_class.as_deref() {
+        if !matches!(asset_class, "forex" | "crypto" | "stock") {
+            return Err("asset_class must be forex, crypto, or stock".into());
+        }
+    }
     if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "open_interest" | "liquidation" | "basis") {
         return Err("event_type must be trade, book, funding, open_interest, liquidation, or basis".into());
     }
@@ -186,10 +192,15 @@ async fn evaluate_market_horizons(
         .sort(doc!{"ts_ms": 1})
         .limit(50_000)
         .build();
-    let mut cursor = match s.events.find(
-        doc!{"symbol": &symbol, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}},
-        Some(options),
-    ).await {
+    let filter = if let Some(asset_class) = query.asset_class.as_deref() {
+        if !matches!(asset_class, "forex" | "crypto" | "stock") {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"asset_class must be forex, crypto, or stock"})));
+        }
+        doc!{"symbol": &symbol, "asset_class": asset_class, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}}
+    } else {
+        doc!{"symbol": &symbol, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}}
+    };
+    let mut cursor = match s.events.find(filter, Some(options)).await {
         Ok(cursor) => cursor,
         Err(error) => {
             tracing::error!(symbol=%symbol, error=%error, "multi-horizon event query failed");
@@ -240,6 +251,7 @@ async fn evaluate_market_horizons(
 
     (StatusCode::OK, Json(serde_json::json!({
         "symbol": symbol,
+        "asset_class": query.asset_class,
         "decision_ts_ms": decision_ts_ms,
         "events_loaded": events.len(),
         "event_limit_reached": events.len() >= 50_000,
