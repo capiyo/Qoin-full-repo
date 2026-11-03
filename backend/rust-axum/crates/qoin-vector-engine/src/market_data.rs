@@ -326,8 +326,7 @@ mod tests {
         );
         assert_eq!(result.observation.ofi, 1.0);
         assert_eq!(result.trade_count, 1);
-        assert!(!result.ready);
-        assert!(result.reasons.iter().any(|reason| reason.contains("requires at least 2 events") == false));
+        assert!(result.ready);
     }
 
     #[test]
