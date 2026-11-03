@@ -93,7 +93,7 @@ components:
             funding: { type: number }
             open_interest_change: { type: number }
             liquidation_pressure: { type: number }
-            basis: { type: number, description: Zero until a basis feed is added; see reasons and response note }
+            basis: { type: number, description: Latest spot-perpetual basis event in the horizon window; zero when unavailable }
         event_count: { type: integer }
         trade_count: { type: integer }
         book_count: { type: integer }
@@ -143,7 +143,7 @@ components:
         event_id: { type: string, minLength: 1 }
         venue: { type: string, minLength: 1 }
         symbol: { type: string, minLength: 1 }
-        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
+        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation, basis] }
         ts_ms: { type: integer, minimum: 1 }
         price: { type: number, nullable: true, minimum: 0 }
         size: { type: number, nullable: true, minimum: 0 }
@@ -155,3 +155,4 @@ components:
         funding_rate: { type: number, nullable: true }
         open_interest: { type: number, nullable: true, minimum: 0 }
         liquidation_side: { type: string, nullable: true, enum: [long, short] }
+        basis: { type: number, nullable: true, description: "Normalized spot-perpetual basis observation" }
