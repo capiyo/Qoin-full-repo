@@ -99,5 +99,8 @@ jobs:
           PORTFOLIO_PUT_STATUS=$(curl -sS -o /tmp/portfolio-put.json -w "%{http_code}" -X PUT http://127.0.0.1:8080/v1/portfolio -H 'content-type: application/json' --data '{"symbols":["BTC/USD"]}')
           test "$PORTFOLIO_PUT_STATUS" = "401"
           PREFLIGHT=$(curl -sS -D - -o /dev/null -X OPTIONS http://127.0.0.1:8080/v1/portfolio -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
-          grep -Fqi 'access-control-allow-origin: *' <<<"$PREFLIGHT"
-          grep -qi 'PUT' <<<"$PREFLIGHT"
+          printf '%s\\n' "$PREFLIGHT"
+          if ! grep -Fqi 'access-control-allow-origin: *' <<<"$PREFLIGHT" || ! grep -qi 'PUT' <<<"$PREFLIGHT"; then
+            cat /tmp/qoin-drogon.log
+            exit 1
+          fi
