@@ -7,28 +7,36 @@ import {
   type Auth,
 } from "firebase/auth";
 
-const config = {
+const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-export const isFirebaseConfigured = Object.values(config).every(
-  (value) => typeof value === "string" && value.length > 0,
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId,
 );
 
-let configuredAuth: Auth | null = null;
+let auth: Auth | null = null;
+
 if (isFirebaseConfigured) {
-  const app = getApps().length > 0 ? getApp() : initializeApp(config);
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
   try {
-    configuredAuth = initializeAuth(app, {
+    auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
-  } catch {
-    // Fast refresh may initialize the same Firebase app more than once.
-    configuredAuth = getAuth(app);
+  } catch (error) {
+    // Expo fast refresh can evaluate this module more than once.
+    if (error instanceof Error && error.message.toLowerCase().includes("already")) {
+      auth = getAuth(app);
+    } else {
+      throw error;
+    }
   }
 }
 
-export const firebaseAuth = configuredAuth;
+export const firebaseAuth = auth;
