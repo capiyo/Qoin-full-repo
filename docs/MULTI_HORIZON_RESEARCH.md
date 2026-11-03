@@ -119,3 +119,18 @@ should replace this conservative cap before high-volume instruments are evaluate
 The endpoint requires an explicit asset class. Queries without it are rejected
 rather than mixing events for symbols that collide across markets. The same
 asset-class key is included in the event index used by the query.
+
+## Horizon window coverage
+
+A horizon is not considered ready merely because a burst of events meets the
+minimum event count. The adapter measures the timestamp span between the first
+and last usable events and divides it by the horizon duration. The initial
+readiness policy requires at least 15% temporal coverage, in addition to the
+minimum event count, classified trade evidence, and book-depth evidence.
+Coverage is exposed as `coverage_ratio` in the API and UI.
+
+The 15% threshold is a conservative completeness guard, not a calibrated
+predictive parameter. It is a rolling wall-clock coverage proxy, not a full
+exchange-session calendar. Before production use, this guard should be refined
+with venue calendars, holidays, and instrument trading sessions, particularly
+for equities and FX.
