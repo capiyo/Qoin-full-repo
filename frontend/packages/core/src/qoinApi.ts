@@ -26,9 +26,11 @@ export type QoinSignalRequest = {
 };
 
 export type QoinHealth = {
-  status: "ok" | string;
-  mode: "research" | string;
-  live_trading: false;
+  service: string;
+  status: "ok" | "degraded" | string;
+  mongodb: boolean;
+  strategy_version: string;
+  live_order_submission: "not wired" | string;
 };
 
 function getBaseUrl(): string {
