@@ -82,6 +82,9 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, and symbol are required".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "open_interest" | "liquidation" | "basis") {
+        return Err("event_type must be trade, book, funding, open_interest, liquidation, or basis".into());
+    }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
         ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest),("basis",e.basis)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
