@@ -56,7 +56,7 @@ pub fn aggregate_horizon(
     rows.sort_by_key(|event| event.ts_ms);
 
     let mut signed_trade = 0.0;
-    let mut total_trade = 0.0;
+    let mut classified_trade_size = 0.0;
     let mut book_imbalance_sum = 0.0;
     let mut book_count = 0usize;
     let mut absolute_returns = 0.0;
@@ -75,11 +75,17 @@ pub fn aggregate_horizon(
             "trade" => {
                 let size = event.size.unwrap_or(0.0);
                 if size > 0.0 {
-                    total_trade += size;
-                    trade_count += 1;
                     match event.side.as_deref() {
-                        Some("buy") => signed_trade += size,
-                        Some("sell") => signed_trade -= size,
+                        Some("buy") => {
+                            signed_trade += size;
+                            classified_trade_size += size;
+                            trade_count += 1;
+                        }
+                        Some("sell") => {
+                            signed_trade -= size;
+                            classified_trade_size += size;
+                            trade_count += 1;
+                        }
                         _ => {}
                     }
                 }
@@ -131,7 +137,13 @@ pub fn aggregate_horizon(
         }
     }
 
-    let ofi = if total_trade > 0.0 { signed_trade / total_trade } else { 0.0 };
+    // Unknown aggressor-side trades must not dilute signed OFI or count as
+    // signed-flow evidence for readiness.
+    let ofi = if classified_trade_size > 0.0 {
+        signed_trade / classified_trade_size
+    } else {
+        0.0
+    };
     let book_imbalance = if book_count > 0 {
         book_imbalance_sum / book_count as f64
     } else { 0.0 };
@@ -292,6 +304,30 @@ mod tests {
         let result = aggregate_horizon(&[trade], Horizon::FiveMinutes, 100_000, 1);
         assert!(!result.ready);
         assert!(result.reasons.iter().any(|reason| reason.contains("order-book")));
+    }
+
+    #[test]
+    fn unknown_trade_sides_do_not_dilute_signed_flow_or_readiness() {
+        let mut buy = event(100_000, "trade");
+        buy.size = Some(2.0);
+        buy.side = Some("buy".into());
+        let mut unknown = event(110_000, "trade");
+        unknown.size = Some(100.0);
+        unknown.side = Some("unknown".into());
+        let mut book = event(120_000, "book");
+        book.bid_size = Some(2.0);
+        book.ask_size = Some(1.0);
+
+        let result = aggregate_horizon(
+            &[buy, unknown, book],
+            Horizon::OneHour,
+            130_000,
+            2,
+        );
+        assert_eq!(result.observation.ofi, 1.0);
+        assert_eq!(result.trade_count, 1);
+        assert!(!result.ready);
+        assert!(result.reasons.iter().any(|reason| reason.contains("requires at least 2 events") == false));
     }
 
     #[test]
