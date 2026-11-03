@@ -5,6 +5,20 @@ import { WATCHLIST } from "@qoin/core";
 type PrimaryTab = "archive" | "feed";
 type AssetClass = "All" | "Forex" | "Crypto" | "Stocks" | "Options";
 
+const PORTFOLIO_STORAGE_KEY = "qoin.portfolio.v1";
+
+function readSavedBasket(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(PORTFOLIO_STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(stored)) return [];
+    const allowed = new Set<string>(WATCHLIST);
+    return [...new Set(stored.filter((item): item is string => typeof item === "string" && allowed.has(item)))];
+  } catch {
+    return [];
+  }
+}
+
 const assets = WATCHLIST.map((symbol) => ({
   symbol,
   name: symbol.split("/")[0] === "BTC" ? "Bitcoin" :
@@ -20,7 +34,7 @@ function App() {
   const [filter, setFilter] = useState<AssetClass>("All");
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [basket, setBasket] = useState<string[]>([]);
+  const [basket, setBasket] = useState<string[]>(readSavedBasket);
   const [health, setHealth] = useState<QoinHealth | null>(null);
 
   useEffect(() => {
@@ -145,7 +159,7 @@ function App() {
               <div><p className="eyebrow">YOUR ASSET BASKET</p><h2>My portfolio</h2></div>
               <button className="icon-button" onClick={() => setPortfolioOpen(false)} aria-label="Close portfolio">×</button>
             </div>
-            <p className="drawer-copy">Choose the instruments you want Qoin to evaluate. The algorithms manage the authorized portfolio process; this basket does not place orders.</p>
+            <p className="drawer-copy">Choose the instruments you want Qoin to evaluate. Your basket is saved on this device; account synchronization will be added with authenticated portfolio storage. This basket does not place orders.</p>
             {basket.length ? (
               <div className="drawer-assets">
                 {basket.map((symbol) => {
