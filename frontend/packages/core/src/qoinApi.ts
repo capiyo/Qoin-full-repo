@@ -38,9 +38,12 @@ function getBaseUrl(): string {
   // Physical devices need a reachable host configured for the development environment.
   const runtime = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };
+    __QOIN_API_URL__?: string;
   };
   const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
+  const configured = runtime.__QOIN_API_URL__
+    ?? env?.EXPO_PUBLIC_QOIN_API_URL
+    ?? env?.VITE_QOIN_API_URL;
   return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
