@@ -1,7 +1,7 @@
 name: Qoin Drogon gateway
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map]
+    branches: [main, feat/mongodb-edge-strategy-map, feat/funspot-inspired-archive-feed-portfolio-ui]
     paths:
       - "backend/cpp-drogon/**"
       - ".github/workflows/drogon-gateway.yml"
