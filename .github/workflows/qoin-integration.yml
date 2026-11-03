@@ -92,3 +92,6 @@ jobs:
           SIGNAL='{"observation":{"ofi":0.2,"liquidity":0.4,"volatility":0.1,"funding":0.0,"open_interest_change":0.1,"liquidation_pressure":0.0,"basis":0.0},"has_open_position":false}'
           curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data "$SIGNAL" >/tmp/signal.json
           jq -e '.decision != null and .config_version != ""' /tmp/signal.json
+          PORTFOLIO_STATUS=$(curl -sS -o /tmp/portfolio.json -w "%{http_code}" http://127.0.0.1:8080/v1/portfolio)
+          test "$PORTFOLIO_STATUS" = "503"
+          jq -e '.error == "Firebase authentication is not configured"' /tmp/portfolio.json
