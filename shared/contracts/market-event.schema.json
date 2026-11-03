@@ -30,7 +30,8 @@
         "book",
         "funding",
         "open_interest",
-        "liquidation"
+        "liquidation",
+        "basis"
       ]
     },
     "ts_ms": {
@@ -114,6 +115,10 @@
         "short",
         null
       ]
+    },
+    "basis": {
+      "type": "number",
+      "description": "Optional normalized spot-perpetual basis observation"
     }
   }
 }
