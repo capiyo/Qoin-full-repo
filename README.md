@@ -1,6 +1,6 @@
-# Qoin — Market-Force Trading Research Monorepo
+# Qoin — Market-Force Research Monorepo
 
-Qoin is a multi-client research and paper-trading system. The repository is explicitly divided into `frontend/` and `backend/`. React web and React Native share TypeScript packages. Rust/Axum owns event ingestion, market state, strategy-map and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The strategy is a research baseline, not a validated or proven profitable edge.
+Qoin is a multi-client market research and paper-trading system. The repository is divided into `frontend/` and `backend/`. React web and React Native share TypeScript packages. Rust/Axum owns market-event ingestion, state estimation, strategy-map validation and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The current strategy is a research baseline, not a validated or proven profitable edge.
 
 ## Repository structure
 
@@ -17,7 +17,6 @@ Qoin-full-repo/
 │   │   └── crates/qoin-vector-engine/
 │   ├── rust-axum-api/           # Separate compatibility/research API
 │   ├── cpp-drogon/              # HTTP gateway; forwards to Axum
-│   ├── jepa-world-model/        # JEPA-inspired research service
 │   ├── config/                  # Backend strategy configuration examples
 │   ├── research/                # Python research/reference models
 │   └── tests/                   # Backend/reference-model tests
@@ -32,21 +31,20 @@ Qoin-full-repo/
 
 ## Service boundaries
 
-1. Frontend web and mobile call the gateway/API contracts and never implement trading decisions.
+1. Frontend web and mobile call gateway/API contracts and never implement trading decisions.
 2. C++ Drogon is the HTTP gateway and forwards market events and queries to Axum. It must not duplicate strategy, vector, or risk logic.
-3. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
+3. Rust Axum owns event ingestion, state estimation, vector decisions and strategy state.
 4. MongoDB is the durable persistence layer.
-5. The JEPA world model is research-only; it cannot override Axum decision authority or bypass risk controls.
+5. The active architecture uses the deterministic vector/strategy path only; no JEPA/world-model service or inference path is part of this repository branch.
 
 The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
 
-## Version tracks
+## Version track
 
 - [Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)
-- [Version 2 — JEPA world model](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)
 - [Version map](docs/versions/README.md)
 
-Both versions remain paper-only until every gate in [docs/RISK_POLICY.md](docs/RISK_POLICY.md) is independently verified and live trading is explicitly approved in writing.
+The system remains paper/research-only until every gate in [docs/RISK_POLICY.md](docs/RISK_POLICY.md) is independently verified and live trading is explicitly approved in writing.
 
 ## Requirements
 
