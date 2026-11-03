@@ -1,6 +1,10 @@
-# Qoin — Market-Force Research Monorepo
+# Qoin — Quantitative Investment Intelligence
 
-Qoin is a multi-client market research and paper-trading system. The repository is divided into `frontend/` and `backend/`. React web and React Native share TypeScript packages. Rust/Axum owns market-event ingestion, state estimation, strategy-map validation and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The current strategy is a research baseline, not a validated or proven profitable edge.
+Qoin is a multi-client investment-intelligence platform designed to help ordinary people build and understand diversified asset baskets without becoming retail traders. Customers explore the Archive, follow the Feed, state their own investment goals and contribution plans, and see transparent research about their selected instruments. Qoin's deterministic vector engine evaluates market conditions; a research signal is not an order, a portfolio allocation or a promise of returns. Customer assets, regulated advice, asset management, custody and any execution must remain with appropriately licensed institutions. Qoin does not hold customer investment funds or enable live order execution.
+
+The repository is divided into `frontend/` and `backend/`. React web and React Native share TypeScript packages. Rust/Axum owns market-event ingestion, state estimation, strategy-map validation and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The current strategy is a research baseline, not a validated or proven profitable edge.
+
+See [the investment platform direction](docs/INVESTMENT_PLATFORM.md) for product principles, user-owned planning inputs, regulatory boundaries and implementation gaps.
 
 ## Repository structure
 
