@@ -722,3 +722,44 @@ async fn main(){
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
 }
+
+#[cfg(test)]
+mod market_stream_tests {
+    use super::*;
+
+    #[test]
+    fn websocket_symbol_subscriptions_are_trimmed_uppercase_and_deduplicated() {
+        let symbols = subscription_set(None, Some(" btcusdt, ETHUSDT,btcusdt, ,solusdt ".into()));
+        assert_eq!(symbols.len(), 3);
+        assert!(symbols.contains("BTCUSDT"));
+        assert!(symbols.contains("ETHUSDT"));
+        assert!(symbols.contains("SOLUSDT"));
+    }
+
+    #[test]
+    fn stream_numbers_accept_provider_string_and_numeric_values() {
+        assert_eq!(stream_number(Some(&serde_json::json!("123.45"))), Some(123.45));
+        assert_eq!(stream_number(Some(&serde_json::json!(0.25))), Some(0.25));
+        assert_eq!(stream_number(Some(&serde_json::json!("not-a-number"))), None);
+        assert_eq!(stream_number(None), None);
+    }
+
+    #[test]
+    fn market_event_validation_rejects_non_finite_and_crossed_book_data() {
+        let base = MarketEvent {
+            event_id: "test-1".into(), venue: "test".into(), symbol: "BTCUSDT".into(),
+            event_type: "trade".into(), ts_ms: 1_700_000_000_000, price: Some(100.0),
+            size: Some(1.0), side: Some("buy".into()), bid: None, ask: None,
+            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,
+            liquidation_side: None,
+        };
+        assert!(validate_event(&base).is_ok());
+        let mut non_finite = base.clone();
+        non_finite.price = Some(f64::NAN);
+        assert!(validate_event(&non_finite).is_err());
+        let mut crossed = base;
+        crossed.bid = Some(101.0);
+        crossed.ask = Some(100.0);
+        assert!(validate_event(&crossed).is_err());
+    }
+}
