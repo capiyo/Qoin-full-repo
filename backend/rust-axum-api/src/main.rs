@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use qoin_vector_engine::{decide, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::{decide, Decision, EngineConfig, ForceObservation, Signal};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::{Arc, Mutex}};
 use tower_http::cors::CorsLayer;
@@ -106,7 +106,13 @@ async fn signal(
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     if let Ok(mut cycle) = state.operating_cycle.lock() {
         cycle.record_observation();
-        cycle.record_signal_evaluation();
+        let decision_name = match result.decision {
+            Decision::Buy => "buy",
+            Decision::Sell => "sell",
+            Decision::Close => "close",
+            Decision::Wait => "wait",
+        };
+        cycle.record_signal_evaluation(result.score, result.alignment, decision_name);
     }
 
     // A signal is not an order. No exchange adapter is called here.
