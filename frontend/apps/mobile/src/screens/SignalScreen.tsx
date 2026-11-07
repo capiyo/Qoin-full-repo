@@ -50,7 +50,7 @@ export function SignalScreen() {
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
-  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: "24", warmup_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
@@ -84,7 +84,7 @@ export function SignalScreen() {
     setBacktestBusy(true); setBacktestError(""); setBacktest(null);
     const end = Date.now();
     try {
-      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
+      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, warmup_hours: Number(backtestForm.warmup_hours), initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
     } catch (err) { setBacktestError(err instanceof Error ? err.message : "Paper replay failed"); }
     finally { setBacktestBusy(false); }
   }
@@ -160,6 +160,7 @@ export function SignalScreen() {
           {([
             ["symbol", "Symbol"],
             ["lookback_hours", "Lookback hours"],
+            ["warmup_hours", "Warmup history hours"],
             ["initial_cash", "Starting capital"],
             ["notional_per_trade", "Notional per entry"],
             ["fee_bps", "Fee bps / side"],
@@ -188,6 +189,7 @@ export function SignalScreen() {
               ["Closed trades", String(backtest.executed_exits)],
               ["Fees paid", backtest.fees_paid.toFixed(2)],
               ["Events / signals", backtest.event_count + " / " + backtest.signal_count],
+              ["Warmup events", String(backtest.warmup_event_count)],
               ["Skipped entries", String(backtest.skipped_entries)],
             ] as const).map(([label, value]) => (
               <View key={label} style={styles.metricRow}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>
