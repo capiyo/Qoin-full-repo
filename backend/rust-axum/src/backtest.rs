@@ -18,6 +18,8 @@ pub struct BacktestRequest {
     pub warmup_hours: u64,
     pub initial_cash: f64,
     pub notional_per_trade: f64,
+    #[serde(default = "default_reinvest_profits")]
+    pub reinvest_profits: bool,
     #[serde(default = "default_fee_bps")]
     pub fee_bps: f64,
     #[serde(default = "default_slippage_bps")]
@@ -25,6 +27,7 @@ pub struct BacktestRequest {
     #[serde(default = "default_max_events")]
     pub max_events: usize,
 }
+fn default_reinvest_profits() -> bool { true }
 fn default_fee_bps() -> f64 { 10.0 }
 fn default_slippage_bps() -> f64 { 5.0 }
 
@@ -100,6 +103,7 @@ pub struct BacktestReport {
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
     pub initial_cash: f64,
+    pub reinvest_profits: bool,
     pub final_equity: f64,
     pub realized_pnl: f64,
     pub unrealized_pnl: f64,
@@ -196,7 +200,12 @@ pub fn run_backtest(
         if decision.action == "buy" && position.is_none() {
             if let Some((_bid, ask)) = fresh_quote {
                 let entry_price = ask * (1.0 + request.slippage_bps / 10_000.0);
-                let quantity = request.notional_per_trade / entry_price;
+                let target_notional = if request.reinvest_profits {
+                    request.notional_per_trade * (cash / request.initial_cash)
+                } else {
+                    request.notional_per_trade
+                };
+                let quantity = target_notional / entry_price;
                 let fee = quantity * entry_price * request.fee_bps / 10_000.0;
                 let debit = quantity * entry_price + fee;
                 if debit <= cash {
@@ -284,14 +293,14 @@ pub fn run_backtest(
     Ok(BacktestReport {
         run_id, symbol: request.symbol.clone(), venue: request.venue.clone(), strategy_version: strategy.version.clone(),
         start_ts_ms: request.start_ts_ms, end_ts_ms: request.end_ts_ms,
-        initial_cash: request.initial_cash, final_equity, realized_pnl, unrealized_pnl,
+        initial_cash: request.initial_cash, reinvest_profits: request.reinvest_profits, final_equity, realized_pnl, unrealized_pnl,
         net_pnl, return_pct: net_pnl / request.initial_cash * 100.0,
         max_drawdown_pct: max_drawdown * 100.0, event_count: ordered.iter().filter(|e|
             e.symbol == request.symbol && e.venue == request.venue && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
         warmup_event_count, signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
         skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
         profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
-        fees_paid, assumptions: "Long-only; one position at a time; fixed cash notional per entry; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
+        fees_paid, assumptions: "Long-only; one position at a time; starting notional per entry is scaled in proportion to current cash when reinvest_profits is enabled, so gains and losses compound; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
         open_position, trades, decisions,
     })
 }
@@ -302,14 +311,14 @@ mod tests {
     #[test]
     fn rejects_future_or_invalid_cost_inputs() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), start_ts_ms: 10, end_ts_ms: 20,
-            warmup_hours: 24, initial_cash: 1000.0, notional_per_trade: 100.0, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
+            warmup_hours: 24, initial_cash: 1000.0, notional_per_trade: 100.0, reinvest_profits: true, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
         assert!(request.validate().is_err());
     }
 
     #[test]
     fn empty_history_returns_flat_equity_without_inventing_trades() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), start_ts_ms: 10, end_ts_ms: 20,
-            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
         let report = run_backtest(&request, &[], &EdgeStrategy::baseline(), "empty-run".into()).unwrap();
         assert_eq!(report.event_count, 0);
         assert_eq!(report.final_equity, 20_000.0);
