@@ -104,7 +104,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
         {selected ? <View style={styles.modalShade}><View style={styles.modalCard}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>INSTRUMENT SPACE</Text><Text style={styles.modalTitle}>{selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
-            <Text style={styles.mapTitle}>Force map</Text><Text style={styles.mapCopy}>A preview of interacting market dimensions.</Text>
+            <Text style={styles.mapTitle}>Force map</Text><Text style={styles.mapCopy}>Persisted Axum decision vector on bullish and bearish axes.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
@@ -113,9 +113,9 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 <Line x1="10" y1="8" x2="10" y2="90" stroke="#CBD5E1" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#CBD5E1" strokeWidth=".7" />
                 {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#2867DC" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#2867DC" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
                 <Circle cx="10" cy="90" r="2" fill="#94A3B8" />
-              </Svg>        </Svg>
+              </Svg>
             </View>
-            <View style={styles.legend}>{[["#2867DC", "Order flow"], ["#60A5FA", "Liquidity"], ["#8B5CF6", "Volatility"], ["#0F9F91", "Positioning"]].map(([color, label]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: color }]} /><Text style={styles.legendText}>{label}</Text></View>)}</View>
+            <Text style={styles.mapCopy}>Horizontal: bullish component · Vertical: bearish component</Text>
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
               <>
                 <View style={styles.engineMetrics}>
@@ -138,7 +138,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 <Text style={styles.disclaimer}>{vector.reason || "Engine research output. Not an order or a profitability claim."}</Text>
               </>
             ) : <Text style={styles.disclaimer}>{vectorError || "No persisted engine vector is available for this symbol yet."}</Text>}
-            <Text style={styles.disclaimer}>Illustrative coordinates only. Live observations and engine-produced embeddings are not connected to this preview. Not a trading recommendation.</Text>
+            <Text style={styles.disclaimer}>The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</Text>
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
         </View></View> : null}
