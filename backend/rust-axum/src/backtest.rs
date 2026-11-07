@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn warmup_updates_state_but_never_counts_as_a_trade_period_signal() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "venue-a".into(), start_ts_ms: 20_000, end_ts_ms: 30_000,
-            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
         let event = MarketEvent {
             event_id: "warmup-1".into(), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
             event_type: "trade".into(), ts_ms: 10_000, price: Some(100.0), size: Some(1.0),
