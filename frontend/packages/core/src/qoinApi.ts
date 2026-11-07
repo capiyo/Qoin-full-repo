@@ -115,9 +115,9 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
 
 export type QoinMarketState = {
   symbol: string; event_count: number; last_event_ts_ms?: number | null; last_price?: number | null;
-  spread_bps?: number | null; order_flow_imbalance: number; total_trade_size: number;
+  spread_bps?: number | null; signed_flow: number; order_flow_imbalance: number; total_trade_size: number;
   event_intensity: number; ewma_abs_return: number; funding_rate?: number | null;
-  open_interest?: number | null; liquidation_events: number; state_quality: number;
+  open_interest?: number | null; liquidation_events: number; last_liquidation_side?: string | null; state_quality: number;
 };
 export type QoinStreamUpdate = {
   type: string; symbol?: string;
