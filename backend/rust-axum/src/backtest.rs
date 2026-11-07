@@ -200,11 +200,14 @@ pub fn run_backtest(
         if decision.action == "buy" && position.is_none() {
             if let Some((_bid, ask)) = fresh_quote {
                 let entry_price = ask * (1.0 + request.slippage_bps / 10_000.0);
-                let target_notional = if request.reinvest_profits {
+                let compounded_notional = if request.reinvest_profits {
                     request.notional_per_trade * (cash / request.initial_cash)
                 } else {
                     request.notional_per_trade
                 };
+                let target_notional = compounded_notional.min(
+                    cash / (1.0 + request.fee_bps / 10_000.0)
+                );
                 let quantity = target_notional / entry_price;
                 let fee = quantity * entry_price * request.fee_bps / 10_000.0;
                 let debit = quantity * entry_price + fee;
