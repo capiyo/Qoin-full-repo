@@ -402,17 +402,23 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let cycle_phase = {
         let mut cycle = s.active_cycle.lock().await;
+        let phase = cycle.snapshot().phase;
         if cycle.is_active() {
-            cycle.record_observation();
-            let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
-            let signed_alignment = (decision.angle_radians * 2.0).cos();
-            cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action, &decision.features, &decision.attention, &decision.attended_features, &strategy.bullish_weights, &strategy.bearish_weights);
-            if let Err(error) = persist_operating_cycle(&s, &cycle).await {
-                tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-                    "error":"cycle Mirror persistence failed", "event_persisted":true,
-                    "state_persisted":true, "decision_persisted":true, "event_id":event.event_id
-                })));
+            if phase == "observation" {
+                cycle.record_observation();
+            } else if phase == "weight_evaluation" {
+                let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
+                let signed_alignment = (decision.angle_radians * 2.0).cos();
+                cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action, &decision.features, &decision.attention, &decision.attended_features, &strategy.bullish_weights, &strategy.bearish_weights);
+            }
+            if phase == "observation" || phase == "weight_evaluation" {
+                if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+                    tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                        "error":"cycle Mirror persistence failed", "event_persisted":true,
+                        "state_persisted":true, "decision_persisted":true, "event_id":event.event_id
+                    })));
+                }
             }
         }
         cycle.snapshot().phase
