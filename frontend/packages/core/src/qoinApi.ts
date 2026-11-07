@@ -1,3 +1,5 @@
+declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
+
 export type MarketForceObservation = {
   ofi: number;
   liquidity: number;
@@ -70,7 +72,8 @@ function getBaseUrl(): string {
   };
   const env = runtime.process?.env;
   const location = (globalThis as typeof globalThis & { location?: { protocol?: string; host?: string } }).location;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
+  const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_API_URL : undefined;
+  const configured = expoConfigured ?? env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
   if (configured) return configured.replace(/\/$/, "");
   if (location?.host) return (location.protocol === "https:" ? "https://" : "http://") + location.host;
   return "http://127.0.0.1:8080";
@@ -135,7 +138,8 @@ export type QoinVectorHistory = {
 function getWebSocketBaseUrl(): string {
   const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } };
   const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_WS_URL ?? env?.VITE_QOIN_WS_URL;
+  const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_WS_URL : undefined;
+  const configured = expoConfigured ?? env?.EXPO_PUBLIC_QOIN_WS_URL ?? env?.VITE_QOIN_WS_URL;
   if (configured) return configured.replace(/\/$/, "");
   return getBaseUrl().replace(/^https:/, "wss:").replace(/^http:/, "ws:");
 }
