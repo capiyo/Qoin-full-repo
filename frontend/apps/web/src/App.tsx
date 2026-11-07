@@ -130,7 +130,7 @@ export default function App() {
           <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
           <div className="filter-row">{["All", "Crypto", "Equities", "FX"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
           {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
-          <div className="explore-note"><strong>Discovery feed</strong><p>News, macro events and instrument universes will appear here as their data sources are connected. No simulated headlines are shown.</p></div>
+          <div className="explore-note"><strong>News & events</strong><p>Connect a sourced news and macro-events feed to populate this section. No simulated headlines are shown.</p></div>
         </section>
       )}
 
