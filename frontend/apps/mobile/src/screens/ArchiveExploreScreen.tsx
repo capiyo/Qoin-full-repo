@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinCalendar, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -58,6 +58,9 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
+  const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
+  const [showRawEvents, setShowRawEvents] = useState(false);
+  const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
   const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
@@ -138,34 +141,58 @@ export function ArchiveExploreScreen({ mode }: Props) {
     return () => { current = false; };
   }, [selected?.engineSymbol]);
   useEffect(() => {
-    if (!selected) {
-      setVectorHistory([]); setMarketState(null); setLastEvent(null); setStreamStatus("disconnected");
-      return;
-    }
+    if (!selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
     let active = true;
     setVectorHistory([]);
-    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => {
-      if (active) setVectorHistory(result.items);
-    }).catch(() => { if (active) setVectorHistory([]); });
-    const unsubscribe = subscribeQoinStream([selected.engineSymbol], (update) => {
+    setRawEvents([]);
+    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    getQoinEvents(selected.engineSymbol, 200).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [selected?.engineSymbol]);
+
+  useEffect(() => {
+    const symbols = items.map((item) => item.engineSymbol);
+    if (!symbols.length) return;
+    let active = true;
+    const unsubscribe = subscribeQoinStream(symbols, (update) => {
       if (!active) return;
-      if (update.type === "market.update" && update.symbol?.toUpperCase() === selected.engineSymbol.toUpperCase()) {
-        if (update.state) setMarketState(update.state);
-        if (update.event) setLastEvent(update.event);
-        if (update.decision) {
-          setVector(update.decision);
-          setVectorHistory((current) => [...current.slice(-119), {
-            symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
-            magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
-            action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
-            stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
-          }]);
+      if (update.type === "market.update" && update.symbol) {
+        const symbol = update.symbol.toUpperCase();
+        setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
+        if (selected?.engineSymbol.toUpperCase() === symbol) {
+          if (update.state) setMarketState(update.state);
+          if (update.event) {
+            setLastEvent(update.event);
+            setRawEvents((current) => [{
+              ...update.event,
+              event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()),
+              venue: update.event?.venue || "stream", symbol,
+              event_type: update.event?.event_type || "unknown",
+              ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now(),
+            } as QoinMarketEvent, ...current].slice(0, 200));
+          }
+          if (update.decision) {
+            setVector(update.decision);
+            setVectorHistory((current) => [...current.slice(-119), {
+              symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
+              magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
+              action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
+              stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
+            }]);
+          }
         }
       }
       if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
     }, setStreamStatus);
     return () => { active = false; unsubscribe(); };
-  }, [selected?.engineSymbol]);
+  }, [items, selected?.engineSymbol]);
+
+  useEffect(() => {
+    const current = selected ? liveBySymbol[selected.engineSymbol.toUpperCase()] : undefined;
+    setMarketState(current?.state || null);
+    setLastEvent(current?.event || null);
+  }, [selected?.engineSymbol, liveBySymbol]);
+
   const bullish = vector?.decision_vector?.[0] ?? 0;
   const bearish = vector?.decision_vector?.[1] ?? 0;
   const vectorPoints = [...vectorHistory, ...(vector?.decision_vector ? [{ decision_vector: vector.decision_vector } as QoinVectorHistory] : [])];
@@ -195,7 +222,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
               <Text style={styles.arrow}>↗</Text>
             </Pressable>
-            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider}</Text>
+            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO SIGNAL"}</Text></View>
             {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
@@ -297,6 +324,15 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 <Text style={styles.disclaimer}>{vector.reason || "Engine research output. Not an order or a profitability claim."}</Text>
               </>
             ) : <Text style={styles.disclaimer}>{vectorError || "No persisted engine vector is available for this symbol yet."}</Text>}
+            <View style={styles.rawTape}>
+              <Pressable style={styles.rawTapeToggle} onPress={() => setShowRawEvents((value) => !value)}>
+                <Text style={styles.attentionTitle}>Raw event tape · {rawEvents.length} observations</Text><Text style={styles.attentionCaption}>{showRawEvents ? "Hide" : "Show"}</Text>
+              </Pressable>
+              {showRawEvents ? rawEvents.slice(0,100).map((event) => <View key={event.event_id} style={styles.rawEvent}>
+                <Text style={styles.newsMeta}>{event.event_type.toUpperCase()} · {new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</Text>
+                <Text style={styles.newsHeadline}>{JSON.stringify(event)}</Text>
+              </View>) : null}
+            </View>
             <Text style={styles.disclaimer}>The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</Text>
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
