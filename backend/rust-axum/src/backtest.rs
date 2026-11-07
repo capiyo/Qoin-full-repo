@@ -5,12 +5,15 @@ use crate::{apply, MarketEvent, SymbolState};
 use crate::edge_strategy::EdgeStrategy;
 
 fn default_max_events() -> usize { 100_000 }
+fn default_warmup_hours() -> u64 { 24 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BacktestRequest {
     pub symbol: String,
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
+    #[serde(default = "default_warmup_hours")]
+    pub warmup_hours: u64,
     pub initial_cash: f64,
     pub notional_per_trade: f64,
     #[serde(default = "default_fee_bps")]
@@ -28,6 +31,9 @@ impl BacktestRequest {
         if self.symbol.trim().is_empty() { return Err("symbol is required".into()); }
         if self.start_ts_ms <= 0 || self.end_ts_ms <= self.start_ts_ms {
             return Err("end_ts_ms must be greater than a positive start_ts_ms".into());
+        }
+        if self.warmup_hours == 0 || self.warmup_hours > 168 {
+            return Err("warmup_hours must be between 1 and 168".into());
         }
         if !self.initial_cash.is_finite() || self.initial_cash <= 0.0 {
             return Err("initial_cash must be finite and positive".into());
@@ -91,6 +97,7 @@ pub struct BacktestReport {
     pub return_pct: f64,
     pub max_drawdown_pct: f64,
     pub event_count: usize,
+    pub warmup_event_count: usize,
     pub signal_count: usize,
     pub buy_signals: usize,
     pub sell_signals: usize,
@@ -143,11 +150,17 @@ pub fn run_backtest(
     let mut max_drawdown = 0.0_f64;
     let mut last_bid: Option<f64> = None;
 
+    let mut warmup_event_count = 0usize;
     for (index, event) in ordered.iter().enumerate() {
-        if event.symbol != request.symbol || event.ts_ms < request.start_ts_ms || event.ts_ms > request.end_ts_ms {
+        let warmup_start = request.start_ts_ms.saturating_sub((request.warmup_hours as i64).saturating_mul(3_600_000));
+        if event.symbol != request.symbol || event.ts_ms < warmup_start || event.ts_ms > request.end_ts_ms {
             continue;
         }
         apply(&mut state, event);
+        if event.ts_ms < request.start_ts_ms {
+            warmup_event_count += 1;
+            continue;
+        }
         if let (Some(bid), Some(ask)) = (event.bid, event.ask) {
             if bid.is_finite() && ask.is_finite() && bid > 0.0 && ask >= bid {
                 last_bid = Some(bid);
@@ -262,7 +275,7 @@ pub fn run_backtest(
         net_pnl, return_pct: net_pnl / request.initial_cash * 100.0,
         max_drawdown_pct: max_drawdown * 100.0, event_count: ordered.iter().filter(|e|
             e.symbol == request.symbol && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
-        signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
+        warmup_event_count, signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
         skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
         profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
         fees_paid, assumptions: "Long-only; one position at a time; fixed cash notional per entry; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
@@ -276,14 +289,14 @@ mod tests {
     #[test]
     fn rejects_future_or_invalid_cost_inputs() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), start_ts_ms: 10, end_ts_ms: 20,
-            initial_cash: 1000.0, notional_per_trade: 100.0, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
+            warmup_hours: 24, initial_cash: 1000.0, notional_per_trade: 100.0, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
         assert!(request.validate().is_err());
     }
 
     #[test]
     fn empty_history_returns_flat_equity_without_inventing_trades() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), start_ts_ms: 10, end_ts_ms: 20,
-            initial_cash: 20_000.0, notional_per_trade: 2_000.0, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
         let report = run_backtest(&request, &[], &EdgeStrategy::baseline(), "empty-run".into()).unwrap();
         assert_eq!(report.event_count, 0);
         assert_eq!(report.final_equity, 20_000.0);
