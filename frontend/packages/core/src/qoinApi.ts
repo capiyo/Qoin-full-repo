@@ -117,6 +117,7 @@ export type PaperBacktestRequest = {
   symbol: string;
   start_ts_ms: number;
   end_ts_ms: number;
+  warmup_hours?: number;
   initial_cash: number;
   notional_per_trade: number;
   fee_bps: number;
@@ -163,6 +164,7 @@ export type PaperBacktestReport = {
   return_pct: number;
   max_drawdown_pct: number;
   event_count: number;
+  warmup_event_count: number;
   signal_count: number;
   buy_signals: number;
   sell_signals: number;
