@@ -18,6 +18,7 @@ use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
 mod algorithm_catalogue;
+mod algorithm_entitlements;
 mod edge_strategy;
 mod jepa;
 mod vector_engine;
