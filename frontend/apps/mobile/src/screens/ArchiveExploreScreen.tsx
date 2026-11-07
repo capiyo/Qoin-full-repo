@@ -24,6 +24,7 @@ const seed: Instrument[] = [
 ];
 
 type Props = { mode: "Archive" | "Explore" };
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
 export function ArchiveExploreScreen({ mode }: Props) {
   const [items, setItems] = useState(seed);
@@ -123,6 +124,8 @@ export function ArchiveExploreScreen({ mode }: Props) {
                   <View><Text style={styles.engineLabel}>Magnitude</Text><Text style={styles.engineValue}>{vector.magnitude?.toFixed(3) ?? "—"}</Text></View>
                   <View><Text style={styles.engineLabel}>Angle</Text><Text style={styles.engineValue}>{vector.angle_radians?.toFixed(3) ?? "—"} rad</Text></View>
                   <View><Text style={styles.engineLabel}>Strategy</Text><Text style={styles.engineValue}>{vector.strategy_version || "—"}</Text></View>
+                  <View><Text style={styles.engineLabel}>Bullish component</Text><Text style={styles.engineValue}>{vector.decision_vector?.[0].toFixed(3) ?? "—"}</Text></View>
+                  <View><Text style={styles.engineLabel}>Bearish component</Text><Text style={styles.engineValue}>{vector.decision_vector?.[1].toFixed(3) ?? "—"}</Text></View>
                 </View>
                 {QOIN_FEATURE_NAMES.map((name, index) => {
                   const raw = vector.features?.[name];
@@ -135,6 +138,24 @@ export function ArchiveExploreScreen({ mode }: Props) {
                     {strongest >= 0 ? <Text style={styles.attentionHint}>Strongest attention: {QOIN_FEATURE_NAMES[strongest]} ({weights[strongest].toFixed(2)})</Text> : null}
                   </View>;
                 })}
+                <View style={styles.attentionPanel}>
+                  <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Attention matrix</Text><Text style={styles.attentionCaption}>Row → column weights</Text></View>
+                  <View style={styles.attentionRow}>
+                    <Text style={styles.attentionRowLabel} />
+                    {QOIN_FEATURE_SHORT_NAMES.map((name) => <Text key={`head-${name}`} style={styles.attentionAxis}>{name}</Text>)}
+                  </View>
+                  {QOIN_FEATURE_NAMES.map((rowName, rowIndex) => (
+                    <View key={rowName} style={styles.attentionRow}>
+                      <Text style={styles.attentionRowLabel}>{QOIN_FEATURE_SHORT_NAMES[rowIndex]}</Text>
+                      {QOIN_FEATURE_NAMES.map((columnName, columnIndex) => {
+                        const weight = vector.attention?.[rowIndex]?.[columnIndex] ?? 0;
+                        return <View key={columnName} style={[styles.attentionCell, { backgroundColor: `rgba(40,103,220,${0.08 + weight * 0.82})` }]}>
+                          <Text style={[styles.attentionValue, { color: weight > 0.55 ? "#FFFFFF" : "#2B4160" }]}>{weight.toFixed(2)}</Text>
+                        </View>;
+                      })}
+                    </View>
+                  ))}
+                </View>
                 <Text style={styles.disclaimer}>{vector.reason || "Engine research output. Not an order or a profitability claim."}</Text>
               </>
             ) : <Text style={styles.disclaimer}>{vectorError || "No persisted engine vector is available for this symbol yet."}</Text>}
@@ -210,6 +231,15 @@ const styles = StyleSheet.create({
   engineLabel: { color: "#8996A8", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
   engineValue: { color: "#2B4160", fontSize: 12, fontWeight: "700", marginTop: 4 },
   attentionHint: { color: "#9AA6B5", fontSize: 8, marginTop: 5 },
+  attentionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  attentionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 9 },
+  attentionTitle: { color: "#40536E", fontSize: 10, fontWeight: "700" },
+  attentionCaption: { color: "#9AA6B5", fontSize: 8 },
+  attentionRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 3 },
+  attentionRowLabel: { width: 36, color: "#8794A7", fontSize: 8, fontWeight: "700" },
+  attentionAxis: { flex: 1, color: "#8794A7", fontSize: 7, fontWeight: "700", textAlign: "center" },
+  attentionCell: { flex: 1, minWidth: 0, height: 25, borderRadius: 4, alignItems: "center", justifyContent: "center" },
+  attentionValue: { fontSize: 8, fontVariant: ["tabular-nums"] },
   disclaimer: { color: "#8996A7", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#F7F9FC", borderRadius: 9, marginTop: 15 },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, padding: 14, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#F0F3F8" },
