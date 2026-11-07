@@ -8,6 +8,7 @@ import {
   stopOperatingCycle,
   runPaperBacktest,
   getPaperBacktestHistory,
+  getPaperSession,
   type PaperBacktestReport,
   type PaperBacktestHistoryItem,
   type MarketForceObservation,
@@ -15,6 +16,8 @@ import {
   type QoinSignal,
   type OperatingCycleConfig,
   type OperatingCycleSnapshot,
+  type PaperAccountConfig,
+  type PaperSessionSnapshot,
 } from "@qoin/core";
 
 const initial: MarketForceObservation = {
@@ -44,9 +47,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);
-  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });
+  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper", paper_accounts: [] });
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleError, setCycleError] = useState("");
+  const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
+  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
@@ -57,7 +62,8 @@ export default function App() {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
     getPaperBacktestHistory().then((result) => setBacktestHistory(result.runs)).catch(() => setBacktestHistory([]));
     getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
-    const refreshCycle = () => getOperatingCycle().then(setCycle).catch(() => setCycle(null));
+    getPaperSession().then(setPaperSession).catch(() => setPaperSession(null));
+    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); };
     const timer = window.setInterval(refreshCycle, 5000);
     return () => window.clearInterval(timer);
   }, []);
@@ -69,16 +75,35 @@ export default function App() {
 
   async function saveCycle() {
     setCycleBusy(true); setCycleError("");
-    try { setCycle(await configureOperatingCycle(cycleConfig)); }
+    try { const snapshot = await configureOperatingCycle(cycleConfig); setCycle(snapshot); }
     catch (e) { setCycleError(e instanceof Error ? e.message : "Could not save cycle configuration"); }
     finally { setCycleBusy(false); }
   }
 
   async function runCycle(action: "start" | "stop") {
     setCycleBusy(true); setCycleError("");
-    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
+    try {
+      if (action === "start") { await configureOperatingCycle(cycleConfig); setCycle(await startOperatingCycle()); }
+      else setCycle(await stopOperatingCycle());
+      setPaperSession(await getPaperSession());
+    }
     catch (e) { setCycleError(e instanceof Error ? e.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
+  }
+
+  function addPaperAccount() {
+    const account = { ...paperAccountDraft, symbol: paperAccountDraft.symbol.trim().toUpperCase(), venue: paperAccountDraft.venue.trim(), quote_currency: paperAccountDraft.quote_currency.trim().toUpperCase() };
+    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash) {
+      setCycleError("Enter an exact symbol and venue, quote currency, positive starting capital, and a notional no greater than that capital."); return;
+    }
+    if (cycleConfig.paper_accounts.some((item) => item.symbol === account.symbol && item.venue === account.venue)) { setCycleError("That venue and symbol are already configured."); return; }
+    if (cycleConfig.paper_accounts.length >= 50) { setCycleError("A cycle supports at most 50 instruments."); return; }
+    setCycleConfig((current) => ({ ...current, paper_accounts: [...current.paper_accounts, account] }));
+    setCycleError("");
+  }
+
+  function removePaperAccount(symbol: string, venue: string) {
+    setCycleConfig((current) => ({ ...current, paper_accounts: current.paper_accounts.filter((item) => item.symbol !== symbol || item.venue !== venue) }));
   }
 
   function formatRemaining(seconds: number) {
@@ -132,6 +157,22 @@ export default function App() {
           <label className="cycle-field"><span>Weight evaluation (minutes)</span><input type="number" min="1" max="720" value={cycleConfig.weight_evaluation_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, weight_evaluation_minutes: Number(e.target.value) }))} /></label>
           <label className="cycle-field"><span>Paper session (minutes)</span><input type="number" min="1" max="1440" value={cycleConfig.session_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, session_minutes: Number(e.target.value) }))} /></label>
         </div>
+        <div className="cycle-diagnostics">
+          <strong>Paper accounts · {cycleConfig.paper_accounts.length}/50</strong>
+          <p className="hint">Each venue/symbol has its own isolated quote-currency ledger. Add one account per instrument; capital is not converted between KSh, USD, USDT or other currencies.</p>
+          <div className="cycle-grid">
+            <label className="cycle-field"><span>Symbol</span><input value={paperAccountDraft.symbol} onChange={(e) => setPaperAccountDraft(v => ({...v, symbol:e.target.value}))} placeholder="BTCUSDT" /></label>
+            <label className="cycle-field"><span>Exact venue ID</span><input value={paperAccountDraft.venue} onChange={(e) => setPaperAccountDraft(v => ({...v, venue:e.target.value}))} placeholder="Must match ingestion venue" /></label>
+            <label className="cycle-field"><span>Quote currency</span><input value={paperAccountDraft.quote_currency} onChange={(e) => setPaperAccountDraft(v => ({...v, quote_currency:e.target.value}))} placeholder="USDT / USD / KES" /></label>
+            <label className="cycle-field"><span>Starting capital</span><input type="number" min="0" value={paperAccountDraft.initial_cash} onChange={(e) => setPaperAccountDraft(v => ({...v, initial_cash:Number(e.target.value)}))} /></label>
+            <label className="cycle-field"><span>Notional per entry</span><input type="number" min="0" value={paperAccountDraft.notional_per_trade} onChange={(e) => setPaperAccountDraft(v => ({...v, notional_per_trade:Number(e.target.value)}))} /></label>
+            <label className="cycle-field"><span>Fee (bps per side)</span><input type="number" min="0" max="100" value={paperAccountDraft.fee_bps} onChange={(e) => setPaperAccountDraft(v => ({...v, fee_bps:Number(e.target.value)}))} /></label>
+            <label className="cycle-field"><span>Slippage (bps per side)</span><input type="number" min="0" max="100" value={paperAccountDraft.slippage_bps} onChange={(e) => setPaperAccountDraft(v => ({...v, slippage_bps:Number(e.target.value)}))} /></label>
+            <label className="cycle-check"><input type="checkbox" checked={paperAccountDraft.reinvest_profits} onChange={(e) => setPaperAccountDraft(v => ({...v, reinvest_profits:e.target.checked}))} /><span>Reinvest profits / compound notional</span></label>
+          </div>
+          <button className="secondary" onClick={addPaperAccount} disabled={!!cycle?.active}>Add instrument account</button>
+          {cycleConfig.paper_accounts.map((account) => <div className="cycle-meta" key={`${account.venue}:${account.symbol}`}><span><strong>{account.symbol}</strong> · {account.venue} · {account.quote_currency} {account.initial_cash.toLocaleString()} · entry {account.notional_per_trade.toLocaleString()}</span><button className="secondary" onClick={() => removePaperAccount(account.symbol, account.venue)} disabled={!!cycle?.active}>Remove</button></div>)}
+        </div>
         <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span><span>Mean |score|: <strong>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"}</strong></span><span>Mean alignment: <strong>{cycle?.mean_alignment?.toFixed(3) ?? "—"}</strong></span><span>BUY / SELL / WAIT: <strong>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</strong></span></div>
         {cycle && Object.keys(cycle.mean_feature_values).length > 0 && <div className="cycle-diagnostics">
           <strong>Mean feature activations</strong>
@@ -141,9 +182,15 @@ export default function App() {
           <strong>Mean attention matrix</strong>
           {cycle.mean_attention.map((row, index) => <span key={index}>Row {index + 1}: {row.map((value) => value.toFixed(3)).join(" · ")}</span>)}
         </div>}
-        <div className="cycle-actions"><button className="secondary" onClick={saveCycle} disabled={cycleBusy || !!cycle?.active}>Save schedule</button><button className="primary cycle-start" onClick={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active}>Start cycle</button><button className="secondary" onClick={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active}>Stop cycle</button></div>
+        <div className="cycle-actions"><button className="secondary" onClick={saveCycle} disabled={cycleBusy || !!cycle?.active}>Save schedule</button><button className="primary cycle-start" onClick={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active || (cycleConfig.mode === "paper" && cycleConfig.paper_accounts.length === 0)}>Start cycle</button><button className="secondary" onClick={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active}>Stop cycle</button></div>
         {cycleError && <p className="error" role="alert">{cycleError}</p>}
-        <p className="cycle-safety">Signal monitoring only: no simulated fills or orders yet · live execution disabled · five-minute observation is not a replacement for historical lookback.</p>
+        <p className="cycle-safety">Paper phase: forward event-driven fills are simulated only for configured venue/symbol accounts · no broker orders · live execution disabled.</p>
+      </section>
+      <section className="panel cycle-panel">
+        <div className="panel-heading"><div><p className="eyebrow">MIRROR / FORWARD PAPER SESSION</p><h2>Paper account ledger</h2></div><span className="counter">{paperSession?.active ? "SESSION ACTIVE" : "SESSION INACTIVE"}</span></div>
+        <p className="hint">Fills use the next valid observed two-sided quote, with configured fees and slippage. Each account is isolated by venue and quote currency.</p>
+        {paperSession?.accounts.length ? paperSession.accounts.map((account) => <div className="cycle-diagnostics" key={`${account.venue}:${account.symbol}`}><strong>{account.symbol} · {account.venue} · {account.quote_currency}</strong><div className="cycle-meta"><span>Equity <strong>{account.equity.toFixed(2)}</strong></span><span>Net P/L <strong>{account.net_pnl.toFixed(2)}</strong></span><span>Realized <strong>{account.realized_pnl.toFixed(2)}</strong></span><span>Fees <strong>{account.fees_paid.toFixed(2)}</strong></span><span>Max DD <strong>{account.max_drawdown_pct.toFixed(2)}%</strong></span><span>Entries / exits <strong>{account.entries} / {account.exits}</strong></span><span>Events <strong>{account.events}</strong></span><span>Position <strong>{account.has_open_position ? "OPEN" : "FLAT"}</strong></span></div></div>) : <p className="hint">No paper account activity yet. Configure accounts above, then start a paper cycle.</p>}
+        <p className="cycle-safety">SIMULATED EXECUTION ONLY · LIVE BROKER ROUTING DISABLED</p>
       </section>
       <section className="panel backtest-panel">
         <div className="panel-heading"><div><p className="eyebrow">MIRROR / CHRONOLOGICAL REPLAY</p><h2>Paper backtest</h2></div><span className="counter">NO LIVE ORDERS</span></div>
