@@ -310,8 +310,8 @@ export function SignalScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>{account.symbol} · {account.venue}</Text>
                 <Text style={styles.fieldHelp}>{account.quote_currency} · Equity {account.equity.toFixed(2)} · Net P/L {account.net_pnl.toFixed(2)}</Text>
-                <Text style={styles.fieldHelp}>Realized {account.realized_pnl.toFixed(2)} · Fees {account.fees_paid.toFixed(2)} · Max DD {account.max_drawdown_pct.toFixed(2)}%</Text>
-                <Text style={styles.fieldHelp}>Entries / exits {account.entries} / {account.exits} · Events {account.events} · {account.has_open_position ? "POSITION OPEN" : "FLAT"}</Text>
+                <Text style={styles.fieldHelp}>Realized {account.realized_pnl.toFixed(2)} · Unrealized {account.unrealized_pnl.toFixed(2)} · Fees {account.fees_paid.toFixed(2)} · Max DD {account.max_drawdown_pct.toFixed(2)}%</Text>
+                <Text style={styles.fieldHelp}>Entries / exits {account.entries} / {account.exits} · Events {account.events} · {account.has_open_position ? `POSITION OPEN · ${account.open_position?.quantity.toFixed(6)} @ ${account.open_position?.entry_price.toFixed(5)}` : "FLAT"}</Text>
               </View>
             </View>
           )) : <Text style={styles.fieldHelp}>No paper session activity yet. Add accounts and start a cycle.</Text>}
