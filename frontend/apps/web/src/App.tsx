@@ -99,7 +99,7 @@ export default function App() {
 
   function addPaperAccount() {
     const account = { ...paperAccountDraft, symbol: paperAccountDraft.symbol.trim().toUpperCase(), venue: paperAccountDraft.venue.trim(), quote_currency: paperAccountDraft.quote_currency.trim().toUpperCase() };
-    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash) {
+    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash || account.contract_multiplier <= 0 || account.quantity_step <= 0) {
       setCycleError("Enter an exact symbol and venue, quote currency, positive starting capital, and a notional no greater than that capital."); return;
     }
     if (cycleConfig.paper_accounts.some((item) => item.symbol === account.symbol && item.venue === account.venue)) { setCycleError("That venue and symbol are already configured."); return; }
