@@ -239,7 +239,7 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
-async fn get_events(State(s):State<AppState>,Query(q):State<HistoryQuery>)->impl IntoResponse {
+async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(100).clamp(1,1000);
     let options=FindOptions::builder().sort(doc!{"ts_ms":-1}).limit(limit).build();
@@ -598,9 +598,9 @@ async fn main(){
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
-    let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",post(ingest))
+    let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
-        .route("/internal/events",get(get_events).post(ingest)).route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
+        .route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
