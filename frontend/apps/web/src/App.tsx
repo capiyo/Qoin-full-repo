@@ -113,7 +113,7 @@ export default function App() {
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
         <div className="modal-body">
-          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{vector ? "LIVE ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
+          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{vector ? "PERSISTED ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
           <VectorMap decision={vector} />
           {vectorLoading ? <p className="disclaimer">Loading the latest persisted engine vector…</p> : vector ? (
             <>
