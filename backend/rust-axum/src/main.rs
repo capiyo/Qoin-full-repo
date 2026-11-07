@@ -381,6 +381,45 @@ async fn get_instruments()->impl IntoResponse {
 }
 #[derive(Deserialize)]
 struct NewsQuery { category: Option<String> }
+async fn get_calendar()->impl IntoResponse {
+    let key=env::var("FINNHUB_API_KEY").unwrap_or_default();
+    if key.trim().is_empty() {
+        return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+            "source":"Finnhub","status":"not_configured","items":[],
+            "message":"Set FINNHUB_API_KEY to load sourced economic-calendar events."
+        })));
+    }
+    let from=chrono::Utc::now().date_naive();
+    let to=from+chrono::Duration::days(7);
+    let from_text=from.format("%Y-%m-%d").to_string();
+    let to_text=to.format("%Y-%m-%d").to_string();
+    let response=match reqwest::Client::new().get("https://finnhub.io/api/v1/calendar/economic")
+        .query(&[("from",from_text.as_str()),("to",to_text.as_str()),("token",key.as_str())]).send().await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::warn!(error=%error,"Finnhub economic calendar request failed");
+            return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"provider_unavailable","items":[]}))); }
+    };
+    if !response.status().is_success() {
+        tracing::warn!(status=%response.status(),"Finnhub calendar provider returned non-success");
+        return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"provider_error","items":[]})));
+    }
+    let payload:serde_json::Value=match response.json().await {
+        Ok(value)=>value,
+        Err(_)=>return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"invalid_provider_response","items":[]})))
+    };
+    let items=payload.get("economicCalendar").and_then(|v|v.get("events")).and_then(|v|v.as_array())
+        .cloned().unwrap_or_default().into_iter().map(|event|serde_json::json!({
+            "country":event.get("country").and_then(|v|v.as_str()).unwrap_or(""),
+            "event":event.get("event").and_then(|v|v.as_str()).unwrap_or(""),
+            "impact":event.get("impact").and_then(|v|v.as_str()).unwrap_or(""),
+            "actual":event.get("actual").cloned().unwrap_or(serde_json::Value::Null),
+            "previous":event.get("prev").cloned().unwrap_or(serde_json::Value::Null),
+            "estimate":event.get("estimate").cloned().unwrap_or(serde_json::Value::Null),
+            "time":event.get("time").and_then(|v|v.as_str()).unwrap_or(""),
+            "unit":event.get("unit").and_then(|v|v.as_str()).unwrap_or("")
+        })).collect::<Vec<_>>();
+    (StatusCode::OK,Json(serde_json::json!({"source":"Finnhub economic calendar","status":"ok","from":from_text,"to":to_text,"items":items,"count":items.len()})))
+}
 async fn get_news(Query(query):Query<NewsQuery>)->impl IntoResponse {
     let key=env::var("FINNHUB_API_KEY").unwrap_or_default();
     if key.trim().is_empty() {
@@ -654,7 +693,7 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
-        .route("/internal/news",get(get_news))
+        .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
