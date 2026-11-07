@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +28,7 @@ const seed: Instrument[] = [
 ];
 
 type Props = { mode: "Archive" | "Explore" };
+type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
 function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
@@ -71,6 +72,12 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [newsCategory, setNewsCategory] = useState("general");
   const [macroEvents, setMacroEvents] = useState<QoinMacroEvent[]>([]);
   const [calendarStatus, setCalendarStatus] = useState("loading");
+  const [notifications, setNotifications] = useState<QoinNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const previousActionRef = useRef<Record<string, string>>({});
+  const notifiedEventIdsRef = useRef<Set<string>>(new Set());
+  const unreadNotifications = notifications.filter((item) => !item.read).length;
+  const addNotification = (notification: QoinNotification) => setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const toggle = (symbol: string) => {
@@ -161,6 +168,21 @@ export function ArchiveExploreScreen({ mode }: Props) {
       if (!active) return;
       if (update.type === "market.update" && update.symbol) {
         const symbol = update.symbol.toUpperCase();
+        if (update.decision?.action) {
+          const action = update.decision.action.toUpperCase();
+          const previous = previousActionRef.current[symbol];
+          if ((action === "BUY" || action === "SELL") && previous !== action) {
+            addNotification({ id: "signal-" + symbol + "-" + action + "-" + (update.server_ts_ms || Date.now()), symbol, title: symbol + " research signal: " + action, body: (update.decision.reason || "The engine decision changed.") + " Magnitude " + (update.decision.magnitude ?? 0).toFixed(3) + ". Research only; no order was placed.", kind: "signal", createdAt: update.server_ts_ms || Date.now(), read: false, details: JSON.stringify(update.decision, null, 2) });
+          }
+          previousActionRef.current[symbol] = action;
+        }
+        if (update.event && (update.event.event_type === "liquidation" || update.event.liquidation_side)) {
+          const eventId = update.event.event_id || symbol + "-" + (update.event.ts_ms || update.server_ts_ms || Date.now());
+          if (!notifiedEventIdsRef.current.has(eventId)) {
+            notifiedEventIdsRef.current.add(eventId);
+            addNotification({ id: "liquidation-" + eventId, symbol, title: symbol + " liquidation event", body: "Liquidation side: " + (update.event.liquidation_side || update.event.side || "not supplied") + ". Price: " + (update.event.price ?? "not supplied") + ".", kind: "liquidation", createdAt: update.event.ts_ms || update.server_ts_ms || Date.now(), read: false, details: JSON.stringify(update.event, null, 2) });
+          }
+        }
         setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
         if (selected?.engineSymbol.toUpperCase() === symbol) {
           if (update.state) setMarketState(update.state);
