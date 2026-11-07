@@ -78,7 +78,7 @@ impl Default for OperatingCycle {
 impl OperatingCycle {
     pub fn configure(&mut self, config: CycleConfig) -> Result<CycleSnapshot, String> {
         config.validate()?;
-        if self.active {
+        if self.snapshot().active {
             return Err("stop the current cycle before changing its configuration".into());
         }
         self.config = config;
