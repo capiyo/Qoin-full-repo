@@ -83,6 +83,12 @@ export type OperatingCycleSnapshot = {
   phase_seconds_remaining: number;
   observations: number;
   signal_evaluations: number;
+  mean_absolute_score: number | null;
+  mean_alignment: number | null;
+  buy_signals: number;
+  sell_signals: number;
+  close_signals: number;
+  wait_signals: number;
   live_execution_enabled: false;
   weight_policy: string;
   note: string;
