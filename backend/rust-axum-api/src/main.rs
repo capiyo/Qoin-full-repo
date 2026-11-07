@@ -12,10 +12,6 @@ use tower_http::cors::CorsLayer;
 mod operating_cycle;
 use operating_cycle::{CycleConfig, OperatingCycle};
 
-mod operating_cycle;
-use operating_cycle::{CycleConfig, OperatingCycle};
-
-#[derive(Clone)]
 struct AppState {
     config: EngineConfig,
     config_version: String,
@@ -75,14 +71,11 @@ async fn main() {
             HeaderValue::from_static("http://localhost:3000"),
             HeaderValue::from_static("http://127.0.0.1:3000"),
         ])
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
         .allow_headers([CONTENT_TYPE]);
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/signal", post(signal))
-        .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))
-        .route("/v1/operating-cycle/start", post(start_operating_cycle))
-        .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
         .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))
         .route("/v1/operating-cycle/start", post(start_operating_cycle))
         .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
@@ -104,10 +97,6 @@ async fn signal(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SignalRequest>,
 ) -> Result<Json<Signal>, (StatusCode, String)> {
-    if let Ok(mut cycle) = state.operating_cycle.lock() {
-        cycle.record_observation();
-        cycle.record_signal_evaluation();
-    }
     let result = decide(
         request.observation,
         &state.config,
@@ -115,6 +104,10 @@ async fn signal(
         request.has_open_position,
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    if let Ok(mut cycle) = state.operating_cycle.lock() {
+        cycle.record_observation();
+        cycle.record_signal_evaluation();
+    }
 
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
