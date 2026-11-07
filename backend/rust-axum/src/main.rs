@@ -7,12 +7,12 @@ use axum::{
 };
 use mongodb::{
     bson::{doc, Document},
-    options::{FindOneOptions, IndexOptions, UpdateOptions},
+    options::{FindOneOptions, FindOptions, IndexOptions, UpdateOptions},
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
@@ -236,6 +236,121 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
+
+#[derive(Deserialize)]
+struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    let limit=q.limit.unwrap_or(120).clamp(1,500);
+    let options=FindOptions::builder().sort(doc!{"stored_at":-1}).limit(limit).build();
+    let mut cursor=match s.decisions.find(doc!{"symbol":&symbol},Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,"vector history query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"vector history unavailable","symbol":symbol}))); }
+    };
+    let mut items=Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document))=>{
+                let stored_at=document.get_datetime("stored_at").ok().map(|value|value.to_chrono().to_rfc3339());
+                document.remove("_id"); document.remove("stored_at");
+                let mut value= mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default();
+                if let (Some(object),Some(timestamp))=(value.as_object_mut(),stored_at){object.insert("stored_at".into(),serde_json::Value::String(timestamp));}
+                items.push(value);
+            }
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"vector history cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"vector history read failed","symbol":symbol}))); }
+        }
+    }
+    items.reverse();
+    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
+}
+async fn get_instruments()->impl IntoResponse {
+    let finnhub_configured=env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false);
+    let mut items=serde_json::json!([
+      {"symbol":"BTC/USD","engine_symbol":"BTCUSDT","name":"Bitcoin","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Bitcoin perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"ETH/USD","engine_symbol":"ETHUSDT","name":"Ethereum","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Ether perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"SOL/USD","engine_symbol":"SOLUSDT","name":"Solana","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Solana perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"BNB/USD","engine_symbol":"BNBUSDT","name":"BNB","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"BNB perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"XRP/USD","engine_symbol":"XRPUSDT","name":"XRP","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"XRP perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"DOGE/USD","engine_symbol":"DOGEUSDT","name":"Dogecoin","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Dogecoin perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"AAPL","engine_symbol":"AAPL","name":"Apple","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Apple Inc. · common stock","quote_currency":"USD"},
+      {"symbol":"MSFT","engine_symbol":"MSFT","name":"Microsoft","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Microsoft Corporation · common stock","quote_currency":"USD"},
+      {"symbol":"NVDA","engine_symbol":"NVDA","name":"NVIDIA","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"NVIDIA Corporation · common stock","quote_currency":"USD"},
+      {"symbol":"AMZN","engine_symbol":"AMZN","name":"Amazon","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Amazon.com Inc. · common stock","quote_currency":"USD"},
+      {"symbol":"GOOGL","engine_symbol":"GOOGL","name":"Alphabet","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Alphabet Inc. · Class A","quote_currency":"USD"},
+      {"symbol":"META","engine_symbol":"META","name":"Meta Platforms","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Meta Platforms Inc. · common stock","quote_currency":"USD"},
+      {"symbol":"TSLA","engine_symbol":"TSLA","name":"Tesla","asset_class":"Equities","venue":"NASDAQ","provider":"Finnhub","description":"Tesla Inc. · common stock","quote_currency":"USD"},
+      {"symbol":"EUR/USD","engine_symbol":"OANDA:EUR_USD","name":"Euro / US Dollar","asset_class":"FX","venue":"OANDA","provider":"Finnhub","description":"Major FX pair","quote_currency":"USD"},
+      {"symbol":"GBP/USD","engine_symbol":"OANDA:GBP_USD","name":"Pound / US Dollar","asset_class":"FX","venue":"OANDA","provider":"Finnhub","description":"Major FX pair","quote_currency":"USD"},
+      {"symbol":"USD/JPY","engine_symbol":"OANDA:USD_JPY","name":"US Dollar / Yen","asset_class":"FX","venue":"OANDA","provider":"Finnhub","description":"Major FX pair","quote_currency":"JPY"},
+      {"symbol":"AUD/USD","engine_symbol":"OANDA:AUD_USD","name":"Australian Dollar / US Dollar","asset_class":"FX","venue":"OANDA","provider":"Finnhub","description":"Major FX pair","quote_currency":"USD"},
+      {"symbol":"SPX500","engine_symbol":"OANDA:SPX500_USD","name":"S&P 500","asset_class":"Indices","venue":"OANDA","provider":"Finnhub","description":"US large-cap equity index CFD reference","quote_currency":"USD"},
+      {"symbol":"NAS100","engine_symbol":"OANDA:NAS100_USD","name":"NASDAQ 100","asset_class":"Indices","venue":"OANDA","provider":"Finnhub","description":"US technology-heavy equity index reference","quote_currency":"USD"},
+      {"symbol":"US30","engine_symbol":"OANDA:US30_USD","name":"Dow Jones 30","asset_class":"Indices","venue":"OANDA","provider":"Finnhub","description":"US blue-chip equity index reference","quote_currency":"USD"},
+      {"symbol":"GER40","engine_symbol":"OANDA:DE30_EUR","name":"DAX 40","asset_class":"Indices","venue":"OANDA","provider":"Finnhub","description":"German equity index reference","quote_currency":"EUR"},
+      {"symbol":"XAU/USD","engine_symbol":"OANDA:XAU_USD","name":"Gold","asset_class":"Commodities","venue":"OANDA","provider":"Finnhub","description":"Gold spot reference","quote_currency":"USD"},
+      {"symbol":"XAG/USD","engine_symbol":"OANDA:XAG_USD","name":"Silver","asset_class":"Commodities","venue":"OANDA","provider":"Finnhub","description":"Silver spot reference","quote_currency":"USD"},
+      {"symbol":"WTI","engine_symbol":"OANDA:WTICO_USD","name":"WTI Crude Oil","asset_class":"Commodities","venue":"OANDA","provider":"Finnhub","description":"US crude oil reference","quote_currency":"USD"},
+      {"symbol":"BRENT","engine_symbol":"OANDA:BCO_USD","name":"Brent Crude","asset_class":"Commodities","venue":"OANDA","provider":"Finnhub","description":"Brent crude oil reference","quote_currency":"USD"},
+      {"symbol":"NATGAS","engine_symbol":"OANDA:NATGAS_USD","name":"Natural Gas","asset_class":"Commodities","venue":"OANDA","provider":"Finnhub","description":"Natural gas reference","quote_currency":"USD"}
+    ]);
+    if let Some(rows)=items.as_array_mut() {
+        for row in rows {
+            if row.get("asset_class").and_then(|v|v.as_str())!=Some("Crypto") {
+                row["provider_status"]=serde_json::json!(if finnhub_configured {"configured_not_streaming"} else {"requires_FINNHUB_API_KEY"});
+            } else { row["provider_status"]=serde_json::json!("streaming_when_Binance_adapter_connected"); }
+        }
+    }
+    (StatusCode::OK,Json(serde_json::json!({"source":"Qoin instrument registry","items":items,"count":items.as_array().map(|v|v.len()).unwrap_or(0)})))
+}
+#[derive(Deserialize)]
+struct NewsQuery { category: Option<String> }
+async fn get_news(Query(query):Query<NewsQuery>)->impl IntoResponse {
+    let key=env::var("FINNHUB_API_KEY").unwrap_or_default();
+    if key.trim().is_empty() {
+        return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+            "source":"Finnhub","status":"not_configured","items":[],
+            "message":"Set FINNHUB_API_KEY to load sourced live headlines. No placeholder headlines are generated."
+        })));
+    }
+    let category=query.category.unwrap_or_else(||"general".into());
+    if !["general","forex","crypto","merger"].contains(&category.as_str()) {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"category must be general, forex, crypto, or merger"})));
+    }
+    let response=match reqwest::Client::new().get("https://finnhub.io/api/v1/news")
+        .query(&[("category",category.as_str()),("token",key.as_str())]).send().await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::warn!(error=%error,"Finnhub news request failed");
+            return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"provider_unavailable","items":[],"message":"News provider request failed."}))); }
+    };
+    if !response.status().is_success() {
+        let status=response.status();
+        tracing::warn!(status=%status,"Finnhub news provider returned non-success");
+        return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"provider_error","items":[],"message":"News provider rejected the request."})));
+    }
+    let payload:serde_json::Value=match response.json().await {
+        Ok(value)=>value,
+        Err(_)=>return (StatusCode::BAD_GATEWAY,Json(serde_json::json!({"source":"Finnhub","status":"invalid_provider_response","items":[]})))
+    };
+    let items=payload.as_array().cloned().unwrap_or_default().into_iter().filter_map(|item|{
+        let headline=item.get("headline")?.as_str()?.trim();
+        let url=item.get("url")?.as_str()?.trim();
+        if headline.is_empty()||!url.starts_with("https://"){return None;}
+        Some(serde_json::json!({
+            "id":item.get("id").cloned().unwrap_or(serde_json::Value::Null),
+            "headline":headline,"summary":item.get("summary").and_then(|v|v.as_str()).unwrap_or(""),
+            "source":item.get("source").and_then(|v|v.as_str()).unwrap_or("Finnhub"),
+            "url":url,"image":item.get("image").and_then(|v|v.as_str()).unwrap_or(""),
+            "published_at_ms":item.get("datetime").and_then(|v|v.as_i64()).unwrap_or(0)*1000,
+            "related":item.get("related").and_then(|v|v.as_str()).unwrap_or(""),
+            "category":item.get("category").and_then(|v|v.as_str()).unwrap_or(category.as_str())
+        }))
+    }).collect::<Vec<_>>();
+    (StatusCode::OK,Json(serde_json::json!({"source":"Finnhub","status":"ok","items":items,"count":items.len()})))
+}
+
 async fn get_jepa_prediction(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if s.jepa_client.is_none() {
@@ -464,6 +579,8 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
+        .route("/internal/news",get(get_news))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
