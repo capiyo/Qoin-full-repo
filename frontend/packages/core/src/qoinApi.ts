@@ -190,3 +190,12 @@ export function getQoinInstruments(): Promise<{ items: QoinInstrument[]; source:
 export function getInstrumentVectorHistory(symbol: string, limit = 120): Promise<{ symbol: string; items: QoinVectorHistory[] }> {
   return request<{ symbol: string; items: QoinVectorHistory[] }>("/api/v1/vector/history?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
+
+export type QoinMacroEvent = {
+  country: string; event: string; impact: string; actual: number | string | null;
+  previous: number | string | null; estimate: number | string | null; time: string; unit: string;
+};
+export type QoinCalendarResponse = { source: string; status: string; from?: string; to?: string; items: QoinMacroEvent[]; message?: string };
+export function getQoinCalendar(): Promise<QoinCalendarResponse> {
+  return request<QoinCalendarResponse>("/api/v1/calendar");
+}
