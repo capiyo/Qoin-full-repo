@@ -32,7 +32,7 @@ export default function App() {
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [signal, setSignal] = useState<QoinSignal | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);\n  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });\n  const [cycleBusy, setCycleBusy] = useState(false);\n  const [cycleError, setCycleError] = useState("");
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
@@ -43,7 +43,7 @@ export default function App() {
     [forces],
   );
 
-  async function evaluate() {
+  async function saveCycle() {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(await configureOperatingCycle(cycleConfig)); }\n    catch (e) { setCycleError(e instanceof Error ? e.message : "Could not save cycle configuration"); }\n    finally { setCycleBusy(false); }\n  }\n\n  async function runCycle(action: "start" | "stop") {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }\n    catch (e) { setCycleError(e instanceof Error ? e.message : "Could not update operating cycle"); }\n    finally { setCycleBusy(false); }\n  }\n\n  function formatRemaining(seconds: number) {\n    const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60); const secs = seconds % 60;\n    return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;\n  }\n\n  async function evaluate() {
     setBusy(true);
     setError("");
     try {
@@ -69,7 +69,7 @@ export default function App() {
         <h1>Read the forces.<br /><span>Respect uncertainty.</span></h1>
         <p className="lede">A present-centered view of market pressure. Explore normalized inputs and request a deterministic research signal from the Rust engine.</p>
       </section>
-      <div className="layout">
+      <section className="panel cycle-panel">\n        <div className="panel-heading"><div><p className="eyebrow">OPERATING POLICY</p><h2>Observation → validation → session</h2></div><span className="counter">{cycle?.phase?.replaceAll("_", " ").toUpperCase() ?? "LOADING"}</span></div>\n        <p className="hint">Five-minute initial observation, one-hour weight diagnostics, then a configurable paper session. Existing coefficients remain locked; this phase evaluates them rather than silently training on recent outcomes.</p>\n        <div className="cycle-grid">\n          <label className="cycle-field"><span>Observation (minutes)</span><input type="number" min="1" max="120" value={cycleConfig.observation_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, observation_minutes: Number(e.target.value) }))} /></label>\n          <label className="cycle-field"><span>Weight evaluation (minutes)</span><input type="number" min="1" max="720" value={cycleConfig.weight_evaluation_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, weight_evaluation_minutes: Number(e.target.value) }))} /></label>\n          <label className="cycle-field"><span>Paper session (minutes)</span><input type="number" min="1" max="1440" value={cycleConfig.session_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, session_minutes: Number(e.target.value) }))} /></label>\n        </div>\n        <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span></div>\n        <div className="cycle-actions"><button className="secondary" onClick={saveCycle} disabled={cycleBusy || !!cycle?.active}>Save schedule</button><button className="primary cycle-start" onClick={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active}>Start cycle</button><button className="secondary" onClick={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active}>Stop cycle</button></div>\n        {cycleError && <p className="error" role="alert">{cycleError}</p>}\n        <p className="cycle-safety">Paper/research only · live execution disabled · five-minute observation is not a replacement for historical lookback.</p>\n      </section>\n      <div className="layout">
         <section className="panel forces-panel">
           <div className="panel-heading"><div><p className="eyebrow">INPUT VECTOR</p><h2>Market forces</h2></div><span className="counter">{activeForces} / 7 active</span></div>
           <p className="hint">Use normalized values. This prototype does not fetch exchange data.</p>
