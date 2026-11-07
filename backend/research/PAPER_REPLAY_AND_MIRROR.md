@@ -53,7 +53,7 @@ Forward session records are stored in:
 - `paper_session_trades`: closed simulated trades with entry/exit timestamps and prices, gross P/L, both-side fees, net P/L, return, multiplier, lot step and cost assumptions.
 - `operating_cycles`: five-minute observation / one-hour diagnostic / session schedule and aggregate score/alignment/feature/attention plus per-feature bullish/bearish coefficient-contribution diagnostics. The coefficient values remain locked; the strategy update endpoint rejects changes while a cycle is active. This measures their contribution but does not auto-retune them.
 
-Configure/start/stop/read the cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. Read live paper account state through `GET /internal/paper-session`, and the latest 1–200 Mirror decisions and closed trades through `GET /internal/paper-session/history?limit=50` (optionally filter by `symbol`). Historical backtest endpoints remain `GET /internal/backtests?symbol=BTCUSDT` and `GET /internal/backtests/{run_id}`. These records survive service restarts.
+Configure/start/stop/read the cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. Read live paper account state through `GET /internal/paper-session`, and the latest 1–200 Mirror decisions and closed trades through `GET /internal/paper-session/history?limit=50` (optionally filter by `symbol` or `cycle_id`). Historical backtest endpoints remain `GET /internal/backtests?symbol=BTCUSDT` and `GET /internal/backtests/{run_id}`. These records survive service restarts.
 
 ## Interpretation and limits
 
