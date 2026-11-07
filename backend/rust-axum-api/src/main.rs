@@ -6,8 +6,8 @@ use axum::{
 };
 use qoin_vector_engine::{decide, EngineConfig, ForceObservation, Signal};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, sync::Arc};
-use tower_http::cors::CorsLayer;
+use std::{net::SocketAddr, sync::{Arc, Mutex}};
+use tower_http::cors::CorsLayer;\n\nmod operating_cycle;\nuse operating_cycle::{CycleConfig, OperatingCycle};
 
 #[derive(Clone)]
 struct AppState {
@@ -60,7 +60,7 @@ async fn main() {
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
         &config, &config_version, false,
     ).expect("Qoin engine configuration must be valid");
-    let state = Arc::new(AppState { config, config_version });
+    let state = Arc::new(AppState { config, config_version, operating_cycle: Mutex::new(OperatingCycle::default()) });
     let cors = CorsLayer::new()
         .allow_origin([
             HeaderValue::from_static("http://localhost:5173"),
@@ -72,7 +72,7 @@ async fn main() {
         .allow_headers([CONTENT_TYPE]);
     let app = Router::new()
         .route("/health", get(health))
-        .route("/v1/signal", post(signal))
+        .route("/v1/signal", post(signal))\n        .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))\n        .route("/v1/operating-cycle/start", post(start_operating_cycle))\n        .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
         .layer(cors)
         .with_state(state);
 
@@ -101,4 +101,40 @@ async fn signal(
 
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
+}
+
+
+async fn get_operating_cycle(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<operating_cycle::CycleSnapshot>, (StatusCode, String)> {
+    let cycle = state.operating_cycle.lock()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "operating cycle lock poisoned".to_owned()))?;
+    Ok(Json(cycle.snapshot()))
+}
+
+async fn configure_operating_cycle(
+    State(state): State<Arc<AppState>>,
+    Json(config): Json<CycleConfig>,
+) -> Result<Json<operating_cycle::CycleSnapshot>, (StatusCode, String)> {
+    let mut cycle = state.operating_cycle.lock()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "operating cycle lock poisoned".to_owned()))?;
+    cycle.configure(config)
+        .map(Json)
+        .map_err(|message| (StatusCode::BAD_REQUEST, message))
+}
+
+async fn start_operating_cycle(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<operating_cycle::CycleSnapshot>, (StatusCode, String)> {
+    let mut cycle = state.operating_cycle.lock()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "operating cycle lock poisoned".to_owned()))?;
+    Ok(Json(cycle.start()))
+}
+
+async fn stop_operating_cycle(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<operating_cycle::CycleSnapshot>, (StatusCode, String)> {
+    let mut cycle = state.operating_cycle.lock()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "operating cycle lock poisoned".to_owned()))?;
+    Ok(Json(cycle.stop()))
 }
