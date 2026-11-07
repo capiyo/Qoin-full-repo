@@ -1,0 +1,58 @@
+name: Qoin live workspace checks
+on:
+  push:
+    branches: [qoin-archive-explore-vector-ui]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust workspace
+        run: cargo test --workspace
+
+  react-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build web client
+        run: pnpm --filter @qoin/react-web build
+
+  react-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Typecheck Android and React Native client
+        run: pnpm --filter @qoin/mobile exec tsc --noEmit
+
+  drogon-gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Drogon build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdrogon-dev cmake build-essential
+      - name: Configure gateway
+        run: cmake -S backend/cpp-drogon -B build/drogon
+      - name: Build gateway
+        run: cmake --build build/drogon --parallel 2
