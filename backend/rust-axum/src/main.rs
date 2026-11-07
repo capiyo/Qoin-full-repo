@@ -232,6 +232,17 @@ async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
     }
     drop(cycle);
     let mut active_paper = s.active_paper_session.lock().await;
+    if active_paper.is_active() {
+        active_paper.stop();
+        if let Err(error) = persist_paper_session(&s, &active_paper).await {
+            tracing::error!(error=%error, "previous paper session stop persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
+        }
+        if let Err(error) = archive_paper_session(&s, &active_paper).await {
+            tracing::error!(error=%error, "previous paper session archive failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
+        }
+    }
     *active_paper = paper;
     if let Err(error) = persist_paper_session(&s, &active_paper).await {
         tracing::error!(error=%error, "paper session start persistence failed");
