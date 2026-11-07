@@ -336,6 +336,20 @@ export default function App() {
                   </div>;
                 })}
               </div>
+              <section className="contribution-panel">
+                <div className="attention-heading"><strong>Feature contribution ledger</strong><span>Coefficient × attended feature</span></div>
+                {QOIN_FEATURE_NAMES.map((name,index) => {
+                  const attended = vector.attended_features?.[index] ?? 0;
+                  const bullishWeight = strategy?.bullish_weights[name] ?? 0;
+                  const bearishWeight = strategy?.bearish_weights[name] ?? 0;
+                  return <div className="contribution-row" key={name}>
+                    <strong>{name.replaceAll("_"," ")}</strong>
+                    <span>Bull {bullishWeight.toFixed(3)} × {attended.toFixed(3)} = <b>{(bullishWeight*attended).toFixed(4)}</b></span>
+                    <span>Bear {bearishWeight.toFixed(3)} × {attended.toFixed(3)} = <b>{(bearishWeight*attended).toFixed(4)}</b></span>
+                  </div>;
+                })}
+                <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
+              </section>
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
