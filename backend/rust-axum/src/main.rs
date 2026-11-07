@@ -140,7 +140,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "live_order_submission":"not wired"})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
-    if let Err(message)=validate_event(&event){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
+    if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
@@ -282,9 +282,7 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
                             price, size, side:None, bid:None, ask:None, bid_size:None, ask_size:None,
                             funding_rate:None, open_interest:None, liquidation_side:None,
                         };
-                        if let Err(error) = client.post(&endpoint).json(&event).send().await {
-                            tracing::warn!(symbol=%event.symbol,error=%error,"could not submit Finnhub observation to local engine");
-                        }
+                        submit_market_event(&client,&endpoint,&event,"finnhub").await;
                     }
                 }
             }
@@ -548,6 +546,19 @@ async fn stream_connection(mut socket: WebSocket, state: AppState, mut symbols: 
 fn stream_number(value: Option<&serde_json::Value>) -> Option<f64> {
     value.and_then(|v|v.as_f64().or_else(||v.as_str().and_then(|s|s.parse::<f64>().ok())))
 }
+async fn submit_market_event(client: &reqwest::Client, endpoint: &str, event: &MarketEvent, provider: &str) {
+    match client.post(endpoint).json(event).send().await {
+        Ok(response) if !response.status().is_success() => {
+            let status=response.status();
+            let body=response.text().await.unwrap_or_default();
+            tracing::warn!(provider=%provider,symbol=%event.symbol,event_id=%event.event_id,status=%status,
+                response=%body.chars().take(300).collect::<String>(),"provider observation rejected by engine ingestion");
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(provider=%provider,symbol=%event.symbol,event_id=%event.event_id,
+            error=%error,"provider observation could not reach engine ingestion"),
+    }
+}
 async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
     if symbols.is_empty(){return;}
     let streams=symbols.iter().flat_map(|symbol|{
@@ -603,9 +614,7 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                             liquidation_side:liquidation_side.map(str::to_owned)})
                     } else {None};
                     if let Some(event)=event {
-                        if let Err(error)=client.post(&endpoint).json(&event).send().await {
-                            tracing::warn!(symbol=%event.symbol,error=%error,"could not submit Binance observation to local engine");
-                        }
+                        submit_market_event(&client,&endpoint,&event,"binance_usdm").await;
                     }
                 }
             }
