@@ -53,6 +53,33 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
   );
 }
 
+function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
+  const labels = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"];
+  const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
+  const coordinates = values.map((value, index) => {
+    const angle = (-Math.PI / 2) + index * (Math.PI * 2 / 6);
+    const radius = 18 + value * 14;
+    return [50 + Math.cos(angle) * radius, 50 + Math.sin(angle) * radius] as const;
+  });
+  const polygon = coordinates.map((point) => point.join(",")).join(" ");
+  return <section className="feature-space-panel">
+    <div className="attention-heading"><strong>Six-dimensional feature space</strong><span>Normalized engine inputs · not a learned embedding</span></div>
+    <svg viewBox="0 0 100 100" role="img" aria-label="Six dimensional normalized feature profile">
+      {[14, 24, 34].map((radius) => <polygon key={radius} points={labels.map((_, i) => {
+        const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
+        return (50 + Math.cos(angle) * radius) + "," + (50 + Math.sin(angle) * radius);
+      }).join(" ")} fill="none" stroke="#e5ebf4" strokeWidth=".5" />)}
+      {labels.map((label, i) => {
+        const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
+        return <g key={label}><line x1="50" y1="50" x2={50 + Math.cos(angle) * 35} y2={50 + Math.sin(angle) * 35} stroke="#e5ebf4" strokeWidth=".5" /><text x={50 + Math.cos(angle) * 43} y={50 + Math.sin(angle) * 43} textAnchor="middle" dominantBaseline="middle" fill="#7f8da1" fontSize="4.5">{label}</text></g>;
+      })}
+      {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#2867dc" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#2867dc" />)}</>}
+      {!decision && <text x="50" y="52" textAnchor="middle" fill="#94a3b8" fontSize="5">NO FEATURE VECTOR</text>}
+    </svg>
+    <div className="feature-space-values">{labels.map((label,index) => <span key={label}>{label} <strong>{values[index].toFixed(3)}</strong></span>)}</div>
+  </section>;
+}
+
 function InstrumentCard({ item, onOpen, action }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void } }) {
   return (
     <article className="instrument-card">
@@ -223,6 +250,7 @@ export default function App() {
         <div className="modal-body">
           <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorMap decision={vector} history={vectorHistory} />
+          <FeatureSpace decision={vector} />
           <section className="live-state-panel">
             <div className="live-state-heading"><strong>Live market state</strong><span>{lastEvent?.event_type || "awaiting event"}</span></div>
             <div className="live-state-grid">
