@@ -10,11 +10,11 @@ The response is the Rust Axum `EdgeDecision` persisted for that symbol. The curr
 
 - `features`: six normalized input features keyed by the names in `QOIN_FEATURE_NAMES`
 - `attended_features`: the six post-attention feature values, in `FEATURE_NAMES` order
-- `attention`: the 6 × 6 attention-weight matrix
+- `attention`: the 6 × 6 attention-weight matrix, rendered as a labeled heatmap
 - `decision_vector`: bullish and bearish components
 - `magnitude`, `angle_radians`, `action`, `reason`, and `strategy_version`
 
-The UI plots the actual persisted two-dimensional decision vector and exposes each raw feature, attended value, and strongest attention link. A missing decision is shown as unavailable/awaiting data; it is not replaced by fabricated live values.
+The UI plots the actual persisted two-dimensional decision vector and exposes each raw feature, attended value, strongest attention link, and the complete 6 × 6 attention heatmap. A missing decision is shown as unavailable/awaiting data; it is not replaced by fabricated live values.
 
 ## Explicit integration gaps
 
