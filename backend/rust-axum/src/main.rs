@@ -12,7 +12,7 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
@@ -239,6 +239,59 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<String>) {
+    if symbols.is_empty() { return; }
+    let url = format!("wss://ws.finnhub.io?token={token}");
+    let client = reqwest::Client::new();
+    let endpoint = format!("http://{axum_addr}/internal/events");
+    let mut backoff = 1_u64;
+    loop {
+        match connect_async(url.as_str()).await {
+            Ok((mut socket, _)) => {
+                tracing::info!(symbols=?symbols, "connected to Finnhub public market trade stream");
+                backoff = 1;
+                for symbol in &symbols {
+                    let command = serde_json::json!({"type":"subscribe","symbol":symbol});
+                    if let Err(error) = socket.send(tokio_tungstenite::tungstenite::Message::Text(command.to_string())).await {
+                        tracing::warn!(symbol=%symbol,error=%error,"Finnhub subscription send failed");
+                        break;
+                    }
+                }
+                while let Some(message) = socket.next().await {
+                    let message = match message {
+                        Ok(value) => value,
+                        Err(error) => { tracing::warn!(error=%error,"Finnhub stream disconnected"); break; }
+                    };
+                    let text = match message.to_text() { Ok(value) => value, Err(_) => continue };
+                    let payload: serde_json::Value = match serde_json::from_str(text) {
+                        Ok(value) => value,
+                        Err(error) => { tracing::warn!(error=%error,"invalid Finnhub stream JSON"); continue; }
+                    };
+                    if payload.get("type").and_then(|v|v.as_str()) != Some("trade") { continue; }
+                    let Some(rows) = payload.get("data").and_then(|v|v.as_array()) else { continue; };
+                    for row in rows {
+                        let Some(symbol) = row.get("s").and_then(|v|v.as_str()) else { continue; };
+                        let ts_ms = row.get("t").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+                        let price = stream_number(row.get("p"));
+                        let size = stream_number(row.get("v"));
+                        let event_id = format!("trade:{}:{}:{}",ts_ms,price.unwrap_or_default(),size.unwrap_or_default());
+                        let event = MarketEvent {
+                            event_id, venue:"finnhub".into(), symbol:symbol.into(), event_type:"trade".into(), ts_ms,
+                            price, size, side:None, bid:None, ask:None, bid_size:None, ask_size:None,
+                            funding_rate:None, open_interest:None, liquidation_side:None,
+                        };
+                        if let Err(error) = client.post(&endpoint).json(&event).send().await {
+                            tracing::warn!(symbol=%event.symbol,error=%error,"could not submit Finnhub observation to local engine");
+                        }
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(error=%error,retry_seconds=backoff,"Finnhub market stream connection failed"),
+        }
+        tokio::time::sleep(Duration::from_secs(backoff)).await;
+        backoff = (backoff * 2).min(30);
+    }
+}
 async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(100).clamp(1,1000);
@@ -320,7 +373,7 @@ async fn get_instruments()->impl IntoResponse {
     if let Some(rows)=items.as_array_mut() {
         for row in rows {
             if row.get("asset_class").and_then(|v|v.as_str())!=Some("Crypto") {
-                row["provider_status"]=serde_json::json!(if finnhub_configured {"configured_not_streaming"} else {"requires_FINNHUB_API_KEY"});
+                row["provider_status"]=serde_json::json!(if finnhub_configured {"live_stream_configured"} else {"requires_FINNHUB_API_KEY"});
             } else { row["provider_status"]=serde_json::json!("streaming_when_Binance_adapter_connected"); }
         }
     }
@@ -613,6 +666,14 @@ async fn main(){
         let adapter_addr=addr.clone();
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
+    if let Ok(token) = env::var("FINNHUB_API_KEY").filter(|v| !v.trim().is_empty()) {
+        let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:XAU_USD,OANDA:WTICO_USD".into())
+            .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+        let adapter_addr=addr.clone();
+        tokio::spawn(async move { spawn_finnhub_stream(adapter_addr,token,symbols).await; });
+    } else {
+        tracing::info!("Finnhub market stream disabled: FINNHUB_API_KEY is not configured");
+    }
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
