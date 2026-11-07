@@ -174,7 +174,7 @@ mod tests {
         let decision = authorize_algorithm("user-001", "qoin-vector-baseline",
             &["crypto".into(), "1h".into()], &[active_grant()], 5_000);
         assert!(!decision.allowed);
-        assert_eq!(decision.missing_capabilities, vec!["1h"]);
+        assert_eq!(decision.missing_capabilities, vec!["1h".to_owned()]);
     }
 
     #[test]
