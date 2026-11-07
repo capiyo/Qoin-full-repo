@@ -7,12 +7,19 @@ use axum::{
 use qoin_vector_engine::{decide, EngineConfig, ForceObservation, Signal};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::{Arc, Mutex}};
-use tower_http::cors::CorsLayer;\n\nmod operating_cycle;\nuse operating_cycle::{CycleConfig, OperatingCycle};
+use tower_http::cors::CorsLayer;
+
+mod operating_cycle;
+use operating_cycle::{CycleConfig, OperatingCycle};
+
+mod operating_cycle;
+use operating_cycle::{CycleConfig, OperatingCycle};
 
 #[derive(Clone)]
 struct AppState {
     config: EngineConfig,
     config_version: String,
+    operating_cycle: Mutex<OperatingCycle>,
 }
 
 #[derive(Serialize)]
@@ -72,7 +79,13 @@ async fn main() {
         .allow_headers([CONTENT_TYPE]);
     let app = Router::new()
         .route("/health", get(health))
-        .route("/v1/signal", post(signal))\n        .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))\n        .route("/v1/operating-cycle/start", post(start_operating_cycle))\n        .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
+        .route("/v1/signal", post(signal))
+        .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))
+        .route("/v1/operating-cycle/start", post(start_operating_cycle))
+        .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
+        .route("/v1/operating-cycle", get(get_operating_cycle).put(configure_operating_cycle))
+        .route("/v1/operating-cycle/start", post(start_operating_cycle))
+        .route("/v1/operating-cycle/stop", post(stop_operating_cycle))
         .layer(cors)
         .with_state(state);
 
@@ -91,6 +104,10 @@ async fn signal(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SignalRequest>,
 ) -> Result<Json<Signal>, (StatusCode, String)> {
+    if let Ok(mut cycle) = state.operating_cycle.lock() {
+        cycle.record_observation();
+        cycle.record_signal_evaluation();
+    }
     let result = decide(
         request.observation,
         &state.config,
