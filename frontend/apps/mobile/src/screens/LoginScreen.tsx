@@ -43,9 +43,9 @@ export function LoginScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary, justifyContent: "center", padding: 20 },
   card: { backgroundColor: colors.bgSecondary, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 20 },
-  brand: { color: colors.white, fontSize: 24, fontWeight: "700", textAlign: "center", marginBottom: 24 },
+  brand: { color: colors.accentCyan, fontSize: 24, fontWeight: "700", textAlign: "center", marginBottom: 24 },
   label: { color: colors.textMuted, fontSize: 12, marginTop: 12, marginBottom: 4 },
   input: { backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, color: colors.textPrimary },
   button: { backgroundColor: colors.accentCyan, borderRadius: 8, padding: 12, alignItems: "center", marginTop: 20 },
-  buttonText: { color: colors.bgPrimary, fontWeight: "700" },
+  buttonText: { color: colors.white, fontWeight: "700" },
 });

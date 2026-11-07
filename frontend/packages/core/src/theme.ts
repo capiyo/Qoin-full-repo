@@ -1,17 +1,16 @@
-// Single source of truth for Qoin brand tokens.
-// Consumed by apps/web/tailwind.config.ts and apps/mobile/src/theme/.
-
+// Single source of truth for Qoin's white-and-blue brand system.
+// Shared by the web and React Native applications.
 export const qoinColors = {
-  bgPrimary: "#0B0E14",   // app background — near-black, low glare
-  bgSecondary: "#131722", // card/panel background
-  border: "#1E222D",      // dividers, panel borders
-  accentCyan: "#2FD8E8",  // brand accent — links, focus, active nav, primary buttons
-  bullish: "#22C55E",     // up candles, positive PnL, buy
-  bearish: "#EF4444",     // down candles, negative PnL, sell/destructive
-  warning: "#F59E0B",     // stale data / risk limit warnings only
-  textPrimary: "#D1D4DC", // soft off-white body text
-  textMuted: "#787B86",   // secondary text, labels, disabled
-  white: "#FFFFFF",       // logo mark only
+  bgPrimary: "#F5F8FC",
+  bgSecondary: "#FFFFFF",
+  border: "#E5EBF3",
+  accentCyan: "#246BDF",
+  bullish: "#246BDF",
+  bearish: "#D94B59",
+  warning: "#C88924",
+  textPrimary: "#1B2A41",
+  textMuted: "#7D8BA1",
+  white: "#FFFFFF",
 } as const;
 
 export type QoinColorToken = keyof typeof qoinColors;
