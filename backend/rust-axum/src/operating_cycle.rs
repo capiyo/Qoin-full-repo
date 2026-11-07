@@ -5,6 +5,7 @@ fn now_ms() -> i64 {
         .map(|duration| duration.as_millis() as i64).unwrap_or(0)
 }
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -56,6 +57,8 @@ pub struct CycleSnapshot {
     pub signal_evaluations: u64,
     pub mean_absolute_score: Option<f64>,
     pub mean_alignment: Option<f64>,
+    pub mean_feature_values: BTreeMap<String, f64>,
+    pub mean_attention: Vec<Vec<f64>>,
     pub buy_signals: u64,
     pub sell_signals: u64,
     pub close_signals: u64,
@@ -75,6 +78,10 @@ pub struct OperatingCycle {
     signal_evaluations: u64,
     absolute_score_sum: f64,
     alignment_sum: f64,
+    feature_sums: BTreeMap<String, f64>,
+    feature_counts: BTreeMap<String, u64>,
+    attention_sums: Vec<Vec<f64>>,
+    attention_observations: u64,
     buy_signals: u64,
     sell_signals: u64,
     close_signals: u64,
@@ -91,6 +98,10 @@ impl Default for OperatingCycle {
             signal_evaluations: 0,
             absolute_score_sum: 0.0,
             alignment_sum: 0.0,
+            feature_sums: BTreeMap::new(),
+            feature_counts: BTreeMap::new(),
+            attention_sums: Vec::new(),
+            attention_observations: 0,
             buy_signals: 0,
             sell_signals: 0,
             close_signals: 0,
@@ -116,6 +127,10 @@ impl OperatingCycle {
         self.signal_evaluations = 0;
         self.absolute_score_sum = 0.0;
         self.alignment_sum = 0.0;
+        self.feature_sums.clear();
+        self.feature_counts.clear();
+        self.attention_sums.clear();
+        self.attention_observations = 0;
         self.buy_signals = 0;
         self.sell_signals = 0;
         self.close_signals = 0;
@@ -136,11 +151,36 @@ impl OperatingCycle {
         }
     }
 
-    pub fn record_signal_evaluation(&mut self, score: f64, alignment: f64, decision: &str) {
+    pub fn record_signal_evaluation(
+        &mut self,
+        score: f64,
+        alignment: f64,
+        decision: &str,
+        features: &BTreeMap<String, f64>,
+        attention: &[Vec<f64>],
+    ) {
         if self.active && score.is_finite() && alignment.is_finite() {
             self.signal_evaluations = self.signal_evaluations.saturating_add(1);
             self.absolute_score_sum += score.abs();
             self.alignment_sum += alignment;
+            for (name, value) in features {
+                if value.is_finite() {
+                    *self.feature_sums.entry(name.clone()).or_insert(0.0) += value;
+                    *self.feature_counts.entry(name.clone()).or_insert(0) += 1;
+                }
+            }
+            if !attention.is_empty() && attention.iter().all(|row| row.iter().all(|value| value.is_finite())) {
+                if self.attention_sums.is_empty() {
+                    self.attention_sums = attention.iter().map(|row| vec![0.0; row.len()]).collect();
+                }
+                if self.attention_sums.len() == attention.len()
+                    && self.attention_sums.iter().zip(attention).all(|(sum, row)| sum.len() == row.len()) {
+                    for (sum_row, value_row) in self.attention_sums.iter_mut().zip(attention) {
+                        for (sum, value) in sum_row.iter_mut().zip(value_row) { *sum += value; }
+                    }
+                    self.attention_observations = self.attention_observations.saturating_add(1);
+                }
+            }
             match decision {
                 "buy" => self.buy_signals = self.buy_signals.saturating_add(1),
                 "sell" => self.sell_signals = self.sell_signals.saturating_add(1),
@@ -182,13 +222,20 @@ impl OperatingCycle {
             signal_evaluations: self.signal_evaluations,
             mean_absolute_score: if self.signal_evaluations > 0 { Some(self.absolute_score_sum / self.signal_evaluations as f64) } else { None },
             mean_alignment: if self.signal_evaluations > 0 { Some(self.alignment_sum / self.signal_evaluations as f64) } else { None },
+            mean_feature_values: self.feature_sums.iter().map(|(name, sum)| {
+                let count = self.feature_counts.get(name).copied().unwrap_or(0);
+                (name.clone(), if count > 0 { sum / count as f64 } else { 0.0 })
+            }).collect(),
+            mean_attention: if self.attention_observations > 0 {
+                self.attention_sums.iter().map(|row| row.iter().map(|value| value / self.attention_observations as f64).collect()).collect()
+            } else { Vec::new() },
             buy_signals: self.buy_signals,
             sell_signals: self.sell_signals,
             close_signals: self.close_signals,
             wait_signals: self.wait_signals,
             live_execution_enabled: false,
             weight_policy: "baseline_locked_during_session; validation_is_observational_not_online_training",
-            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates signal-score, alignment, and decision-count diagnostics; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
+            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates directional score, signed alignment, per-feature mean activations, attention-matrix means and decision counts; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
         }
     }
 }
