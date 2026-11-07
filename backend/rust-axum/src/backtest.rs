@@ -372,6 +372,36 @@ mod tests {
     }
 
     #[test]
+    fn buy_signal_waits_for_next_book_quote_before_simulated_fill() {
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "venue-a".into(), quote_currency: "USDT".into(),
+            start_ts_ms: 10_000, end_ts_ms: 20_000, warmup_hours: 1, initial_cash: 20_000.0,
+            notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+        let book = MarketEvent {
+            event_id: "book-warmup".into(), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
+            event_type: "book".into(), ts_ms: 9_000, price: None, size: None, side: None,
+            bid: Some(99.99), ask: Some(100.01), bid_size: Some(10.0), ask_size: Some(5.0),
+            funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        let trade = MarketEvent {
+            event_id: "trade-signal".into(), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
+            event_type: "trade".into(), ts_ms: 10_000, price: Some(100.0), size: Some(10.0), side: Some("buy".into()),
+            bid: None, ask: None, bid_size: None, ask_size: None, funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        let next_book = MarketEvent {
+            event_id: "book-fill".into(), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
+            event_type: "book".into(), ts_ms: 11_000, price: None, size: None, side: None,
+            bid: Some(100.0), ask: Some(100.02), bid_size: Some(10.0), ask_size: Some(5.0),
+            funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        let report = run_backtest(&request, &[next_book, trade, book], &EdgeStrategy::baseline(), "pending-fill".into()).unwrap();
+        assert_eq!(report.event_count, 2);
+        assert_eq!(report.warmup_event_count, 1);
+        assert_eq!(report.executed_entries, 1);
+        assert_eq!(report.decisions[0].execution, "queued_buy_waiting_for_quote");
+        assert_eq!(report.decisions[1].execution, "filled_pending_buy");
+    }
+
+    #[test]
     fn warmup_updates_state_but_never_counts_as_a_trade_period_signal() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "venue-a".into(), quote_currency: "USDT".into(), start_ts_ms: 20_000, end_ts_ms: 30_000,
             warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
