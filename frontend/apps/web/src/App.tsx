@@ -51,7 +51,7 @@ export default function App() {
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
-  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", quote_currency: "USDT", lookback_hours: 24, warmup_hours: 24, initial_cash: 20000, notional_per_trade: 2000, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", quote_currency: "USDT", lookback_hours: 24, warmup_hours: 24, initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
@@ -139,7 +139,7 @@ export default function App() {
       </section>
       <section className="panel backtest-panel">
         <div className="panel-heading"><div><p className="eyebrow">MIRROR / CHRONOLOGICAL REPLAY</p><h2>Paper backtest</h2></div><span className="counter">NO LIVE ORDERS</span></div>
-        <p className="hint">Replays persisted MongoDB market events in event-time order using the active EdgeStrategy. Entries fill at observed ask, exits at observed bid, with your fee and slippage assumptions. Long-only; one position at a time.</p>
+        <p className="hint">Replays persisted MongoDB market events in event-time order using the active EdgeStrategy. Entries fill at observed ask, exits at observed bid, with your fee and slippage assumptions. Long-only; one position at a time. Capital and notional use the instrument quote currency: convert KSh 20,000 to USDT first for BTCUSDT; no FX conversion is applied.</p>
         <div className="cycle-grid">
           <label className="cycle-field"><span>Instrument symbol</span><input value={backtestForm.symbol} onChange={(e) => setBacktestForm(v => ({...v, symbol:e.target.value}))} /></label>
           <label className="cycle-field"><span>Exact venue ID</span><input value={backtestForm.venue} placeholder="Must match stored event venue" onChange={(e) => setBacktestForm(v => ({...v, venue:e.target.value}))} /></label>
