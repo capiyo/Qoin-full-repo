@@ -25,25 +25,25 @@ use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct MarketEvent {
+pub(crate) struct MarketEvent {
     pub(crate) event_id: String,
     pub(crate) venue: String,
     pub(crate) symbol: String,
     pub(crate) event_type: String,
     pub(crate) ts_ms: i64,
-    #[serde(default)] price: Option<f64>,
-    #[serde(default)] size: Option<f64>,
-    #[serde(default)] side: Option<String>,
-    #[serde(default)] bid: Option<f64>,
-    #[serde(default)] ask: Option<f64>,
-    #[serde(default)] bid_size: Option<f64>,
-    #[serde(default)] ask_size: Option<f64>,
-    #[serde(default)] funding_rate: Option<f64>,
-    #[serde(default)] open_interest: Option<f64>,
-    #[serde(default)] liquidation_side: Option<String>,
+    #[serde(default)] pub(crate) price: Option<f64>,
+    #[serde(default)] pub(crate) size: Option<f64>,
+    #[serde(default)] pub(crate) side: Option<String>,
+    #[serde(default)] pub(crate) bid: Option<f64>,
+    #[serde(default)] pub(crate) ask: Option<f64>,
+    #[serde(default)] pub(crate) bid_size: Option<f64>,
+    #[serde(default)] pub(crate) ask_size: Option<f64>,
+    #[serde(default)] pub(crate) funding_rate: Option<f64>,
+    #[serde(default)] pub(crate) open_interest: Option<f64>,
+    #[serde(default)] pub(crate) liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Default)]
-struct SymbolState {
+pub(crate) struct SymbolState {
     pub(crate) symbol: String,
     pub(crate) event_count: usize,
     pub(crate) last_event_ts_ms: Option<i64>,
@@ -66,7 +66,9 @@ struct AppState {
     states: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
-    jepa_predictions: Collection<Document>,\n    backtest_runs: Collection<Document>,\n    backtest_decisions: Collection<Document>,
+    jepa_predictions: Collection<Document>,
+    backtest_runs: Collection<Document>,
+    backtest_decisions: Collection<Document>,
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
@@ -393,14 +395,20 @@ async fn main(){
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
-    let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");\n    let backtest_runs:Collection<Document>=db.collection("backtest_runs");\n    let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
+    let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
+    let backtest_runs:Collection<Document>=db.collection("backtest_runs");
+    let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
-    backtest_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1})\n        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest run index");\n    backtest_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1,"sequence":1})\n        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest decision index");\n    jepa_predictions.create_index(mongodb::IndexModel::builder()
+    backtest_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest run index");
+    backtest_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1,"sequence":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest decision index");
+    jepa_predictions.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"symbol":1,"event_ts_ms":-1}).build(),None).await
         .expect("JEPA prediction lookup index");
     let baseline=EdgeStrategy::baseline();
@@ -443,7 +451,8 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
-        .route("/internal/jepa",get(get_jepa_prediction))\n        .route("/internal/backtest",post(run_paper_backtest))
+        .route("/internal/jepa",get(get_jepa_prediction))
+        .route("/internal/backtest",post(run_paper_backtest))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
