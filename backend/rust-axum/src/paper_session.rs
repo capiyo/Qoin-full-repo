@@ -92,9 +92,9 @@ struct PaperAccount {
     #[serde(default)]
     losses: u64,
     #[serde(default)]
-    gross_profit: f64,
+    net_winning_pnl: f64,
     #[serde(default)]
-    gross_loss: f64,
+    net_losing_pnl: f64,
     skipped_entries: u64,
     peak_equity: f64,
     max_drawdown_pct: f64,
