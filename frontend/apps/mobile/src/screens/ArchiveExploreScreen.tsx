@@ -279,6 +279,10 @@ export function ArchiveExploreScreen({ mode }: Props) {
                   ["Open interest", marketState?.open_interest?.toString() ?? "—"],
                   ["Liquidations", marketState?.liquidation_events?.toString() ?? "—"],
                   ["Events", marketState?.event_count?.toString() ?? "—"],
+                  ["Total trade size", marketState?.total_trade_size?.toFixed(4) ?? "—"],
+                  ["Event intensity", marketState?.event_intensity?.toFixed(3) ?? "—"],
+                  ["EWMA abs return", marketState?.ewma_abs_return?.toFixed(6) ?? "—"],
+                  ["Last event time", marketState?.last_event_ts_ms ? new Date(marketState.last_event_ts_ms).toLocaleTimeString() : "—"],
                   ["State quality", marketState?.state_quality?.toFixed(3) ?? "—"],
                 ].map(([label,value]) => <View key={label} style={styles.liveMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
               </View>
