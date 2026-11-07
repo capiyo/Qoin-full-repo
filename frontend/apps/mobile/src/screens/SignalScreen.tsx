@@ -224,6 +224,7 @@ export function SignalScreen() {
                   <Text style={styles.metricValue}>{item.magnitude.toFixed(3)}</Text>
                 </View>
                 <Text style={styles.fieldHelp}>{item.reason}</Text>
+                <Text style={styles.fieldHelp}>Vector [{item.decision_vector.map((value) => value.toFixed(2)).join(", ")}] · forces {Object.entries(item.features).map(([name, value]) => name + " " + value.toFixed(2)).join(" / ")}</Text>
               </View>
             ))}
             <Text style={styles.panelTitle}>Closed trade ledger · latest 5</Text>
