@@ -184,6 +184,7 @@ export default function App() {
           <strong>Mean feature activations</strong>
           <div>{Object.entries(cycle.mean_feature_values).map(([name, value]) => <span key={name}>{name}: <b>{value.toFixed(3)}</b></span>)}</div>
         </div>}
+        {cycle && Object.keys(cycle.mean_weight_contributions).length > 0 && <div className="cycle-diagnostics"><strong>Mean weighted contribution · bullish / bearish</strong><div>{Object.entries(cycle.mean_weight_contributions).map(([name, values]) => <span key={name}>{name}: <b>{values[0].toFixed(3)} / {values[1].toFixed(3)}</b></span>)}</div></div>}
         {cycle && cycle.mean_attention.length > 0 && <div className="cycle-diagnostics">
           <strong>Mean attention matrix</strong>
           {cycle.mean_attention.map((row, index) => <span key={index}>Row {index + 1}: {row.map((value) => value.toFixed(3)).join(" · ")}</span>)}
