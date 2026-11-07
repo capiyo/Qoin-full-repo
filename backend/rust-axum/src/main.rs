@@ -342,6 +342,7 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
 }
 async fn get_instruments()->impl IntoResponse {
     let finnhub_configured=env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false);
+    let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     let mut items=serde_json::json!([
       {"symbol":"BTC/USD","engine_symbol":"BTCUSDT","name":"Bitcoin","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Bitcoin perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"ETH/USD","engine_symbol":"ETHUSDT","name":"Ethereum","asset_class":"Crypto","venue":"Binance USD-M","provider":"Binance public market stream","description":"Ether perpetual · USDT quote","quote_currency":"USDT"},
@@ -373,8 +374,8 @@ async fn get_instruments()->impl IntoResponse {
     if let Some(rows)=items.as_array_mut() {
         for row in rows {
             if row.get("asset_class").and_then(|v|v.as_str())!=Some("Crypto") {
-                row["provider_status"]=serde_json::json!(if finnhub_configured {"live_stream_configured"} else {"requires_FINNHUB_API_KEY"});
-            } else { row["provider_status"]=serde_json::json!("streaming_when_Binance_adapter_connected"); }
+                row["provider_status"]=serde_json::json!(if finnhub_configured {"provider_key_configured"} else {"requires_FINNHUB_API_KEY"});
+            } else { row["provider_status"]=serde_json::json!(if binance_enabled {"public_stream_enabled"} else {"stream_disabled"}); }
         }
     }
     (StatusCode::OK,Json(serde_json::json!({"source":"Qoin instrument registry","items":items,"count":items.as_array().map(|v|v.len()).unwrap_or(0)})))
