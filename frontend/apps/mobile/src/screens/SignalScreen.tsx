@@ -9,7 +9,9 @@ import {
   startOperatingCycle,
   stopOperatingCycle,
   runPaperBacktest,
+  getPaperBacktestHistory,
   type PaperBacktestReport,
+  type PaperBacktestHistoryItem,
   type MarketForceObservation,
   type QoinSignal,
   type OperatingCycleConfig,
@@ -48,11 +50,13 @@ export function SignalScreen() {
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleError, setCycleError] = useState("");
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
+  const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
   const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", lookback_hours: "24", warmup_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
 
   useEffect(() => {
+    getPaperBacktestHistory().then((result) => setBacktestHistory(result.runs)).catch(() => setBacktestHistory([]));
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
     const refreshCycle = () => getOperatingCycle().then(setCycle).catch(() => setCycle(null));
@@ -84,7 +88,10 @@ export function SignalScreen() {
     setBacktestBusy(true); setBacktestError(""); setBacktest(null);
     const end = Date.now();
     try {
-      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), venue: backtestForm.venue.trim(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, warmup_hours: Number(backtestForm.warmup_hours), initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
+      const result = await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), venue: backtestForm.venue.trim(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, warmup_hours: Number(backtestForm.warmup_hours), initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 });
+      setBacktest(result);
+      const history = await getPaperBacktestHistory(backtestForm.symbol.trim().toUpperCase());
+      setBacktestHistory(history.runs);
     } catch (err) { setBacktestError(err instanceof Error ? err.message : "Paper replay failed"); }
     finally { setBacktestBusy(false); }
   }
@@ -197,6 +204,18 @@ export function SignalScreen() {
             ))}
             <Text style={styles.fieldHelp}>Run {backtest.run_id} · {backtest.venue} · {backtest.decisions.length} Mirror decisions persisted · {backtest.strategy_version}</Text>
             <Text style={styles.fieldHelp}>{backtest.assumptions}</Text>
+            {backtestHistory.length > 0 ? <>
+              <Text style={styles.panelTitle}>Saved Mirror runs</Text>
+              {backtestHistory.slice(0, 6).map((run) => (
+                <View key={run.run_id} style={styles.metricRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.metricLabel}>{run.symbol} · {run.run_id}</Text>
+                    <Text style={styles.fieldHelp}>{run.return_pct.toFixed(2)}% · drawdown {run.max_drawdown_pct.toFixed(2)}%</Text>
+                  </View>
+                  <Text style={styles.metricValue}>{run.net_pnl.toFixed(2)}</Text>
+                </View>
+              ))}
+            </> : null}
             <Text style={styles.panelTitle}>Mirror trace · latest decisions</Text>
             {backtest.decisions.slice(-8).reverse().map((item) => (
               <View key={item.sequence + "-" + item.event_id} style={styles.mirrorEntry}>
