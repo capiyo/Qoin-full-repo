@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { getInstrumentVector, getQoinHealth, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision } from "@qoin/core";
 
 type Instrument = {
@@ -172,7 +172,7 @@ export default function App() {
                   <span className="attention-corner" />
                   {QOIN_FEATURE_SHORT_NAMES.map((name) => <span className="attention-axis" key={`col-${name}`}>{name}</span>)}
                   {QOIN_FEATURE_NAMES.map((rowName, rowIndex) => (
-                    <React.Fragment key={rowName}>
+                    <Fragment key={rowName}>
                       <span className="attention-axis attention-row-label">{QOIN_FEATURE_SHORT_NAMES[rowIndex]}</span>
                       {QOIN_FEATURE_NAMES.map((columnName, columnIndex) => {
                         const weight = vector.attention?.[rowIndex]?.[columnIndex] ?? 0;
@@ -183,7 +183,7 @@ export default function App() {
                           style={{ background: `rgba(40, 103, 220, ${0.08 + weight * 0.82})`, color: weight > 0.55 ? "#FFFFFF" : "#2B4160" }}
                         >{weight.toFixed(2)}</span>;
                       })}
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                 </div>
               </section>
