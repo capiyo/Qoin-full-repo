@@ -1,6 +1,7 @@
 //! Deterministic chronological paper backtest using the same EdgeStrategy::decide path
 //! as live research ingestion. This module never submits orders.
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use crate::{apply, MarketEvent, SymbolState};
 use crate::edge_strategy::EdgeStrategy;
 
@@ -77,8 +78,13 @@ pub struct MirrorDecision {
     pub event_id: String,
     pub venue: String,
     pub ts_ms: i64,
+    pub strategy_version: String,
     pub action: String,
     pub reason: String,
+    pub features: BTreeMap<String, f64>,
+    pub attention: Vec<Vec<f64>>,
+    pub attended_features: Vec<f64>,
+    pub decision_vector: [f64; 2],
     pub magnitude: f64,
     pub angle_radians: f64,
     pub spread_bps: Option<f64>,
@@ -233,7 +239,10 @@ pub fn run_backtest(
         }
         decisions.push(MirrorDecision {
             sequence: index, event_id: event.event_id.clone(), venue: event.venue.clone(), ts_ms: event.ts_ms,
+            strategy_version: decision.strategy_version.clone(),
             action: decision.action.into(), reason: decision.reason,
+            features: decision.features.clone(), attention: decision.attention.clone(),
+            attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
             magnitude: decision.magnitude, angle_radians: decision.angle_radians,
             spread_bps: state.spread_bps, execution,
         });
