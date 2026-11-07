@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -111,6 +111,8 @@ export default function App() {
   const [news, setNews] = useState<QoinNewsItem[]>([]);
   const [newsStatus, setNewsStatus] = useState("loading");
   const [newsCategory, setNewsCategory] = useState("general");
+  const [macroEvents, setMacroEvents] = useState<QoinMacroEvent[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState("loading");
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); }, []);
   useEffect(() => {
@@ -143,6 +145,18 @@ export default function App() {
     const timer = setInterval(load, 5 * 60 * 1000);
     return () => { active = false; clearInterval(timer); };
   }, [newsCategory]);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => getQoinCalendar().then((result) => {
+      if (!active) return;
+      setMacroEvents(result.items);
+      setCalendarStatus(result.status === "ok" ? "connected" : result.message || result.status);
+    }).catch((error: unknown) => { if (active) setCalendarStatus(error instanceof Error ? error.message : "Calendar provider unavailable"); });
+    load();
+    const timer = setInterval(load, 15 * 60 * 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -239,6 +253,13 @@ export default function App() {
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
             {news.length ? <div className="news-list">{news.slice(0, 30).map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
+          </section>
+          <section className="macro-section">
+            <div className="news-heading"><div><p className="eyebrow">UPCOMING CATALYSTS</p><h3>Economic calendar</h3><p>Scheduled releases from the configured provider, with actual, estimate and previous values where published.</p></div><span className="news-status">{calendarStatus}</span></div>
+            {macroEvents.length ? <div className="macro-list">{macroEvents.slice(0,40).map((item,index) => <article className="macro-item" key={item.time + item.country + item.event + index}>
+              <div><strong>{item.event}</strong><small>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</small></div>
+              <div className="macro-values"><span>Actual <b>{item.actual ?? "—"}</b></span><span>Estimate <b>{item.estimate ?? "—"}</b></span><span>Previous <b>{item.previous ?? "—"}</b></span></div>
+            </article>)}</div> : <p className="provider-empty">{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</p>}
           </section>
         </section>
       )}
