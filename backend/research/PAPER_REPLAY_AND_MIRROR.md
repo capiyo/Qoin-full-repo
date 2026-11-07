@@ -16,6 +16,7 @@ Example request:
 {
   "symbol": "BTCUSDT",
   "venue": "your-exact-ingestion-venue",
+  "quote_currency": "USDT",
   "start_ts_ms": 1794000000000,
   "end_ts_ms": 1794086400000,
   "warmup_hours": 24,
@@ -29,6 +30,7 @@ Example request:
 ```
 
 - `start_ts_ms` and `end_ts_ms` are Unix milliseconds.
+- `initial_cash` and `notional_per_trade` are denominated in `quote_currency`. The simulator does not convert KSh to USD/USDT or model contract multipliers; convert the account balance to the instrument quote currency before running, and do not enter KSh 20,000 as USDT 20,000.
 - The warmup window (1–168 hours) updates causal feature state before the measurement window. Warmup events do not create signals or trades.
 - The replay is capped at 100,000 fetched events per request. Narrow the time window if the cap is reached.
 - A fill is possible only on an event containing a valid bid and ask. Entries pay the ask plus slippage; exits receive the bid less slippage. Fees are charged on both sides.
