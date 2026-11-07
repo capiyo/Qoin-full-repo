@@ -269,12 +269,12 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
                     };
                     if payload.get("type").and_then(|v|v.as_str()) != Some("trade") { continue; }
                     let Some(rows) = payload.get("data").and_then(|v|v.as_array()) else { continue; };
-                    for row in rows {
+                    for (row_index, row) in rows.iter().enumerate() {
                         let Some(symbol) = row.get("s").and_then(|v|v.as_str()) else { continue; };
                         let ts_ms = row.get("t").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
                         let price = stream_number(row.get("p"));
                         let size = stream_number(row.get("v"));
-                        let event_id = format!("trade:{}:{}:{}",ts_ms,price.unwrap_or_default(),size.unwrap_or_default());
+                        let event_id = format!("trade:{}:{}:{}:{}",ts_ms,price.unwrap_or_default(),size.unwrap_or_default(),row_index);
                         let event = MarketEvent {
                             event_id, venue:"finnhub".into(), symbol:symbol.into(), event_type:"trade".into(), ts_ms,
                             price, size, side:None, bid:None, ask:None, bid_size:None, ask_size:None,
@@ -592,7 +592,7 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                         let order=data.get("o").unwrap_or(data);
                         let side=order.get("S").and_then(|v|v.as_str()).unwrap_or_default();
                         let liquidation_side=match side{"SELL"=>Some("long"),"BUY"=>Some("short"),_=>None};
-                        let id=order.get("T").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
+                        let id=format!("{}:{}:{}:{}",order.get("T").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string()),side,order.get("p").and_then(|v|v.as_str()).unwrap_or(""),order.get("q").and_then(|v|v.as_str()).unwrap_or(""));
                         Some(MarketEvent{event_id:format!("liquidation:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
                             event_type:"liquidation".into(),ts_ms:order.get("T").and_then(|v|v.as_i64()).unwrap_or(timestamp),
                             price:stream_number(order.get("p")),size:stream_number(order.get("q")),side:None,
@@ -700,14 +700,14 @@ async fn main(){
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if binance_enabled {
-        let symbols=env::var("QOIN_BINANCE_STREAM_SYMBOLS").unwrap_or_else(|_|"BTCUSDT,ETHUSDT,SOLUSDT".into())
+        let symbols=env::var("QOIN_BINANCE_STREAM_SYMBOLS").unwrap_or_else(|_|"BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(|v|v.to_ascii_uppercase()).collect::<Vec<_>>();
         let adapter_addr=addr.clone();
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
     if let Ok(token) = env::var("FINNHUB_API_KEY") {
       if !token.trim().is_empty() {
-        let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:XAU_USD,OANDA:WTICO_USD".into())
+        let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:AUD_USD,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:US30_USD,OANDA:DE30_EUR,OANDA:XAU_USD,OANDA:XAG_USD,OANDA:WTICO_USD,OANDA:BCO_USD,OANDA:NATGAS_USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
         let adapter_addr=addr.clone();
         tokio::spawn(async move { spawn_finnhub_stream(adapter_addr,token,symbols).await; });
