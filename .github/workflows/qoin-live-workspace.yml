@@ -51,7 +51,7 @@ jobs:
       - name: Install Drogon build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdrogon-dev libjsoncpp-dev cmake build-essential
+          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Configure gateway
         run: cmake -S backend/cpp-drogon -B build/drogon
       - name: Build gateway
