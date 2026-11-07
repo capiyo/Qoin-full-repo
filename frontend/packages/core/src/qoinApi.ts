@@ -20,6 +20,37 @@ export type QoinSignal = {
   rationale: string;
 };
 
+
+export type QoinVectorDecision = {
+  symbol: string;
+  strategy_key?: string;
+  strategy_version?: string;
+  features?: Record<string, number>;
+  attention?: number[][];
+  attended_features?: number[];
+  decision_vector?: [number, number];
+  magnitude?: number;
+  angle_radians?: number;
+  angular_threshold_radians?: number;
+  action?: "buy" | "sell" | "wait" | string;
+  reason?: string;
+  research_only?: boolean;
+};
+
+export const QOIN_FEATURE_NAMES = [
+  "order_flow_imbalance",
+  "funding_pressure",
+  "liquidity_stress",
+  "volatility_shock",
+  "event_intensity",
+  "liquidation_pressure",
+] as const;
+
+/** Fetches the latest persisted engine vector for a symbol; never places orders. */
+export function getInstrumentVector(symbol: string): Promise<QoinVectorDecision> {
+  return request<QoinVectorDecision>(`/api/v1/vector?symbol=${encodeURIComponent(symbol)}`);
+}
+
 export type QoinSignalRequest = {
   observation: MarketForceObservation;
   has_open_position: boolean;
