@@ -113,6 +113,8 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/start >/tmp/paper-cycle-start.json
           curl -fsS http://127.0.0.1:8081/internal/paper-session >/tmp/paper-session-active.json
           jq -e '.active == true and .live_execution_enabled == false and .accounts[0].symbol == "ETHUSDT"' /tmp/paper-session-active.json
+          curl -fsS 'http://127.0.0.1:8081/internal/paper-session/history?limit=10' >/tmp/paper-session-history.json
+          jq -e '(.decisions | type) == "array" and (.trades | type) == "array"' /tmp/paper-session-history.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/stop >/tmp/paper-cycle-stop.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
