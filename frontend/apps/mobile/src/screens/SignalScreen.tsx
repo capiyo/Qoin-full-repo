@@ -57,7 +57,7 @@ export function SignalScreen() {
   const [cycleError, setCycleError] = useState("");
   const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
   const [paperHistory, setPaperHistory] = useState<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>({ decisions: [], trades: [] });
-  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
+  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, contract_multiplier: 1, quantity_step: 0.000001, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
@@ -174,12 +174,14 @@ export function SignalScreen() {
             </View>
           ))}
           <Text style={styles.panelTitle}>Paper accounts · {cycleConfig.paper_accounts.length}/50</Text>
-          <Text style={styles.fieldHelp}>Each venue/symbol uses an isolated ledger in its quote currency. No automatic FX conversion.</Text>
+          <Text style={styles.fieldHelp}>Each venue/symbol uses an isolated quote-currency ledger. Set the contract multiplier and lot step from the venue specification; no FX conversion.</Text>
           <TextInput accessibilityLabel="Paper symbol" placeholder="Symbol e.g. BTCUSDT" value={paperAccountDraft.symbol} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, symbol: value }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Exact venue" placeholder="Exact ingestion venue ID" value={paperAccountDraft.venue} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, venue: value }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Quote currency" placeholder="Quote currency e.g. USDT" value={paperAccountDraft.quote_currency} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, quote_currency: value }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Starting capital" placeholder="Starting capital in quote currency" keyboardType="decimal-pad" value={String(paperAccountDraft.initial_cash || "")} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, initial_cash: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Notional per entry" placeholder="Notional per entry" keyboardType="decimal-pad" value={String(paperAccountDraft.notional_per_trade || "")} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, notional_per_trade: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Contract multiplier" placeholder="Contract multiplier from venue spec" keyboardType="decimal-pad" value={String(paperAccountDraft.contract_multiplier)} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, contract_multiplier: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Quantity step" placeholder="Minimum quantity increment / lot step" keyboardType="decimal-pad" value={String(paperAccountDraft.quantity_step)} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, quantity_step: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
           <Pressable onPress={() => setPaperAccountDraft((v) => ({ ...v, reinvest_profits: !v.reinvest_profits }))} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Compound future entries: {paperAccountDraft.reinvest_profits ? "ON" : "OFF"}</Text></Pressable>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Fee / slippage (bps per side)</Text><Text style={styles.metricValue}>{paperAccountDraft.fee_bps} / {paperAccountDraft.slippage_bps}</Text></View>
           <View style={styles.cycleButtons}>
@@ -191,7 +193,7 @@ export function SignalScreen() {
           <Pressable onPress={addPaperAccount} disabled={!!cycle?.active} style={[styles.secondaryButton, !!cycle?.active && styles.disabled]}><Text style={styles.secondaryButtonText}>Add instrument account</Text></Pressable>
           {cycleConfig.paper_accounts.map((account) => (
             <View key={account.venue + account.symbol} style={styles.metricRow}>
-              <Text style={styles.metricLabel}>{account.symbol} · {account.venue} · {account.quote_currency} {account.initial_cash}</Text>
+              <Text style={styles.metricLabel}>{account.symbol} · {account.venue} · {account.quote_currency} {account.initial_cash} · x{account.contract_multiplier} · step {account.quantity_step}</Text>
               <Pressable onPress={() => removePaperAccount(account.symbol, account.venue)} disabled={!!cycle?.active}><Text style={styles.secondaryButtonText}>Remove</Text></Pressable>
             </View>
           ))}
