@@ -70,3 +70,12 @@ The six-axis chart is a direct visualization of the six normalized input feature
 - There is no live order-submission route. The WebSocket transports observations and research vectors only. This work does not enable live execution, exchange credentials, position sizing or order management.
 
 Keep Qoin research/paper-only. The existing `docs/RISK_POLICY.md` remains binding.
+
+
+## Live notification centre
+
+The web and React Native clients now expose a notification centre fed directly by the existing read-only market WebSocket. It creates deduplicated alerts when a symbol's engine action transitions into BUY or SELL and when a liquidation event is received. Each alert shows the symbol, timestamp, event category, engine rationale or liquidation side/price, and the underlying JSON payload for inspection. Users can mark the notification list read or clear it for the current app session.
+
+On web, users may opt into browser desktop notifications from the notification centre. Those browser notifications are emitted only while the page is running and has an active WebSocket connection. The mobile app currently shows in-app notifications while the app is running; it does not yet register FCM/APNs/Expo push tokens or deliver background notifications.
+
+Notification history is currently in-memory and resets when the app process/page is restarted. It is not stored per user in MongoDB, synchronized across devices, or backed by a server-side notification queue. Those capabilities require authenticated user identity, device-token registration, durable notification storage, delivery retries, and user-configurable alert preferences. Do not describe the current client layer as remote push delivery.
