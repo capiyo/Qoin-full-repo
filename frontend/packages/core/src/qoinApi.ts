@@ -115,6 +115,7 @@ export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
 
 export type PaperBacktestRequest = {
   symbol: string;
+  venue: string;
   start_ts_ms: number;
   end_ts_ms: number;
   warmup_hours?: number;
@@ -141,6 +142,7 @@ export type PaperBacktestTrade = {
 export type MirrorDecision = {
   sequence: number;
   event_id: string;
+  venue: string;
   ts_ms: number;
   action: "buy" | "sell" | "wait";
   reason: string;
@@ -153,6 +155,7 @@ export type MirrorDecision = {
 export type PaperBacktestReport = {
   run_id: string;
   symbol: string;
+  venue: string;
   strategy_version: string;
   start_ts_ms: number;
   end_ts_ms: number;
