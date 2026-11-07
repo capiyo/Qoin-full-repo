@@ -666,11 +666,13 @@ async fn main(){
         let adapter_addr=addr.clone();
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
-    if let Ok(token) = env::var("FINNHUB_API_KEY").filter(|v| !v.trim().is_empty()) {
+    if let Ok(token) = env::var("FINNHUB_API_KEY") {
+      if !token.trim().is_empty() {
         let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:XAU_USD,OANDA:WTICO_USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
         let adapter_addr=addr.clone();
         tokio::spawn(async move { spawn_finnhub_stream(adapter_addr,token,symbols).await; });
+      } else { tracing::info!("Finnhub market stream disabled: FINNHUB_API_KEY is empty"); }
     } else {
         tracing::info!("Finnhub market stream disabled: FINNHUB_API_KEY is not configured");
     }
