@@ -25,7 +25,7 @@ mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use backtest::{BacktestRequest, run_backtest};
 use operating_cycle::{CycleConfig, OperatingCycle};
-use paper_session::{PaperSession, PaperSessionConfig, PaperAccountConfig};
+use paper_session::PaperSession;
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
