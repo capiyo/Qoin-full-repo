@@ -176,7 +176,8 @@ export default function App() {
                   <div><strong>{item.action.toUpperCase()}</strong><small>{new Date(item.ts_ms).toLocaleString()}</small></div>
                   <span>{item.execution.replaceAll("_", " ")}</span>
                   <small>{item.reason}</small>
-                  <small>Magnitude {item.magnitude.toFixed(3)} · spread {item.spread_bps == null ? "—" : item.spread_bps.toFixed(2) + " bps"}</small>
+                  <small>Vector [{item.decision_vector.map((value) => value.toFixed(3)).join(", ")}] · magnitude {item.magnitude.toFixed(3)} · spread {item.spread_bps == null ? "—" : item.spread_bps.toFixed(2) + " bps"}</small>
+                  <small>Forces: {Object.entries(item.features).map(([name, value]) => name + " " + value.toFixed(2)).join(" · ")}</small>
                 </article>
               ))}
             </div>
