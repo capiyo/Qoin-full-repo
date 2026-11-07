@@ -56,6 +56,7 @@ impl PaperAccountConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 struct OpenPosition {
     entry_ts_ms: i64,
     entry_event_id: String,
