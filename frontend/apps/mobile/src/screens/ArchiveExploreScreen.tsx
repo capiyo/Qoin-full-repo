@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Rect } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors } from "../theme";
 
 type Market = "Crypto" | "Equities" | "FX";
 type Instrument = {
