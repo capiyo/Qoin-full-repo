@@ -46,6 +46,9 @@ export default function App() {
   const [runs, setRuns] = useState<PaperSessionRun[]>([]);
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [savedDiscovery, setSavedDiscovery] = useState<Array<{ symbol: string; name: string; category: string }>>(() => {
+    try { const raw = window.localStorage.getItem("qoin:archive-instruments"); const value: unknown = raw ? JSON.parse(raw) : []; return Array.isArray(value) ? value.filter((item): item is { symbol: string; name: string; category: string } => !!item && typeof item.symbol === "string" && typeof item.name === "string" && typeof item.category === "string") : []; } catch { return []; }
+  });
 
   useEffect(() => {
     const refresh = () => {
@@ -75,8 +78,9 @@ export default function App() {
       byKey.set(key, { ...current, symbol: account.symbol, venue: account.venue, currency: account.quote_currency,
         equity: current?.equity, pnl: current?.pnl ?? account.net_pnl, status: current?.status ?? "Archived" });
     }
+    for (const item of savedDiscovery) if (![...byKey.values()].some((saved) => saved.symbol === item.symbol)) byKey.set("discovery:" + item.symbol, { symbol: item.symbol, venue: "Not configured", currency: item.symbol.endsWith("USDT") ? "USDT" : "USD", status: "Added · discovery" });
     return [...byKey.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
-  }, [cycle, session, runs]);
+  }, [cycle, session, runs, savedDiscovery]);
 
   const selectedEvents = selected ? history.decisions.filter((e) => e.symbol === selected.symbol && e.venue === selected.venue) : [];
   const latest = selectedEvents[0];
@@ -85,7 +89,13 @@ export default function App() {
     (item.symbol + item.name).toLowerCase().includes(query.toLowerCase()));
 
   function addToArchive(item: typeof discovery[number]) {
-    setSelected({ symbol: item.symbol, venue: "Not configured", currency: item.symbol.endsWith("USDT") ? "USDT" : "USD", status: "Discovery only" });
+    setSavedDiscovery((current) => {
+      if (current.some((saved) => saved.symbol === item.symbol)) return current;
+      const next = [...current, { symbol: item.symbol, name: item.name, category: item.category }];
+      window.localStorage.setItem("qoin:archive-instruments", JSON.stringify(next));
+      return next;
+    });
+    setTab("archive");
   }
 
   return <main className="qoin-app">
@@ -130,7 +140,7 @@ export default function App() {
             <div className="section-heading explore-title"><div><p className="eyebrow">INSTRUMENT DIRECTORY</p><h2>Find an instrument</h2></div></div>
             <div className="filter-row">{["All", "Forex", "Crypto", "Commodities", "Stocks"].map((name) => <button key={name} className={filter === name ? "filter-chip selected" : "filter-chip"} onClick={() => setFilter(name)}>{name}</button>)}</div>
             <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments…" />
-            <div className="discovery-list">{visibleDiscovery.map((item) => <article className="discovery-card" key={item.symbol}><span className="asset-avatar">{item.symbol.slice(0, 1)}</span><span className="asset-main"><strong>{item.symbol}</strong><small>{item.name} · {item.category}</small></span><button className="add-button" onClick={() => addToArchive(item)}>＋ Add</button></article>)}</div>
+            <div className="discovery-list">{visibleDiscovery.map((item) => <article className="discovery-card" key={item.symbol}><span className="asset-avatar">{item.symbol.slice(0, 1)}</span><span className="asset-main"><strong>{item.symbol}</strong><small>{item.name} · {item.category}</small></span><button className="add-button" onClick={() => addToArchive(item)} disabled={instruments.some((saved) => saved.symbol === item.symbol)}>{instruments.some((saved) => saved.symbol === item.symbol) ? "In Archive" : "＋ Add"}</button></article>)}</div>
           </div>}
       </section>
       <aside className="explore-column"><div className="side-sticky"><p className="eyebrow">QOIN ENGINE</p><h2>{cycle?.phase?.replaceAll("_", " ") ?? "Research mode"}</h2><p className="muted">Your instruments are observed and evaluated through the operating cycle.</p><div className="cycle-steps"><div className={cycle?.phase === "observation" ? "step current" : "step"}><i /> <span><strong>Observation</strong><small>Market data collection</small></span></div><div className={cycle?.phase === "weight_evaluation" ? "step current" : "step"}><i /> <span><strong>Weight diagnostics</strong><small>Feature and vector review</small></span></div><div className={cycle?.phase === "paper_session" ? "step current" : "step"}><i /> <span><strong>Paper session</strong><small>Simulated execution only</small></span></div></div><div className="side-divider" /><p className="eyebrow">RECENT MIRROR</p>{history.decisions.slice(0, 4).map((event) => <div className="mini-event" key={event.event_id}><strong>{event.symbol} · {event.action.toUpperCase()}</strong><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.execution}</small></div>)}{!history.decisions.length && <p className="muted">Your decision trace will appear here as instruments produce observations.</p>}</div></aside>
