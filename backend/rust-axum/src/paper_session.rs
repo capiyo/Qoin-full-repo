@@ -183,7 +183,9 @@ impl PaperAccount {
                     trade = Some(PaperTradeRecord {
                         cycle_id: cycle_id.to_owned(), symbol: self.config.symbol.clone(), venue: self.config.venue.clone(),
                         quote_currency: self.config.quote_currency.to_uppercase(), entry_ts_ms: open.entry_ts_ms,
-                        exit_ts_ms: event.ts_ms, quantity: open.quantity, contract_multiplier: self.config.contract_multiplier, entry_price: open.entry_price,
+                        exit_ts_ms: event.ts_ms, quantity: open.quantity, contract_multiplier: self.config.contract_multiplier,
+                        quantity_step: self.config.quantity_step, fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
+                        reinvest_profits: self.config.reinvest_profits, entry_price: open.entry_price,
                         exit_price, gross_pnl: gross, fees: total_fees, net_pnl: net,
                         return_pct: net / (open.quantity * open.entry_price * self.config.contract_multiplier) * 100.0,
                         exit_reason: "strategy_sell".into(),
@@ -204,6 +206,9 @@ impl PaperAccount {
         let record = PaperMirrorRecord {
             cycle_id: cycle_id.to_owned(), event_id: event.event_id.clone(), venue: event.venue.clone(),
             symbol: event.symbol.clone(), quote_currency: self.config.quote_currency.to_uppercase(),
+            contract_multiplier: self.config.contract_multiplier, quantity_step: self.config.quantity_step,
+            notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
+            fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
             ts_ms: event.ts_ms, strategy_version: decision.strategy_version.clone(), action: decision.action.into(),
             reason: decision.reason.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
@@ -218,7 +223,9 @@ impl PaperAccount {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaperMirrorRecord {
     pub cycle_id: String, pub event_id: String, pub venue: String, pub symbol: String,
-    pub quote_currency: String, pub ts_ms: i64, pub strategy_version: String, pub action: String,
+    pub quote_currency: String, pub contract_multiplier: f64, pub quantity_step: f64,
+    pub notional_per_trade: f64, pub reinvest_profits: bool, pub fee_bps: f64, pub slippage_bps: f64,
+    pub ts_ms: i64, pub strategy_version: String, pub action: String,
     pub reason: String, pub features: BTreeMap<String, f64>, pub attention: Vec<Vec<f64>>,
     pub attended_features: Vec<f64>, pub decision_vector: [f64; 2], pub magnitude: f64,
     pub angle_radians: f64, pub spread_bps: Option<f64>, pub execution: String,
@@ -228,7 +235,8 @@ pub struct PaperMirrorRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaperTradeRecord {
     pub cycle_id: String, pub symbol: String, pub venue: String, pub quote_currency: String,
-    pub entry_ts_ms: i64, pub exit_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64, pub entry_price: f64,
+    pub entry_ts_ms: i64, pub exit_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64,
+    pub quantity_step: f64, pub fee_bps: f64, pub slippage_bps: f64, pub reinvest_profits: bool, pub entry_price: f64,
     pub exit_price: f64, pub gross_pnl: f64, pub fees: f64, pub net_pnl: f64,
     pub return_pct: f64, pub exit_reason: String,
 }
