@@ -166,6 +166,7 @@ export default function App() {
         <div className="cycle-diagnostics">
           <strong>Paper accounts · {cycleConfig.paper_accounts.length}/50</strong>
           <p className="hint">Each venue/symbol has its own isolated quote-currency ledger. Set the venue contract multiplier and lot step from its specification; capital is not converted between KSh, USD, USDT or other currencies.</p>
+          <div className="cycle-meta">{Object.entries(cycleConfig.paper_accounts.reduce<Record<string, number>>((totals, account) => { totals[account.quote_currency] = (totals[account.quote_currency] ?? 0) + account.initial_cash; return totals; }, {})).map(([currency, total]) => <span key={currency}>Allocated {currency}: <strong>{total.toLocaleString()}</strong></span>)}</div>
           <div className="cycle-grid">
             <label className="cycle-field"><span>Symbol</span><input value={paperAccountDraft.symbol} onChange={(e) => setPaperAccountDraft(v => ({...v, symbol:e.target.value}))} placeholder="BTCUSDT" /></label>
             <label className="cycle-field"><span>Exact venue ID</span><input value={paperAccountDraft.venue} onChange={(e) => setPaperAccountDraft(v => ({...v, venue:e.target.value}))} placeholder="Must match ingestion venue" /></label>
