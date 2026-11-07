@@ -39,14 +39,21 @@ Example request:
 
 ## Durable Mirror records
 
-Raw events remain in `market_events`; ingestion state snapshots and decisions remain in `market_states` and `trade_decisions`.
+Raw events remain in `market_events`; venue-isolated state snapshots and research decisions remain in `market_states` and `trade_decisions`. Live state is keyed by `(venue, symbol)`, not symbol alone. The service restores the latest state for each venue/symbol pair on restart. Events arriving older than that pair's event-time watermark are retained in raw history for chronological replay but are not applied to forward state or paper execution.
 
-Each replay writes:
+Historical replay writes:
 - `backtest_runs`: run summary, capital/cost assumptions, strategy version and performance metrics.
 - `backtest_decisions`: append-only per-event decision trace, including event ID/time, venue, action, reason, full feature vector, attention matrix, attended features, decision vector, magnitude/angle, spread and simulated execution outcome.
-- `operating_cycles`: the current five-minute observation / one-hour diagnostic / session state, including counters and score/alignment aggregates. The flow API restores this record on restart and updates it as new ingested events are evaluated.
 
-Retrieve the latest 50 runs with `GET /internal/backtests?symbol=BTCUSDT`, or a specific run and its trace with `GET /internal/backtests/{run_id}`. Configure/start/stop/read the persistent operating cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. These collections survive service restarts.
+The operating cycle now has a forward paper-session phase. Configure up to 50 explicit paper accounts in `CycleConfig.paper_accounts`, each with a symbol, exact ingestion venue, quote currency, starting capital, per-entry notional, compounding choice, fee and slippage assumptions. Each venue/symbol account has its own isolated cash ledger; no cross-currency conversion or shared-wallet allocation is inferred. A paper-mode cycle cannot start without at least one valid account. The first observation and one-hour diagnostic phases do not create fills. Once the session phase begins, new chronological events for configured accounts pass through the active strategy and the incremental paper simulator.
+
+Forward session records are stored in:
+- `paper_sessions`: durable current account balances, open positions, pending intents and cycle ID; restored after service restart.
+- `paper_session_decisions`: append-only per-event Mirror record with feature/attention diagnostics, strategy version, action/reason, quote spread, simulated execution status, cash, equity and open-position state.
+- `paper_session_trades`: closed simulated trades with entry/exit timestamps and prices, gross P/L, both-side fees, net P/L and return.
+- `operating_cycles`: five-minute observation / one-hour diagnostic / session schedule and aggregate score/alignment/feature/attention diagnostics.
+
+Configure/start/stop/read the cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. Read live paper account state through `GET /internal/paper-session`, and the latest 1–200 Mirror decisions and closed trades through `GET /internal/paper-session/history?limit=50` (optionally filter by `symbol`). Historical backtest endpoints remain `GET /internal/backtests?symbol=BTCUSDT` and `GET /internal/backtests/{run_id}`. These records survive service restarts.
 
 ## Interpretation and limits
 
@@ -60,4 +67,4 @@ The API is internal research infrastructure. Keep it on a trusted network; do no
 The flow service defaults to loopback at `127.0.0.1:8081`, and the shared frontend client defaults to `http://127.0.0.1:8081`. Set `VITE_QOIN_FLOW_API_URL` for the web build and `EXPO_PUBLIC_QOIN_FLOW_API_URL` for Expo/mobile when the service is hosted elsewhere. For a physical device on a trusted development LAN, bind the service to a LAN-reachable interface with `QOIN_AXUM_ADDR` and point the app to that machine's LAN address. Do not expose this internal service to the public internet.
 
 
-The operating-cycle session currently records and monitors incoming research decisions; it does not yet generate forward simulated fills or send broker orders. The historical replay endpoint is the current paper-fill simulator. The one-hour diagnostic phase reports score/alignment and decision distributions but does not automatically retune coefficients.
+The forward paper simulator is deliberately conservative and remains long-only, one position at a time per configured venue/symbol account. It waits for a valid two-sided quote, fills entries at ask plus slippage and exits at bid less slippage, and charges configured fees on both sides. It does not model shorts, leverage, margin, stop-losses, funding/financing, partial fills, queue position, market impact, exchange outages or FX conversion. Open positions are marked to estimated liquidation value; they are not forcibly closed when a cycle ends. The one-hour diagnostic phase reports feature/attention/score distributions but does not automatically retune coefficients. No broker orders are submitted and live execution remains disabled.
