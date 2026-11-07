@@ -67,11 +67,23 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
 }
 
 
+export type PaperAccountConfig = {
+  symbol: string;
+  venue: string;
+  quote_currency: string;
+  initial_cash: number;
+  notional_per_trade: number;
+  reinvest_profits: boolean;
+  fee_bps: number;
+  slippage_bps: number;
+};
+
 export type OperatingCycleConfig = {
   observation_minutes: number;
   weight_evaluation_minutes: number;
   session_minutes: number;
   mode: "research" | "paper";
+  paper_accounts: PaperAccountConfig[];
 };
 
 export type OperatingCycleSnapshot = {
@@ -113,6 +125,22 @@ export function startOperatingCycle(): Promise<OperatingCycleSnapshot> {
 
 export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
   return flowRequest<OperatingCycleSnapshot>("/internal/operating-cycle/stop", { method: "POST" });
+}
+
+export type PaperAccountSnapshot = {
+  symbol: string; venue: string; quote_currency: string; initial_cash: number; cash: number; equity: number;
+  net_pnl: number; realized_pnl: number; fees_paid: number; max_drawdown_pct: number; events: number; decisions: number;
+  buy_signals: number; sell_signals: number; wait_signals: number; entries: number; exits: number;
+  skipped_entries: number; has_open_position: boolean; pending_action: string | null;
+};
+
+export type PaperSessionSnapshot = {
+  cycle_id: string | null; active: boolean; accounts: PaperAccountSnapshot[];
+  live_execution_enabled: false; note: string;
+};
+
+export function getPaperSession(): Promise<PaperSessionSnapshot> {
+  return flowRequest<PaperSessionSnapshot>("/internal/paper-session");
 }
 
 export type PaperBacktestRequest = {
