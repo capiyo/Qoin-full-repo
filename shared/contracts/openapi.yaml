@@ -35,6 +35,45 @@ paths:
       responses:
         '200': { description: Latest state }
         '503': { description: Storage unavailable }
+  /api/v1/vector/history:
+    get:
+      summary: Get chronological persisted vector decisions for a symbol
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 120 }
+      responses:
+        '200': { description: Chronological decision-vector trajectory }
+        '503': { description: Storage unavailable }
+  /api/v1/instruments:
+    get:
+      summary: Get the supported multi-asset instrument registry
+      responses:
+        '200': { description: Crypto, equities, FX, indices and commodities catalog with provider status }
+  /api/v1/news:
+    get:
+      summary: Get sourced news from the configured Finnhub provider
+      parameters:
+        - in: query
+          name: category
+          schema: { type: string, enum: [general, forex, crypto, merger], default: general }
+      responses:
+        '200': { description: Sourced news items with publication time and attribution }
+        '503': { description: Finnhub provider is not configured }
+        '502': { description: Provider unavailable }
+  /api/v1/stream:
+    get:
+      summary: WebSocket market updates and research vectors
+      description: |
+        WebSocket endpoint. Connect with ?symbols=BTCUSDT,ETHUSDT. Server sends
+        stream.ready, market.update, stream.gap and stream.subscribed messages.
+        Clients must refresh REST snapshots after stream.gap. Read-only; no order route.
+      responses:
+        '101': { description: WebSocket upgrade }
   /api/v1/vector:
     get:
       summary: Get latest geometric vector decision
