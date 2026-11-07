@@ -77,6 +77,7 @@ export default function App() {
 
   function toggleArchive(symbol: string) {
     setInstruments((items) => items.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
+    setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   }
 
   return (
