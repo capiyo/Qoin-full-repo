@@ -83,6 +83,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    try {
+      const payload = JSON.parse(detail) as { status?: string; items?: unknown[] };
+      if (typeof payload.status === "string" && Array.isArray(payload.items)) return payload as T;
+    } catch { /* preserve the HTTP error below */ }
     throw new Error(`Qoin API ${response.status}: ${detail || response.statusText}`);
   }
   return response.json() as Promise<T>;
@@ -198,4 +202,14 @@ export type QoinMacroEvent = {
 export type QoinCalendarResponse = { source: string; status: string; from?: string; to?: string; items: QoinMacroEvent[]; message?: string };
 export function getQoinCalendar(): Promise<QoinCalendarResponse> {
   return request<QoinCalendarResponse>("/api/v1/calendar");
+}
+
+export type QoinMarketEvent = {
+  event_id: string; venue: string; symbol: string; event_type: string; ts_ms: number;
+  price?: number | null; size?: number | null; side?: string | null;
+  bid?: number | null; ask?: number | null; bid_size?: number | null; ask_size?: number | null;
+  funding_rate?: number | null; open_interest?: number | null; liquidation_side?: string | null;
+};
+export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: string; items: QoinMarketEvent[]; count: number }> {
+  return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
