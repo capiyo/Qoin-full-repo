@@ -229,7 +229,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.topline}><Text style={styles.brand}>qoin</Text><View style={styles.avatar}><Text style={styles.avatarText}>Q</Text></View></View>
+        <View style={styles.topline}><Text style={styles.brand}>qoin</Text><View style={styles.topActions}><Pressable accessibilityLabel={"Notifications, " + unreadNotifications + " unread"} onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}><Text style={styles.notificationGlyph}>♧</Text>{unreadNotifications > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications > 99 ? "99+" : unreadNotifications}</Text></View> : null}</Pressable><View style={styles.avatar}><Text style={styles.avatarText}>Q</Text></View></View></View>
         <View style={styles.hero}><Text style={styles.kicker}>YOUR MARKET WORKSPACE</Text><Text style={styles.heroTitle}>See the market{"\n"}<Text style={styles.blue}>as a system.</Text></Text><Text style={styles.heroCopy}>Keep the instruments that matter close. Explore the forces shaping each one.</Text></View>
         <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
@@ -273,6 +273,13 @@ export function ArchiveExploreScreen({ mode }: Props) {
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
       </ScrollView>
 
+      <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
+        <View style={styles.modalShade}><View style={styles.notificationModal}>
+          <View style={styles.modalHeader}><View><Text style={styles.kicker}>LIVE ENGINE EVENTS</Text><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.assetMeta}>{unreadNotifications} unread · current session</Text></View><Pressable onPress={() => setNotificationsOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
+          <View style={styles.notificationActions}><Pressable onPress={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}><Text style={styles.notificationActionText}>Mark all read</Text></Pressable><Pressable onPress={() => setNotifications([])}><Text style={styles.notificationActionText}>Clear history</Text></Pressable></View>
+          <ScrollView contentContainerStyle={styles.notificationContent}>{notifications.length ? notifications.map((item) => <View key={item.id} style={[styles.notificationItem, item.read && styles.notificationRead]}><Text style={styles.notificationMeta}>{item.kind.toUpperCase()} · {item.symbol} · {new Date(item.createdAt).toLocaleTimeString()}</Text><Text style={styles.notificationTitle}>{item.title}</Text><Text style={styles.notificationBody}>{item.body}</Text><Text style={styles.notificationPayload}>{item.details}</Text></View>) : <Text style={styles.noteCopy}>No alerts yet. Signal transitions and liquidation events from the live stream will appear here.</Text>}</ScrollView>
+        </View></View>
+      </Modal>
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
         {selected ? <View style={styles.modalShade}><View style={styles.modalCard}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>INSTRUMENT SPACE</Text><Text style={styles.modalTitle}>{selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
@@ -413,6 +420,22 @@ export function ArchiveExploreScreen({ mode }: Props) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F7F9FC" },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EDF3FF", alignItems: "center", justifyContent: "center" },
+  notificationGlyph: { color: "#2867DC", fontSize: 18 },
+  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#2867DC", alignItems: "center", justifyContent: "center" },
+  notificationBadgeText: { color: "#FFFFFF", fontSize: 7, fontWeight: "800" },
+  notificationModal: { maxHeight: "88%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 21, borderTopRightRadius: 21, overflow: "hidden" },
+  notificationActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
+  notificationActionText: { color: "#2867DC", fontSize: 10, fontWeight: "700" },
+  notificationContent: { padding: 14 },
+  notificationItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
+  notificationRead: { opacity: 0.6 },
+  notificationMeta: { color: "#8996A8", fontSize: 8, fontWeight: "800" },
+  notificationTitle: { color: "#30445F", fontSize: 11, fontWeight: "800", marginTop: 6 },
+  notificationBody: { color: "#8391A4", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  notificationPayload: { color: "#8A97A9", fontSize: 7, lineHeight: 11, marginTop: 7 },
+
   content: { paddingHorizontal: 17, paddingBottom: 25 },
   topline: { height: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   brand: { color: "#1B2C45", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
