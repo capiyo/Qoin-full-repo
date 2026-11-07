@@ -88,7 +88,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
         <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
         <span className="open-arrow" aria-hidden="true">↗</span>
       </button>
-      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</p><div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{live?.decision?.action?.toUpperCase() || "NO SIGNAL"}</span></div>
+      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</p><div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{live?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</span></div>
       {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </article>
   );
