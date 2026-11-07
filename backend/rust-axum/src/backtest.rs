@@ -139,6 +139,15 @@ struct OpenPosition {
     entry_fee: f64,
 }
 
+fn effective_entry_notional(request: &BacktestRequest, cash: f64) -> f64 {
+    let compounded = if request.reinvest_profits {
+        request.notional_per_trade * (cash / request.initial_cash)
+    } else {
+        request.notional_per_trade
+    };
+    compounded.min(cash / (1.0 + request.fee_bps / 10_000.0))
+}
+
 pub fn run_backtest(
     request: &BacktestRequest,
     events: &[MarketEvent],
@@ -203,14 +212,7 @@ pub fn run_backtest(
         if decision.action == "buy" && position.is_none() {
             if let Some((_bid, ask)) = fresh_quote {
                 let entry_price = ask * (1.0 + request.slippage_bps / 10_000.0);
-                let compounded_notional = if request.reinvest_profits {
-                    request.notional_per_trade * (cash / request.initial_cash)
-                } else {
-                    request.notional_per_trade
-                };
-                let target_notional = compounded_notional.min(
-                    cash / (1.0 + request.fee_bps / 10_000.0)
-                );
+                let target_notional = effective_entry_notional(request, cash);
                 let quantity = target_notional / entry_price;
                 let fee = quantity * entry_price * request.fee_bps / 10_000.0;
                 let debit = quantity * entry_price + fee;
@@ -314,6 +316,15 @@ pub fn run_backtest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reinvestment_scales_next_entry_with_cash_but_fixed_mode_does_not() {
+        let mut request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), quote_currency: "USDT".into(), start_ts_ms: 10, end_ts_ms: 20,
+            warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+        assert!((effective_entry_notional(&request, 22_000.0) - 2_200.0).abs() < 1e-9);
+        request.reinvest_profits = false;
+        assert!((effective_entry_notional(&request, 22_000.0) - 2_000.0).abs() < 1e-9);
+    }
+
     #[test]
     fn rejects_future_or_invalid_cost_inputs() {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), quote_currency: "USD".into(), start_ts_ms: 10, end_ts_ms: 20,
