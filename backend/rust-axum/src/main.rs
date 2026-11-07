@@ -271,7 +271,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             cycle.record_observation();
             let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
             let signed_alignment = (decision.angle_radians * 2.0).cos();
-            cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action);
+            cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action, &decision.features, &decision.attention);
             if let Err(error) = persist_operating_cycle(&s, &cycle).await {
                 tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
                 return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
