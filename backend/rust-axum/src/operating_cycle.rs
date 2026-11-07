@@ -6,6 +6,7 @@ fn now_ms() -> i64 {
 }
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use crate::paper_session::PaperAccountConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
