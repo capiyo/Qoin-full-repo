@@ -61,7 +61,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
-  const [showRawEvents, setShowRawEvents] = useState(false);
+  const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
@@ -148,8 +148,8 @@ export function ArchiveExploreScreen({ mode }: Props) {
     let active = true;
     setVectorHistory([]);
     setRawEvents([]);
-    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
-    getQoinEvents(selected.engineSymbol, 200).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
+    getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
 
@@ -234,7 +234,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
           <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
           <Text style={styles.noteCopy}>Provider-attributed headlines with publication timestamps and original links.</Text>
           <View style={styles.filters}>{["general", "forex", "crypto", "merger"].map((category) => <Pressable key={category} onPress={() => setNewsCategory(category)} style={[styles.filter, newsCategory === category && styles.filterActive]}><Text style={[styles.filterText, newsCategory === category && styles.filterTextActive]}>{category}</Text></Pressable>)}</View>
-          {news.length ? news.slice(0, 25).map((item) => <Pressable key={String(item.id)} style={styles.newsItem} onPress={() => Linking.openURL(item.url).catch(() => undefined)}>
+          {news.length ? news.map((item) => <Pressable key={String(item.id)} style={styles.newsItem} onPress={() => Linking.openURL(item.url).catch(() => undefined)}>
             <Text style={styles.newsMeta}>{item.source} · {item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</Text>
             <Text style={styles.newsHeadline}>{item.headline}</Text><Text style={styles.newsSummary} numberOfLines={3}>{item.summary}</Text>
           </Pressable>) : <Text style={styles.noteCopy}>{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend. No placeholder headlines are generated."}</Text>}
@@ -242,7 +242,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
         {mode === "Explore" ? <View style={styles.macroSection}>
           <Text style={styles.kicker}>UPCOMING CATALYSTS</Text><Text style={styles.newsTitle}>Economic calendar</Text>
           <Text style={styles.noteCopy}>Scheduled releases, with actual, estimate and previous values where published.</Text>
-          {macroEvents.length ? macroEvents.slice(0,40).map((item,index) => <View key={item.time + item.country + item.event + index} style={styles.macroItem}>
+          {macroEvents.length ? macroEvents.map((item,index) => <View key={item.time + item.country + item.event + index} style={styles.macroItem}>
             <Text style={styles.newsHeadline}>{item.event}</Text><Text style={styles.newsMeta}>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</Text>
             <View style={styles.macroValues}><Text style={styles.newsMeta}>Actual: {item.actual ?? "—"}</Text><Text style={styles.newsMeta}>Estimate: {item.estimate ?? "—"}</Text><Text style={styles.newsMeta}>Previous: {item.previous ?? "—"}</Text></View>
           </View>) : <Text style={styles.noteCopy}>{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</Text>}
@@ -357,7 +357,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <Pressable style={styles.rawTapeToggle} onPress={() => setShowRawEvents((value) => !value)}>
                 <Text style={styles.attentionTitle}>Raw event tape · {rawEvents.length} observations</Text><Text style={styles.attentionCaption}>{showRawEvents ? "Hide" : "Show"}</Text>
               </Pressable>
-              {showRawEvents ? rawEvents.slice(-100).reverse().map((event) => <View key={event.event_id} style={styles.rawEvent}>
+              {showRawEvents ? rawEvents.slice(-200).reverse().map((event) => <View key={event.event_id} style={styles.rawEvent}>
                 <Text style={styles.newsMeta}>{event.event_type.toUpperCase()} · {new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</Text>
                 <Text style={styles.newsHeadline}>{JSON.stringify(event)}</Text>
               </View>) : null}
