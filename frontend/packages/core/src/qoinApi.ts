@@ -112,3 +112,114 @@ export function startOperatingCycle(): Promise<OperatingCycleSnapshot> {
 export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
   return request<OperatingCycleSnapshot>("/v1/operating-cycle/stop", { method: "POST" });
 }
+
+export type PaperBacktestRequest = {
+  symbol: string;
+  start_ts_ms: number;
+  end_ts_ms: number;
+  initial_cash: number;
+  notional_per_trade: number;
+  fee_bps: number;
+  slippage_bps: number;
+  max_events?: number;
+};
+
+export type PaperBacktestTrade = {
+  entry_ts_ms: number;
+  exit_ts_ms: number | null;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  gross_pnl: number | null;
+  fees: number;
+  net_pnl: number | null;
+  return_pct: number | null;
+  exit_reason: string | null;
+};
+
+export type MirrorDecision = {
+  sequence: number;
+  event_id: string;
+  ts_ms: number;
+  action: "buy" | "sell" | "wait";
+  reason: string;
+  magnitude: number;
+  angle_radians: number;
+  spread_bps: number | null;
+  execution: string;
+};
+
+export type PaperBacktestReport = {
+  run_id: string;
+  symbol: string;
+  strategy_version: string;
+  start_ts_ms: number;
+  end_ts_ms: number;
+  initial_cash: number;
+  final_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  net_pnl: number;
+  return_pct: number;
+  max_drawdown_pct: number;
+  event_count: number;
+  signal_count: number;
+  buy_signals: number;
+  sell_signals: number;
+  wait_signals: number;
+  executed_entries: number;
+  executed_exits: number;
+  skipped_entries: number;
+  win_rate_pct: number | null;
+  profit_factor: number | null;
+  fees_paid: number;
+  assumptions: string;
+  open_position: PaperBacktestTrade | null;
+  trades: PaperBacktestTrade[];
+  decisions: MirrorDecision[];
+};
+
+function getFlowBaseUrl(): string {
+  const runtime = globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  };
+  const env = runtime.process?.env;
+  const configured = env?.EXPO_PUBLIC_QOIN_FLOW_API_URL ?? env?.VITE_QOIN_FLOW_API_URL;
+  return (configured || "http://127.0.0.1:8081").replace(/\/$/, "");
+}
+
+async function flowRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${getFlowBaseUrl()}${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...init?.headers },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Qoin flow API ${response.status}: ${detail || response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+/** Replays persisted market events chronologically. It only simulates long-only fills. */
+export function runPaperBacktest(input: PaperBacktestRequest): Promise<PaperBacktestReport> {
+  return flowRequest<PaperBacktestReport>("/internal/backtest", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export type PaperBacktestHistoryItem = Pick<PaperBacktestReport,
+  "run_id" | "symbol" | "strategy_version" | "initial_cash" | "final_equity" |
+  "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" |
+  "executed_entries" | "executed_exits" | "fees_paid">;
+
+export function getPaperBacktestHistory(symbol?: string): Promise<{ runs: PaperBacktestHistoryItem[] }> {
+  const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+  return flowRequest<{ runs: PaperBacktestHistoryItem[] }>(`/internal/backtests${query}`);
+}
+
+export function getPaperBacktest(runId: string): Promise<{ summary: PaperBacktestHistoryItem; decisions: MirrorDecision[] }> {
+  return flowRequest<{ summary: PaperBacktestHistoryItem; decisions: MirrorDecision[] }>(
+    `/internal/backtests/${encodeURIComponent(runId)}`,
+  );
+}
