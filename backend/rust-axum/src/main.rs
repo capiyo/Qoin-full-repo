@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, put},
@@ -11,7 +11,10 @@ use mongodb::{
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, sync::{Arc, RwLock}};
+use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
+use futures_util::StreamExt;
+use tokio::sync::broadcast;
+use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
 mod edge_strategy;
@@ -59,6 +62,7 @@ struct SymbolState {
 }
 #[derive(Clone)]
 struct AppState {
+    stream: broadcast::Sender<serde_json::Value>,
     events: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
@@ -71,6 +75,8 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
+#[derive(Deserialize)]
+struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -208,6 +214,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
+    let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
+        "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+    let _=s.stream.send(update);
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
@@ -251,6 +260,131 @@ async fn get_jepa_prediction(State(s):State<AppState>,Query(q):Query<SymbolQuery
         })))
     }
 }
+fn subscription_set(symbol: Option<String>, symbols: Option<String>) -> HashSet<String> {
+    symbols.or(symbol).unwrap_or_default().split(',').map(str::trim)
+        .filter(|v| !v.is_empty()).map(|v| v.to_ascii_uppercase()).collect()
+}
+async fn stream_ws(State(state): State<AppState>, Query(query): Query<StreamQuery>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    let symbols = subscription_set(query.symbol, query.symbols);
+    ws.on_upgrade(move |socket| stream_connection(socket, state, symbols))
+}
+async fn stream_connection(mut socket: WebSocket, state: AppState, mut symbols: HashSet<String>) {
+    let hello = serde_json::json!({"type":"stream.ready","protocol_version":1,
+        "subscribed_symbols":symbols,"server_ts_ms":chrono::Utc::now().timestamp_millis(),
+        "note":"Read-only market observations and research vectors; no order execution."});
+    if socket.send(Message::Text(hello.to_string())).await.is_err() { return; }
+    let mut updates = state.stream.subscribe();
+    loop {
+        tokio::select! {
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(command) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if command.get("type").and_then(|v|v.as_str()) == Some("subscribe") {
+                            let requested = command.get("symbols").and_then(|v|v.as_array())
+                                .map(|items| items.iter().filter_map(|v|v.as_str())
+                                    .map(|v|v.trim().to_ascii_uppercase()).filter(|v|!v.is_empty()).collect::<HashSet<_>>())
+                                .or_else(||command.get("symbol").and_then(|v|v.as_str())
+                                    .map(|v|[v.trim().to_ascii_uppercase()].into_iter().collect()));
+                            if let Some(next)=requested { symbols=next;
+                                let ack=serde_json::json!({"type":"stream.subscribed","subscribed_symbols":symbols,
+                                    "server_ts_ms":chrono::Utc::now().timestamp_millis()});
+                                if socket.send(Message::Text(ack.to_string())).await.is_err(){break;}
+                            }
+                        }
+                    }
+                }
+                Some(Ok(Message::Ping(payload))) => if socket.send(Message::Pong(payload)).await.is_err(){break;},
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                _ => {}
+            },
+            update = updates.recv() => match update {
+                Ok(value) => {
+                    let symbol=value.get("symbol").and_then(|v|v.as_str()).unwrap_or_default().to_ascii_uppercase();
+                    if !symbols.is_empty() && !symbols.contains(&symbol) {continue;}
+                    if socket.send(Message::Text(value.to_string())).await.is_err(){break;}
+                }
+                Err(broadcast::error::RecvError::Lagged(missed)) => {
+                    let gap=serde_json::json!({"type":"stream.gap","missed_updates":missed,
+                        "server_ts_ms":chrono::Utc::now().timestamp_millis(),
+                        "note":"Backpressure dropped updates. Refresh REST snapshots before trusting the live view."});
+                    if socket.send(Message::Text(gap.to_string())).await.is_err(){break;}
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    }
+}
+fn stream_number(value: Option<&serde_json::Value>) -> Option<f64> {
+    value.and_then(|v|v.as_f64().or_else(||v.as_str().and_then(|s|s.parse::<f64>().ok())))
+}
+async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
+    if symbols.is_empty(){return;}
+    let streams=symbols.iter().flat_map(|symbol|{
+        let symbol=symbol.to_ascii_lowercase();
+        [format!("{symbol}@trade"),format!("{symbol}@bookTicker"),
+         format!("{symbol}@markPrice@1s"),format!("{symbol}@forceOrder")]
+    }).collect::<Vec<_>>().join("/");
+    let url=format!("wss://fstream.binance.com/stream?streams={streams}");
+    let client=reqwest::Client::new();
+    let endpoint=format!("http://{axum_addr}/internal/events");
+    let mut backoff=1_u64;
+    loop {
+        match connect_async(&url).await {
+            Ok((mut socket,_)) => {
+                tracing::info!(symbols=?symbols,"connected to Binance USD-M public market streams");
+                backoff=1;
+                while let Some(message)=socket.next().await {
+                    let message=match message {Ok(v)=>v,Err(error)=>{tracing::warn!(error=%error,"Binance stream disconnected");break;}};
+                    let text=match message.to_text(){Ok(v)=>v,Err(_)=>continue};
+                    let envelope:serde_json::Value=match serde_json::from_str(text){Ok(v)=>v,Err(error)=>{tracing::warn!(error=%error,"invalid Binance stream JSON");continue;}};
+                    let data=envelope.get("data").unwrap_or(&envelope);
+                    let event_name=data.get("e").and_then(|v|v.as_str()).unwrap_or_default();
+                    let symbol=data.get("s").and_then(|v|v.as_str()).unwrap_or_default();
+                    if symbol.is_empty(){continue;}
+                    let timestamp=data.get("E").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+                    let event=if event_name=="trade" {
+                        let id=data.get("t").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
+                        Some(MarketEvent{event_id:format!("trade:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
+                            event_type:"trade".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:stream_number(data.get("q")),
+                            side:Some(if data.get("m").and_then(|v|v.as_bool()).unwrap_or(false){"sell"}else{"buy"}.into()),
+                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,liquidation_side:None})
+                    } else if data.get("b").is_some()&&data.get("a").is_some()&&data.get("u").is_some() {
+                        let id=data.get("u").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
+                        Some(MarketEvent{event_id:format!("book:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
+                            event_type:"book".into(),ts_ms:timestamp,price:None,size:None,side:None,
+                            bid:stream_number(data.get("b")),ask:stream_number(data.get("a")),
+                            bid_size:stream_number(data.get("B")),ask_size:stream_number(data.get("A")),
+                            funding_rate:None,open_interest:None,liquidation_side:None})
+                    } else if event_name=="markPriceUpdate" {
+                        Some(MarketEvent{event_id:format!("funding:{timestamp}"),venue:"binance_usdm".into(),symbol:symbol.into(),
+                            event_type:"funding".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:None,side:None,
+                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:stream_number(data.get("r")),
+                            open_interest:None,liquidation_side:None})
+                    } else if event_name=="forceOrder" {
+                        let order=data.get("o").unwrap_or(data);
+                        let side=order.get("S").and_then(|v|v.as_str()).unwrap_or_default();
+                        let liquidation_side=match side{"SELL"=>Some("long"),"BUY"=>Some("short"),_=>None};
+                        let id=order.get("T").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
+                        Some(MarketEvent{event_id:format!("liquidation:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
+                            event_type:"liquidation".into(),ts_ms:order.get("T").and_then(|v|v.as_i64()).unwrap_or(timestamp),
+                            price:stream_number(order.get("p")),size:stream_number(order.get("q")),side:None,
+                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,
+                            liquidation_side:liquidation_side.map(str::to_owned)})
+                    } else {None};
+                    if let Some(event)=event {
+                        if let Err(error)=client.post(&endpoint).json(&event).send().await {
+                            tracing::warn!(symbol=%event.symbol,error=%error,"could not submit Binance observation to local engine");
+                        }
+                    }
+                }
+            }
+            Err(error)=>tracing::warn!(error=%error,retry_seconds=backoff,"Binance stream connection failed")
+        }
+        tokio::time::sleep(Duration::from_secs(backoff)).await;
+        backoff=(backoff*2).min(30);
+    }
+}
+
 async fn get_strategy(State(s):State<AppState>)->impl IntoResponse{
     match s.active_strategy.read(){Ok(v)=>(StatusCode::OK,Json(serde_json::to_value(&*v).unwrap_or_default())),
         Err(_)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))}
@@ -321,18 +455,26 @@ async fn main(){
         }
         Err(_) => None,
     };
+    let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        events,states,decisions,strategies,jepa_predictions,jepa_client,
+        stream, events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
-    let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
+    let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
+    let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
+    if binance_enabled {
+        let symbols=env::var("QOIN_BINANCE_STREAM_SYMBOLS").unwrap_or_else(|_|"BTCUSDT,ETHUSDT,SOLUSDT".into())
+            .split(',').map(str::trim).filter(|v|!v.is_empty()).map(|v|v.to_ascii_uppercase()).collect::<Vec<_>>();
+        let adapter_addr=addr.clone();
+        tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
+    } else { tracing::info!("Binance public market stream disabled by configuration"); }
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
