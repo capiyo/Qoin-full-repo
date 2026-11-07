@@ -165,7 +165,15 @@ export function ArchiveExploreScreen({ mode }: Props) {
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
 
-        {mode === "Explore" ? <View style={styles.note}><Text style={styles.noteTitle}>News & events</Text><Text style={styles.noteCopy}>Connect a sourced news and macro-events feed to populate this section. No simulated headlines are shown.</Text></View> : null}
+        {mode === "Explore" ? <View style={styles.newsSection}>
+          <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
+          <Text style={styles.noteCopy}>Provider-attributed headlines with publication timestamps and original links.</Text>
+          <View style={styles.filters}>{["general", "forex", "crypto", "merger"].map((category) => <Pressable key={category} onPress={() => setNewsCategory(category)} style={[styles.filter, newsCategory === category && styles.filterActive]}><Text style={[styles.filterText, newsCategory === category && styles.filterTextActive]}>{category}</Text></Pressable>)}</View>
+          {news.length ? news.slice(0, 25).map((item) => <Pressable key={String(item.id)} style={styles.newsItem} onPress={() => Linking.openURL(item.url).catch(() => undefined)}>
+            <Text style={styles.newsMeta}>{item.source} · {item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</Text>
+            <Text style={styles.newsHeadline}>{item.headline}</Text><Text style={styles.newsSummary} numberOfLines={3}>{item.summary}</Text>
+          </Pressable>) : <Text style={styles.noteCopy}>{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend. No placeholder headlines are generated."}</Text>}
+        </View> : null}
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
       </ScrollView>
 
