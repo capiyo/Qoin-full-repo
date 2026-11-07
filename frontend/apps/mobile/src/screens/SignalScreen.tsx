@@ -110,7 +110,7 @@ export function SignalScreen() {
             <Text style={styles.panelTitle}>Operating cycle</Text>
             <Text style={styles.counter}>{(cycle?.phase ?? "loading").replace(/_/g, " ").toUpperCase()}</Text>
           </View>
-          <Text style={styles.fieldHelp}>5-minute observation → 60-minute weight diagnostics → paper session. Weights stay fixed during the session; no online self-training.</Text>
+          <Text style={styles.fieldHelp}>5-minute observation → 60-minute signal diagnostics → paper monitoring. Weights stay fixed; no online self-training.</Text>
           {([
             ["observation_minutes", "Observation (min)"],
             ["weight_evaluation_minutes", "Weight evaluation (min)"],
@@ -126,13 +126,15 @@ export function SignalScreen() {
           ))}
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Seconds remaining</Text><Text style={styles.metricValue}>{cycle?.phase_seconds_remaining ?? 0}</Text></View>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Observations / evaluations</Text><Text style={styles.metricValue}>{cycle?.observations ?? 0} / {cycle?.signal_evaluations ?? 0}</Text></View>
+          <View style={styles.metricRow}><Text style={styles.metricLabel}>Mean |score| / alignment</Text><Text style={styles.metricValue}>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"} / {cycle?.mean_alignment?.toFixed(3) ?? "—"}</Text></View>
+          <View style={styles.metricRow}><Text style={styles.metricLabel}>BUY / SELL / WAIT</Text><Text style={styles.metricValue}>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</Text></View>
           <View style={styles.cycleButtons}>
             <Pressable onPress={saveCycle} disabled={cycleBusy || !!cycle?.active} style={[styles.secondaryButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Save</Text></Pressable>
             <Pressable onPress={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active} style={[styles.cycleButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.buttonText}>Start</Text></Pressable>
             <Pressable onPress={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active} style={[styles.secondaryButton, (cycleBusy || !cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Stop</Text></Pressable>
           </View>
           {cycleError ? <Text accessibilityRole="alert" style={styles.error}>{cycleError}</Text> : null}
-          <Text style={styles.cycleSafety}>PAPER / RESEARCH ONLY · LIVE EXECUTION DISABLED</Text>
+          <Text style={styles.cycleSafety}>SIGNAL MONITORING ONLY · NO SIMULATED FILLS · LIVE EXECUTION DISABLED</Text>
         </View>
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
