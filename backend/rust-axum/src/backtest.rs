@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn empty_history_returns_flat_equity_without_inventing_trades() {
-        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), start_ts_ms: 10, end_ts_ms: 20,
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), quote_currency: "USD".into(), start_ts_ms: 10, end_ts_ms: 20,
             warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
         let report = run_backtest(&request, &[], &EdgeStrategy::baseline(), "empty-run".into()).unwrap();
         assert_eq!(report.event_count, 0);
