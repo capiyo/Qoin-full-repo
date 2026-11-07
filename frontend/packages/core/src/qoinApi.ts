@@ -73,6 +73,8 @@ export type PaperAccountConfig = {
   quote_currency: string;
   initial_cash: number;
   notional_per_trade: number;
+  contract_multiplier: number;
+  quantity_step: number;
   reinvest_profits: boolean;
   fee_bps: number;
   slippage_bps: number;
@@ -130,10 +132,11 @@ export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
 
 export type PaperAccountSnapshot = {
   symbol: string; venue: string; quote_currency: string; initial_cash: number; cash: number; equity: number;
+  contract_multiplier: number; quantity_step: number;
   net_pnl: number; realized_pnl: number; unrealized_pnl: number; fees_paid: number; max_drawdown_pct: number; events: number; decisions: number;
   buy_signals: number; sell_signals: number; wait_signals: number; entries: number; exits: number;
   skipped_entries: number; has_open_position: boolean;
-  open_position: { entry_ts_ms: number; quantity: number; entry_price: number; entry_fee: number; unrealized_pnl: number } | null;
+  open_position: { entry_ts_ms: number; quantity: number; contract_multiplier: number; entry_price: number; entry_fee: number; unrealized_pnl: number } | null;
   pending_action: string | null;
 };
 
@@ -156,7 +159,7 @@ export type PaperMirrorEvent = {
 
 export type PaperTradeHistoryItem = {
   cycle_id: string; symbol: string; venue: string; quote_currency: string; entry_ts_ms: number; exit_ts_ms: number;
-  quantity: number; entry_price: number; exit_price: number; gross_pnl: number; fees: number; net_pnl: number;
+  quantity: number; contract_multiplier: number; entry_price: number; exit_price: number; gross_pnl: number; fees: number; net_pnl: number;
   return_pct: number; exit_reason: string;
 };
 
