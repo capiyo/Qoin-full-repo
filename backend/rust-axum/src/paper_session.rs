@@ -87,9 +87,13 @@ struct PaperAccount {
     wait_signals: u64,
     entries: u64,
     exits: u64,
+    #[serde(default)]
     wins: u64,
+    #[serde(default)]
     losses: u64,
+    #[serde(default)]
     gross_profit: f64,
+    #[serde(default)]
     gross_loss: f64,
     skipped_entries: u64,
     peak_equity: f64,
