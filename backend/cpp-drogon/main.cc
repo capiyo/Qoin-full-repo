@@ -202,7 +202,7 @@ int main() {
             forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
-    }, {drogon::Post});
+    }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/strategy", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) {
