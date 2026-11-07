@@ -29,6 +29,26 @@ const seed: Instrument[] = [
 type Props = { mode: "Archive" | "Explore" };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
+function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
+  const labels = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"];
+  const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
+  const coordinates = values.map((value, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / 6;
+    const radius = 18 + value * 14;
+    return (50 + Math.cos(angle) * radius) + "," + (50 + Math.sin(angle) * radius);
+  }).join(" ");
+  return <View style={styles.featureSpacePanel}>
+    <Text style={styles.attentionTitle}>Six-dimensional feature space</Text>
+    <Text style={styles.attentionCaption}>Normalized engine inputs · not a learned embedding</Text>
+    <Svg viewBox="0 0 100 100" width="100%" height={190}>
+      {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF4" strokeWidth=".5" />)}
+      {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF4" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
+      {decision ? <Polygon points={coordinates} fill="#3475E8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#94A3B8" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
+    </Svg>
+    <View style={styles.featureValues}>{QOIN_FEATURE_NAMES.map((name,index) => <View key={name} style={styles.featureValue}><Text style={styles.metricLabel}>{labels[index]}</Text><Text style={styles.metricValue}>{values[index].toFixed(3)}</Text></View>)}</View>
+  </View>;
+}
+
 export function ArchiveExploreScreen({ mode }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
@@ -135,7 +155,9 @@ export function ArchiveExploreScreen({ mode }: Props) {
   }, [selected?.engineSymbol]);
   const bullish = vector?.decision_vector?.[0] ?? 0;
   const bearish = vector?.decision_vector?.[1] ?? 0;
-  const vectorScale = Math.max(0.35, bullish, bearish);
+  const vectorPoints = [...vectorHistory, ...(vector?.decision_vector ? [{ decision_vector: vector.decision_vector } as QoinVectorHistory] : [])];
+  const vectorScale = Math.max(0.35, ...vectorPoints.flatMap((item) => item.decision_vector));
+  const trajectoryPoints = vectorPoints.map((item) => (10 + item.decision_vector[0] / vectorScale * 80) + "," + (90 - item.decision_vector[1] / vectorScale * 80)).join(" ");
   const vectorX = 10 + (bullish / vectorScale) * 80;
   const vectorY = 90 - (bearish / vectorScale) * 80;
 
@@ -188,11 +210,29 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#E9EEF6" strokeWidth=".4" />)}
                 {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#E9EEF6" strokeWidth=".4" />)}
                 <Line x1="10" y1="8" x2="10" y2="90" stroke="#CBD5E1" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#CBD5E1" strokeWidth=".7" />
+                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#9BB9F3" strokeWidth="1.1" /> : null}
                 {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#2867DC" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#2867DC" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
                 <Circle cx="10" cy="90" r="2" fill="#94A3B8" />
               </Svg>
             </View>
-            <Text style={styles.mapCopy}>Horizontal: bullish component · Vertical: bearish component</Text>
+            <Text style={styles.mapCopy}>Horizontal: bullish · Vertical: bearish · {vectorHistory.length} stored observations</Text>
+            <View style={styles.livePanel}>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Live market state</Text><Text style={styles.attentionCaption}>{streamStatus}</Text></View>
+              <View style={styles.liveGrid}>
+                {[
+                  ["Last price", marketState?.last_price?.toString() ?? "—"],
+                  ["Spread (bps)", marketState?.spread_bps?.toFixed(3) ?? "—"],
+                  ["Order flow", marketState?.order_flow_imbalance?.toFixed(4) ?? "—"],
+                  ["Funding", marketState?.funding_rate?.toFixed(6) ?? "—"],
+                  ["Open interest", marketState?.open_interest?.toString() ?? "—"],
+                  ["Liquidations", marketState?.liquidation_events?.toString() ?? "—"],
+                  ["Events", marketState?.event_count?.toString() ?? "—"],
+                  ["State quality", marketState?.state_quality?.toFixed(3) ?? "—"],
+                ].map(([label,value]) => <View key={label} style={styles.liveMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+              </View>
+              <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
+            </View>
+            <FeatureSpace decision={vector} />
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
               <>
                 <View style={styles.engineMetrics}>
