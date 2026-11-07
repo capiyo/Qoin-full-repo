@@ -10,6 +10,7 @@ fn default_warmup_hours() -> u64 { 24 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct BacktestRequest {
     pub symbol: String,
+    pub venue: String,
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
     #[serde(default = "default_warmup_hours")]
@@ -29,6 +30,7 @@ fn default_slippage_bps() -> f64 { 5.0 }
 impl BacktestRequest {
     pub fn validate(&self) -> Result<(), String> {
         if self.symbol.trim().is_empty() { return Err("symbol is required".into()); }
+        if self.venue.trim().is_empty() { return Err("venue is required; replay one data venue at a time".into()); }
         if self.start_ts_ms <= 0 || self.end_ts_ms <= self.start_ts_ms {
             return Err("end_ts_ms must be greater than a positive start_ts_ms".into());
         }
@@ -73,6 +75,7 @@ pub struct SimulatedTrade {
 pub struct MirrorDecision {
     pub sequence: usize,
     pub event_id: String,
+    pub venue: String,
     pub ts_ms: i64,
     pub action: String,
     pub reason: String,
@@ -86,6 +89,7 @@ pub struct MirrorDecision {
 pub struct BacktestReport {
     pub run_id: String,
     pub symbol: String,
+    pub venue: String,
     pub strategy_version: String,
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
@@ -153,7 +157,7 @@ pub fn run_backtest(
     let mut warmup_event_count = 0usize;
     for (index, event) in ordered.iter().enumerate() {
         let warmup_start = request.start_ts_ms.saturating_sub((request.warmup_hours as i64).saturating_mul(3_600_000));
-        if event.symbol != request.symbol || event.ts_ms < warmup_start || event.ts_ms > request.end_ts_ms {
+        if event.symbol != request.symbol || event.venue != request.venue || event.ts_ms < warmup_start || event.ts_ms > request.end_ts_ms {
             continue;
         }
         apply(&mut state, event);
@@ -228,7 +232,7 @@ pub fn run_backtest(
             }
         }
         decisions.push(MirrorDecision {
-            sequence: index, event_id: event.event_id.clone(), ts_ms: event.ts_ms,
+            sequence: index, event_id: event.event_id.clone(), venue: event.venue.clone(), ts_ms: event.ts_ms,
             action: decision.action.into(), reason: decision.reason,
             magnitude: decision.magnitude, angle_radians: decision.angle_radians,
             spread_bps: state.spread_bps, execution,
@@ -269,12 +273,12 @@ pub fn run_backtest(
         fees: open.entry_fee, net_pnl: None, return_pct: None, exit_reason: None,
     });
     Ok(BacktestReport {
-        run_id, symbol: request.symbol.clone(), strategy_version: strategy.version.clone(),
+        run_id, symbol: request.symbol.clone(), venue: request.venue.clone(), strategy_version: strategy.version.clone(),
         start_ts_ms: request.start_ts_ms, end_ts_ms: request.end_ts_ms,
         initial_cash: request.initial_cash, final_equity, realized_pnl, unrealized_pnl,
         net_pnl, return_pct: net_pnl / request.initial_cash * 100.0,
         max_drawdown_pct: max_drawdown * 100.0, event_count: ordered.iter().filter(|e|
-            e.symbol == request.symbol && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
+            e.symbol == request.symbol && e.venue == request.venue && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
         warmup_event_count, signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
         skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
         profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
@@ -288,7 +292,7 @@ mod tests {
     use super::*;
     #[test]
     fn rejects_future_or_invalid_cost_inputs() {
-        let request = BacktestRequest { symbol: "BTCUSDT".into(), start_ts_ms: 10, end_ts_ms: 20,
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), start_ts_ms: 10, end_ts_ms: 20,
             warmup_hours: 24, initial_cash: 1000.0, notional_per_trade: 100.0, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
         assert!(request.validate().is_err());
     }
