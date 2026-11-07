@@ -311,7 +311,7 @@ export function SignalScreen() {
           </> : null}
         </View>
                         <View style={styles.panel}>
-          <View style={styles.panelHeader}><Text style={styles.panelTitle}>Paper account ledger</Text><Text style={styles.counter}>{paperSession?.active ? "ACTIVE" : "INACTIVE"}</Text></View>
+          <View style={styles.panelHeader}><Text style={styles.panelTitle}>Paper account ledger</Text><Text style={styles.counter}>{cycle?.phase === "paper_session" ? "PAPER ACTIVE" : cycle?.active ? "ARMED · WAITING" : "INACTIVE"}</Text></View>
           {paperSession?.accounts.length ? paperSession.accounts.map((account) => (
             <View key={account.venue + account.symbol} style={styles.metricRow}>
               <View style={{ flex: 1 }}>
