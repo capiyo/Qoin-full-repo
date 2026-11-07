@@ -18,12 +18,14 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod backtest;
 mod operating_cycle;
+mod paper_session;
 mod edge_strategy;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use backtest::{BacktestRequest, run_backtest};
 use operating_cycle::{CycleConfig, OperatingCycle};
+use paper_session::{PaperSession, PaperSessionConfig, PaperAccountConfig};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -73,7 +75,11 @@ struct AppState {
     backtest_runs: Collection<Document>,
     backtest_decisions: Collection<Document>,
     operating_cycles: Collection<Document>,
+    paper_sessions: Collection<Document>,
+    paper_session_decisions: Collection<Document>,
+    paper_session_trades: Collection<Document>,
     active_cycle: Arc<Mutex<OperatingCycle>>,
+    active_paper_session: Arc<Mutex<PaperSession>>,
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
@@ -89,6 +95,24 @@ async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result
     s.operating_cycles.update_one(doc! {"cycle_id": "active"}, doc! {"$set": document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
+}
+
+async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(session).map_err(|error| error.to_string())?;
+    document.insert("session_key", "active");
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.paper_sessions.update_one(doc! {"session_key": "active"}, doc! {"$set": document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
+    let cycle = s.active_cycle.lock().await;
+    let cycle_active = cycle.snapshot().phase == "paper_session" && cycle.snapshot().config.mode == "paper";
+    drop(cycle);
+    let mut session = s.active_paper_session.lock().await;
+    if !cycle_active && session.is_active() { session.stop(); }
+    (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
 }
 
 async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
@@ -111,10 +135,25 @@ async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json
 
 async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
     let mut cycle = s.active_cycle.lock().await;
+    let config = cycle.snapshot().config;
+    let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
+    let paper = if config.mode == "paper" {
+        match PaperSession::start(cycle_id, &config.paper_accounts) {
+            Ok(session) => session,
+            Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+        }
+    } else { PaperSession::default() };
     let snapshot = cycle.start();
     if let Err(error) = persist_operating_cycle(&s, &cycle).await {
         tracing::error!(error=%error, "operating cycle start persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    drop(cycle);
+    let mut active_paper = s.active_paper_session.lock().await;
+    *active_paper = paper;
+    if let Err(error) = persist_paper_session(&s, &active_paper).await {
+        tracing::error!(error=%error, "paper session start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
@@ -125,6 +164,13 @@ async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
     if let Err(error) = persist_operating_cycle(&s, &cycle).await {
         tracing::error!(error=%error, "operating cycle stop persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    drop(cycle);
+    let mut paper = s.active_paper_session.lock().await;
+    paper.stop();
+    if let Err(error) = persist_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
@@ -265,7 +311,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    {
+    let cycle_phase = {
         let mut cycle = s.active_cycle.lock().await;
         if cycle.is_active() {
             cycle.record_observation();
@@ -275,16 +321,43 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             if let Err(error) = persist_operating_cycle(&s, &cycle).await {
                 tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
                 return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-                    "error":"cycle Mirror persistence failed",
-                    "event_persisted":true,
-                    "state_persisted":true,
-                    "decision_persisted":true,
-                    "event_id":event.event_id
+                    "error":"cycle Mirror persistence failed", "event_persisted":true,
+                    "state_persisted":true, "decision_persisted":true, "event_id":event.event_id
                 })));
             }
         }
+        cycle.snapshot().phase
+    };
+    if cycle_phase == "paper_session" {
+        let mut paper = s.active_paper_session.lock().await;
+        if let Some((mirror, trade)) = paper.process_event(&event, &decision) {
+            let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
+                Ok(value) => value,
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
+            };
+            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror decision persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror decision persistence failed","event_persisted":true,"event_id":event.event_id})));
+            }
+            if let Some(trade) = trade {
+                let mut trade_doc = match mongodb::bson::to_document(&trade) {
+                    Ok(value) => value,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
+                };
+                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true,"event_id":event.event_id})));
+                }
+            }
+            if let Err(error) = persist_paper_session(&s, &paper).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true,"event_id":event.event_id})));
+            }
+        }
     }
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"paper_phase":cycle_phase})))
 }
 async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<BacktestRequest>) -> impl IntoResponse {
     if let Err(message) = request.validate() {
@@ -530,6 +603,9 @@ async fn main(){
     let backtest_runs:Collection<Document>=db.collection("backtest_runs");
     let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
     let operating_cycles:Collection<Document>=db.collection("operating_cycles");
+    let paper_sessions:Collection<Document>=db.collection("paper_sessions");
+    let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
+    let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})
         .build(),None).await.expect("market event replay index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
@@ -542,6 +618,11 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest run index");
     operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
+    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session state index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper Mirror event index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper trade history index");
     backtest_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1,"sequence":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest decision index");
     jepa_predictions.create_index(mongodb::IndexModel::builder()
@@ -586,9 +667,15 @@ async fn main(){
         }
         _ => OperatingCycle::default(),
     };
+    let persisted_paper = match paper_sessions.find_one(doc!{"session_key":"active"}, None).await {
+        Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
+        _ => PaperSession::default(),
+    };
     let state=AppState{
         events,states,decisions,strategies,jepa_predictions,backtest_runs,backtest_decisions,operating_cycles,
-        active_cycle:Arc::new(Mutex::new(persisted_cycle)),jepa_client,
+        paper_sessions,paper_session_decisions,paper_session_trades,
+        active_cycle:Arc::new(Mutex::new(persisted_cycle)),
+        active_paper_session:Arc::new(Mutex::new(persisted_paper)),jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
@@ -609,6 +696,7 @@ async fn main(){
         .route("/internal/operating-cycle",get(get_operating_cycle).put(configure_operating_cycle))
         .route("/internal/operating-cycle/start",post(start_operating_cycle))
         .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
+        .route("/internal/paper-session",get(get_paper_session))
         .route("/internal/backtests",get(list_backtest_runs))
         .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
