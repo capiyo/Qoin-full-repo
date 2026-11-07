@@ -454,7 +454,9 @@ async fn main(){
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     let backtest_runs:Collection<Document>=db.collection("backtest_runs");
     let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
-    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})\n        .build(),None).await.expect("market event replay index");\n    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})
+        .build(),None).await.expect("market event replay index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
