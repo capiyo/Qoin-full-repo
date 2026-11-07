@@ -48,7 +48,7 @@ export default function App() {
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
-  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: 24, initial_cash: 20000, notional_per_trade: 2000, fee_bps: 10, slippage_bps: 5 });
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: 24, warmup_hours: 24, initial_cash: 20000, notional_per_trade: 2000, fee_bps: 10, slippage_bps: 5 });
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
@@ -86,7 +86,7 @@ export default function App() {
     setBacktestBusy(true); setBacktestError(""); setBacktest(null);
     const end = Date.now();
     try {
-      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - backtestForm.lookback_hours * 3600000, end_ts_ms: end, initial_cash: backtestForm.initial_cash, notional_per_trade: backtestForm.notional_per_trade, fee_bps: backtestForm.fee_bps, slippage_bps: backtestForm.slippage_bps, max_events: 100000 }));
+      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - backtestForm.lookback_hours * 3600000, end_ts_ms: end, warmup_hours: backtestForm.warmup_hours, initial_cash: backtestForm.initial_cash, notional_per_trade: backtestForm.notional_per_trade, fee_bps: backtestForm.fee_bps, slippage_bps: backtestForm.slippage_bps, max_events: 100000 }));
     } catch (e) { setBacktestError(e instanceof Error ? e.message : "Paper replay failed"); }
     finally { setBacktestBusy(false); }
   }
@@ -136,6 +136,7 @@ export default function App() {
         <div className="cycle-grid">
           <label className="cycle-field"><span>Instrument symbol</span><input value={backtestForm.symbol} onChange={(e) => setBacktestForm(v => ({...v, symbol:e.target.value}))} /></label>
           <label className="cycle-field"><span>Lookback (hours)</span><input type="number" min="1" max="8760" value={backtestForm.lookback_hours} onChange={(e) => setBacktestForm(v => ({...v, lookback_hours:Math.max(1,Math.min(8760,Number(e.target.value)||1))}))} /></label>
+          <label className="cycle-field"><span>Warmup history (hours)</span><input type="number" min="1" max="168" value={backtestForm.warmup_hours} onChange={(e) => setBacktestForm(v => ({...v, warmup_hours:Math.max(1,Math.min(168,Number(e.target.value)||1))}))} /></label>
           <label className="cycle-field"><span>Starting capital</span><input type="number" min="1" value={backtestForm.initial_cash} onChange={(e) => setBacktestForm(v => ({...v, initial_cash:Math.max(1,Number(e.target.value)||1)}))} /></label>
           <label className="cycle-field"><span>Notional per entry</span><input type="number" min="1" value={backtestForm.notional_per_trade} onChange={(e) => setBacktestForm(v => ({...v, notional_per_trade:Math.max(1,Number(e.target.value)||1)}))} /></label>
           <label className="cycle-field"><span>Fees (basis points / side)</span><input type="number" min="0" max="100" step="0.5" value={backtestForm.fee_bps} onChange={(e) => setBacktestForm(v => ({...v, fee_bps:Math.max(0,Math.min(100,Number(e.target.value)||0))}))} /></label>
@@ -152,6 +153,7 @@ export default function App() {
             <div><small>Closed trades</small><strong>{backtest.executed_exits}</strong></div>
             <div><small>Fees paid</small><strong>{backtest.fees_paid.toFixed(2)}</strong></div>
             <div><small>Events / signals</small><strong>{backtest.event_count} / {backtest.signal_count}</strong></div>
+            <div><small>Warmup events</small><strong>{backtest.warmup_event_count}</strong></div>
             <div><small>Entries skipped</small><strong>{backtest.skipped_entries}</strong></div>
           </div>
           <div className="cycle-meta"><span>Run: <strong>{backtest.run_id}</strong></span><span>Strategy: <strong>{backtest.strategy_version}</strong></span><span>Mirror decisions saved: <strong>{backtest.decisions.length}</strong></span></div>
