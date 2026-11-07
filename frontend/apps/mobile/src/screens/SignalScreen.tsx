@@ -53,7 +53,7 @@ export function SignalScreen() {
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
-  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", quote_currency: "USDT", lookback_hours: "24", warmup_hours: "24", initial_cash: "20000", notional_per_trade: "2000", reinvest_profits: true, fee_bps: "10", slippage_bps: "5" });
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", quote_currency: "USDT", lookback_hours: "24", warmup_hours: "24", initial_cash: "0", notional_per_trade: "0", reinvest_profits: true, fee_bps: "10", slippage_bps: "5" });
 
   useEffect(() => {
     getPaperBacktestHistory().then((result) => setBacktestHistory(result.runs)).catch(() => setBacktestHistory([]));
@@ -163,7 +163,7 @@ export function SignalScreen() {
             <Text style={styles.panelTitle}>Mirror paper backtest</Text>
             <Text style={styles.counter}>NO LIVE ORDERS</Text>
           </View>
-          <Text style={styles.fieldHelp}>Chronological replay of persisted MongoDB events using the active strategy. Simulated buys use ask; sells use bid, plus fees and slippage. Long-only.</Text>
+          <Text style={styles.fieldHelp}>Chronological replay of persisted MongoDB events using the active strategy. Simulated buys use ask; sells use bid, plus fees and slippage. Long-only. Capital/notional are in quote currency: convert KSh 20,000 to USDT first for BTCUSDT. No FX conversion is applied.</Text>
           {([
             ["symbol", "Symbol"],
             ["venue", "Exact venue ID"],
