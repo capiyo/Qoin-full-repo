@@ -186,6 +186,8 @@ export type PaperBacktestReport = {
   executed_entries: number;
   executed_exits: number;
   skipped_entries: number;
+  pending_order: string | null;
+  pending_signal_ts_ms: number | null;
   win_rate_pct: number | null;
   profit_factor: number | null;
   fees_paid: number;
@@ -227,7 +229,7 @@ export function runPaperBacktest(input: PaperBacktestRequest): Promise<PaperBack
 export type PaperBacktestHistoryItem = Pick<PaperBacktestReport,
   "run_id" | "symbol" | "venue" | "quote_currency" | "strategy_version" | "initial_cash" | "reinvest_profits" | "final_equity" |
   "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" | "warmup_event_count" |
-  "executed_entries" | "executed_exits" | "fees_paid">;
+  "executed_entries" | "executed_exits" | "fees_paid" | "pending_order" | "pending_signal_ts_ms">;
 
 export function getPaperBacktestHistory(symbol?: string): Promise<{ runs: PaperBacktestHistoryItem[] }> {
   const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
