@@ -183,7 +183,7 @@ impl PaperAccount {
                     trade = Some(PaperTradeRecord {
                         cycle_id: cycle_id.to_owned(), symbol: self.config.symbol.clone(), venue: self.config.venue.clone(),
                         quote_currency: self.config.quote_currency.to_uppercase(), entry_ts_ms: open.entry_ts_ms,
-                        exit_ts_ms: event.ts_ms, quantity: open.quantity, entry_price: open.entry_price,
+                        exit_ts_ms: event.ts_ms, quantity: open.quantity, contract_multiplier: self.config.contract_multiplier, entry_price: open.entry_price,
                         exit_price, gross_pnl: gross, fees: total_fees, net_pnl: net,
                         return_pct: net / (open.quantity * open.entry_price * self.config.contract_multiplier) * 100.0,
                         exit_reason: "strategy_sell".into(),
