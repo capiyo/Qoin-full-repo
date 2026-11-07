@@ -352,7 +352,7 @@ export default function App() {
               </section>
               <section className="raw-tape">
             <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Raw event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
-            {showRawEvents && <div className="raw-event-list">{rawEvents.slice().reverse().slice(-100).map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
+            {showRawEvents && <div className="raw-event-list">{rawEvents.slice(-100).reverse().map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
           </section>
           <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
