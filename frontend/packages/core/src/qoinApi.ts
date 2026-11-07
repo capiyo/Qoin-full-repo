@@ -219,8 +219,8 @@ export function runPaperBacktest(input: PaperBacktestRequest): Promise<PaperBack
 }
 
 export type PaperBacktestHistoryItem = Pick<PaperBacktestReport,
-  "run_id" | "symbol" | "strategy_version" | "initial_cash" | "final_equity" |
-  "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" |
+  "run_id" | "symbol" | "venue" | "strategy_version" | "initial_cash" | "final_equity" |
+  "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" | "warmup_event_count" |
   "executed_entries" | "executed_exits" | "fees_paid">;
 
 export function getPaperBacktestHistory(symbol?: string): Promise<{ runs: PaperBacktestHistoryItem[] }> {
