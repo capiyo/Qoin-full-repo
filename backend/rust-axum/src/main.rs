@@ -269,7 +269,12 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
                         Ok(value) => value,
                         Err(error) => { tracing::warn!(error=%error,"invalid Finnhub stream JSON"); continue; }
                     };
-                    if payload.get("type").and_then(|v|v.as_str()) != Some("trade") { continue; }
+                    let message_type=payload.get("type").and_then(|v|v.as_str()).unwrap_or_default();
+                    if message_type=="error" {
+                        tracing::warn!(provider_message=?payload.get("msg"),"Finnhub reported a subscription or entitlement error");
+                        continue;
+                    }
+                    if message_type != "trade" { continue; }
                     let Some(rows) = payload.get("data").and_then(|v|v.as_array()) else { continue; };
                     for (row_index, row) in rows.iter().enumerate() {
                         let Some(symbol) = row.get("s").and_then(|v|v.as_str()) else { continue; };
