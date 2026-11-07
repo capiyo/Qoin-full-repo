@@ -24,7 +24,8 @@ export function ArchiveExploreScreen() {
   const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);
   const [session, setSession] = useState<PaperSessionSnapshot | null>(null);
   const [decisions, setDecisions] = useState<PaperMirrorEvent[]>([]);
-  const [trades, setTrades] = useState<PaperTradeHistoryItem[]>([]);\n  const [runs, setRuns] = useState<PaperSessionRun[]>([]);
+  const [trades, setTrades] = useState<PaperTradeHistoryItem[]>([]);
+  const [runs, setRuns] = useState<PaperSessionRun[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
