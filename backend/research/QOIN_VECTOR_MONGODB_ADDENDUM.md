@@ -8,6 +8,7 @@
 - `backtest_runs` and `backtest_decisions`: historical replay summaries and per-event Mirror traces.
 - `operating_cycles`: persistent observation / diagnostic / paper-session cycle state.
 - `paper_sessions`: active forward paper account ledgers and open/pending positions.
+- `paper_session_runs`: archived final account snapshots for completed paper cycles.
 - `paper_session_decisions`: append-only forward paper Mirror records.
 - `paper_session_trades`: closed simulated paper trades and net outcomes.
 - `trade_orders`: reserved for a future broker order lifecycle; no live order endpoint is registered.
