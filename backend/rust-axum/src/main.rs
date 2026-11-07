@@ -223,6 +223,9 @@ async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
+fn is_out_of_order(state: &SymbolState, event: &MarketEvent) -> bool {
+    state.last_event_ts_ms.map(|last| event.ts_ms < last).unwrap_or(false)
+}
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
@@ -295,8 +298,7 @@ mod venue_state_tests {
     fn older_event_is_not_a_forward_update() {
         let mut state = SymbolState::default();
         apply(&mut state, &event("broker-a", "EURUSD", 2_000, 2.0));
-        assert!(state.last_event_ts_ms.unwrap() > 1_000);
-        // Ingest compares event time to this watermark before calling apply.
+        assert!(is_out_of_order(&state, &event("broker-a", "EURUSD", 1_000, 1.0)));
     }
 }
 
@@ -320,7 +322,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     let (snapshot, out_of_order) = {
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
         let state=guard.entry(state_key.clone()).or_default();
-        let late = state.last_event_ts_ms.map(|last| event.ts_ms < last).unwrap_or(false);
+        let late = is_out_of_order(state, &event);
         if !late { apply(state,&event); }
         (state.clone(), late)
     };
