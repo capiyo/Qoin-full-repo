@@ -12,15 +12,17 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 use futures_util::TryStreamExt;
-use std::{collections::HashMap, env, sync::{Arc, RwLock}};
+use std::{collections::HashMap, env, sync::{Arc, Mutex, RwLock}};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod backtest;
+mod operating_cycle;
 mod edge_strategy;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use backtest::{BacktestRequest, run_backtest};
+use operating_cycle::{CycleConfig, OperatingCycle};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -69,6 +71,8 @@ struct AppState {
     jepa_predictions: Collection<Document>,
     backtest_runs: Collection<Document>,
     backtest_decisions: Collection<Document>,
+    operating_cycles: Collection<Document>,
+    active_cycle: Arc<Mutex<OperatingCycle>>,
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
@@ -76,6 +80,82 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
+
+async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
+    document.insert("cycle_id", "active");
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.operating_cycles.update_one(doc! {"cycle_id": "active"}, doc! {"$set": document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    match s.active_cycle.lock() {
+        Ok(cycle) => (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default())),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+    }
+}
+
+async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json<CycleConfig>) -> impl IntoResponse {
+    let snapshot = {
+        let mut cycle = match s.active_cycle.lock() {
+            Ok(value) => value,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+        };
+        match cycle.configure(config) {
+            Ok(value) => value,
+            Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+        }
+    };
+    let cycle = match s.active_cycle.lock() {
+        Ok(value) => value.clone(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+    };
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle configuration persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let snapshot = {
+        let mut cycle = match s.active_cycle.lock() {
+            Ok(value) => value,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+        };
+        cycle.start()
+    };
+    let cycle = match s.active_cycle.lock() {
+        Ok(value) => value.clone(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+    };
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let snapshot = {
+        let mut cycle = match s.active_cycle.lock() {
+            Ok(value) => value,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+        };
+        cycle.stop()
+    };
+    let cycle = match s.active_cycle.lock() {
+        Ok(value) => value.clone(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+    };
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -212,6 +292,32 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
+    }
+    let cycle_snapshot = {
+        match s.active_cycle.lock() {
+            Ok(mut cycle) if cycle.is_active() => {
+                cycle.record_observation();
+                cycle.record_signal_evaluation(decision.magnitude, decision.angle_radians.cos(), decision.action);
+                Some(cycle.clone())
+            }
+            Ok(_) => None,
+            Err(_) => {
+                tracing::error!("operating cycle lock poisoned while recording Mirror decision");
+                None
+            }
+        }
+    };
+    if let Some(cycle) = cycle_snapshot {
+        if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+            tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"cycle Mirror persistence failed",
+                "event_persisted":true,
+                "state_persisted":true,
+                "decision_persisted":true,
+                "event_id":event.event_id
+            })));
+        }
     }
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
 }
@@ -454,6 +560,7 @@ async fn main(){
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     let backtest_runs:Collection<Document>=db.collection("backtest_runs");
     let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
+    let operating_cycles:Collection<Document>=db.collection("operating_cycles");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})
         .build(),None).await.expect("market event replay index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
@@ -464,6 +571,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     backtest_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest run index");
+    operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
     backtest_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1,"sequence":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("backtest decision index");
     jepa_predictions.create_index(mongodb::IndexModel::builder()
@@ -501,8 +610,16 @@ async fn main(){
         }
         Err(_) => None,
     };
+    let persisted_cycle = match operating_cycles.find_one(doc!{"cycle_id":"active"}, None).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default()
+        }
+        _ => OperatingCycle::default(),
+    };
     let state=AppState{
-        events,states,decisions,strategies,jepa_predictions,backtest_runs,backtest_decisions,jepa_client,
+        events,states,decisions,strategies,jepa_predictions,backtest_runs,backtest_decisions,operating_cycles,
+        active_cycle:Arc::new(Mutex::new(persisted_cycle)),jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
@@ -519,7 +636,10 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
-        .route("/internal/backtest",post(run_paper_backtest))
+         .route("/internal/backtest",post(run_paper_backtest))
+        .route("/internal/operating-cycle",get(get_operating_cycle).put(configure_operating_cycle))
+        .route("/internal/operating-cycle/start",post(start_operating_cycle))
+        .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
         .route("/internal/backtests",get(list_backtest_runs))
         .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
