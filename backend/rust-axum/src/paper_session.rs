@@ -399,6 +399,9 @@ mod tests {
         assert!((trade.gross_pnl - 11.99175).abs() < 1e-8);
         let snapshot = session.snapshot();
         assert!((snapshot.accounts[0].cash - (20_000.0 + trade.net_pnl)).abs() < 1e-8);
+        assert_eq!(snapshot.accounts[0].wins, 1);
+        assert_eq!(snapshot.accounts[0].losses, 0);
+        assert!((snapshot.accounts[0].win_rate_pct - 100.0).abs() < 1e-8);
     }
 
     #[test]
