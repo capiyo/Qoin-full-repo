@@ -174,6 +174,8 @@ The branch now contains:
 - `backend/rust-axum/src/algorithm_entitlements.rs`: pure fail-closed entitlement rules. Access requires a matching authenticated-user identity supplied by a trusted caller, an active grant, a positive verification timestamp, an effective start time, a non-expired grant, the requested algorithm ID and every required capability. Pending, unverified, expired, refunded, revoked and chargeback grants deny access.
 - Unit tests cover successful authorization, cross-user isolation, unverified/pending payments, expiry, future activation, missing capabilities, revoked/refunded/chargeback states and invalid identity/clock inputs.
 
+- `frontend/packages/core/src/qoinApi.ts`: shared TypeScript contracts for manifests, catalogue responses, entitlement projections and pinned selections. These are types only; no unavailable protected API is called by the client.
+
 The entitlement module is currently a domain rule library, not a live authorization endpoint. It is deliberately not wired to caller-supplied user IDs, because this branch does not yet expose a verified Axum identity extractor or middleware. It is also not connected to payment webhooks or persisted grants. Do not use it to unlock paid access until the trusted identity, grant persistence, payment reconciliation and endpoint authorization layers are implemented and integration-tested.
 
 The new module and its registration have been committed, but GitHub Actions has not yet reported a run for these connector-created commits. The Rust tests have not yet been executed in this environment; compilation and test status remain unverified.
