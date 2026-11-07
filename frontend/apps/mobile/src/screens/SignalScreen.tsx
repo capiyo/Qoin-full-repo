@@ -34,7 +34,7 @@ export function SignalScreen() {
   const [signal, setSignal] = useState<QoinSignal | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);\n  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });\n  const [cycleBusy, setCycleBusy] = useState(false);\n  const [cycleError, setCycleError] = useState("");
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
@@ -46,7 +46,7 @@ export function SignalScreen() {
     [forces],
   );
 
-  async function evaluate() {
+  async function saveCycle() {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(await configureOperatingCycle(cycleConfig)); }\n    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not save cycle configuration"); }\n    finally { setCycleBusy(false); }\n  }\n\n  async function runCycle(action: "start" | "stop") {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }\n    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }\n    finally { setCycleBusy(false); }\n  }\n\n  async function evaluate() {
     setBusy(true);
     setError("");
     try {
@@ -77,6 +77,35 @@ export function SignalScreen() {
         </View>
         <Text style={styles.subtitle}>Explore current normalized forces and evaluate a versioned signal. This screen never submits orders.</Text>
 
+        <View style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>Operating cycle</Text>
+            <Text style={styles.counter}>{(cycle?.phase ?? "loading").replace(/_/g, " ").toUpperCase()}</Text>
+          </View>
+          <Text style={styles.fieldHelp}>5-minute observation → 60-minute weight diagnostics → paper session. Weights stay fixed during the session; no online self-training.</Text>
+          {([
+            ["observation_minutes", "Observation (min)"],
+            ["weight_evaluation_minutes", "Weight evaluation (min)"],
+            ["session_minutes", "Paper session (min)"],
+          ] as const).map(([key, label]) => (
+            <View key={key} style={styles.fieldRow}>
+              <Text style={styles.fieldLabel}>{label}</Text>
+              <TextInput accessibilityLabel={label} keyboardType="number-pad" value={String(cycleConfig[key])}
+                editable={!cycle?.active}
+                onChangeText={(value) => setCycleConfig((current) => ({ ...current, [key]: Math.max(1, Number(value) || 1) }))}
+                style={styles.input} />
+            </View>
+          ))}
+          <View style={styles.metricRow}><Text style={styles.metricLabel}>Seconds remaining</Text><Text style={styles.metricValue}>{cycle?.phase_seconds_remaining ?? 0}</Text></View>
+          <View style={styles.metricRow}><Text style={styles.metricLabel}>Observations / evaluations</Text><Text style={styles.metricValue}>{cycle?.observations ?? 0} / {cycle?.signal_evaluations ?? 0}</Text></View>
+          <View style={styles.cycleButtons}>
+            <Pressable onPress={saveCycle} disabled={cycleBusy || !!cycle?.active} style={[styles.secondaryButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Save</Text></Pressable>
+            <Pressable onPress={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active} style={[styles.cycleButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.buttonText}>Start</Text></Pressable>
+            <Pressable onPress={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active} style={[styles.secondaryButton, (cycleBusy || !cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Stop</Text></Pressable>
+          </View>
+          {cycleError ? <Text accessibilityRole="alert" style={styles.error}>{cycleError}</Text> : null}
+          <Text style={styles.cycleSafety}>PAPER / RESEARCH ONLY · LIVE EXECUTION DISABLED</Text>
+        </View>
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelTitle}>Observation vector</Text>
@@ -157,7 +186,7 @@ const styles = StyleSheet.create({
   fieldHelp: { color: colors.textMuted, fontSize: 10, marginTop: 3 },
   input: { width: 92, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 8, textAlign: "right", fontSize: 13 },
   button: { backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", paddingVertical: 13, marginTop: 18 },
-  disabled: { opacity: 0.55 },
+  disabled: { opacity: 0.55 },\n  cycleButtons: { flexDirection: "row", gap: 8, marginTop: 14 },\n  cycleButton: { flex: 1, backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },\n  secondaryButton: { flex: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },\n  secondaryButtonText: { color: colors.textPrimary, fontSize: 11, fontWeight: "800" },\n  cycleSafety: { color: colors.accentCyan, fontSize: 9, fontWeight: "800", marginTop: 12, letterSpacing: 0.6 },
   buttonText: { color: colors.bgPrimary, fontSize: 12, fontWeight: "800" },
   error: { color: colors.bearish, fontSize: 11, marginTop: 10 },
   decision: { fontSize: 30, fontWeight: "900", letterSpacing: 2, marginVertical: 8 },
