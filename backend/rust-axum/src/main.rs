@@ -239,6 +239,27 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+async fn get_events(State(s):State<AppState>,Query(q):State<HistoryQuery>)->impl IntoResponse {
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    let limit=q.limit.unwrap_or(100).clamp(1,1000);
+    let options=FindOptions::builder().sort(doc!{"ts_ms":-1}).limit(limit).build();
+    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,"raw event history query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw event history unavailable","symbol":symbol}))); }
+    };
+    let mut items=Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document))=>{document.remove("_id");items.push(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default());}
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"raw event history cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw event history read failed","symbol":symbol}))); }
+        }
+    }
+    items.reverse();
+    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
+}
 async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
@@ -252,7 +273,7 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     loop {
         match cursor.try_next().await {
             Ok(Some(mut document))=>{
-                let stored_at=document.get_datetime("stored_at").ok().map(|value|value.to_chrono().to_rfc3339());
+                let stored_at=document.get_datetime("stored_at").ok().map(|value|chrono::DateTime::from_timestamp_millis(value.timestamp_millis()).map(|v|v.to_rfc3339()).unwrap_or_default());
                 document.remove("_id"); document.remove("stored_at");
                 let mut value= mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default();
                 if let (Some(object),Some(timestamp))=(value.as_object_mut(),stored_at){object.insert("stored_at".into(),serde_json::Value::String(timestamp));}
@@ -579,7 +600,7 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
-        .route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
+        .route("/internal/events",get(get_events).post(ingest)).route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
