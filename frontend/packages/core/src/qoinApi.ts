@@ -69,8 +69,11 @@ function getBaseUrl(): string {
     process?: { env?: Record<string, string | undefined> };
   };
   const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
-  return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
+  const location = (globalThis as typeof globalThis & { location?: { protocol?: string; host?: string } }).location;
+  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  if (location?.host) return (location.protocol === "https:" ? "https://" : "http://") + location.host;
+  return "http://127.0.0.1:8080";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -95,4 +98,95 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export type QoinMarketState = {
+  symbol: string; event_count: number; last_event_ts_ms?: number | null; last_price?: number | null;
+  spread_bps?: number | null; order_flow_imbalance: number; total_trade_size: number;
+  event_intensity: number; ewma_abs_return: number; funding_rate?: number | null;
+  open_interest?: number | null; liquidation_events: number; state_quality: number;
+};
+export type QoinStreamUpdate = {
+  type: string; symbol?: string;
+  event?: { event_type?: string; price?: number | null; size?: number | null; side?: string | null;
+    bid?: number | null; ask?: number | null; funding_rate?: number | null;
+    liquidation_side?: string | null; ts_ms?: number };
+  state?: QoinMarketState; decision?: QoinVectorDecision; server_ts_ms?: number;
+  missed_updates?: number; note?: string; subscribed_symbols?: string[];
+};
+export type QoinNewsItem = {
+  id: string | number; headline: string; summary: string; source: string; url: string;
+  image?: string; published_at_ms: number; related?: string; category?: string;
+};
+export type QoinNewsResponse = { source: string; status: string; items: QoinNewsItem[]; message?: string };
+export type QoinInstrument = {
+  symbol: string; engine_symbol: string; name: string;
+  asset_class: "Crypto" | "Equities" | "FX" | "Indices" | "Commodities";
+  venue: string; provider: string; description: string; quote_currency?: string;
+};
+export type QoinVectorHistory = {
+  symbol: string; strategy_version?: string; decision_vector: [number, number];
+  magnitude: number; angle_radians: number; action: string; stored_at?: string;
+};
+function getWebSocketBaseUrl(): string {
+  const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } };
+  const env = runtime.process?.env;
+  const configured = env?.EXPO_PUBLIC_QOIN_WS_URL ?? env?.VITE_QOIN_WS_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  return getBaseUrl().replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+}
+/** Reconnecting read-only stream through the Drogon gateway. Returns an unsubscribe function. */
+export function subscribeQoinStream(
+  symbols: string[],
+  onUpdate: (update: QoinStreamUpdate) => void,
+  onStatus?: (status: "connecting" | "connected" | "reconnecting" | "disconnected" | "error") => void,
+): () => void {
+  let stopped = false;
+  let socket: WebSocket | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryMs = 1000;
+  const normalized = [...new Set(symbols.map((value) => value.trim().toUpperCase()).filter(Boolean))];
+  const scheduleReconnect = () => {
+    if (stopped || retryTimer) return;
+    retryTimer = setTimeout(() => { retryTimer = null; connect(); }, retryMs);
+    retryMs = Math.min(30000, retryMs * 2);
+  };
+  const connect = () => {
+    if (stopped) return;
+    onStatus?.(retryMs === 1000 ? "connecting" : "reconnecting");
+    const base = getWebSocketBaseUrl() + "/api/v1/stream";
+    const url = base + (normalized.length ? "?symbols=" + encodeURIComponent(normalized.join(",")) : "");
+    try { socket = new WebSocket(url); }
+    catch { onStatus?.("error"); scheduleReconnect(); return; }
+    socket.onopen = () => {
+      retryMs = 1000;
+      onStatus?.("connected");
+      if (normalized.length) socket?.send(JSON.stringify({ type: "subscribe", symbols: normalized }));
+    };
+    socket.onmessage = (message) => {
+      try { onUpdate(JSON.parse(String(message.data)) as QoinStreamUpdate); }
+      catch { onStatus?.("error"); }
+    };
+    socket.onerror = () => onStatus?.("error");
+    socket.onclose = () => {
+      if (!stopped) { onStatus?.("reconnecting"); scheduleReconnect(); }
+    };
+  };
+  connect();
+  return () => {
+    stopped = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    socket?.close();
+    socket = null;
+    onStatus?.("disconnected");
+  };
+}
+export function getQoinNews(category = "general"): Promise<QoinNewsResponse> {
+  return request<QoinNewsResponse>("/api/v1/news?category=" + encodeURIComponent(category));
+}
+export function getQoinInstruments(): Promise<{ items: QoinInstrument[]; source: string }> {
+  return request<{ items: QoinInstrument[]; source: string }>("/api/v1/instruments");
+}
+export function getInstrumentVectorHistory(symbol: string, limit = 120): Promise<{ symbol: string; items: QoinVectorHistory[] }> {
+  return request<{ symbol: string; items: QoinVectorHistory[] }>("/api/v1/vector/history?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
