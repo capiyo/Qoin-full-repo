@@ -1,9 +1,10 @@
-name: Qoin React web
+name: Qoin React web and mobile
 
 on:
   push:
     paths:
       - "frontend/apps/web/**"
+      - "frontend/apps/mobile/**"
       - "frontend/packages/core/**"
       - "package.json"
       - "pnpm-workspace.yaml"
@@ -29,3 +30,16 @@ jobs:
           node-version: 20
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm --filter @qoin/react-web build
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm --filter @qoin/mobile typecheck
