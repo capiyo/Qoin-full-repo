@@ -135,6 +135,7 @@ export type PaperAccountSnapshot = {
   contract_multiplier: number; quantity_step: number;
   net_pnl: number; realized_pnl: number; unrealized_pnl: number; fees_paid: number; max_drawdown_pct: number; events: number; decisions: number;
   buy_signals: number; sell_signals: number; wait_signals: number; entries: number; exits: number;
+  wins: number; losses: number; win_rate_pct: number; gross_profit: number; gross_loss: number; profit_factor: number | null;
   skipped_entries: number; has_open_position: boolean;
   open_position: { entry_ts_ms: number; entry_event_id: string; strategy_version: string; quantity: number; contract_multiplier: number; entry_price: number; entry_fee: number; unrealized_pnl: number } | null;
   pending_action: string | null;
