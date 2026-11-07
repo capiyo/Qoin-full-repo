@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -56,6 +56,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
+  const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
@@ -116,6 +117,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
     const timer = setInterval(load, 15 * 60 * 1000);
     return () => { active = false; clearInterval(timer); };
   }, []);
+  useEffect(() => { getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
   const data = mode === "Archive" ? archived : discovered;
   useEffect(() => {
     if (!selected) {
@@ -283,6 +285,28 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
             </View>
             <FeatureSpace decision={vector} />
+            <View style={styles.strategyPanel}>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{strategy?.version || "Unavailable"}</Text></View>
+              {strategy ? <>
+                <View style={styles.strategyGates}>
+                  {[
+                    ["Angle", strategy.angular_threshold_degrees.toFixed(2) + "°"],
+                    ["Magnitude", strategy.magnitude_threshold.toFixed(3)],
+                    ["Max spread", strategy.max_spread_bps.toFixed(2) + " bps"],
+                    ["Attention", strategy.attention_scale.toFixed(3)],
+                  ].map(([label,value]) => <View key={label} style={styles.liveMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+                </View>
+                {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={styles.strategyWeightRow}>
+                  <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
+                  <View style={styles.strategyWeightValues}>
+                    <Text style={styles.attentionCaption}>Bullish {strategy.bullish_weights[name]?.toFixed(3) ?? "—"}</Text>
+                    <Text style={styles.attentionCaption}>Bearish {strategy.bearish_weights[name]?.toFixed(3) ?? "—"}</Text>
+                    <Text style={styles.attentionCaption}>Scale {strategy.feature_scales[name]?.toFixed(3) ?? "—"}</Text>
+                  </View>
+                </View>)}
+                <Text style={styles.disclaimer}>Status: {strategy.status}. Last update: {new Date(strategy.updated_at_ms).toLocaleString()}.</Text>
+              </> : <Text style={styles.disclaimer}>The active strategy map could not be loaded.</Text>}
+            </View>
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
               <>
                 <View style={styles.engineMetrics}>
