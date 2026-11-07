@@ -1,4 +1,9 @@
-use chrono::Utc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn now_ms() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64).unwrap_or(0)
+}
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +91,7 @@ impl OperatingCycle {
     }
 
     pub fn start(&mut self) -> CycleSnapshot {
-        self.started_at_ms = Some(Utc::now().timestamp_millis());
+        self.started_at_ms = Some(now_ms());
         self.active = true;
         self.observations = 0;
         self.signal_evaluations = 0;
