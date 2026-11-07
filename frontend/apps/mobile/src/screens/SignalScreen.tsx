@@ -114,7 +114,7 @@ export function SignalScreen() {
 
   function addPaperAccount() {
     const account = { ...paperAccountDraft, symbol: paperAccountDraft.symbol.trim().toUpperCase(), venue: paperAccountDraft.venue.trim(), quote_currency: paperAccountDraft.quote_currency.trim().toUpperCase() };
-    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash) { setCycleError("Enter symbol, exact venue, quote currency, positive capital and a notional within that capital."); return; }
+    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash || account.contract_multiplier <= 0 || account.quantity_step <= 0) { setCycleError("Enter symbol, exact venue, quote currency, positive capital and a notional within that capital."); return; }
     if (cycleConfig.paper_accounts.some((item) => item.symbol === account.symbol && item.venue === account.venue)) { setCycleError("This venue and symbol are already configured."); return; }
     if (cycleConfig.paper_accounts.length >= 50) { setCycleError("A cycle supports at most 50 instruments."); return; }
     setCycleConfig((current) => ({ ...current, paper_accounts: [...current.paper_accounts, account] })); setCycleError("");
