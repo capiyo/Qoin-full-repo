@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.12.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.12.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -51,7 +51,7 @@ jobs:
       - name: Install Drogon build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdrogon-dev cmake build-essential
+          sudo apt-get install -y libdrogon-dev libjsoncpp-dev cmake build-essential
       - name: Configure gateway
         run: cmake -S backend/cpp-drogon -B build/drogon
       - name: Build gateway
