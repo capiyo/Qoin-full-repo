@@ -11,6 +11,7 @@ import {
   runPaperBacktest,
   getPaperBacktestHistory,
   getPaperSession,
+  getPaperSessionHistory,
   type PaperBacktestReport,
   type PaperBacktestHistoryItem,
   type MarketForceObservation,
@@ -19,6 +20,8 @@ import {
   type OperatingCycleSnapshot,
   type PaperAccountConfig,
   type PaperSessionSnapshot,
+  type PaperMirrorEvent,
+  type PaperTradeHistoryItem,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -53,6 +56,7 @@ export function SignalScreen() {
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleError, setCycleError] = useState("");
   const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
+  const [paperHistory, setPaperHistory] = useState<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>({ decisions: [], trades: [] });
   const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
@@ -66,7 +70,8 @@ export function SignalScreen() {
       .catch(() => setApiOnline(false));
     getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     getPaperSession().then(setPaperSession).catch(() => setPaperSession(null));
-    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); };
+    getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => setPaperHistory({ decisions: [], trades: [] }));
+    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => undefined); };
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -89,6 +94,7 @@ export function SignalScreen() {
       if (action === "start") { await configureOperatingCycle(cycleConfig); setCycle(await startOperatingCycle()); }
       else setCycle(await stopOperatingCycle());
       setPaperSession(await getPaperSession());
+      setPaperHistory(await getPaperSessionHistory(undefined, 50));
     }
     catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
@@ -310,6 +316,12 @@ export function SignalScreen() {
             </View>
           )) : <Text style={styles.fieldHelp}>No paper session activity yet. Add accounts and start a cycle.</Text>}
           <Text style={styles.cycleSafety}>SIMULATED FILLS ONLY · LIVE BROKER ROUTING DISABLED</Text>
+          <Text style={styles.panelTitle}>Recent Mirror decisions</Text>
+          {paperHistory.decisions.slice(0, 8).map((item) => <View key={item.venue + item.symbol + item.event_id} style={styles.metricRow}><View style={{ flex: 1 }}><Text style={styles.fieldLabel}>{item.symbol} · {item.venue} · {item.action.toUpperCase()}</Text><Text style={styles.fieldHelp}>{item.execution} · {item.reason}</Text><Text style={styles.fieldHelp}>Equity {item.equity.toFixed(2)} {item.quote_currency} · {new Date(item.ts_ms).toLocaleTimeString()}</Text></View></View>)}
+          {!paperHistory.decisions.length ? <Text style={styles.fieldHelp}>No paper Mirror events yet.</Text> : null}
+          <Text style={styles.panelTitle}>Closed paper trades</Text>
+          {paperHistory.trades.slice(0, 8).map((trade, index) => <View key={trade.cycle_id + trade.venue + trade.symbol + trade.exit_ts_ms + index} style={styles.metricRow}><View style={{ flex: 1 }}><Text style={styles.fieldLabel}>{trade.symbol} · {trade.venue}</Text><Text style={styles.fieldHelp}>Net P/L {trade.net_pnl.toFixed(2)} {trade.quote_currency} · {trade.return_pct.toFixed(3)}%</Text><Text style={styles.fieldHelp}>Fees {trade.fees.toFixed(2)} · {new Date(trade.exit_ts_ms).toLocaleString()}</Text></View></View>)}
+          {!paperHistory.trades.length ? <Text style={styles.fieldHelp}>No closed paper trades yet.</Text> : null}
         </View>
 <View style={styles.panel}>
           <View style={styles.panelHeader}>
