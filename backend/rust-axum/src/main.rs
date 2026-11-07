@@ -90,7 +90,7 @@ struct AppState {
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 #[derive(Deserialize)]
-struct PaperHistoryQuery { symbol: Option<String>, limit: Option<i64> }
+struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
 
 async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
     let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
@@ -111,9 +111,8 @@ async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(
 }
 
 async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>) -> impl IntoResponse {
-    let cycle_id = s.active_paper_session.lock().await.snapshot().cycle_id;
     let mut filter = Document::new();
-    if let Some(cycle_id) = cycle_id { filter.insert("cycle_id", cycle_id); }
+    if let Some(cycle_id) = query.cycle_id { filter.insert("cycle_id", cycle_id); }
     if let Some(symbol) = query.symbol { filter.insert("symbol", symbol); }
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let mut decisions_cursor = match s.paper_session_decisions.find(filter.clone(), FindOptions::builder().sort(doc! {"ts_ms": -1}).limit(limit).build()).await {
