@@ -98,6 +98,7 @@ export type OperatingCycleSnapshot = {
   mean_absolute_score: number | null;
   mean_alignment: number | null;
   mean_feature_values: Record<string, number>;
+  mean_weight_contributions: Record<string, [number, number]>;
   mean_attention: number[][];
   buy_signals: number;
   sell_signals: number;
