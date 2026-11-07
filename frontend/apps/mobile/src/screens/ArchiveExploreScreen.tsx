@@ -45,9 +45,14 @@ export function ArchiveExploreScreen() {
     const map = new Map<string, Instrument>();
     for (const account of cycle?.config.paper_accounts ?? []) map.set(account.venue + ":" + account.symbol, { symbol: account.symbol, venue: account.venue, currency: account.quote_currency, status: "Configured" });
     for (const account of session?.accounts ?? []) map.set(account.venue + ":" + account.symbol, { symbol: account.symbol, venue: account.venue, currency: account.quote_currency, status: "Paper account", pnl: account.net_pnl });
+    for (const run of runs) for (const account of run.accounts) {
+      const key = account.venue + ":" + account.symbol;
+      const current = map.get(key);
+      map.set(key, { symbol: account.symbol, venue: account.venue, currency: account.quote_currency, pnl: current?.pnl ?? account.net_pnl, status: current?.status ?? "Archived" });
+    }
     for (const symbol of saved) if (![...map.values()].some((item) => item.symbol === symbol)) map.set("discovery:" + symbol, { symbol, venue: "Not configured", currency: symbol.endsWith("USDT") ? "USDT" : "USD", status: "Added · discovery" });
     return [...map.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
-  }, [cycle, session, saved]);
+  }, [cycle, session, runs, saved]);
 
   const events = selected ? decisions.filter((item) => item.symbol === selected.symbol && item.venue === selected.venue) : [];
   const latest = events[0];
