@@ -225,6 +225,49 @@ export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: st
   return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
 
+
+/** Public, read-only metadata for an independently versioned research algorithm.
+ * This is a data contract only; it does not imply that paid access or switching
+ * endpoints are available until server-side identity and grants are integrated.
+ */
+export type QoinAlgorithmStatus = "active" | "preview" | "deprecated" | "disabled";
+export type QoinAlgorithmManifest = {
+  algorithm_id: string;
+  display_name: string;
+  description: string;
+  version: string;
+  status: QoinAlgorithmStatus;
+  supported_asset_classes: string[];
+  supported_timeframes: string[];
+  required_features: string[];
+  optional_features: string[];
+  risk_profile: string;
+  execution_mode: "research_only";
+  evaluation_status: "not_independently_validated" | "in_sample" | "out_of_sample" | "walk_forward" | "independently_validated";
+};
+export type QoinAlgorithmCatalogue = {
+  catalogue_version: number;
+  algorithms: QoinAlgorithmManifest[];
+  selection_enabled: boolean;
+  entitlements_enabled: boolean;
+  note?: string;
+};
+export type QoinAlgorithmEntitlement = {
+  algorithm_id: string;
+  allowed: boolean;
+  grant_status: "pending" | "active" | "expired" | "refunded" | "revoked" | "chargeback" | "none";
+  allowed_capabilities: string[];
+  missing_capabilities: string[];
+  effective_at_ms?: number;
+  expires_at_ms?: number | null;
+};
+export type QoinAlgorithmSelection = {
+  algorithm_id: string;
+  version: string;
+  selected_at_ms: number;
+  config_fingerprint: string;
+};
+
 export type QoinStrategy = {
   strategy_key: string; version: string; status: string;
   bullish_weights: Record<string, number>; bearish_weights: Record<string, number>;
