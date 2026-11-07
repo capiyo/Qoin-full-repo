@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinCalendar, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -64,6 +64,8 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [news, setNews] = useState<QoinNewsItem[]>([]);
   const [newsStatus, setNewsStatus] = useState("loading");
   const [newsCategory, setNewsCategory] = useState("general");
+  const [macroEvents, setMacroEvents] = useState<QoinMacroEvent[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState("loading");
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const toggle = (symbol: string) => {
@@ -99,6 +101,17 @@ export function ArchiveExploreScreen({ mode }: Props) {
     const timer = setInterval(load, 5 * 60 * 1000);
     return () => { active = false; clearInterval(timer); };
   }, [newsCategory]);
+  useEffect(() => {
+    let active = true;
+    const load = () => getQoinCalendar().then((result) => {
+      if (!active) return;
+      setMacroEvents(result.items);
+      setCalendarStatus(result.status === "ok" ? "connected" : result.message || result.status);
+    }).catch((error: unknown) => { if (active) setCalendarStatus(error instanceof Error ? error.message : "Calendar provider unavailable"); });
+    load();
+    const timer = setInterval(load, 15 * 60 * 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
   const data = mode === "Archive" ? archived : discovered;
   useEffect(() => {
     if (!selected) {
@@ -196,6 +209,15 @@ export function ArchiveExploreScreen({ mode }: Props) {
             <Text style={styles.newsHeadline}>{item.headline}</Text><Text style={styles.newsSummary} numberOfLines={3}>{item.summary}</Text>
           </Pressable>) : <Text style={styles.noteCopy}>{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend. No placeholder headlines are generated."}</Text>}
         </View> : null}
+        {mode === "Explore" ? <View style={styles.macroSection}>
+          <Text style={styles.kicker}>UPCOMING CATALYSTS</Text><Text style={styles.newsTitle}>Economic calendar</Text>
+          <Text style={styles.noteCopy}>Scheduled releases, with actual, estimate and previous values where published.</Text>
+          {macroEvents.length ? macroEvents.slice(0,40).map((item,index) => <View key={item.time + item.country + item.event + index} style={styles.macroItem}>
+            <Text style={styles.newsHeadline}>{item.event}</Text><Text style={styles.newsMeta}>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</Text>
+            <View style={styles.macroValues}><Text style={styles.newsMeta}>Actual: {item.actual ?? "—"}</Text><Text style={styles.newsMeta}>Estimate: {item.estimate ?? "—"}</Text><Text style={styles.newsMeta}>Previous: {item.previous ?? "—"}</Text></View>
+          </View>) : <Text style={styles.noteCopy}>{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</Text>}
+        </View> : null}
+
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
       </ScrollView>
 
