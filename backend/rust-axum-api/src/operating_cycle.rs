@@ -54,6 +54,12 @@ pub struct CycleSnapshot {
     pub phase_seconds_remaining: u64,
     pub observations: u64,
     pub signal_evaluations: u64,
+    pub mean_absolute_score: Option<f64>,
+    pub mean_alignment: Option<f64>,
+    pub buy_signals: u64,
+    pub sell_signals: u64,
+    pub close_signals: u64,
+    pub wait_signals: u64,
     pub live_execution_enabled: bool,
     pub weight_policy: &'static str,
     pub note: &'static str,
@@ -66,6 +72,12 @@ pub struct OperatingCycle {
     active: bool,
     observations: u64,
     signal_evaluations: u64,
+    absolute_score_sum: f64,
+    alignment_sum: f64,
+    buy_signals: u64,
+    sell_signals: u64,
+    close_signals: u64,
+    wait_signals: u64,
 }
 
 impl Default for OperatingCycle {
@@ -76,6 +88,12 @@ impl Default for OperatingCycle {
             active: false,
             observations: 0,
             signal_evaluations: 0,
+            absolute_score_sum: 0.0,
+            alignment_sum: 0.0,
+            buy_signals: 0,
+            sell_signals: 0,
+            close_signals: 0,
+            wait_signals: 0,
         }
     }
 }
@@ -95,6 +113,12 @@ impl OperatingCycle {
         self.active = true;
         self.observations = 0;
         self.signal_evaluations = 0;
+        self.absolute_score_sum = 0.0;
+        self.alignment_sum = 0.0;
+        self.buy_signals = 0;
+        self.sell_signals = 0;
+        self.close_signals = 0;
+        self.wait_signals = 0;
         self.snapshot()
     }
 
@@ -109,9 +133,17 @@ impl OperatingCycle {
         }
     }
 
-    pub fn record_signal_evaluation(&mut self) {
-        if self.active {
+    pub fn record_signal_evaluation(&mut self, score: f64, alignment: f64, decision: &str) {
+        if self.active && score.is_finite() && alignment.is_finite() {
             self.signal_evaluations = self.signal_evaluations.saturating_add(1);
+            self.absolute_score_sum += score.abs();
+            self.alignment_sum += alignment;
+            match decision {
+                "buy" => self.buy_signals = self.buy_signals.saturating_add(1),
+                "sell" => self.sell_signals = self.sell_signals.saturating_add(1),
+                "close" => self.close_signals = self.close_signals.saturating_add(1),
+                _ => self.wait_signals = self.wait_signals.saturating_add(1),
+            }
         }
     }
 
@@ -145,9 +177,15 @@ impl OperatingCycle {
             phase_seconds_remaining,
             observations: self.observations,
             signal_evaluations: self.signal_evaluations,
+            mean_absolute_score: if self.signal_evaluations > 0 { Some(self.absolute_score_sum / self.signal_evaluations as f64) } else { None },
+            mean_alignment: if self.signal_evaluations > 0 { Some(self.alignment_sum / self.signal_evaluations as f64) } else { None },
+            buy_signals: self.buy_signals,
+            sell_signals: self.sell_signals,
+            close_signals: self.close_signals,
+            wait_signals: self.wait_signals,
             live_execution_enabled: false,
             weight_policy: "baseline_locked_during_session; validation_is_observational_not_online_training",
-            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase evaluates signal and weight diagnostics; it does not silently retune coefficients. Session operation is research/paper only.",
+            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates signal-score, alignment, and decision-count diagnostics; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
         }
     }
 }
