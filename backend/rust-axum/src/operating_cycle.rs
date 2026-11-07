@@ -15,6 +15,8 @@ pub struct CycleConfig {
     pub weight_evaluation_minutes: u64,
     pub session_minutes: u64,
     pub mode: String,
+    #[serde(default)]
+    pub paper_accounts: Vec<PaperAccountConfig>,
 }
 
 impl Default for CycleConfig {
@@ -24,6 +26,7 @@ impl Default for CycleConfig {
             weight_evaluation_minutes: 60,
             session_minutes: 480,
             mode: "paper".to_owned(),
+            paper_accounts: Vec::new(),
         }
     }
 }
@@ -41,6 +44,14 @@ impl CycleConfig {
         }
         if self.mode != "research" && self.mode != "paper" {
             return Err("mode must be research or paper; live mode is not supported".into());
+        }
+        if self.paper_accounts.len() > 50 { return Err("at most 50 paper accounts are supported".into()); }
+        let mut keys = std::collections::BTreeSet::new();
+        for account in &self.paper_accounts {
+            account.validate()?;
+            if !keys.insert(format!("{}::{}", account.venue, account.symbol)) {
+                return Err(format!("duplicate paper account for {}::{}", account.venue, account.symbol));
+            }
         }
         Ok(())
     }
