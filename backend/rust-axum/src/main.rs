@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, put},
@@ -20,7 +20,7 @@ mod edge_strategy;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
-use backtest::{BacktestRequest, BacktestReport, run_backtest};
+use backtest::{BacktestRequest, run_backtest};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -326,6 +326,59 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
     (StatusCode::OK, Json(serde_json::to_value(report).unwrap_or_else(|_| serde_json::json!({"run_id":run_id,"error":"report serialization failed"}))))
 }
 
+async fn get_backtest_run(Path(run_id): Path<String>, State(s): State<AppState>) -> impl IntoResponse {
+    let summary = match s.backtest_runs.find_one(doc! {"run_id": &run_id}, None).await {
+        Ok(Some(mut value)) => { value.remove("_id"); value }
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"backtest run not found"}))),
+        Err(error) => {
+            tracing::error!(error=%error, run_id=%run_id, "backtest history lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"backtest history unavailable"})));
+        }
+    };
+    let options = FindOptions::builder().sort(doc! {"sequence": 1}).build();
+    let mut cursor = match s.backtest_decisions.find(doc! {"run_id": &run_id}, options).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Mirror trace unavailable","run_id":run_id}))),
+    };
+    let mut decisions = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut value)) => {
+                value.remove("_id");
+                decisions.push(value);
+            }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Mirror trace read interrupted","run_id":run_id}))),
+        }
+    }
+    let summary_value = mongodb::bson::from_document::<serde_json::Value>(summary).unwrap_or(serde_json::Value::Null);
+    (StatusCode::OK, Json(serde_json::json!({"summary":summary_value,"decisions":decisions})))
+}
+
+async fn list_backtest_runs(Query(query): Query<SymbolQuery>, State(s): State<AppState>) -> impl IntoResponse {
+    let filter = match query.symbol {
+        Some(symbol) => doc! {"symbol": symbol},
+        None => doc! {},
+    };
+    let options = FindOptions::builder().sort(doc! {"created_at": -1}).limit(50).build();
+    let mut cursor = match s.backtest_runs.find(filter, options).await {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"backtest history unavailable"}))),
+    };
+    let mut runs = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut value)) => {
+                value.remove("_id");
+                runs.push(value);
+            }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"backtest history read interrupted"}))),
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"runs":runs})))
+}
+
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
@@ -452,7 +505,7 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
-        .route("/internal/backtest",post(run_paper_backtest))
+        .route("/internal/backtest",post(run_paper_backtest))\n        .route("/internal/backtests",get(list_backtest_runs))\n        .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
