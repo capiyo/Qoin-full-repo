@@ -248,7 +248,7 @@ pub struct PaperTradeRecord {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PaperOpenPositionSnapshot {
-    pub entry_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64, pub entry_price: f64, pub entry_fee: f64,
+    pub entry_ts_ms: i64, pub entry_event_id: String, pub strategy_version: String, pub quantity: f64, pub contract_multiplier: f64, pub entry_price: f64, pub entry_fee: f64,
     pub unrealized_pnl: f64,
 }
 
@@ -313,7 +313,8 @@ impl PaperSession {
                 entries: account.entries, exits: account.exits, skipped_entries: account.skipped_entries,
                 has_open_position: account.position.is_some(),
                 open_position: account.position.as_ref().map(|position| PaperOpenPositionSnapshot {
-                    entry_ts_ms: position.entry_ts_ms, quantity: position.quantity, contract_multiplier: account.config.contract_multiplier, entry_price: position.entry_price,
+                    entry_ts_ms: position.entry_ts_ms, entry_event_id: position.entry_event_id.clone(), strategy_version: position.strategy_version.clone(),
+                    quantity: position.quantity, contract_multiplier: account.config.contract_multiplier, entry_price: position.entry_price,
                     entry_fee: position.entry_fee, unrealized_pnl: account.unrealized_pnl(),
                 }),
                 pending_action: account.pending.as_ref().map(|pending| pending.action.clone()),
