@@ -92,6 +92,9 @@ jobs:
           jq -e '.venue == "ci" and .event_count == 1' /tmp/state-late.json
           curl -fsS -X PUT http://127.0.0.1:8081/internal/operating-cycle -H 'content-type: application/json' --data '{"observation_minutes":5,"weight_evaluation_minutes":60,"session_minutes":480,"mode":"research","paper_accounts":[]}' >/tmp/cycle-config.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/start >/tmp/cycle-start.json
+          STRATEGY_LOCK_STATUS=$(curl -sS -o /tmp/strategy-locked.json -w '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$STRATEGY_LOCK_STATUS" = "409"
+          jq -e '.error | contains("locked")' /tmp/strategy-locked.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-cycle-book","venue":"ci","symbol":"ETHUSDT","event_type":"book","ts_ms":1792860000200,"bid":200,"ask":200.02,"bid_size":5,"ask_size":4}' >/tmp/cycle-book.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-cycle-trade","venue":"ci","symbol":"ETHUSDT","event_type":"trade","ts_ms":1792860000300,"price":200.01,"size":2,"side":"buy"}' >/tmp/cycle-trade.json
           curl -fsS http://127.0.0.1:8081/internal/operating-cycle >/tmp/cycle-active.json
