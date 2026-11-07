@@ -104,6 +104,35 @@ export function ArchiveExploreScreen({ mode }: Props) {
     });
     return () => { current = false; };
   }, [selected?.engineSymbol]);
+  useEffect(() => {
+    if (!selected) {
+      setVectorHistory([]); setMarketState(null); setLastEvent(null); setStreamStatus("disconnected");
+      return;
+    }
+    let active = true;
+    setVectorHistory([]);
+    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => {
+      if (active) setVectorHistory(result.items);
+    }).catch(() => { if (active) setVectorHistory([]); });
+    const unsubscribe = subscribeQoinStream([selected.engineSymbol], (update) => {
+      if (!active) return;
+      if (update.type === "market.update" && update.symbol?.toUpperCase() === selected.engineSymbol.toUpperCase()) {
+        if (update.state) setMarketState(update.state);
+        if (update.event) setLastEvent(update.event);
+        if (update.decision) {
+          setVector(update.decision);
+          setVectorHistory((current) => [...current.slice(-119), {
+            symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
+            magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
+            action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
+            stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
+          }]);
+        }
+      }
+      if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
+    }, setStreamStatus);
+    return () => { active = false; unsubscribe(); };
+  }, [selected?.engineSymbol]);
   const bullish = vector?.decision_vector?.[0] ?? 0;
   const bearish = vector?.decision_vector?.[1] ?? 0;
   const vectorScale = Math.max(0.35, bullish, bearish);
@@ -120,7 +149,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
         {mode === "Explore" ? (
           <>
             <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
-            <View style={styles.filters}>{["All", "Crypto", "Equities", "FX"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
+            <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
           </>
         ) : null}
 
@@ -131,7 +160,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
               <Text style={styles.arrow}>↗</Text>
             </Pressable>
-            <Text style={styles.detail}>{item.detail}</Text>
+            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider}</Text>
             {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
