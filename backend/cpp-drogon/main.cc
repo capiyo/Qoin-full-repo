@@ -37,12 +37,28 @@ int main() {
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
-        proxyGet(req, std::move(cb), "/internal/state" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
+        const auto venue = req->getParameter("venue");
+        std::string path = "/internal/state";
+        if (!symbol.empty() || !venue.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !venue.empty()) path += "&";
+            if (!venue.empty()) path += "venue=" + drogon::utils::urlEncode(venue);
+        }
+        proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/vector", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
-        proxyGet(req, std::move(cb), "/internal/vector" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
+        const auto venue = req->getParameter("venue");
+        std::string path = "/internal/vector";
+        if (!symbol.empty() || !venue.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !venue.empty()) path += "&";
+            if (!venue.empty()) path += "venue=" + drogon::utils::urlEncode(venue);
+        }
+        proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
