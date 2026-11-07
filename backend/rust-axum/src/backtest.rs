@@ -255,7 +255,7 @@ pub fn run_backtest(
             e.symbol == request.symbol && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
         signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
         skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
-        profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else if gross_profit > 0.0 { Some(f64::INFINITY) } else { None },
+        profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
         fees_paid, assumptions: "Long-only; one position at a time; fixed cash notional per entry; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
         open_position, trades, decisions,
     })
