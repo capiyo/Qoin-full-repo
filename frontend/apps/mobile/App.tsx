@@ -22,3 +22,18 @@ function MainTabs() {
   return <ArchiveExploreScreen />;
 }
 
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
+          <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bgPrimary } }}>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Dashboard" component={MainTabs} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </QueryClientProvider>
+  );
+}
