@@ -65,3 +65,44 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
     body: JSON.stringify(input),
   });
 }
+
+
+export type OperatingCycleConfig = {
+  observation_minutes: number;
+  weight_evaluation_minutes: number;
+  session_minutes: number;
+  mode: "research" | "paper";
+};
+
+export type OperatingCycleSnapshot = {
+  config: OperatingCycleConfig;
+  phase: "idle" | "stopped" | "observation" | "weight_evaluation" | "paper_session" | "completed" | string;
+  active: boolean;
+  started_at_ms: number | null;
+  elapsed_seconds: number;
+  phase_seconds_remaining: number;
+  observations: number;
+  signal_evaluations: number;
+  live_execution_enabled: false;
+  weight_policy: string;
+  note: string;
+};
+
+export function getOperatingCycle(): Promise<OperatingCycleSnapshot> {
+  return request<OperatingCycleSnapshot>("/v1/operating-cycle");
+}
+
+export function configureOperatingCycle(config: OperatingCycleConfig): Promise<OperatingCycleSnapshot> {
+  return request<OperatingCycleSnapshot>("/v1/operating-cycle", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function startOperatingCycle(): Promise<OperatingCycleSnapshot> {
+  return request<OperatingCycleSnapshot>("/v1/operating-cycle/start", { method: "POST" });
+}
+
+export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
+  return request<OperatingCycleSnapshot>("/v1/operating-cycle/stop", { method: "POST" });
+}
