@@ -122,6 +122,8 @@ pub struct BacktestReport {
     pub executed_entries: usize,
     pub executed_exits: usize,
     pub skipped_entries: usize,
+    pub pending_order: Option<String>,
+    pub pending_signal_ts_ms: Option<i64>,
     pub win_rate_pct: Option<f64>,
     pub profit_factor: Option<f64>,
     pub fees_paid: f64,
@@ -172,6 +174,7 @@ pub fn run_backtest(
     let mut executed_entries = 0usize;
     let mut executed_exits = 0usize;
     let mut skipped_entries = 0usize;
+    let mut pending_action: Option<(String, i64)> = None;
     let mut peak_equity = request.initial_cash;
     let mut max_drawdown = 0.0_f64;
     let mut last_bid: Option<f64> = None;
@@ -209,49 +212,70 @@ pub fn run_backtest(
             (Some(bid), Some(ask)) if bid.is_finite() && ask.is_finite() && bid > 0.0 && ask >= bid => Some((bid, ask)),
             _ => None,
         };
-        if decision.action == "buy" && position.is_none() {
-            if let Some((_bid, ask)) = fresh_quote {
-                let entry_price = ask * (1.0 + request.slippage_bps / 10_000.0);
-                let target_notional = effective_entry_notional(request, cash);
-                let quantity = target_notional / entry_price;
-                let fee = quantity * entry_price * request.fee_bps / 10_000.0;
-                let debit = quantity * entry_price + fee;
-                if debit <= cash {
-                    cash -= debit;
-                    fees_paid += fee;
-                    position = Some(OpenPosition { entry_ts_ms: event.ts_ms, quantity, entry_price, entry_fee: fee });
-                    executed_entries += 1;
-                    execution = "entered_long".into();
-                } else {
-                    skipped_entries += 1;
-                    execution = "skipped_insufficient_cash".into();
-                }
+        let mut action_to_execute: Option<(String, i64)> = None;
+        if let Some((pending, signal_ts_ms)) = pending_action.take() {
+            let opposite_signal = (pending == "buy" && decision.action == "sell")
+                || (pending == "sell" && decision.action == "buy");
+            if opposite_signal {
+                execution = format!("cancelled_pending_{}", pending);
+            } else if fresh_quote.is_some() {
+                action_to_execute = Some((pending, signal_ts_ms));
             } else {
-                skipped_entries += 1;
-                execution = "skipped_no_fresh_bid_ask".into();
+                pending_action = Some((pending, signal_ts_ms));
             }
-        } else if decision.action == "sell" && position.is_some() {
-            if let Some((bid, _ask)) = fresh_quote {
-                let open = position.take().expect("position checked above");
-                let exit_price = bid * (1.0 - request.slippage_bps / 10_000.0);
-                let gross = open.quantity * (exit_price - open.entry_price);
-                let exit_fee = open.quantity * exit_price * request.fee_bps / 10_000.0;
-                let total_fees = open.entry_fee + exit_fee;
-                let net = gross - total_fees;
-                cash += open.quantity * exit_price - exit_fee;
-                fees_paid += exit_fee;
-                realized_pnl += net;
-                trades.push(SimulatedTrade {
-                    entry_ts_ms: open.entry_ts_ms, exit_ts_ms: Some(event.ts_ms),
-                    quantity: open.quantity, entry_price: open.entry_price,
-                    exit_price: Some(exit_price), gross_pnl: Some(gross), fees: total_fees,
-                    net_pnl: Some(net), return_pct: Some(net / (open.quantity * open.entry_price) * 100.0),
-                    exit_reason: Some("strategy_sell".into()),
-                });
-                executed_exits += 1;
-                execution = "exited_long".into();
-            } else {
-                execution = "sell_waiting_for_fresh_bid_ask".into();
+        }
+        if action_to_execute.is_none() && pending_action.is_none() {
+            let eligible = (decision.action == "buy" && position.is_none())
+                || (decision.action == "sell" && position.is_some());
+            if eligible {
+                if fresh_quote.is_some() {
+                    action_to_execute = Some((decision.action.to_owned(), event.ts_ms));
+                } else {
+                    pending_action = Some((decision.action.to_owned(), event.ts_ms));
+                    execution = format!("queued_{}_waiting_for_quote", decision.action);
+                }
+            }
+        }
+        if let Some((action, signal_ts_ms)) = action_to_execute {
+            if action == "buy" && position.is_none() {
+                if let Some((_bid, ask)) = fresh_quote {
+                    let entry_price = ask * (1.0 + request.slippage_bps / 10_000.0);
+                    let target_notional = effective_entry_notional(request, cash);
+                    let quantity = target_notional / entry_price;
+                    let fee = quantity * entry_price * request.fee_bps / 10_000.0;
+                    let debit = quantity * entry_price + fee;
+                    if debit <= cash && quantity.is_finite() && quantity > 0.0 {
+                        cash -= debit;
+                        fees_paid += fee;
+                        position = Some(OpenPosition { entry_ts_ms: event.ts_ms, quantity, entry_price, entry_fee: fee });
+                        executed_entries += 1;
+                        execution = if signal_ts_ms == event.ts_ms { "entered_long".into() } else { "filled_pending_buy".into() };
+                    } else {
+                        skipped_entries += 1;
+                        execution = "skipped_insufficient_cash".into();
+                    }
+                }
+            } else if action == "sell" && position.is_some() {
+                if let Some((bid, _ask)) = fresh_quote {
+                    let open = position.take().expect("position checked above");
+                    let exit_price = bid * (1.0 - request.slippage_bps / 10_000.0);
+                    let gross = open.quantity * (exit_price - open.entry_price);
+                    let exit_fee = open.quantity * exit_price * request.fee_bps / 10_000.0;
+                    let total_fees = open.entry_fee + exit_fee;
+                    let net = gross - total_fees;
+                    cash += open.quantity * exit_price - exit_fee;
+                    fees_paid += exit_fee;
+                    realized_pnl += net;
+                    trades.push(SimulatedTrade {
+                        entry_ts_ms: open.entry_ts_ms, exit_ts_ms: Some(event.ts_ms),
+                        quantity: open.quantity, entry_price: open.entry_price,
+                        exit_price: Some(exit_price), gross_pnl: Some(gross), fees: total_fees,
+                        net_pnl: Some(net), return_pct: Some(net / (open.quantity * open.entry_price) * 100.0),
+                        exit_reason: Some("strategy_sell".into()),
+                    });
+                    executed_exits += 1;
+                    execution = if signal_ts_ms == event.ts_ms { "exited_long".into() } else { "filled_pending_sell".into() };
+                }
             }
         }
         decisions.push(MirrorDecision {
@@ -306,9 +330,12 @@ pub fn run_backtest(
         max_drawdown_pct: max_drawdown * 100.0, event_count: ordered.iter().filter(|e|
             e.symbol == request.symbol && e.venue == request.venue && e.ts_ms >= request.start_ts_ms && e.ts_ms <= request.end_ts_ms).count(),
         warmup_event_count, signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
-        skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
+        skipped_entries,
+        pending_order: pending_action.as_ref().map(|(action, _)| action.clone()),
+        pending_signal_ts_ms: pending_action.as_ref().map(|(_, ts_ms)| *ts_ms),
+        win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
         profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
-        fees_paid, assumptions: "Long-only; one position at a time; starting notional per entry is scaled in proportion to current cash when reinvest_profits is enabled, so gains and losses compound; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
+        fees_paid, assumptions: "Long-only; one position at a time; starting notional per entry is scaled in proportion to current cash when reinvest_profits is enabled, so gains and losses compound; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Signals queue until the next event carrying a fresh valid bid and ask; an opposite signal cancels an unfilled intent. Results depend on data completeness and supplied cost assumptions.".into(),
         open_position, trades, decisions,
     })
 }
