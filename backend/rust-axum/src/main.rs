@@ -405,6 +405,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         "start_ts_ms": report.start_ts_ms,
         "end_ts_ms": report.end_ts_ms,
         "initial_cash": report.initial_cash,
+        "reinvest_profits": report.reinvest_profits,
         "final_equity": report.final_equity,
         "realized_pnl": report.realized_pnl,
         "unrealized_pnl": report.unrealized_pnl,
