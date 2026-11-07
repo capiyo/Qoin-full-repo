@@ -135,6 +135,8 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
        "mongodb":ok,"strategy_version":strategy_version,
        "jepa_research_inference":if s.jepa_client.is_some(){"enabled"}else{"disabled"},
+       "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
+          "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
        "live_order_submission":"not wired"})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
