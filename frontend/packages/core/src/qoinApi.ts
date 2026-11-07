@@ -95,22 +95,22 @@ export type OperatingCycleSnapshot = {
 };
 
 export function getOperatingCycle(): Promise<OperatingCycleSnapshot> {
-  return request<OperatingCycleSnapshot>("/v1/operating-cycle");
+  return flowRequest<OperatingCycleSnapshot>("/internal/operating-cycle");
 }
 
 export function configureOperatingCycle(config: OperatingCycleConfig): Promise<OperatingCycleSnapshot> {
-  return request<OperatingCycleSnapshot>("/v1/operating-cycle", {
+  return flowRequest<OperatingCycleSnapshot>("/internal/operating-cycle", {
     method: "PUT",
     body: JSON.stringify(config),
   });
 }
 
 export function startOperatingCycle(): Promise<OperatingCycleSnapshot> {
-  return request<OperatingCycleSnapshot>("/v1/operating-cycle/start", { method: "POST" });
+  return flowRequest<OperatingCycleSnapshot>("/internal/operating-cycle/start", { method: "POST" });
 }
 
 export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
-  return request<OperatingCycleSnapshot>("/v1/operating-cycle/stop", { method: "POST" });
+  return flowRequest<OperatingCycleSnapshot>("/internal/operating-cycle/stop", { method: "POST" });
 }
 
 export type PaperBacktestRequest = {
