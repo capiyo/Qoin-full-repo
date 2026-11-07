@@ -677,6 +677,11 @@ async fn get_strategy(State(s):State<AppState>)->impl IntoResponse{
         Err(_)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))}
 }
 async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>)->impl IntoResponse{
+    let cycle = s.active_cycle.lock().await;
+    if cycle.snapshot().active {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"strategy weights are locked while an operating cycle is active"})));
+    }
+    drop(cycle);
     if let Err(message)=strategy.validate(){return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let mut stored=strategy.clone();
     stored.updated_at_ms=chrono::Utc::now().timestamp_millis();
