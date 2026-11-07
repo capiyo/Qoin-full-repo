@@ -1,6 +1,108 @@
 #include <drogon/drogon.h>
+#include <drogon/WebSocketClient.h>
+#include <drogon/WebSocketController.h>
 #include <cstdlib>
 #include <string>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+
+
+namespace {
+struct StreamProxySession {
+    drogon::WebSocketClientPtr upstream_client;
+    drogon::WebSocketConnectionPtr upstream_connection;
+    std::weak_ptr<drogon::WebSocketConnection> downstream;
+};
+std::mutex streamSessionsMutex;
+std::unordered_map<const drogon::WebSocketConnection*, std::shared_ptr<StreamProxySession>> streamSessions;
+std::string upstreamWs() {
+    const char* value = std::getenv("QOIN_AXUM_WS_URL");
+    return value ? std::string(value) : "ws://127.0.0.1:8081";
+}
+}
+class MarketStreamProxy : public drogon::WebSocketController<MarketStreamProxy> {
+public:
+    void handleNewMessage(const drogon::WebSocketConnectionPtr& connection,
+                          std::string&& message,
+                          const drogon::WebSocketMessageType&) override {
+        std::shared_ptr<StreamProxySession> session;
+        {
+            std::lock_guard<std::mutex> lock(streamSessionsMutex);
+            auto it = streamSessions.find(connection.get());
+            if (it != streamSessions.end()) session = it->second;
+        }
+        if (session && session->upstream_connection && session->upstream_connection->connected()) {
+            session->upstream_connection->send(message);
+        }
+    }
+    void handleNewConnection(const drogon::HttpRequestPtr& request,
+                              const drogon::WebSocketConnectionPtr& connection) override {
+        auto session = std::make_shared<StreamProxySession>();
+        session->downstream = connection;
+        session->upstream_client = drogon::WebSocketClient::newWebSocketClient(upstreamWs());
+        {
+            std::lock_guard<std::mutex> lock(streamSessionsMutex);
+            streamSessions[connection.get()] = session;
+        }
+        const auto symbol = request->getParameter("symbol");
+        const auto symbols = request->getParameter("symbols");
+        std::string path = "/internal/stream";
+        if (!symbol.empty() || !symbols.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !symbols.empty()) path += "&";
+            if (!symbols.empty()) path += "symbols=" + drogon::utils::urlEncode(symbols);
+        }
+        std::weak_ptr<drogon::WebSocketConnection> downstream = connection;
+        auto client = session->upstream_client;
+        client->setMessageHandler([downstream](std::string&& message,
+            const drogon::WebSocketClientPtr&, const drogon::WebSocketMessageType&) {
+            if (auto target = downstream.lock()) {
+                if (target->connected()) target->send(message);
+            }
+        });
+        client->setConnectionClosedHandler([downstream](const drogon::WebSocketClientPtr&) {
+            if (auto target = downstream.lock()) target->forceClose();
+        });
+        auto upstreamRequest = drogon::HttpRequest::newHttpRequest();
+        upstreamRequest->setPath(path);
+        client->connectToServer(upstreamRequest,
+            [downstream, client, key = connection.get()](drogon::ReqResult result,
+                const drogon::HttpResponsePtr&, const drogon::WebSocketClientPtr&) {
+                if (result != drogon::ReqResult::Ok) {
+                    if (auto target = downstream.lock()) {
+                        target->send("{\"type\":\"stream.error\",\"error\":\"upstream market stream unavailable\"}");
+                        target->forceClose();
+                    }
+                    std::lock_guard<std::mutex> lock(streamSessionsMutex);
+                    streamSessions.erase(key);
+                    return;
+                }
+                std::lock_guard<std::mutex> lock(streamSessionsMutex);
+                auto it = streamSessions.find(key);
+                if (it != streamSessions.end()) it->second->upstream_connection = client->getConnection();
+            });
+    }
+    void handleConnectionClosed(const drogon::WebSocketConnectionPtr& connection) override {
+        std::shared_ptr<StreamProxySession> session;
+        {
+            std::lock_guard<std::mutex> lock(streamSessionsMutex);
+            auto it = streamSessions.find(connection.get());
+            if (it != streamSessions.end()) {
+                session = it->second;
+                streamSessions.erase(it);
+            }
+        }
+        if (session) {
+            if (session->upstream_connection) session->upstream_connection->forceClose();
+            if (session->upstream_client) session->upstream_client->stop();
+        }
+    }
+    WS_PATH_LIST_BEGIN
+    WS_PATH_ADD("/api/v1/stream");
+    WS_PATH_LIST_END
+};
 
 namespace {
 std::string upstream() {
