@@ -144,8 +144,13 @@ export type MirrorDecision = {
   event_id: string;
   venue: string;
   ts_ms: number;
+  strategy_version: string;
   action: "buy" | "sell" | "wait";
   reason: string;
+  features: Record<string, number>;
+  attention: number[][];
+  attended_features: number[];
+  decision_vector: [number, number];
   magnitude: number;
   angle_radians: number;
   spread_bps: number | null;
