@@ -33,7 +33,7 @@ Example request:
 - `initial_cash` and `notional_per_trade` are denominated in `quote_currency`. The simulator does not convert KSh to USD/USDT or model contract multipliers; convert the account balance to the instrument quote currency before running, and do not enter KSh 20,000 as USDT 20,000.
 - The warmup window (1–168 hours) updates causal feature state before the measurement window. Warmup events do not create signals or trades.
 - The replay is capped at 100,000 fetched events per request. Narrow the time window if the cap is reached.
-- A fill is possible only on an event containing a valid bid and ask. Entries pay the ask plus slippage; exits receive the bid less slippage. Fees are charged on both sides.
+- A signal intent queues until the next event containing a valid bid and ask. An opposite signal cancels an unfilled intent. Entries pay the ask plus slippage; exits receive the bid less slippage. Fees are charged on both sides.
 - The current simulator is long-only, one position at a time, no leverage, no shorting, no stop-loss, no funding/financing debit, and no partial fills. `notional_per_trade` is the starting notional. With `reinvest_profits=true` (default), subsequent entry notional scales in proportion to current cash so both gains and losses compound; false keeps the starting notional fixed. The entry is capped by available cash after the entry-fee reserve. This is a baseline simulator, not a broker-specific execution model.
 - Open positions are marked to estimated liquidation value including exit slippage and fee. They are not force-closed at the end of the replay.
 
