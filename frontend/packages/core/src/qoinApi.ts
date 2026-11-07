@@ -143,6 +143,26 @@ export function getPaperSession(): Promise<PaperSessionSnapshot> {
   return flowRequest<PaperSessionSnapshot>("/internal/paper-session");
 }
 
+export type PaperMirrorEvent = {
+  cycle_id: string; event_id: string; venue: string; symbol: string; quote_currency: string; ts_ms: number;
+  strategy_version: string; action: "buy" | "sell" | "wait"; reason: string; features: Record<string, number>;
+  attention: number[][]; attended_features: number[]; decision_vector: [number, number]; magnitude: number;
+  angle_radians: number; spread_bps: number | null; execution: string; equity: number; cash: number;
+  realized_pnl: number; fees_paid: number; open_position: boolean;
+};
+
+export type PaperTradeHistoryItem = {
+  cycle_id: string; symbol: string; venue: string; quote_currency: string; entry_ts_ms: number; exit_ts_ms: number;
+  quantity: number; entry_price: number; exit_price: number; gross_pnl: number; fees: number; net_pnl: number;
+  return_pct: number; exit_reason: string;
+};
+
+export function getPaperSessionHistory(symbol?: string, limit = 50): Promise<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (symbol) query.set("symbol", symbol);
+  return flowRequest<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>(`/internal/paper-session/history?${query.toString()}`);
+}
+
 export type PaperBacktestRequest = {
   symbol: string;
   venue: string;
