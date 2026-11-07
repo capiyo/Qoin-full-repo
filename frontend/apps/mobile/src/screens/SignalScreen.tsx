@@ -205,6 +205,10 @@ export function SignalScreen() {
               <View key={name} style={styles.metricRow}><Text style={styles.metricLabel}>{name}</Text><Text style={styles.metricValue}>{value.toFixed(3)}</Text></View>
             ))}
           </> : null}
+          {cycle && Object.keys(cycle.mean_weight_contributions).length > 0 ? <>
+            <Text style={styles.panelTitle}>Mean weighted contribution · bullish / bearish</Text>
+            {Object.entries(cycle.mean_weight_contributions).map(([name, values]) => <View key={name} style={styles.metricRow}><Text style={styles.metricLabel}>{name}</Text><Text style={styles.metricValue}>{values[0].toFixed(3)} / {values[1].toFixed(3)}</Text></View>)}
+          </> : null}
           {cycle && cycle.mean_attention.length > 0 ? <>
             <Text style={styles.panelTitle}>Mean attention matrix</Text>
             {cycle.mean_attention.map((values, index) => (
