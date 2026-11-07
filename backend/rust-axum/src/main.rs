@@ -78,6 +78,7 @@ struct AppState {
     backtest_decisions: Collection<Document>,
     operating_cycles: Collection<Document>,
     paper_sessions: Collection<Document>,
+    paper_session_runs: Collection<Document>,
     paper_session_decisions: Collection<Document>,
     paper_session_trades: Collection<Document>,
     active_cycle: Arc<Mutex<OperatingCycle>>,
@@ -108,6 +109,37 @@ async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(
     s.paper_sessions.update_one(doc! {"session_key": "active"}, doc! {"$set": document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
+}
+
+async fn archive_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let snapshot = session.snapshot();
+    let Some(cycle_id) = snapshot.cycle_id.clone() else { return Ok(()); };
+    let mut document = mongodb::bson::to_document(&snapshot).map_err(|error| error.to_string())?;
+    document.insert("archived_at", mongodb::bson::DateTime::now());
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.paper_session_runs.update_one(doc! {"cycle_id": cycle_id}, doc! {"$set": document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct PaperRunsQuery { limit: Option<i64> }
+
+async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): State<AppState>) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let mut cursor = match s.paper_session_runs.find(doc! {}, FindOptions::builder().sort(doc! {"archived_at": -1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper session archive query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archives unavailable"}))); }
+    };
+    let mut runs = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); runs.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"runs":runs})))
 }
 
 async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>) -> impl IntoResponse {
@@ -153,6 +185,10 @@ async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
         if let Err(error) = persist_paper_session(&s, &session).await {
             tracing::error!(error=%error, "paper session completion persistence failed");
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state unavailable"})));
+        }
+        if let Err(error) = archive_paper_session(&s, &session).await {
+            tracing::error!(error=%error, "paper session archive persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive unavailable"})));
         }
     }
     (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
@@ -217,6 +253,10 @@ async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
     if let Err(error) = persist_paper_session(&s, &paper).await {
         tracing::error!(error=%error, "paper session stop persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    if let Err(error) = archive_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session archive persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
@@ -716,6 +756,7 @@ async fn main(){
     let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
     let operating_cycles:Collection<Document>=db.collection("operating_cycles");
     let paper_sessions:Collection<Document>=db.collection("paper_sessions");
+    let paper_session_runs:Collection<Document>=db.collection("paper_session_runs");
     let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
     let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})
@@ -732,6 +773,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
     paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session state index");
+    paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session archive index");
     paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper Mirror event index");
     paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper trade history index");
@@ -809,7 +852,7 @@ async fn main(){
     tracing::info!(restored_symbols=restored_memory.len(), "restored latest venue-isolated market states");
     let state=AppState{
         events,states,decisions,strategies,jepa_predictions,backtest_runs,backtest_decisions,operating_cycles,
-        paper_sessions,paper_session_decisions,paper_session_trades,
+        paper_sessions,paper_session_runs,paper_session_decisions,paper_session_trades,
         active_cycle:Arc::new(Mutex::new(persisted_cycle)),
         active_paper_session:Arc::new(Mutex::new(persisted_paper)),jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
@@ -834,6 +877,7 @@ async fn main(){
         .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
         .route("/internal/paper-session",get(get_paper_session))
         .route("/internal/paper-session/history",get(get_paper_session_history))
+        .route("/internal/paper-session/runs",get(get_paper_session_runs))
         .route("/internal/backtests",get(list_backtest_runs))
         .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
