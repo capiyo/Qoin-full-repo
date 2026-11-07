@@ -12,6 +12,7 @@ import {
   getPaperBacktestHistory,
   getPaperSession,
   getPaperSessionHistory,
+  getPaperSessionRuns,
   type PaperBacktestReport,
   type PaperBacktestHistoryItem,
   type MarketForceObservation,
@@ -22,6 +23,7 @@ import {
   type PaperSessionSnapshot,
   type PaperMirrorEvent,
   type PaperTradeHistoryItem,
+  type PaperSessionRun,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -57,6 +59,7 @@ export function SignalScreen() {
   const [cycleError, setCycleError] = useState("");
   const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
   const [paperHistory, setPaperHistory] = useState<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>({ decisions: [], trades: [] });
+  const [paperRuns, setPaperRuns] = useState<PaperSessionRun[]>([]);
   const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, contract_multiplier: 1, quantity_step: 0.000001, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
@@ -71,7 +74,8 @@ export function SignalScreen() {
     getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     getPaperSession().then(setPaperSession).catch(() => setPaperSession(null));
     getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => setPaperHistory({ decisions: [], trades: [] }));
-    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => undefined); };
+    getPaperSessionRuns(20).then((result) => setPaperRuns(result.runs)).catch(() => setPaperRuns([]));
+    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => undefined); getPaperSessionRuns(20).then((result) => setPaperRuns(result.runs)).catch(() => undefined); };
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -95,6 +99,7 @@ export function SignalScreen() {
       else setCycle(await stopOperatingCycle());
       setPaperSession(await getPaperSession());
       setPaperHistory(await getPaperSessionHistory(undefined, 50));
+      setPaperRuns((await getPaperSessionRuns(20)).runs);
     }
     catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
@@ -324,6 +329,9 @@ export function SignalScreen() {
             </View>
           )) : <Text style={styles.fieldHelp}>No paper session activity yet. Add accounts and start a cycle.</Text>}
           <Text style={styles.cycleSafety}>SIMULATED FILLS ONLY · LIVE BROKER ROUTING DISABLED</Text>
+          <Text style={styles.panelTitle}>Archived paper sessions</Text>
+          {paperRuns.slice(0, 10).map((run) => <View key={run.cycle_id ?? "unknown"} style={styles.metricRow}><View style={{ flex: 1 }}><Text style={styles.fieldLabel}>{run.cycle_id}</Text>{run.accounts.map((account) => <Text key={run.cycle_id + account.venue + account.symbol} style={styles.fieldHelp}>{account.symbol} · {account.venue} · Net {account.net_pnl.toFixed(2)} {account.quote_currency} · Max DD {account.max_drawdown_pct.toFixed(2)}% · Entries/exits {account.entries}/{account.exits}</Text>)}</View></View>)}
+          {!paperRuns.length ? <Text style={styles.fieldHelp}>Completed paper sessions will be archived here.</Text> : null}
           <Text style={styles.panelTitle}>Recent Mirror decisions</Text>
           {paperHistory.decisions.slice(0, 8).map((item) => <View key={item.venue + item.symbol + item.event_id} style={styles.metricRow}><View style={{ flex: 1 }}><Text style={styles.fieldLabel}>{item.symbol} · {item.venue} · {item.action.toUpperCase()}</Text><Text style={styles.fieldHelp}>{item.execution} · {item.reason}</Text><Text style={styles.fieldHelp}>Vector {item.decision_vector.map((value) => value.toFixed(3)).join(" / ")} · magnitude {item.magnitude.toFixed(3)} · angle {item.angle_radians.toFixed(3)}</Text><Text style={styles.fieldHelp}>Features: {Object.entries(item.features).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</Text><Text style={styles.fieldHelp}>Strategy {item.strategy_version} · Equity {item.equity.toFixed(2)} {item.quote_currency} · x{item.contract_multiplier} · step {item.quantity_step} · fee/slip {item.fee_bps}/{item.slippage_bps} bps · {new Date(item.ts_ms).toLocaleTimeString()}</Text><Text style={styles.fieldHelp}>Bull weights: {Object.entries(item.bullish_weights ?? {}).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</Text><Text style={styles.fieldHelp}>Bear weights: {Object.entries(item.bearish_weights ?? {}).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</Text></View></View>)}
           {!paperHistory.decisions.length ? <Text style={styles.fieldHelp}>No paper Mirror events yet.</Text> : null}
