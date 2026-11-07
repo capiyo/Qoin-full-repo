@@ -160,6 +160,31 @@ export default function App() {
           <p className="hint">{backtest.assumptions}</p>
           {backtest.event_count === 0 && <p className="error">No persisted events found for this symbol and time window. This is not a zero-return strategy test; ingest historical market data first.</p>}
           {backtest.open_position && <p className="hint">Open position remains marked, not force-closed: quantity {backtest.open_position.quantity.toFixed(6)} · entry {backtest.open_position.entry_price.toFixed(6)}.</p>}
+          <details className="mirror-trace">
+            <summary>Mirror decision trace · latest 12 of {backtest.decisions.length}</summary>
+            <div className="mirror-list">
+              {backtest.decisions.slice(-12).reverse().map((item) => (
+                <article className="mirror-item" key={item.sequence + "-" + item.event_id}>
+                  <div><strong>{item.action.toUpperCase()}</strong><small>{new Date(item.ts_ms).toLocaleString()}</small></div>
+                  <span>{item.execution.replaceAll("_", " ")}</span>
+                  <small>{item.reason}</small>
+                  <small>Magnitude {item.magnitude.toFixed(3)} · spread {item.spread_bps == null ? "—" : item.spread_bps.toFixed(2) + " bps"}</small>
+                </article>
+              ))}
+            </div>
+          </details>
+          <details className="mirror-trace">
+            <summary>Simulated trade ledger · {backtest.trades.length} closed</summary>
+            <div className="mirror-list">
+              {backtest.trades.slice(-12).reverse().map((trade, index) => (
+                <article className="mirror-item" key={trade.entry_ts_ms + "-" + index}>
+                  <div><strong>NET {trade.net_pnl?.toFixed(2) ?? "—"}</strong><small>{trade.return_pct?.toFixed(2) ?? "—"}%</small></div>
+                  <span>{trade.exit_reason ?? "closed"}</span>
+                  <small>Entry {new Date(trade.entry_ts_ms).toLocaleString()} · Exit {trade.exit_ts_ms ? new Date(trade.exit_ts_ms).toLocaleString() : "open"}</small>
+                </article>
+              ))}
+            </div>
+          </details>
         </>}
       </section>
       <div className="layout">
