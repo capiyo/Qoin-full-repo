@@ -224,7 +224,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
     let filter = doc! {"symbol": &request.symbol, "ts_ms": {"$gte": request.start_ts_ms, "$lte": request.end_ts_ms}};
     let options = FindOptions::builder()
         .sort(doc! {"ts_ms": 1, "event_id": 1})
-        .limit(request.max_events as i64)
+        .limit(request.max_events as i64 + 1)
         .build();
     let mut cursor = match s.events.find(filter, options).await {
         Ok(value) => value,
@@ -253,7 +253,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
             }
         }
     }
-    if events.len() >= request.max_events {
+    if events.len() > request.max_events {
         return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
             "error":"event limit reached; narrow the time range or raise max_events up to 100000",
             "max_events":request.max_events
@@ -286,7 +286,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Mirror trace persistence failed","run_id":run_id})));
         }
     }
-    let summary = serde_json::to_document(&serde_json::json!({
+    let summary = mongodb::bson::to_document(&serde_json::json!({
         "run_id": run_id,
         "symbol": report.symbol,
         "strategy_version": report.strategy_version,
