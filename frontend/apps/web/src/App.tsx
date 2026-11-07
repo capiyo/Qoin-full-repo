@@ -1,34 +1,41 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getInstrumentVector, getQoinHealth, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
   name: string;
-  market: "Crypto" | "Equities" | "FX";
+  market: QoinInstrument["asset_class"];
+  engineSymbol: string;
   description: string;
+  venue: string;
+  provider: string;
+  providerStatus?: string;
   archived: boolean;
   color: string;
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", description: "Digital asset · USD", archived: true, color: "#f59e0b" },
-  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", description: "Smart-contract network · USD", archived: true, color: "#6477df" },
-  { symbol: "SOL/USD", name: "Solana", market: "Crypto", description: "Layer-one network · USD", archived: true, color: "#8b72e8" },
-  { symbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", archived: false, color: "#76a85a" },
-  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", description: "Major currency pair", archived: false, color: "#4d91d8" },
-  { symbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", archived: false, color: "#8895a7" },
+  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#f59e0b" },
+  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#6477df" },
+  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#8b72e8" },
+  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, color: "#76a85a" },
+  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", provider: "Finnhub", archived: false, color: "#4d91d8" },
+  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, color: "#8895a7" },
 ];
 
 type Tab = "Archive" | "Explore";
 
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
-function VectorMap({ decision }: { decision: QoinVectorDecision | null }) {
+function VectorMap({ decision, history }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[] }) {
   const bullish = decision?.decision_vector?.[0] ?? 0;
   const bearish = decision?.decision_vector?.[1] ?? 0;
-  const max = Math.max(0.35, bullish, bearish);
+  const points = [...history, ...(decision?.decision_vector ? [{ decision_vector: decision.decision_vector } as QoinVectorHistory] : [])];
+  const max = Math.max(0.35, ...points.flatMap((item) => item.decision_vector || [0, 0]));
+  const project = (item: QoinVectorHistory) => [10 + (item.decision_vector[0] / max) * 80, 90 - (item.decision_vector[1] / max) * 80] as const;
   const x = 10 + (bullish / max) * 80;
   const y = 90 - (bearish / max) * 80;
+  const trajectory = points.map((item) => project(item).join(",")).join(" ");
   return (
     <div className="vector-map">
       <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish decision vector">
@@ -36,6 +43,8 @@ function VectorMap({ decision }: { decision: QoinVectorDecision | null }) {
         <rect width="100" height="100" fill="url(#grid)" />
         <path d="M10 8V90H94" fill="none" stroke="#cbd5e1" strokeWidth=".8" />
         <path d="M10 90L94 90 M10 90L10 8" stroke="#cbd5e1" strokeWidth=".5" strokeDasharray="2 2" />
+        {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#9bb9f3" strokeWidth="1.1" strokeLinejoin="round" />}
+        {history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#9bb9f3" />; })}
         {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#2867dc" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#2867dc" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
       </svg>
       <div className="axis-label axis-top">BEARISH COMPONENT ↑</div>
@@ -52,7 +61,7 @@ function InstrumentCard({ item, onOpen, action }: { item: Instrument; onOpen: ()
         <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
         <span className="open-arrow" aria-hidden="true">↗</span>
       </button>
-      <p className="asset-description">{item.description}</p>
+      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider}</p>
       {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </article>
   );
@@ -68,8 +77,45 @@ export default function App() {
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
+  const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
+  const [streamStatus, setStreamStatus] = useState("disconnected");
+  const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
+  const [news, setNews] = useState<QoinNewsItem[]>([]);
+  const [newsStatus, setNewsStatus] = useState("loading");
+  const [newsCategory, setNewsCategory] = useState("general");
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); }, []);
+  useEffect(() => {
+    let active = true;
+    getQoinInstruments().then(({ items }) => {
+      if (!active) return;
+      const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
+      setInstruments(items.map((item, index) => ({
+        symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
+        market: item.asset_class, description: item.description, venue: item.venue,
+        provider: item.provider, providerStatus: (item as QoinInstrument & { provider_status?: string }).provider_status,
+        archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
+      })));
+    }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      setNewsStatus("loading");
+      getQoinNews(newsCategory).then((result) => {
+        if (!active) return;
+        setNews(result.items);
+        setNewsStatus(result.status === "ok" ? "connected" : result.message || result.status);
+      }).catch((error: unknown) => {
+        if (active) setNewsStatus(error instanceof Error ? error.message : "News provider unavailable");
+      });
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, [newsCategory]);
 
   useEffect(() => {
     if (!selected) {
@@ -81,7 +127,7 @@ export default function App() {
     setVector(null);
     setVectorError("");
     setVectorLoading(true);
-    getInstrumentVector(selected.symbol).then((result) => {
+    getInstrumentVector(selected.engineSymbol).then((result) => {
       if (!current) return;
       if (result.decision_vector && result.features && result.attended_features) {
         setVector(result);
@@ -94,8 +140,38 @@ export default function App() {
       if (current) setVectorLoading(false);
     });
     return () => { current = false; };
-  }, [selected?.symbol]);
+  }, [selected?.engineSymbol]);
 
+
+  useEffect(() => {
+    if (!selected) {
+      setVectorHistory([]); setMarketState(null); setLastEvent(null); setStreamStatus("disconnected");
+      return;
+    }
+    let active = true;
+    setVectorHistory([]);
+    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => {
+      if (active) setVectorHistory(result.items);
+    }).catch(() => { if (active) setVectorHistory([]); });
+    const unsubscribe = subscribeQoinStream([selected.engineSymbol], (update) => {
+      if (!active) return;
+      if (update.type === "market.update" && update.symbol?.toUpperCase() === selected.engineSymbol.toUpperCase()) {
+        if (update.state) setMarketState(update.state);
+        if (update.event) setLastEvent(update.event);
+        if (update.decision) {
+          setVector(update.decision);
+          setVectorHistory((current) => [...current.slice(-119), {
+            symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
+            magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
+            action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
+            stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
+          }]);
+        }
+      }
+      if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
+    }, setStreamStatus);
+    return () => { active = false; unsubscribe(); };
+  }, [selected?.engineSymbol]);
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
@@ -128,11 +204,15 @@ export default function App() {
         </section>
       ) : (
         <section className="content-section">
-          <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">MARKET UNIVERSE</span></div>
+          <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
           <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
-          <div className="filter-row">{["All", "Crypto", "Equities", "FX"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
+          <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
           {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
-          <div className="explore-note"><strong>News & events</strong><p>Connect a sourced news and macro-events feed to populate this section. No simulated headlines are shown.</p></div>
+          <section className="news-section">
+            <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
+            <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
+            {news.length ? <div className="news-list">{news.slice(0, 30).map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
+          </section>
         </section>
       )}
 
@@ -141,8 +221,22 @@ export default function App() {
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
         <div className="modal-body">
-          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{vector ? "PERSISTED ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
-          <VectorMap decision={vector} />
+          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
+          <VectorMap decision={vector} history={vectorHistory} />
+          <section className="live-state-panel">
+            <div className="live-state-heading"><strong>Live market state</strong><span>{lastEvent?.event_type || "awaiting event"}</span></div>
+            <div className="live-state-grid">
+              <div><span>Last price</span><strong>{marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</strong></div>
+              <div><span>Spread (bps)</span><strong>{marketState?.spread_bps?.toFixed(3) ?? "—"}</strong></div>
+              <div><span>Order flow imbalance</span><strong>{marketState?.order_flow_imbalance?.toFixed(4) ?? "—"}</strong></div>
+              <div><span>Funding rate</span><strong>{marketState?.funding_rate?.toFixed(6) ?? "—"}</strong></div>
+              <div><span>Open interest</span><strong>{marketState?.open_interest?.toLocaleString() ?? "—"}</strong></div>
+              <div><span>Liquidations</span><strong>{marketState?.liquidation_events ?? "—"}</strong></div>
+              <div><span>Event count</span><strong>{marketState?.event_count ?? "—"}</strong></div>
+              <div><span>State quality</span><strong>{marketState?.state_quality?.toFixed(3) ?? "—"}</strong></div>
+            </div>
+            <p className="disclaimer">A dash means the provider has not supplied that field. Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}.</p>
+          </section>
           {vectorLoading ? <p className="disclaimer">Loading the latest persisted engine vector…</p> : vector ? (
             <>
               <div className="engine-metrics">
