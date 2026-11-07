@@ -8,6 +8,8 @@ import {
   configureOperatingCycle,
   startOperatingCycle,
   stopOperatingCycle,
+  runPaperBacktest,
+  type PaperBacktestReport,
   type MarketForceObservation,
   type QoinSignal,
   type OperatingCycleConfig,
@@ -45,6 +47,10 @@ export function SignalScreen() {
   const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleError, setCycleError] = useState("");
+  const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
+  const [backtestBusy, setBacktestBusy] = useState(false);
+  const [backtestError, setBacktestError] = useState("");
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
@@ -72,6 +78,15 @@ export function SignalScreen() {
     try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
     catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
+  }
+
+  async function runBacktest() {
+    setBacktestBusy(true); setBacktestError(""); setBacktest(null);
+    const end = Date.now();
+    try {
+      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
+    } catch (err) { setBacktestError(err instanceof Error ? err.message : "Paper replay failed"); }
+    finally { setBacktestBusy(false); }
   }
 
   async function evaluate() {
@@ -137,6 +152,52 @@ export function SignalScreen() {
           <Text style={styles.cycleSafety}>SIGNAL MONITORING ONLY · NO SIMULATED FILLS · LIVE EXECUTION DISABLED</Text>
         </View>
         <View style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>Mirror paper backtest</Text>
+            <Text style={styles.counter}>NO LIVE ORDERS</Text>
+          </View>
+          <Text style={styles.fieldHelp}>Chronological replay of persisted MongoDB events using the active strategy. Simulated buys use ask; sells use bid, plus fees and slippage. Long-only.</Text>
+          {([
+            ["symbol", "Symbol"],
+            ["lookback_hours", "Lookback hours"],
+            ["initial_cash", "Starting capital"],
+            ["notional_per_trade", "Notional per entry"],
+            ["fee_bps", "Fee bps / side"],
+            ["slippage_bps", "Slippage bps"],
+          ] as const).map(([key, label]) => (
+            <View key={key} style={styles.fieldRow}>
+              <Text style={styles.fieldLabel}>{label}</Text>
+              <TextInput accessibilityLabel={label} value={backtestForm[key]}
+                keyboardType={key === "symbol" ? "default" : "decimal-pad"}
+                autoCapitalize={key === "symbol" ? "characters" : "none"}
+                onChangeText={(value) => setBacktestForm((current) => ({ ...current, [key]: value }))}
+                style={styles.input} />
+            </View>
+          ))}
+          <Pressable onPress={runBacktest} disabled={backtestBusy || !backtestForm.symbol.trim() || Number(backtestForm.initial_cash) <= 0 || Number(backtestForm.notional_per_trade) <= 0 || Number(backtestForm.notional_per_trade) > Number(backtestForm.initial_cash) || Number(backtestForm.lookback_hours) <= 0}
+            style={[styles.cycleButton, backtestBusy && styles.disabled]}>
+            <Text style={styles.buttonText}>{backtestBusy ? "Replaying event history…" : "Run chronological paper replay"}</Text>
+          </Pressable>
+          {backtestError ? <Text accessibilityRole="alert" style={styles.error}>{backtestError}</Text> : null}
+          {backtest ? <>
+            {([
+              ["Net P&L", backtest.net_pnl.toFixed(2)],
+              ["Return", backtest.return_pct.toFixed(2) + "%"],
+              ["Max drawdown", backtest.max_drawdown_pct.toFixed(2) + "%"],
+              ["Win rate", backtest.win_rate_pct == null ? "—" : backtest.win_rate_pct.toFixed(1) + "%"],
+              ["Closed trades", String(backtest.executed_exits)],
+              ["Fees paid", backtest.fees_paid.toFixed(2)],
+              ["Events / signals", backtest.event_count + " / " + backtest.signal_count],
+              ["Skipped entries", String(backtest.skipped_entries)],
+            ] as const).map(([label, value]) => (
+              <View key={label} style={styles.metricRow}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>
+            ))}
+            <Text style={styles.fieldHelp}>Run {backtest.run_id} · {backtest.decisions.length} Mirror decisions persisted · {backtest.strategy_version}</Text>
+            <Text style={styles.fieldHelp}>{backtest.assumptions}</Text>
+            {backtest.event_count === 0 ? <Text style={styles.error}>No events found. Ingest historical market data before interpreting this result.</Text> : null}
+          </> : null}
+        </View>
+                <View style={styles.panel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelTitle}>Observation vector</Text>
             <Text style={styles.counter}>{activeCount}/7 active</Text>
