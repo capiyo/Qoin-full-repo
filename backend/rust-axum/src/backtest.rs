@@ -12,6 +12,7 @@ fn default_warmup_hours() -> u64 { 24 }
 pub struct BacktestRequest {
     pub symbol: String,
     pub venue: String,
+    pub quote_currency: String,
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
     #[serde(default = "default_warmup_hours")]
@@ -35,6 +36,7 @@ impl BacktestRequest {
     pub fn validate(&self) -> Result<(), String> {
         if self.symbol.trim().is_empty() { return Err("symbol is required".into()); }
         if self.venue.trim().is_empty() { return Err("venue is required; replay one data venue at a time".into()); }
+        if self.quote_currency.trim().is_empty() { return Err("quote_currency is required so capital units are explicit".into()); }
         if self.start_ts_ms <= 0 || self.end_ts_ms <= self.start_ts_ms {
             return Err("end_ts_ms must be greater than a positive start_ts_ms".into());
         }
@@ -99,6 +101,7 @@ pub struct BacktestReport {
     pub run_id: String,
     pub symbol: String,
     pub venue: String,
+    pub quote_currency: String,
     pub strategy_version: String,
     pub start_ts_ms: i64,
     pub end_ts_ms: i64,
@@ -294,7 +297,7 @@ pub fn run_backtest(
         fees: open.entry_fee, net_pnl: None, return_pct: None, exit_reason: None,
     });
     Ok(BacktestReport {
-        run_id, symbol: request.symbol.clone(), venue: request.venue.clone(), strategy_version: strategy.version.clone(),
+        run_id, symbol: request.symbol.clone(), venue: request.venue.clone(), quote_currency: request.quote_currency.to_uppercase(), strategy_version: strategy.version.clone(),
         start_ts_ms: request.start_ts_ms, end_ts_ms: request.end_ts_ms,
         initial_cash: request.initial_cash, reinvest_profits: request.reinvest_profits, final_equity, realized_pnl, unrealized_pnl,
         net_pnl, return_pct: net_pnl / request.initial_cash * 100.0,
@@ -313,7 +316,7 @@ mod tests {
     use super::*;
     #[test]
     fn rejects_future_or_invalid_cost_inputs() {
-        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), start_ts_ms: 10, end_ts_ms: 20,
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "test".into(), quote_currency: "USD".into(), start_ts_ms: 10, end_ts_ms: 20,
             warmup_hours: 24, initial_cash: 1000.0, notional_per_trade: 100.0, reinvest_profits: true, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
         assert!(request.validate().is_err());
     }
@@ -332,7 +335,7 @@ mod tests {
 
     #[test]
     fn warmup_updates_state_but_never_counts_as_a_trade_period_signal() {
-        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "venue-a".into(), start_ts_ms: 20_000, end_ts_ms: 30_000,
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), venue: "venue-a".into(), quote_currency: "USDT".into(), start_ts_ms: 20_000, end_ts_ms: 30_000,
             warmup_hours: 24, initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
         let event = MarketEvent {
             event_id: "warmup-1".into(), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
