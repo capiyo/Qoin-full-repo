@@ -172,11 +172,11 @@ export function ArchiveExploreScreen({ mode }: Props) {
               venue: update.event?.venue || "stream", symbol,
               event_type: update.event?.event_type || "unknown",
               ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now(),
-            } as QoinMarketEvent, ...current].slice(0, 200));
+            } as QoinMarketEvent, ...current].slice(0, 1000));
           }
           if (update.decision) {
             setVector(update.decision);
-            setVectorHistory((current) => [...current.slice(-119), {
+            setVectorHistory((current) => [...current.slice(-499), {
               symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
               magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
               action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
@@ -357,7 +357,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <Pressable style={styles.rawTapeToggle} onPress={() => setShowRawEvents((value) => !value)}>
                 <Text style={styles.attentionTitle}>Raw event tape · {rawEvents.length} observations</Text><Text style={styles.attentionCaption}>{showRawEvents ? "Hide" : "Show"}</Text>
               </Pressable>
-              {showRawEvents ? rawEvents.slice(0,200).map((event) => <View key={event.event_id} style={styles.rawEvent}>
+              {showRawEvents ? rawEvents.slice(0,1000).map((event) => <View key={event.event_id} style={styles.rawEvent}>
                 <Text style={styles.newsMeta}>{event.event_type.toUpperCase()} · {new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</Text>
                 <Text style={styles.newsHeadline}>{JSON.stringify(event)}</Text>
               </View>) : null}
