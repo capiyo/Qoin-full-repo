@@ -12,7 +12,8 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 use futures_util::TryStreamExt;
-use std::{collections::HashMap, env, sync::{Arc, Mutex, RwLock}};
+use std::{collections::HashMap, env, sync::{Arc, RwLock}};
+use tokio::sync::Mutex;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod backtest;
@@ -91,26 +92,15 @@ async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result
 }
 
 async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    match s.active_cycle.lock() {
-        Ok(cycle) => (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default())),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-    }
+    let cycle = s.active_cycle.lock().await;
+    (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default()))
 }
 
 async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json<CycleConfig>) -> impl IntoResponse {
-    let snapshot = {
-        let mut cycle = match s.active_cycle.lock() {
-            Ok(value) => value,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-        };
-        match cycle.configure(config) {
-            Ok(value) => value,
-            Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
-        }
-    };
-    let cycle = match s.active_cycle.lock() {
-        Ok(value) => value.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
+    let mut cycle = s.active_cycle.lock().await;
+    let snapshot = match cycle.configure(config) {
+        Ok(value) => value,
+        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
     };
     if let Err(error) = persist_operating_cycle(&s, &cycle).await {
         tracing::error!(error=%error, "operating cycle configuration persistence failed");
@@ -120,17 +110,8 @@ async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json
 }
 
 async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    let snapshot = {
-        let mut cycle = match s.active_cycle.lock() {
-            Ok(value) => value,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-        };
-        cycle.start()
-    };
-    let cycle = match s.active_cycle.lock() {
-        Ok(value) => value.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-    };
+    let mut cycle = s.active_cycle.lock().await;
+    let snapshot = cycle.start();
     if let Err(error) = persist_operating_cycle(&s, &cycle).await {
         tracing::error!(error=%error, "operating cycle start persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
@@ -139,17 +120,8 @@ async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    let snapshot = {
-        let mut cycle = match s.active_cycle.lock() {
-            Ok(value) => value,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-        };
-        cycle.stop()
-    };
-    let cycle = match s.active_cycle.lock() {
-        Ok(value) => value.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"operating cycle lock poisoned"}))),
-    };
+    let mut cycle = s.active_cycle.lock().await;
+    let snapshot = cycle.stop();
     if let Err(error) = persist_operating_cycle(&s, &cycle).await {
         tracing::error!(error=%error, "operating cycle stop persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
@@ -293,32 +265,23 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    let cycle_snapshot = {
-        match s.active_cycle.lock() {
-            Ok(mut cycle) if cycle.is_active() => {
-                cycle.record_observation();
-                let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
-                let signed_alignment = (decision.angle_radians * 2.0).cos();
-                cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action);
-                Some(cycle.clone())
+    {
+        let mut cycle = s.active_cycle.lock().await;
+        if cycle.is_active() {
+            cycle.record_observation();
+            let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
+            let signed_alignment = (decision.angle_radians * 2.0).cos();
+            cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action);
+            if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+                tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"cycle Mirror persistence failed",
+                    "event_persisted":true,
+                    "state_persisted":true,
+                    "decision_persisted":true,
+                    "event_id":event.event_id
+                })));
             }
-            Ok(_) => None,
-            Err(_) => {
-                tracing::error!("operating cycle lock poisoned while recording Mirror decision");
-                None
-            }
-        }
-    };
-    if let Some(cycle) = cycle_snapshot {
-        if let Err(error) = persist_operating_cycle(&s, &cycle).await {
-            tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id, "operating cycle Mirror persistence failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-                "error":"cycle Mirror persistence failed",
-                "event_persisted":true,
-                "state_persisted":true,
-                "decision_persisted":true,
-                "event_id":event.event_id
-            })));
         }
     }
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
