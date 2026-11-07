@@ -165,7 +165,7 @@ impl OperatingCycle {
     pub fn is_active(&self) -> bool { self.snapshot().active }
 
     pub fn record_observation(&mut self) {
-        if self.active {
+        if self.active && self.snapshot().phase == "observation" {
             self.observations = self.observations.saturating_add(1);
         }
     }
@@ -181,7 +181,7 @@ impl OperatingCycle {
         bullish_weights: &BTreeMap<String, f64>,
         bearish_weights: &BTreeMap<String, f64>,
     ) {
-        if self.active && score.is_finite() && alignment.is_finite() {
+        if self.active && self.snapshot().phase == "weight_evaluation" && score.is_finite() && alignment.is_finite() {
             self.signal_evaluations = self.signal_evaluations.saturating_add(1);
             self.absolute_score_sum += score.abs();
             self.alignment_sum += alignment;
@@ -311,6 +311,7 @@ mod tests {
         cycle.start();
         let features = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.8), ("funding_pressure".to_owned(), 0.2)]);
         cycle.record_observation();
+        cycle.started_at_ms = Some(now_ms() - (cycle.config.observation_minutes as i64 * 60_000));
         let weights = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.7), ("funding_pressure".to_owned(), -0.1)]);
         let bearish = BTreeMap::from([("order_flow_imbalance".to_owned(), -0.7), ("funding_pressure".to_owned(), -0.1)]);
         cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]], &[0.5, 0.2], &weights, &bearish);
