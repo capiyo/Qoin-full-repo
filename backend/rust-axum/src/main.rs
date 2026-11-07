@@ -47,7 +47,8 @@ pub(crate) struct MarketEvent {
     #[serde(default)] pub(crate) open_interest: Option<f64>,
     #[serde(default)] pub(crate) liquidation_side: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub(crate) struct SymbolState {
     pub(crate) venue: String,
     pub(crate) symbol: String,
@@ -702,13 +703,36 @@ async fn main(){
         Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
         _ => PaperSession::default(),
     };
+    let mut restored_memory = HashMap::new();
+    let state_pipeline = vec![
+        doc! {"$sort": {"stored_at": -1}},
+        doc! {"$group": {"_id": {"venue": "$venue", "symbol": "$symbol"}, "latest": {"$first": "$ROOT"}}},
+    ];
+    match states.aggregate(state_pipeline, None).await {
+        Ok(mut cursor) => loop {
+            match cursor.try_next().await {
+                Ok(Some(row)) => {
+                    if let Ok(mut latest) = row.get_document("latest").cloned() {
+                        latest.remove("_id"); latest.remove("stored_at");
+                        if let Ok(restored) = mongodb::bson::from_document::<SymbolState>(latest) {
+                            restored_memory.insert(format!("{}::{}", restored.venue, restored.symbol), restored);
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => { tracing::warn!(error=%error, "could not fully restore latest venue-specific market states"); break; }
+            }
+        },
+        Err(error) => tracing::warn!(error=%error, "market-state restore unavailable; waiting for fresh events"),
+    }
+    tracing::info!(restored_symbols=restored_memory.len(), "restored latest venue-isolated market states");
     let state=AppState{
         events,states,decisions,strategies,jepa_predictions,backtest_runs,backtest_decisions,operating_cycles,
         paper_sessions,paper_session_decisions,paper_session_trades,
         active_cycle:Arc::new(Mutex::new(persisted_cycle)),
         active_paper_session:Arc::new(Mutex::new(persisted_paper)),jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
-        memory:Arc::new(RwLock::new(HashMap::new())),
+        memory:Arc::new(RwLock::new(restored_memory)),
         active_strategy:Arc::new(RwLock::new(active))
     };
     let cors = CorsLayer::new()
