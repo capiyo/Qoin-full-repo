@@ -17,6 +17,7 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
+mod algorithm_catalogue;
 mod edge_strategy;
 mod jepa;
 mod vector_engine;
@@ -745,6 +746,7 @@ async fn main(){
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
+        .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
