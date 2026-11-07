@@ -49,3 +49,8 @@ Retrieve the latest 50 runs with `GET /internal/backtests?symbol=BTCUSDT`, or a 
 A run with zero market events is a data-availability result, not evidence of zero strategy returns. Validate event coverage, timestamps, spread/depth quality, venue consistency, and historical gaps before interpreting performance. Current replay uses the currently active strategy map across the entire selected period; it is not a historical strategy-version walk-forward. It does not yet model stop-losses, short positions, margin, financing/funding payments, partial fills, queue position, market impact, or exchange outages. Do not use its output as a live-trading authorization or profitability claim.
 
 The API is internal research infrastructure. Keep it on a trusted network; do not expose the internal Axum service publicly.
+
+
+## Local client configuration
+
+The flow service defaults to loopback at `127.0.0.1:8081`, and the shared frontend client defaults to `http://127.0.0.1:8081`. Set `VITE_QOIN_FLOW_API_URL` for the web build and `EXPO_PUBLIC_QOIN_FLOW_API_URL` for Expo/mobile when the service is hosted elsewhere. For a physical device on a trusted development LAN, bind the service to a LAN-reachable interface with `QOIN_AXUM_ADDR` and point the app to that machine's LAN address. Do not expose this internal service to the public internet.
