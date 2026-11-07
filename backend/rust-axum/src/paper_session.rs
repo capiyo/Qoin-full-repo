@@ -58,6 +58,8 @@ impl PaperAccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OpenPosition {
     entry_ts_ms: i64,
+    entry_event_id: String,
+    strategy_version: String,
     quantity: f64,
     entry_price: f64,
     entry_fee: f64,
@@ -166,7 +168,7 @@ impl PaperAccount {
                 let debit = filled_notional + fee;
                 if debit <= self.cash && quantity.is_finite() && quantity > 0.0 {
                     self.cash -= debit; self.fees_paid += fee; self.entries += 1;
-                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, quantity, entry_price, entry_fee: fee });
+                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, entry_event_id: event.event_id.clone(), strategy_version: decision.strategy_version.clone(), quantity, entry_price, entry_fee: fee });
                     execution = if action.signal_ts_ms == event.ts_ms { "entered_long" } else { "filled_pending_buy" }.into();
                 } else {
                     self.skipped_entries += 1; execution = "skipped_insufficient_cash".into();
@@ -178,11 +180,12 @@ impl PaperAccount {
                     let exit_fee = open.quantity * exit_price * self.config.contract_multiplier * self.config.fee_bps / 10_000.0;
                     let total_fees = open.entry_fee + exit_fee;
                     let net = gross - total_fees;
-                    self.cash += open.quantity * exit_price - exit_fee;
+                    self.cash += open.quantity * exit_price * self.config.contract_multiplier - exit_fee;
                     self.fees_paid += exit_fee; self.realized_pnl += net; self.exits += 1;
                     trade = Some(PaperTradeRecord {
                         cycle_id: cycle_id.to_owned(), symbol: self.config.symbol.clone(), venue: self.config.venue.clone(),
-                        quote_currency: self.config.quote_currency.to_uppercase(), entry_ts_ms: open.entry_ts_ms,
+                        quote_currency: self.config.quote_currency.to_uppercase(), strategy_version: open.strategy_version.clone(),
+                        entry_event_id: open.entry_event_id.clone(), exit_event_id: event.event_id.clone(), entry_ts_ms: open.entry_ts_ms,
                         exit_ts_ms: event.ts_ms, quantity: open.quantity, contract_multiplier: self.config.contract_multiplier,
                         quantity_step: self.config.quantity_step, fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
                         reinvest_profits: self.config.reinvest_profits, entry_price: open.entry_price,
@@ -209,7 +212,8 @@ impl PaperAccount {
             contract_multiplier: self.config.contract_multiplier, quantity_step: self.config.quantity_step,
             notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
             fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
-            ts_ms: event.ts_ms, strategy_version: decision.strategy_version.clone(), action: decision.action.into(),
+            ts_ms: event.ts_ms, strategy_version: decision.strategy_version.clone(),
+            bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.into(),
             reason: decision.reason.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
             magnitude: decision.magnitude, angle_radians: decision.angle_radians, spread_bps, execution,
@@ -225,7 +229,7 @@ pub struct PaperMirrorRecord {
     pub cycle_id: String, pub event_id: String, pub venue: String, pub symbol: String,
     pub quote_currency: String, pub contract_multiplier: f64, pub quantity_step: f64,
     pub notional_per_trade: f64, pub reinvest_profits: bool, pub fee_bps: f64, pub slippage_bps: f64,
-    pub ts_ms: i64, pub strategy_version: String, pub action: String,
+    pub ts_ms: i64, pub strategy_version: String, pub bullish_weights: BTreeMap<String, f64>, pub bearish_weights: BTreeMap<String, f64>, pub action: String,
     pub reason: String, pub features: BTreeMap<String, f64>, pub attention: Vec<Vec<f64>>,
     pub attended_features: Vec<f64>, pub decision_vector: [f64; 2], pub magnitude: f64,
     pub angle_radians: f64, pub spread_bps: Option<f64>, pub execution: String,
@@ -235,6 +239,7 @@ pub struct PaperMirrorRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaperTradeRecord {
     pub cycle_id: String, pub symbol: String, pub venue: String, pub quote_currency: String,
+    pub strategy_version: String, pub entry_event_id: String, pub exit_event_id: String,
     pub entry_ts_ms: i64, pub exit_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64,
     pub quantity_step: f64, pub fee_bps: f64, pub slippage_bps: f64, pub reinvest_profits: bool, pub entry_price: f64,
     pub exit_price: f64, pub gross_pnl: f64, pub fees: f64, pub net_pnl: f64,
