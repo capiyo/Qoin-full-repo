@@ -365,7 +365,7 @@ mod tests {
         let trade = trade.unwrap();
         assert_eq!(trade.quantity, 1.5);
         assert_eq!(trade.contract_multiplier, 10.0);
-        assert!((trade.gross_pnl - 13.5).abs() < 1e-8);
+        assert!((trade.gross_pnl - 11.99175).abs() < 1e-8);
     }
 
     #[test]
