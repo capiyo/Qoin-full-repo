@@ -10,12 +10,15 @@ import {
   stopOperatingCycle,
   runPaperBacktest,
   getPaperBacktestHistory,
+  getPaperSession,
   type PaperBacktestReport,
   type PaperBacktestHistoryItem,
   type MarketForceObservation,
   type QoinSignal,
   type OperatingCycleConfig,
   type OperatingCycleSnapshot,
+  type PaperAccountConfig,
+  type PaperSessionSnapshot,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -46,9 +49,11 @@ export function SignalScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);
-  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });
+  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper", paper_accounts: [] });
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleError, setCycleError] = useState("");
+  const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
+  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
@@ -60,7 +65,8 @@ export function SignalScreen() {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
     getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
-    const refreshCycle = () => getOperatingCycle().then(setCycle).catch(() => setCycle(null));
+    getPaperSession().then(setPaperSession).catch(() => setPaperSession(null));
+    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); };
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -79,7 +85,11 @@ export function SignalScreen() {
 
   async function runCycle(action: "start" | "stop") {
     setCycleBusy(true); setCycleError("");
-    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
+    try {
+      if (action === "start") { await configureOperatingCycle(cycleConfig); setCycle(await startOperatingCycle()); }
+      else setCycle(await stopOperatingCycle());
+      setPaperSession(await getPaperSession());
+    }
     catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
   }
@@ -94,6 +104,17 @@ export function SignalScreen() {
       setBacktestHistory(history.runs);
     } catch (err) { setBacktestError(err instanceof Error ? err.message : "Paper replay failed"); }
     finally { setBacktestBusy(false); }
+  }
+
+  function addPaperAccount() {
+    const account = { ...paperAccountDraft, symbol: paperAccountDraft.symbol.trim().toUpperCase(), venue: paperAccountDraft.venue.trim(), quote_currency: paperAccountDraft.quote_currency.trim().toUpperCase() };
+    if (!account.symbol || !account.venue || !account.quote_currency || account.initial_cash <= 0 || account.notional_per_trade <= 0 || account.notional_per_trade > account.initial_cash) { setCycleError("Enter symbol, exact venue, quote currency, positive capital and a notional within that capital."); return; }
+    if (cycleConfig.paper_accounts.some((item) => item.symbol === account.symbol && item.venue === account.venue)) { setCycleError("This venue and symbol are already configured."); return; }
+    if (cycleConfig.paper_accounts.length >= 50) { setCycleError("A cycle supports at most 50 instruments."); return; }
+    setCycleConfig((current) => ({ ...current, paper_accounts: [...current.paper_accounts, account] })); setCycleError("");
+  }
+  function removePaperAccount(symbol: string, venue: string) {
+    setCycleConfig((current) => ({ ...current, paper_accounts: current.paper_accounts.filter((item) => item.symbol !== symbol || item.venue !== venue) }));
   }
 
   async function evaluate() {
@@ -146,6 +167,27 @@ export function SignalScreen() {
                 style={styles.input} />
             </View>
           ))}
+          <Text style={styles.panelTitle}>Paper accounts · {cycleConfig.paper_accounts.length}/50</Text>
+          <Text style={styles.fieldHelp}>Each venue/symbol uses an isolated ledger in its quote currency. No automatic FX conversion.</Text>
+          <TextInput accessibilityLabel="Paper symbol" placeholder="Symbol e.g. BTCUSDT" value={paperAccountDraft.symbol} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, symbol: value }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Exact venue" placeholder="Exact ingestion venue ID" value={paperAccountDraft.venue} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, venue: value }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Quote currency" placeholder="Quote currency e.g. USDT" value={paperAccountDraft.quote_currency} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, quote_currency: value }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Starting capital" placeholder="Starting capital in quote currency" keyboardType="decimal-pad" value={String(paperAccountDraft.initial_cash || "")} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, initial_cash: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
+          <TextInput accessibilityLabel="Notional per entry" placeholder="Notional per entry" keyboardType="decimal-pad" value={String(paperAccountDraft.notional_per_trade || "")} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, notional_per_trade: Number(value) || 0 }))} style={styles.input} editable={!cycle?.active} />
+          <View style={styles.metricRow}><Text style={styles.metricLabel}>Fee / slippage (bps per side)</Text><Text style={styles.metricValue}>{paperAccountDraft.fee_bps} / {paperAccountDraft.slippage_bps}</Text></View>
+          <View style={styles.cycleButtons}>
+            <Pressable onPress={() => setPaperAccountDraft((v) => ({ ...v, fee_bps: Math.max(0, v.fee_bps - 1) }))} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Fee −</Text></Pressable>
+            <Pressable onPress={() => setPaperAccountDraft((v) => ({ ...v, fee_bps: Math.min(100, v.fee_bps + 1) }))} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Fee +</Text></Pressable>
+            <Pressable onPress={() => setPaperAccountDraft((v) => ({ ...v, slippage_bps: Math.max(0, v.slippage_bps - 1) }))} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Slip −</Text></Pressable>
+            <Pressable onPress={() => setPaperAccountDraft((v) => ({ ...v, slippage_bps: Math.min(100, v.slippage_bps + 1) }))} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Slip +</Text></Pressable>
+          </View>
+          <Pressable onPress={addPaperAccount} disabled={!!cycle?.active} style={[styles.secondaryButton, !!cycle?.active && styles.disabled]}><Text style={styles.secondaryButtonText}>Add instrument account</Text></Pressable>
+          {cycleConfig.paper_accounts.map((account) => (
+            <View key={account.venue + account.symbol} style={styles.metricRow}>
+              <Text style={styles.metricLabel}>{account.symbol} · {account.venue} · {account.quote_currency} {account.initial_cash}</Text>
+              <Pressable onPress={() => removePaperAccount(account.symbol, account.venue)} disabled={!!cycle?.active}><Text style={styles.secondaryButtonText}>Remove</Text></Pressable>
+            </View>
+          ))}
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Seconds remaining</Text><Text style={styles.metricValue}>{cycle?.phase_seconds_remaining ?? 0}</Text></View>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Observations / evaluations</Text><Text style={styles.metricValue}>{cycle?.observations ?? 0} / {cycle?.signal_evaluations ?? 0}</Text></View>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Mean |score| / alignment</Text><Text style={styles.metricValue}>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"} / {cycle?.mean_alignment?.toFixed(3) ?? "—"}</Text></View>
@@ -164,11 +206,11 @@ export function SignalScreen() {
           </> : null}
           <View style={styles.cycleButtons}>
             <Pressable onPress={saveCycle} disabled={cycleBusy || !!cycle?.active} style={[styles.secondaryButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Save</Text></Pressable>
-            <Pressable onPress={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active} style={[styles.cycleButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.buttonText}>Start</Text></Pressable>
+            <Pressable onPress={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active || (cycleConfig.mode === "paper" && cycleConfig.paper_accounts.length === 0)} style={[styles.cycleButton, (cycleBusy || !!cycle?.active || (cycleConfig.mode === "paper" && cycleConfig.paper_accounts.length === 0)) && styles.disabled]}><Text style={styles.buttonText}>Start</Text></Pressable>
             <Pressable onPress={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active} style={[styles.secondaryButton, (cycleBusy || !cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Stop</Text></Pressable>
           </View>
           {cycleError ? <Text accessibilityRole="alert" style={styles.error}>{cycleError}</Text> : null}
-          <Text style={styles.cycleSafety}>SIGNAL MONITORING ONLY · NO SIMULATED FILLS · LIVE EXECUTION DISABLED</Text>
+          <Text style={styles.cycleSafety}>PAPER SIMULATION ONLY · NO BROKER ORDERS · LIVE EXECUTION DISABLED</Text>
         </View>
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
@@ -255,7 +297,21 @@ export function SignalScreen() {
             {backtest.event_count === 0 ? <Text style={styles.error}>No events found. Ingest historical market data before interpreting this result.</Text> : null}
           </> : null}
         </View>
-                <View style={styles.panel}>
+                        <View style={styles.panel}>
+          <View style={styles.panelHeader}><Text style={styles.panelTitle}>Paper account ledger</Text><Text style={styles.counter}>{paperSession?.active ? "ACTIVE" : "INACTIVE"}</Text></View>
+          {paperSession?.accounts.length ? paperSession.accounts.map((account) => (
+            <View key={account.venue + account.symbol} style={styles.metricRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>{account.symbol} · {account.venue}</Text>
+                <Text style={styles.fieldHelp}>{account.quote_currency} · Equity {account.equity.toFixed(2)} · Net P/L {account.net_pnl.toFixed(2)}</Text>
+                <Text style={styles.fieldHelp}>Realized {account.realized_pnl.toFixed(2)} · Fees {account.fees_paid.toFixed(2)} · Max DD {account.max_drawdown_pct.toFixed(2)}%</Text>
+                <Text style={styles.fieldHelp}>Entries / exits {account.entries} / {account.exits} · Events {account.events} · {account.has_open_position ? "POSITION OPEN" : "FLAT"}</Text>
+              </View>
+            </View>
+          )) : <Text style={styles.fieldHelp}>No paper session activity yet. Add accounts and start a cycle.</Text>}
+          <Text style={styles.cycleSafety}>SIMULATED FILLS ONLY · LIVE BROKER ROUTING DISABLED</Text>
+        </View>
+<View style={styles.panel}>
           <View style={styles.panelHeader}>
             <Text style={styles.panelTitle}>Observation vector</Text>
             <Text style={styles.counter}>{activeCount}/7 active</Text>
