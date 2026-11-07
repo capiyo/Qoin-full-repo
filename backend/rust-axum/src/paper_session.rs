@@ -14,6 +14,10 @@ pub struct PaperAccountConfig {
     pub quote_currency: String,
     pub initial_cash: f64,
     pub notional_per_trade: f64,
+    #[serde(default = "default_multiplier")]
+    pub contract_multiplier: f64,
+    #[serde(default = "default_quantity_step")]
+    pub quantity_step: f64,
     #[serde(default = "default_true")]
     pub reinvest_profits: bool,
     #[serde(default = "default_fee")]
@@ -21,6 +25,8 @@ pub struct PaperAccountConfig {
     #[serde(default = "default_slippage")]
     pub slippage_bps: f64,
 }
+fn default_multiplier() -> f64 { 1.0 }
+fn default_quantity_step() -> f64 { 0.000001 }
 fn default_true() -> bool { true }
 fn default_fee() -> f64 { 10.0 }
 fn default_slippage() -> f64 { 5.0 }
@@ -35,6 +41,10 @@ impl PaperAccountConfig {
         }
         if !self.notional_per_trade.is_finite() || self.notional_per_trade <= 0.0 || self.notional_per_trade > self.initial_cash {
             return Err(format!("{} notional_per_trade must be positive and no greater than initial_cash", self.symbol));
+        }
+        if !self.contract_multiplier.is_finite() || self.contract_multiplier <= 0.0
+            || !self.quantity_step.is_finite() || self.quantity_step <= 0.0 {
+            return Err(format!("{} contract_multiplier and quantity_step must be finite and positive", self.symbol));
         }
         if !self.fee_bps.is_finite() || !(0.0..=100.0).contains(&self.fee_bps)
             || !self.slippage_bps.is_finite() || !(0.0..=100.0).contains(&self.slippage_bps) {
@@ -93,16 +103,16 @@ impl PaperAccount {
         self.position.as_ref().map(|position| {
             let bid = self.last_bid.unwrap_or(position.entry_price);
             let exit_price = bid * (1.0 - self.config.slippage_bps / 10_000.0);
-            let exit_fee = position.quantity * exit_price * self.config.fee_bps / 10_000.0;
-            position.quantity * (exit_price - position.entry_price) - position.entry_fee - exit_fee
+            let exit_fee = position.quantity * exit_price * self.config.contract_multiplier * self.config.fee_bps / 10_000.0;
+            position.quantity * (exit_price - position.entry_price) * self.config.contract_multiplier - position.entry_fee - exit_fee
         }).unwrap_or(0.0)
     }
     fn equity(&self) -> f64 {
         let marked = self.position.as_ref().map(|p| {
             let bid = self.last_bid.unwrap_or(p.entry_price);
             let exit = bid * (1.0 - self.config.slippage_bps / 10_000.0);
-            let fee = p.quantity * exit * self.config.fee_bps / 10_000.0;
-            p.quantity * exit - fee
+            let fee = p.quantity * exit * self.config.contract_multiplier * self.config.fee_bps / 10_000.0;
+            p.quantity * exit * self.config.contract_multiplier - fee
         }).unwrap_or(0.0);
         self.cash + marked
     }
@@ -149,9 +159,11 @@ impl PaperAccount {
                     self.config.notional_per_trade * (self.cash / self.config.initial_cash)
                 } else { self.config.notional_per_trade };
                 let notional = raw_notional.min(self.cash / (1.0 + self.config.fee_bps / 10_000.0));
-                let quantity = notional / entry_price;
-                let fee = quantity * entry_price * self.config.fee_bps / 10_000.0;
-                let debit = quantity * entry_price + fee;
+                let raw_quantity = notional / (entry_price * self.config.contract_multiplier);
+                let quantity = (raw_quantity / self.config.quantity_step).floor() * self.config.quantity_step;
+                let filled_notional = quantity * entry_price * self.config.contract_multiplier;
+                let fee = filled_notional * self.config.fee_bps / 10_000.0;
+                let debit = filled_notional + fee;
                 if debit <= self.cash && quantity.is_finite() && quantity > 0.0 {
                     self.cash -= debit; self.fees_paid += fee; self.entries += 1;
                     self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, quantity, entry_price, entry_fee: fee });
@@ -162,8 +174,8 @@ impl PaperAccount {
             } else if action.action == "sell" {
                 if let Some(open) = self.position.take() {
                     let exit_price = bid * (1.0 - self.config.slippage_bps / 10_000.0);
-                    let gross = open.quantity * (exit_price - open.entry_price);
-                    let exit_fee = open.quantity * exit_price * self.config.fee_bps / 10_000.0;
+                    let gross = open.quantity * (exit_price - open.entry_price) * self.config.contract_multiplier;
+                    let exit_fee = open.quantity * exit_price * self.config.contract_multiplier * self.config.fee_bps / 10_000.0;
                     let total_fees = open.entry_fee + exit_fee;
                     let net = gross - total_fees;
                     self.cash += open.quantity * exit_price - exit_fee;
@@ -216,7 +228,7 @@ pub struct PaperMirrorRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaperTradeRecord {
     pub cycle_id: String, pub symbol: String, pub venue: String, pub quote_currency: String,
-    pub entry_ts_ms: i64, pub exit_ts_ms: i64, pub quantity: f64, pub entry_price: f64,
+    pub entry_ts_ms: i64, pub exit_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64, pub entry_price: f64,
     pub exit_price: f64, pub gross_pnl: f64, pub fees: f64, pub net_pnl: f64,
     pub return_pct: f64, pub exit_reason: String,
 }
@@ -230,6 +242,7 @@ pub struct PaperOpenPositionSnapshot {
 #[derive(Debug, Clone, Serialize)]
 pub struct PaperAccountSnapshot {
     pub symbol: String, pub venue: String, pub quote_currency: String,
+    pub contract_multiplier: f64, pub quantity_step: f64,
     pub initial_cash: f64, pub cash: f64, pub equity: f64, pub net_pnl: f64,
     pub realized_pnl: f64, pub unrealized_pnl: f64, pub fees_paid: f64, pub max_drawdown_pct: f64,
     pub events: u64, pub decisions: u64, pub buy_signals: u64, pub sell_signals: u64,
@@ -278,6 +291,7 @@ impl PaperSession {
             PaperAccountSnapshot {
                 symbol: account.config.symbol.clone(), venue: account.config.venue.clone(),
                 quote_currency: account.config.quote_currency.to_uppercase(),
+                contract_multiplier: account.config.contract_multiplier, quantity_step: account.config.quantity_step,
                 initial_cash: account.config.initial_cash, cash: account.cash, equity,
                 net_pnl: equity - account.config.initial_cash, realized_pnl: account.realized_pnl,
                 unrealized_pnl: account.unrealized_pnl(), fees_paid: account.fees_paid, max_drawdown_pct: account.max_drawdown_pct,
@@ -305,7 +319,7 @@ mod tests {
     use super::*;
     fn config() -> PaperAccountConfig {
         PaperAccountConfig { symbol: "BTCUSDT".into(), venue: "venue-a".into(), quote_currency: "USDT".into(),
-            initial_cash: 20_000.0, notional_per_trade: 2_000.0, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0 }
+            initial_cash: 20_000.0, notional_per_trade: 2_000.0, contract_multiplier: 1.0, quantity_step: 0.000001, reinvest_profits: true, fee_bps: 10.0, slippage_bps: 5.0 }
     }
     fn event(ts_ms: i64, bid: Option<f64>, ask: Option<f64>) -> MarketEvent {
         MarketEvent { event_id: format!("e{ts_ms}"), venue: "venue-a".into(), symbol: "BTCUSDT".into(),
