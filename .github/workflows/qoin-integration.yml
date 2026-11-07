@@ -86,8 +86,8 @@ jobs:
           curl -fsS http://127.0.0.1:8081/internal/operating-cycle >/tmp/cycle-active.json
           jq -e '.observations == 2 and .signal_evaluations == 2 and .live_execution_enabled == false' /tmp/cycle-active.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/stop >/tmp/cycle-stop.json
-          curl -fsS -X POST http://127.0.0.1:8081/internal/backtest -H 'content-type: application/json' --data '{"symbol":"BTCUSDT","venue":"ci","start_ts_ms":1792859999000,"end_ts_ms":1792860000200,"warmup_hours":1,"initial_cash":20000,"notional_per_trade":2000,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5,"max_events":1000}' >/tmp/backtest.json
-          jq -e '.event_count == 2 and .signal_count == 2 and .venue == "ci" and .reinvest_profits == true and (.decisions | length) == 2' /tmp/backtest.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/backtest -H 'content-type: application/json' --data '{"symbol":"BTCUSDT","venue":"ci","quote_currency":"USD","start_ts_ms":1792859999000,"end_ts_ms":1792860000200,"warmup_hours":1,"initial_cash":20000,"notional_per_trade":2000,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5,"max_events":1000}' >/tmp/backtest.json
+          jq -e '.event_count == 2 and .signal_count == 2 and .venue == "ci" and .quote_currency == "USD" and .reinvest_profits == true and (.decisions | length) == 2' /tmp/backtest.json
           RUN_ID=$(jq -r '.run_id' /tmp/backtest.json)
           curl -fsS "http://127.0.0.1:8081/internal/backtests/$RUN_ID" >/tmp/backtest-reloaded.json
           jq -e '.summary.venue == "ci" and (.decisions | length) == 2' /tmp/backtest-reloaded.json
