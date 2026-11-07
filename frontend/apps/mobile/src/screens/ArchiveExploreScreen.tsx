@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getOperatingCycle, getPaperSession, getPaperSessionHistory, getPaperSessionRuns, type OperatingCycleSnapshot, type PaperSessionSnapshot, type PaperMirrorEvent, type PaperTradeHistoryItem } from "@qoin/core";
+import { getOperatingCycle, getPaperSession, getPaperSessionHistory, getPaperSessionRuns, type OperatingCycleSnapshot, type PaperSessionSnapshot, type PaperMirrorEvent, type PaperTradeHistoryItem, type PaperSessionRun } from "@qoin/core";
 import { colors } from "../theme";
 
 type Tab = "Archive" | "Explore";
@@ -24,7 +24,7 @@ export function ArchiveExploreScreen() {
   const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);
   const [session, setSession] = useState<PaperSessionSnapshot | null>(null);
   const [decisions, setDecisions] = useState<PaperMirrorEvent[]>([]);
-  const [trades, setTrades] = useState<PaperTradeHistoryItem[]>([]);
+  const [trades, setTrades] = useState<PaperTradeHistoryItem[]>([]);\n  const [runs, setRuns] = useState<PaperSessionRun[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
@@ -34,7 +34,7 @@ export function ArchiveExploreScreen() {
       getOperatingCycle().then(setCycle).catch(() => setCycle(null));
       getPaperSession().then(setSession).catch(() => setSession(null));
       getPaperSessionHistory(undefined, 100).then((result) => { setDecisions(result.decisions); setTrades(result.trades); }).catch(() => { setDecisions([]); setTrades([]); });
-      getPaperSessionRuns(20).catch(() => undefined);
+      getPaperSessionRuns(20).then((result) => setRuns(result.runs)).catch(() => setRuns([]));
     };
     refresh();
     const timer = setInterval(refresh, 5000);
