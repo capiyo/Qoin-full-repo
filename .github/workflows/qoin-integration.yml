@@ -80,13 +80,16 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-late-trade","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000050,"price":99.99,"size":7,"side":"sell"}' >/tmp/late-event.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-late-base","venue":"ci","symbol":"LATECHECK","event_type":"trade","ts_ms":1792860000100,"price":100,"size":1,"side":"buy"}' >/tmp/late-base.json
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-late-trade","venue":"ci","symbol":"LATECHECK","event_type":"trade","ts_ms":1792860000050,"price":99.99,"size":7,"side":"sell"}' >/tmp/late-event.json
           jq -e '.status == "stored_out_of_order_event_not_applied"' /tmp/late-event.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"ci-other","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":150,"size":3,"side":"buy"}' >/tmp/other-venue.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/state?symbol=BTCUSDT&venue=ci' >/tmp/state-ci.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/state?symbol=BTCUSDT&venue=ci-other' >/tmp/state-other.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/state?symbol=LATECHECK&venue=ci' >/tmp/state-late.json
           jq -e '.venue == "ci" and .event_count == 2' /tmp/state-ci.json
           jq -e '.venue == "ci-other" and .event_count == 1' /tmp/state-other.json
+          jq -e '.venue == "ci" and .event_count == 1' /tmp/state-late.json
           curl -fsS -X PUT http://127.0.0.1:8081/internal/operating-cycle -H 'content-type: application/json' --data '{"observation_minutes":5,"weight_evaluation_minutes":60,"session_minutes":480,"mode":"research","paper_accounts":[]}' >/tmp/cycle-config.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/start >/tmp/cycle-start.json
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-cycle-book","venue":"ci","symbol":"ETHUSDT","event_type":"book","ts_ms":1792860000200,"bid":200,"ask":200.02,"bid_size":5,"ask_size":4}' >/tmp/cycle-book.json
@@ -95,7 +98,7 @@ jobs:
           jq -e '.observations == 2 and .signal_evaluations == 2 and .live_execution_enabled == false' /tmp/cycle-active.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/stop >/tmp/cycle-stop.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/backtest -H 'content-type: application/json' --data '{"symbol":"BTCUSDT","venue":"ci","quote_currency":"USD","start_ts_ms":1792859999000,"end_ts_ms":1792860000200,"warmup_hours":1,"initial_cash":20000,"notional_per_trade":2000,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5,"max_events":1000}' >/tmp/backtest.json
-          jq -e '.event_count == 3 and .signal_count == 3 and .venue == "ci" and .quote_currency == "USD" and .reinvest_profits == true and .pending_order == "buy" and (.decisions | length) == 3' /tmp/backtest.json
+          jq -e '.event_count == 2 and .signal_count == 2 and .venue == "ci" and .quote_currency == "USD" and .reinvest_profits == true and .pending_order == "buy" and (.decisions | length) == 2' /tmp/backtest.json
           RUN_ID=$(jq -r '.run_id' /tmp/backtest.json)
           curl -fsS "http://127.0.0.1:8081/internal/backtests/$RUN_ID" >/tmp/backtest-reloaded.json
           jq -e '.summary.venue == "ci" and (.decisions | length) == 3' /tmp/backtest-reloaded.json
