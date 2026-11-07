@@ -122,6 +122,8 @@ jobs:
           curl -fsS 'http://127.0.0.1:8081/internal/paper-session/history?limit=10' >/tmp/paper-session-history.json
           jq -e '(.decisions | type) == "array" and (.trades | type) == "array"' /tmp/paper-session-history.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/stop >/tmp/paper-cycle-stop.json
+          curl -fsS 'http://127.0.0.1:8081/internal/paper-session/runs?limit=10' >/tmp/paper-session-runs.json
+          jq -e '.runs[0].active == false and .runs[0].accounts[0].symbol == "ETHUSDT"' /tmp/paper-session-runs.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum-paper-restarted.log 2>&1 &
