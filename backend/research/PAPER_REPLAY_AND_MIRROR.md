@@ -49,11 +49,12 @@ The operating cycle now has a forward paper-session phase. Configure up to 50 ex
 
 Forward session records are stored in:
 - `paper_sessions`: durable current account balances, open positions, pending intents and cycle ID; restored after service restart.
+- `paper_session_runs`: archived final account snapshots for completed/stopped sessions, including net P/L, fees, drawdown, entries/exits and open-position state.
 - `paper_session_decisions`: append-only per-event Mirror record with feature/attention diagnostics, strategy version, action/reason, quote spread, simulated execution status, cash, equity, open-position state, and the exact multiplier, quantity step, notional, compounding, fee and slippage assumptions used for that event.
 - `paper_session_trades`: closed simulated trades with entry/exit timestamps and prices, gross P/L, both-side fees, net P/L, return, multiplier, lot step and cost assumptions.
 - `operating_cycles`: five-minute observation / one-hour diagnostic / session schedule and aggregate score/alignment/feature/attention plus per-feature bullish/bearish coefficient-contribution diagnostics. The coefficient values remain locked; the strategy update endpoint rejects changes while a cycle is active. This measures their contribution but does not auto-retune them.
 
-Configure/start/stop/read the cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. Read live paper account state through `GET /internal/paper-session`, and the latest 1–200 Mirror decisions and closed trades through `GET /internal/paper-session/history?limit=50` (optionally filter by `symbol` or `cycle_id`). Historical backtest endpoints remain `GET /internal/backtests?symbol=BTCUSDT` and `GET /internal/backtests/{run_id}`. These records survive service restarts.
+Configure/start/stop/read the cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. Read live paper account state through `GET /internal/paper-session`, completed session summaries through `GET /internal/paper-session/runs?limit=20`, and the latest 1–200 Mirror decisions and closed trades through `GET /internal/paper-session/history?limit=50` (optionally filter by `symbol` or `cycle_id`). Historical backtest endpoints remain `GET /internal/backtests?symbol=BTCUSDT` and `GET /internal/backtests/{run_id}`. These records survive service restarts.
 
 ## Interpretation and limits
 
