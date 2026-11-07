@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     response::IntoResponse,
     routing::{get, post, put},
     Json, Router,
@@ -13,7 +13,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use futures_util::TryStreamExt;
 use std::{collections::HashMap, env, sync::{Arc, RwLock}};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod backtest;
 mod edge_strategy;
@@ -502,12 +502,12 @@ async fn main(){
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
-    let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
+    let cors = CorsLayer::new()\n        .allow_origin([\n            HeaderValue::from_static("http://localhost:5173"),\n            HeaderValue::from_static("http://127.0.0.1:5173"),\n            HeaderValue::from_static("http://localhost:3000"),\n            HeaderValue::from_static("http://127.0.0.1:3000"),\n        ])\n        .allow_methods([Method::GET, Method::POST, Method::PUT])\n        .allow_headers([CONTENT_TYPE]);\n    let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/backtest",post(run_paper_backtest))\n        .route("/internal/backtests",get(list_backtest_runs))\n        .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
-        .with_state(state).layer(TraceLayer::new_for_http());
+        .with_state(state).layer(cors).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
