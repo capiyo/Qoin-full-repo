@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Rect } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getInstrumentVector, QOIN_FEATURE_NAMES, type QoinVectorDecision } from "@qoin/core";
 
 type Market = "Crypto" | "Equities" | "FX";
 type Instrument = {
@@ -11,16 +12,15 @@ type Instrument = {
   detail: string;
   archived: boolean;
   tint: string;
-  vector: { flow: number; liquidity: number; volatility: number; positioning: number };
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", detail: "Digital asset · USD", archived: true, tint: "#E6A23C", vector: { flow: .72, liquidity: .48, volatility: .64, positioning: -.22 } },
-  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", detail: "Smart-contract network · USD", archived: true, tint: "#6477DF", vector: { flow: .36, liquidity: .62, volatility: .42, positioning: .18 } },
-  { symbol: "SOL/USD", name: "Solana", market: "Crypto", detail: "Layer-one network · USD", archived: true, tint: "#8B72E8", vector: { flow: -.18, liquidity: .24, volatility: .78, positioning: .52 } },
-  { symbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", archived: false, tint: "#76A85A", vector: { flow: .58, liquidity: .82, volatility: .46, positioning: .31 } },
-  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", detail: "Major currency pair", archived: false, tint: "#4D91D8", vector: { flow: .12, liquidity: .91, volatility: .19, positioning: -.08 } },
-  { symbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", archived: false, tint: "#8895A7", vector: { flow: .28, liquidity: .86, volatility: .27, positioning: .14 } },
+  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", detail: "Digital asset · USD", archived: true, tint: "#E6A23C" },
+  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", detail: "Smart-contract network · USD", archived: true, tint: "#6477DF" },
+  { symbol: "SOL/USD", name: "Solana", market: "Crypto", detail: "Layer-one network · USD", archived: true, tint: "#8B72E8" },
+  { symbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", archived: false, tint: "#76A85A" },
+  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", detail: "Major currency pair", archived: false, tint: "#4D91D8" },
+  { symbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", archived: false, tint: "#8895A7" },
 ];
 
 type Props = { mode: "Archive" | "Explore" };
@@ -30,6 +30,9 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
+  const [vector, setVector] = useState<QoinVectorDecision | null>(null);
+  const [vectorLoading, setVectorLoading] = useState(false);
+  const [vectorError, setVectorError] = useState("");
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const toggle = (symbol: string) => {
@@ -37,6 +40,35 @@ export function ArchiveExploreScreen({ mode }: Props) {
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   };
   const data = mode === "Archive" ? archived : discovered;
+  useEffect(() => {
+    if (!selected) {
+      setVector(null);
+      setVectorError("");
+      return;
+    }
+    let current = true;
+    setVector(null);
+    setVectorError("");
+    setVectorLoading(true);
+    getInstrumentVector(selected.symbol).then((result) => {
+      if (!current) return;
+      if (result.decision_vector && result.features && result.attended_features) {
+        setVector(result);
+      } else {
+        setVectorError(result.reason || "No persisted engine vector exists for this instrument yet.");
+      }
+    }).catch((error: unknown) => {
+      if (current) setVectorError(error instanceof Error ? error.message : "Engine vector is unavailable.");
+    }).finally(() => {
+      if (current) setVectorLoading(false);
+    });
+    return () => { current = false; };
+  }, [selected?.symbol]);
+  const bullish = vector?.decision_vector?.[0] ?? 0;
+  const bearish = vector?.decision_vector?.[1] ?? 0;
+  const vectorScale = Math.max(0.35, bullish, bearish);
+  const vectorX = 10 + (bullish / vectorScale) * 80;
+  const vectorY = 90 - (bearish / vectorScale) * 80;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -78,13 +110,34 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
                 {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#E9EEF6" strokeWidth=".4" />)}
                 {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#E9EEF6" strokeWidth=".4" />)}
-                <Line x1="50" y1="4" x2="50" y2="96" stroke="#CBD5E1" strokeDasharray="2 2" strokeWidth=".6" /><Line x1="4" y1="50" x2="96" y2="50" stroke="#CBD5E1" strokeDasharray="2 2" strokeWidth=".6" />
-                {([{ k: "flow", c: "#2867DC", x: 50 + selected.vector.flow * 34, y: 50 - selected.vector.flow * 22 }, { k: "liquidity", c: "#60A5FA", x: 50 + selected.vector.liquidity * 28, y: 50 + selected.vector.liquidity * 27 }, { k: "volatility", c: "#8B5CF6", x: 50 - selected.vector.volatility * 32, y: 50 - selected.vector.volatility * 26 }, { k: "positioning", c: "#0F9F91", x: 50 + selected.vector.positioning * 35, y: 50 - selected.vector.positioning * 30 }] as const).map((p) => <React.Fragment key={p.k}><Line x1="50" y1="50" x2={p.x} y2={p.y} stroke={p.c} strokeWidth="1.1" strokeDasharray="2 1.5" /><Circle cx={p.x} cy={p.y} r="2.7" fill={p.c} stroke="#FFFFFF" strokeWidth="1" /></React.Fragment>)}
-                <Circle cx="50" cy="50" r="5" fill={selected.tint} stroke="#FFFFFF" strokeWidth="1.5" />
-              </Svg>
+                <Line x1="10" y1="8" x2="10" y2="90" stroke="#CBD5E1" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#CBD5E1" strokeWidth=".7" />
+                {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#2867DC" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#2867DC" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
+                <Circle cx="10" cy="90" r="2" fill="#94A3B8" />
+              </Svg>        </Svg>
             </View>
             <View style={styles.legend}>{[["#2867DC", "Order flow"], ["#60A5FA", "Liquidity"], ["#8B5CF6", "Volatility"], ["#0F9F91", "Positioning"]].map(([color, label]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: color }]} /><Text style={styles.legendText}>{label}</Text></View>)}</View>
-            {Object.entries(selected.vector).map(([key, value]) => <View key={key} style={styles.metric}><Text style={styles.metricLabel}>{key.replace("_", " ")}</Text><Text style={styles.metricValue}>{value > 0 ? "+" : ""}{value.toFixed(2)}</Text></View>)}
+            {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
+              <>
+                <View style={styles.engineMetrics}>
+                  <View><Text style={styles.engineLabel}>Decision</Text><Text style={styles.engineValue}>{vector.action?.toUpperCase() || "WAIT"}</Text></View>
+                  <View><Text style={styles.engineLabel}>Magnitude</Text><Text style={styles.engineValue}>{vector.magnitude?.toFixed(3) ?? "—"}</Text></View>
+                  <View><Text style={styles.engineLabel}>Angle</Text><Text style={styles.engineValue}>{vector.angle_radians?.toFixed(3) ?? "—"} rad</Text></View>
+                  <View><Text style={styles.engineLabel}>Strategy</Text><Text style={styles.engineValue}>{vector.strategy_version || "—"}</Text></View>
+                </View>
+                {QOIN_FEATURE_NAMES.map((name, index) => {
+                  const raw = vector.features?.[name];
+                  const attended = vector.attended_features?.[index];
+                  const weights = vector.attention?.[index] ?? [];
+                  const strongest = weights.length ? weights.indexOf(Math.max(...weights)) : -1;
+                  return <View key={name} style={styles.metric}>
+                    <Text style={styles.metricLabel}>{name.replaceAll("_", " ")}</Text>
+                    <Text style={styles.metricValue}>{raw?.toFixed(3) ?? "—"} → {attended?.toFixed(3) ?? "—"}</Text>
+                    {strongest >= 0 ? <Text style={styles.attentionHint}>Strongest attention: {QOIN_FEATURE_NAMES[strongest]} ({weights[strongest].toFixed(2)})</Text> : null}
+                  </View>;
+                })}
+                <Text style={styles.disclaimer}>{vector.reason || "Engine research output. Not an order or a profitability claim."}</Text>
+              </>
+            ) : <Text style={styles.disclaimer}>{vectorError || "No persisted engine vector is available for this symbol yet."}</Text>}
             <Text style={styles.disclaimer}>Illustrative coordinates only. Live observations and engine-produced embeddings are not connected to this preview. Not a trading recommendation.</Text>
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
@@ -153,6 +206,10 @@ const styles = StyleSheet.create({
   metric: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
   metricLabel: { color: "#8290A3", fontSize: 10, textTransform: "capitalize" },
   metricValue: { color: "#40536E", fontSize: 10, fontWeight: "700" },
+  engineMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginVertical: 12 },
+  engineLabel: { color: "#8996A8", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
+  engineValue: { color: "#2B4160", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  attentionHint: { color: "#9AA6B5", fontSize: 8, marginTop: 5 },
   disclaimer: { color: "#8996A7", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#F7F9FC", borderRadius: 9, marginTop: 15 },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, padding: 14, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#F0F3F8" },
