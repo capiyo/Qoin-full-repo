@@ -49,7 +49,7 @@ export function SignalScreen() {
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
-    const refreshCycle = () => getOperatingCycle().then((snapshot) => setCycle(snapshot)).catch(() => setCycle(null));
+    const refreshCycle = () => getOperatingCycle().then((snapshot) => { setCycle(snapshot); if (!snapshot.active) setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     refreshCycle();
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
@@ -59,20 +59,6 @@ export function SignalScreen() {
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
     [forces],
   );
-
-  async function saveCycle() {
-    setCycleBusy(true); setCycleError("");
-    try { setCycle(await configureOperatingCycle(cycleConfig)); }
-    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not save cycle configuration"); }
-    finally { setCycleBusy(false); }
-  }
-
-  async function runCycle(action: "start" | "stop") {
-    setCycleBusy(true); setCycleError("");
-    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
-    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
-    finally { setCycleBusy(false); }
-  }
 
   async function saveCycle() {
     setCycleBusy(true); setCycleError("");
