@@ -55,7 +55,7 @@ export default function App() {
   const [cycleError, setCycleError] = useState("");
   const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
   const [paperHistory, setPaperHistory] = useState<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>({ decisions: [], trades: [] });
-  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
+  const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, contract_multiplier: 1, quantity_step: 0.000001, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
   const [backtestBusy, setBacktestBusy] = useState(false);
@@ -165,19 +165,21 @@ export default function App() {
         </div>
         <div className="cycle-diagnostics">
           <strong>Paper accounts · {cycleConfig.paper_accounts.length}/50</strong>
-          <p className="hint">Each venue/symbol has its own isolated quote-currency ledger. Add one account per instrument; capital is not converted between KSh, USD, USDT or other currencies.</p>
+          <p className="hint">Each venue/symbol has its own isolated quote-currency ledger. Set the venue contract multiplier and lot step from its specification; capital is not converted between KSh, USD, USDT or other currencies.</p>
           <div className="cycle-grid">
             <label className="cycle-field"><span>Symbol</span><input value={paperAccountDraft.symbol} onChange={(e) => setPaperAccountDraft(v => ({...v, symbol:e.target.value}))} placeholder="BTCUSDT" /></label>
             <label className="cycle-field"><span>Exact venue ID</span><input value={paperAccountDraft.venue} onChange={(e) => setPaperAccountDraft(v => ({...v, venue:e.target.value}))} placeholder="Must match ingestion venue" /></label>
             <label className="cycle-field"><span>Quote currency</span><input value={paperAccountDraft.quote_currency} onChange={(e) => setPaperAccountDraft(v => ({...v, quote_currency:e.target.value}))} placeholder="USDT / USD / KES" /></label>
             <label className="cycle-field"><span>Starting capital</span><input type="number" min="0" value={paperAccountDraft.initial_cash} onChange={(e) => setPaperAccountDraft(v => ({...v, initial_cash:Number(e.target.value)}))} /></label>
             <label className="cycle-field"><span>Notional per entry</span><input type="number" min="0" value={paperAccountDraft.notional_per_trade} onChange={(e) => setPaperAccountDraft(v => ({...v, notional_per_trade:Number(e.target.value)}))} /></label>
+            <label className="cycle-field"><span>Contract multiplier</span><input type="number" min="0.000001" value={paperAccountDraft.contract_multiplier} onChange={(e) => setPaperAccountDraft(v => ({...v, contract_multiplier:Number(e.target.value)}))} /></label>
+            <label className="cycle-field"><span>Quantity increment / lot step</span><input type="number" min="0.00000001" value={paperAccountDraft.quantity_step} onChange={(e) => setPaperAccountDraft(v => ({...v, quantity_step:Number(e.target.value)}))} /></label>
             <label className="cycle-field"><span>Fee (bps per side)</span><input type="number" min="0" max="100" value={paperAccountDraft.fee_bps} onChange={(e) => setPaperAccountDraft(v => ({...v, fee_bps:Number(e.target.value)}))} /></label>
             <label className="cycle-field"><span>Slippage (bps per side)</span><input type="number" min="0" max="100" value={paperAccountDraft.slippage_bps} onChange={(e) => setPaperAccountDraft(v => ({...v, slippage_bps:Number(e.target.value)}))} /></label>
             <label className="cycle-check"><input type="checkbox" checked={paperAccountDraft.reinvest_profits} onChange={(e) => setPaperAccountDraft(v => ({...v, reinvest_profits:e.target.checked}))} /><span>Reinvest profits / compound notional</span></label>
           </div>
           <button className="secondary" onClick={addPaperAccount} disabled={!!cycle?.active}>Add instrument account</button>
-          {cycleConfig.paper_accounts.map((account) => <div className="cycle-meta" key={`${account.venue}:${account.symbol}`}><span><strong>{account.symbol}</strong> · {account.venue} · {account.quote_currency} {account.initial_cash.toLocaleString()} · entry {account.notional_per_trade.toLocaleString()}</span><button className="secondary" onClick={() => removePaperAccount(account.symbol, account.venue)} disabled={!!cycle?.active}>Remove</button></div>)}
+          {cycleConfig.paper_accounts.map((account) => <div className="cycle-meta" key={`${account.venue}:${account.symbol}`}><span><strong>{account.symbol}</strong> · {account.venue} · {account.quote_currency} {account.initial_cash.toLocaleString()} · entry {account.notional_per_trade.toLocaleString()} · multiplier {account.contract_multiplier} · step {account.quantity_step}</span><button className="secondary" onClick={() => removePaperAccount(account.symbol, account.venue)} disabled={!!cycle?.active}>Remove</button></div>)}
         </div>
         <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span><span>Mean |score|: <strong>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"}</strong></span><span>Mean alignment: <strong>{cycle?.mean_alignment?.toFixed(3) ?? "—"}</strong></span><span>BUY / SELL / WAIT: <strong>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</strong></span></div>
         {cycle && Object.keys(cycle.mean_feature_values).length > 0 && <div className="cycle-diagnostics">
