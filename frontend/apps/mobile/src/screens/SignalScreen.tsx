@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 28 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 },
   kicker: { color: colors.accentCyan, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 6 },
-  title: { color: colors.white, fontSize: 25, fontWeight: "800" },
+  title: { color: colors.textPrimary, fontSize: 25, fontWeight: "800" },
   subtitle: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 16 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 20, backgroundColor: colors.bgSecondary },
   dot: { width: 6, height: 6, borderRadius: 3 },
