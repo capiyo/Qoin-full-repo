@@ -59,8 +59,8 @@ export function SignalScreen() {
     getPaperBacktestHistory().then((result) => setBacktestHistory(result.runs)).catch(() => setBacktestHistory([]));
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
+    getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     const refreshCycle = () => getOperatingCycle().then(setCycle).catch(() => setCycle(null));
-    refreshCycle();
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
   }, []);
