@@ -133,6 +133,14 @@ export default function App() {
           <label className="cycle-field"><span>Paper session (minutes)</span><input type="number" min="1" max="1440" value={cycleConfig.session_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, session_minutes: Number(e.target.value) }))} /></label>
         </div>
         <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span><span>Mean |score|: <strong>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"}</strong></span><span>Mean alignment: <strong>{cycle?.mean_alignment?.toFixed(3) ?? "—"}</strong></span><span>BUY / SELL / WAIT: <strong>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</strong></span></div>
+        {cycle && Object.keys(cycle.mean_feature_values).length > 0 && <div className="cycle-diagnostics">
+          <strong>Mean feature activations</strong>
+          <div>{Object.entries(cycle.mean_feature_values).map(([name, value]) => <span key={name}>{name}: <b>{value.toFixed(3)}</b></span>)}</div>
+        </div>}
+        {cycle && cycle.mean_attention.length > 0 && <div className="cycle-diagnostics">
+          <strong>Mean attention matrix</strong>
+          {cycle.mean_attention.map((row, index) => <span key={index}>Row {index + 1}: {row.map((value) => value.toFixed(3)).join(" · ")}</span>)}
+        </div>}
         <div className="cycle-actions"><button className="secondary" onClick={saveCycle} disabled={cycleBusy || !!cycle?.active}>Save schedule</button><button className="primary cycle-start" onClick={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active}>Start cycle</button><button className="secondary" onClick={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active}>Stop cycle</button></div>
         {cycleError && <p className="error" role="alert">{cycleError}</p>}
         <p className="cycle-safety">Signal monitoring only: no simulated fills or orders yet · live execution disabled · five-minute observation is not a replacement for historical lookback.</p>
