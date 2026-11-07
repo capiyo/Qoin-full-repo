@@ -1,26 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import Svg, { Circle, Line, Rect } from "react-native-svg";
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, QOIN_FEATURE_NAMES, type QoinVectorDecision } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate } from "@qoin/core";
 
-type Market = "Crypto" | "Equities" | "FX";
+type Market = QoinInstrument["asset_class"];
 type Instrument = {
   symbol: string;
+  engineSymbol: string;
   name: string;
   market: Market;
   detail: string;
+  venue: string;
+  provider: string;
   archived: boolean;
   tint: string;
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", detail: "Digital asset · USD", archived: true, tint: "#E6A23C" },
-  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", detail: "Smart-contract network · USD", archived: true, tint: "#6477DF" },
-  { symbol: "SOL/USD", name: "Solana", market: "Crypto", detail: "Layer-one network · USD", archived: true, tint: "#8B72E8" },
-  { symbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", archived: false, tint: "#76A85A" },
-  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", detail: "Major currency pair", archived: false, tint: "#4D91D8" },
-  { symbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", archived: false, tint: "#8895A7" },
+  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", detail: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, tint: "#E6A23C" },
+  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", detail: "Ether perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, tint: "#6477DF" },
+  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", detail: "Solana perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, tint: "#8B72E8" },
+  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, tint: "#76A85A" },
+  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", detail: "Major FX pair", venue: "OANDA", provider: "Finnhub", archived: false, tint: "#4D91D8" },
+  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, tint: "#8895A7" },
 ];
 
 type Props = { mode: "Archive" | "Explore" };
@@ -34,12 +37,48 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
+  const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
+  const [streamStatus, setStreamStatus] = useState("disconnected");
+  const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
+  const [news, setNews] = useState<QoinNewsItem[]>([]);
+  const [newsStatus, setNewsStatus] = useState("loading");
+  const [newsCategory, setNewsCategory] = useState("general");
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const toggle = (symbol: string) => {
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   };
+  useEffect(() => {
+    let active = true;
+    getQoinInstruments().then(({ items }) => {
+      if (!active) return;
+      const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
+      setItems(items.map((item, index) => ({
+        symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
+        market: item.asset_class, detail: item.description, venue: item.venue, provider: item.provider,
+        archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), tint: colors[index % colors.length],
+      })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      setNewsStatus("loading");
+      getQoinNews(newsCategory).then((result) => {
+        if (!active) return;
+        setNews(result.items);
+        setNewsStatus(result.status === "ok" ? "connected" : result.message || result.status);
+      }).catch((error: unknown) => {
+        if (active) setNewsStatus(error instanceof Error ? error.message : "News provider unavailable");
+      });
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, [newsCategory]);
   const data = mode === "Archive" ? archived : discovered;
   useEffect(() => {
     if (!selected) {
@@ -51,7 +90,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
     setVector(null);
     setVectorError("");
     setVectorLoading(true);
-    getInstrumentVector(selected.symbol).then((result) => {
+    getInstrumentVector(selected.engineSymbol).then((result) => {
       if (!current) return;
       if (result.decision_vector && result.features && result.attended_features) {
         setVector(result);
@@ -64,7 +103,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
       if (current) setVectorLoading(false);
     });
     return () => { current = false; };
-  }, [selected?.symbol]);
+  }, [selected?.engineSymbol]);
   const bullish = vector?.decision_vector?.[0] ?? 0;
   const bearish = vector?.decision_vector?.[1] ?? 0;
   const vectorScale = Math.max(0.35, bullish, bearish);
