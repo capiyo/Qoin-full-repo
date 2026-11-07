@@ -50,7 +50,7 @@ export function SignalScreen() {
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState("");
-  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", lookback_hours: "24", warmup_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
+  const [backtestForm, setBacktestForm] = useState({ symbol: "BTCUSDT", venue: "", lookback_hours: "24", warmup_hours: "24", initial_cash: "20000", notional_per_trade: "2000", fee_bps: "10", slippage_bps: "5" });
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
@@ -84,7 +84,7 @@ export function SignalScreen() {
     setBacktestBusy(true); setBacktestError(""); setBacktest(null);
     const end = Date.now();
     try {
-      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, warmup_hours: Number(backtestForm.warmup_hours), initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
+      setBacktest(await runPaperBacktest({ symbol: backtestForm.symbol.trim().toUpperCase(), venue: backtestForm.venue.trim(), start_ts_ms: end - Number(backtestForm.lookback_hours) * 3600000, end_ts_ms: end, warmup_hours: Number(backtestForm.warmup_hours), initial_cash: Number(backtestForm.initial_cash), notional_per_trade: Number(backtestForm.notional_per_trade), fee_bps: Number(backtestForm.fee_bps), slippage_bps: Number(backtestForm.slippage_bps), max_events: 100000 }));
     } catch (err) { setBacktestError(err instanceof Error ? err.message : "Paper replay failed"); }
     finally { setBacktestBusy(false); }
   }
@@ -159,6 +159,7 @@ export function SignalScreen() {
           <Text style={styles.fieldHelp}>Chronological replay of persisted MongoDB events using the active strategy. Simulated buys use ask; sells use bid, plus fees and slippage. Long-only.</Text>
           {([
             ["symbol", "Symbol"],
+            ["venue", "Exact venue ID"],
             ["lookback_hours", "Lookback hours"],
             ["warmup_hours", "Warmup history hours"],
             ["initial_cash", "Starting capital"],
@@ -175,7 +176,7 @@ export function SignalScreen() {
                 style={styles.input} />
             </View>
           ))}
-          <Pressable onPress={runBacktest} disabled={backtestBusy || !backtestForm.symbol.trim() || Number(backtestForm.initial_cash) <= 0 || Number(backtestForm.notional_per_trade) <= 0 || Number(backtestForm.notional_per_trade) > Number(backtestForm.initial_cash) || Number(backtestForm.lookback_hours) <= 0}
+          <Pressable onPress={runBacktest} disabled={backtestBusy || !backtestForm.symbol.trim() || !backtestForm.venue.trim() || Number(backtestForm.initial_cash) <= 0 || Number(backtestForm.notional_per_trade) <= 0 || Number(backtestForm.notional_per_trade) > Number(backtestForm.initial_cash) || Number(backtestForm.lookback_hours) <= 0}
             style={[styles.cycleButton, backtestBusy && styles.disabled]}>
             <Text style={styles.buttonText}>{backtestBusy ? "Replaying event history…" : "Run chronological paper replay"}</Text>
           </Pressable>
@@ -194,7 +195,7 @@ export function SignalScreen() {
             ] as const).map(([label, value]) => (
               <View key={label} style={styles.metricRow}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>
             ))}
-            <Text style={styles.fieldHelp}>Run {backtest.run_id} · {backtest.decisions.length} Mirror decisions persisted · {backtest.strategy_version}</Text>
+            <Text style={styles.fieldHelp}>Run {backtest.run_id} · {backtest.venue} · {backtest.decisions.length} Mirror decisions persisted · {backtest.strategy_version}</Text>
             <Text style={styles.fieldHelp}>{backtest.assumptions}</Text>
             <Text style={styles.panelTitle}>Mirror trace · latest decisions</Text>
             {backtest.decisions.slice(-8).reverse().map((item) => (
