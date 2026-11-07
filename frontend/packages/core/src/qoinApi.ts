@@ -69,8 +69,8 @@ export type QoinHealth = {
 };
 
 function getBaseUrl(): string {
-  // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
-  // Physical devices need a reachable host configured for the development environment.
+  // Android emulator and physical devices must use a gateway host reachable from that device.
+  // A blank Expo URL falls back to loopback for local simulators only.
   const runtime = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };
   };
@@ -121,7 +121,7 @@ export type QoinStreamUpdate = {
   type: string; symbol?: string;
   event?: { event_id?: string; venue?: string; symbol?: string; ts_ms?: number; event_type?: string; price?: number | null; size?: number | null; side?: string | null;
     bid?: number | null; ask?: number | null; funding_rate?: number | null;
-    liquidation_side?: string | null; ts_ms?: number };
+    liquidation_side?: string | null };
   state?: QoinMarketState; decision?: QoinVectorDecision; server_ts_ms?: number;
   missed_updates?: number; note?: string; subscribed_symbols?: string[];
 };
