@@ -34,7 +34,7 @@ Example request:
 - The warmup window (1–168 hours) updates causal feature state before the measurement window. Warmup events do not create signals or trades.
 - The replay is capped at 100,000 fetched events per request. Narrow the time window if the cap is reached.
 - A signal intent queues until the next event containing a valid bid and ask. An opposite signal cancels an unfilled intent. Entries pay the ask plus slippage; exits receive the bid less slippage. Fees are charged on both sides.
-- The current simulator is long-only, one position at a time, no leverage, no shorting, no stop-loss, no funding/financing debit, and no partial fills. `notional_per_trade` is the starting notional. With `reinvest_profits=true` (default), subsequent entry notional scales in proportion to current cash so both gains and losses compound; false keeps the starting notional fixed. The entry is capped by available cash after the entry-fee reserve. This is a baseline simulator, not a broker-specific execution model.
+- The current simulator is long-only, one position at a time, no leverage, no shorting, no stop-loss or daily-loss circuit breaker, no funding/financing debit, and no partial fills. `notional_per_trade` is the starting notional. With `reinvest_profits=true` (default), subsequent entry notional scales in proportion to current cash so both gains and losses compound; false keeps the starting notional fixed. The entry is capped by available cash after the entry-fee reserve. This is a baseline simulator, not a broker-specific execution model.
 - Open positions are marked to estimated liquidation value including exit slippage and fee. They are not force-closed at the end of the replay.
 
 ## Durable Mirror records
@@ -50,7 +50,7 @@ Retrieve the latest 50 runs with `GET /internal/backtests?symbol=BTCUSDT`, or a 
 
 ## Interpretation and limits
 
-A run with zero market events is a data-availability result, not evidence of zero strategy returns. Validate event coverage, timestamps, spread/depth quality, venue consistency, and historical gaps before interpreting performance. Current replay uses the currently active strategy map across the entire selected period; it is not a historical strategy-version walk-forward. It does not yet model stop-losses, short positions, margin, financing/funding payments, partial fills, queue position, market impact, or exchange outages. Do not use its output as a live-trading authorization or profitability claim.
+A run with zero market events is a data-availability result, not evidence of zero strategy returns. Validate event coverage, timestamps, spread/depth quality, venue consistency, and historical gaps before interpreting performance. Current replay uses the currently active strategy map across the entire selected period; it is not a historical strategy-version walk-forward. It does not yet model stop-losses, short positions, margin, financing/funding payments, partial fills, queue position, market impact, or exchange outages. Do not treat the simulator as enforcing your stated $2/day risk ceiling: a daily-loss circuit breaker, stop-loss and broker-specific risk sizing are not implemented yet. Do not use its output as a live-trading authorization or profitability claim.
 
 The API is internal research infrastructure. Keep it on a trusted network; do not expose the internal Axum service publicly.
 
