@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -80,7 +80,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   </section>;
 }
 
-function InstrumentCard({ item, onOpen, action }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void } }) {
+function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision } }) {
   return (
     <article className="instrument-card">
       <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} vector space`}>
@@ -88,7 +88,7 @@ function InstrumentCard({ item, onOpen, action }: { item: Instrument; onOpen: ()
         <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
         <span className="open-arrow" aria-hidden="true">↗</span>
       </button>
-      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider}</p>
+      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider}</p><div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{live?.decision?.action?.toUpperCase() || "NO SIGNAL"}</span></div>
       {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </article>
   );
@@ -105,6 +105,9 @@ export default function App() {
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
+  const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
+  const [showRawEvents, setShowRawEvents] = useState(false);
+  const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
   const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
@@ -185,34 +188,51 @@ export default function App() {
 
 
   useEffect(() => {
-    if (!selected) {
-      setVectorHistory([]); setMarketState(null); setLastEvent(null); setStreamStatus("disconnected");
-      return;
-    }
+    if (!selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
     let active = true;
     setVectorHistory([]);
-    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => {
-      if (active) setVectorHistory(result.items);
-    }).catch(() => { if (active) setVectorHistory([]); });
-    const unsubscribe = subscribeQoinStream([selected.engineSymbol], (update) => {
+    setRawEvents([]);
+    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    getQoinEvents(selected.engineSymbol, 200).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [selected?.engineSymbol]);
+
+  useEffect(() => {
+    const symbols = instruments.map((item) => item.engineSymbol);
+    if (!symbols.length) return;
+    let active = true;
+    const unsubscribe = subscribeQoinStream(symbols, (update) => {
       if (!active) return;
-      if (update.type === "market.update" && update.symbol?.toUpperCase() === selected.engineSymbol.toUpperCase()) {
-        if (update.state) setMarketState(update.state);
-        if (update.event) setLastEvent(update.event);
-        if (update.decision) {
-          setVector(update.decision);
-          setVectorHistory((current) => [...current.slice(-119), {
-            symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
-            magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
-            action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
-            stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
-          }]);
+      if (update.type === "market.update" && update.symbol) {
+        const symbol = update.symbol.toUpperCase();
+        setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
+        if (selected?.engineSymbol.toUpperCase() === symbol) {
+          if (update.state) setMarketState(update.state);
+          if (update.event) {
+            setLastEvent(update.event);
+            setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 200));
+          }
+          if (update.decision) {
+            setVector(update.decision);
+            setVectorHistory((current) => [...current.slice(-119), {
+              symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
+              magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
+              action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
+              stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
+            }]);
+          }
         }
       }
       if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
     }, setStreamStatus);
     return () => { active = false; unsubscribe(); };
-  }, [selected?.engineSymbol]);
+  }, [instruments, selected?.engineSymbol]);
+
+  useEffect(() => {
+    const current = selected ? liveBySymbol[selected.engineSymbol.toUpperCase()] : undefined;
+    setMarketState(current?.state || null);
+    setLastEvent(current?.event || null);
+  }, [selected?.engineSymbol, liveBySymbol]);
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
@@ -241,14 +261,14 @@ export default function App() {
       {tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
-          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
         </section>
       ) : (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
           <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
           <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
@@ -330,7 +350,11 @@ export default function App() {
                   ))}
                 </div>
               </section>
-              <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
+              <section className="raw-tape">
+            <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Raw event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
+            {showRawEvents && <div className="raw-event-list">{rawEvents.slice().reverse().slice(-100).map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
+          </section>
+          <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
           ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
           <p className="disclaimer">The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</p>
