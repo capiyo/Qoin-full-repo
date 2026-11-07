@@ -10,6 +10,7 @@ import {
   getPaperBacktestHistory,
   getPaperSession,
   getPaperSessionHistory,
+  getPaperSessionRuns,
   type PaperBacktestReport,
   type PaperBacktestHistoryItem,
   type MarketForceObservation,
@@ -21,6 +22,7 @@ import {
   type PaperSessionSnapshot,
   type PaperMirrorEvent,
   type PaperTradeHistoryItem,
+  type PaperSessionRun,
 } from "@qoin/core";
 
 const initial: MarketForceObservation = {
@@ -55,6 +57,7 @@ export default function App() {
   const [cycleError, setCycleError] = useState("");
   const [paperSession, setPaperSession] = useState<PaperSessionSnapshot | null>(null);
   const [paperHistory, setPaperHistory] = useState<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }>({ decisions: [], trades: [] });
+  const [paperRuns, setPaperRuns] = useState<PaperSessionRun[]>([]);
   const [paperAccountDraft, setPaperAccountDraft] = useState<PaperAccountConfig>({ symbol: "", venue: "", quote_currency: "USD", initial_cash: 0, notional_per_trade: 0, contract_multiplier: 1, quantity_step: 0.000001, reinvest_profits: true, fee_bps: 10, slippage_bps: 5 });
   const [backtest, setBacktest] = useState<PaperBacktestReport | null>(null);
   const [backtestHistory, setBacktestHistory] = useState<PaperBacktestHistoryItem[]>([]);
@@ -68,7 +71,8 @@ export default function App() {
     getOperatingCycle().then((snapshot) => { setCycle(snapshot); setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     getPaperSession().then(setPaperSession).catch(() => setPaperSession(null));
     getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => setPaperHistory({ decisions: [], trades: [] }));
-    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => undefined); };
+    getPaperSessionRuns(20).then((result) => setPaperRuns(result.runs)).catch(() => setPaperRuns([]));
+    const refreshCycle = () => { getOperatingCycle().then(setCycle).catch(() => setCycle(null)); getPaperSession().then(setPaperSession).catch(() => setPaperSession(null)); getPaperSessionHistory(undefined, 50).then(setPaperHistory).catch(() => undefined); getPaperSessionRuns(20).then((result) => setPaperRuns(result.runs)).catch(() => undefined); };
     const timer = window.setInterval(refreshCycle, 5000);
     return () => window.clearInterval(timer);
   }, []);
@@ -92,6 +96,7 @@ export default function App() {
       else setCycle(await stopOperatingCycle());
       setPaperSession(await getPaperSession());
       setPaperHistory(await getPaperSessionHistory(undefined, 50));
+      setPaperRuns((await getPaperSessionRuns(20)).runs);
     }
     catch (e) { setCycleError(e instanceof Error ? e.message : "Could not update operating cycle"); }
     finally { setCycleBusy(false); }
@@ -201,6 +206,7 @@ export default function App() {
         <p className="hint">Fills use the next valid observed two-sided quote, with configured fees and slippage. Each account is isolated by venue and quote currency.</p>
         {paperSession?.accounts.length ? paperSession.accounts.map((account) => <div className="cycle-diagnostics" key={`${account.venue}:${account.symbol}`}><strong>{account.symbol} · {account.venue} · {account.quote_currency}</strong><div className="cycle-meta"><span>Equity <strong>{account.equity.toFixed(2)}</strong></span><span>Net P/L <strong>{account.net_pnl.toFixed(2)}</strong></span><span>Realized <strong>{account.realized_pnl.toFixed(2)}</strong></span><span>Unrealized <strong>{account.unrealized_pnl.toFixed(2)}</strong></span><span>Fees <strong>{account.fees_paid.toFixed(2)}</strong></span><span>Max DD <strong>{account.max_drawdown_pct.toFixed(2)}%</strong></span><span>Entries / exits <strong>{account.entries} / {account.exits}</strong></span><span>Events <strong>{account.events}</strong></span><span>Position <strong>{account.has_open_position ? `OPEN · ${account.open_position?.quantity.toFixed(6)} @ ${account.open_position?.entry_price.toFixed(5)} · ${account.open_position?.strategy_version} · ${account.open_position?.entry_event_id}` : "FLAT"}</strong></span></div></div>) : <p className="hint">No paper account activity yet. Configure accounts above, then start a paper cycle.</p>}
         <p className="cycle-safety">SIMULATED EXECUTION ONLY · LIVE BROKER ROUTING DISABLED</p>
+        <div className="cycle-diagnostics"><strong>Archived paper sessions</strong>{paperRuns.slice(0, 10).map((run) => <div className="cycle-meta" key={run.cycle_id ?? "unknown"}><span>{run.cycle_id}</span>{run.accounts.map((account) => <span key={`${run.cycle_id}:${account.venue}:${account.symbol}`}>{account.symbol} · {account.venue} · net {account.net_pnl.toFixed(2)} {account.quote_currency} · max DD {account.max_drawdown_pct.toFixed(2)}% · entries/exits {account.entries}/{account.exits}</span>)}</div>)}{!paperRuns.length && <p className="hint">Completed paper sessions will be archived here.</p>}</div>
         <div className="cycle-diagnostics"><strong>Recent Mirror decisions</strong>
           {paperHistory.decisions.slice(0, 8).map((item) => <div className="cycle-meta" key={`${item.venue}:${item.symbol}:${item.event_id}`}><span>{item.symbol} · {item.venue} · {new Date(item.ts_ms).toLocaleTimeString()}</span><span><strong>{item.action.toUpperCase()}</strong> · {item.execution}</span><span>{item.reason}</span><span>Vector {item.decision_vector.map((value) => value.toFixed(3)).join(" / ")} · magnitude {item.magnitude.toFixed(3)} · angle {item.angle_radians.toFixed(3)}</span><span>Features: {Object.entries(item.features).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</span><span>Equity {item.equity.toFixed(2)} {item.quote_currency}</span><span>Strategy {item.strategy_version} · multiplier x{item.contract_multiplier} · step {item.quantity_step} · fee/slip {item.fee_bps}/{item.slippage_bps} bps</span><span>Bull weights: {Object.entries(item.bullish_weights ?? {}).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</span><span>Bear weights: {Object.entries(item.bearish_weights ?? {}).map(([key, value]) => `${key} ${value.toFixed(2)}`).join(" · ")}</span></div>)}
           {!paperHistory.decisions.length && <p className="hint">Mirror decisions appear when configured instruments send events during the paper-session phase.</p>}
