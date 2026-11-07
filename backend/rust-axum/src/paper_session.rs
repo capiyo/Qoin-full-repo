@@ -326,7 +326,7 @@ mod tests {
             event_type: "book".into(), ts_ms, price: None, size: None, side: None, bid, ask,
             bid_size: None, ask_size: None, funding_rate: None, open_interest: None, liquidation_side: None }
     }
-    fn decision(action: &'static str, ts: i64) -> EdgeDecision {
+    fn decision(action: &'static str) -> EdgeDecision {
         EdgeDecision { symbol: "BTCUSDT".into(), strategy_key: "active".into(), strategy_version: "v1".into(),
             features: BTreeMap::new(), attention: vec![], attended_features: vec![], decision_vector: [0.8, 0.1],
             magnitude: 0.8, angle_radians: 0.1, angular_threshold_radians: 0.4, action,
@@ -335,10 +335,10 @@ mod tests {
     #[test]
     fn paper_account_fills_only_on_observed_two_sided_quote_and_closes_on_sell() {
         let mut session = PaperSession::start("cycle-1".into(), &[config()]).unwrap();
-        let (entry, trade) = session.process_event(&event(1000, Some(99.9), Some(100.1)), &decision("buy", 1000)).unwrap();
+        let (entry, trade) = session.process_event(&event(1000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
         assert_eq!(entry.execution, "entered_long");
         assert!(trade.is_none());
-        let (exit, trade) = session.process_event(&event(2000, Some(101.0), Some(101.2)), &decision("sell", 2000)).unwrap();
+        let (exit, trade) = session.process_event(&event(2000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
         assert_eq!(exit.execution, "exited_long");
         assert!(trade.unwrap().net_pnl.is_finite());
         let snapshot = session.snapshot();
@@ -351,7 +351,7 @@ mod tests {
         let mut session = PaperSession::start("cycle-1".into(), &[config()]).unwrap();
         let (queued, _) = session.process_event(&event(1000, None, None), &decision("buy", 1000)).unwrap();
         assert_eq!(queued.execution, "queued_buy_waiting_for_quote");
-        let (filled, _) = session.process_event(&event(2000, Some(99.9), Some(100.1)), &decision("wait", 2000)).unwrap();
+        let (filled, _) = session.process_event(&event(2000, Some(99.9), Some(100.1)), &decision("wait")).unwrap();
         assert_eq!(filled.execution, "filled_pending_buy");
     }
     #[test]
@@ -360,8 +360,8 @@ mod tests {
         instrument.contract_multiplier = 10.0;
         instrument.quantity_step = 0.5;
         let mut session = PaperSession::start("cycle-multiplier".into(), &[instrument]).unwrap();
-        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy", 1_000)).unwrap();
-        let (_, trade) = session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell", 2_000)).unwrap();
+        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
+        let (_, trade) = session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
         let trade = trade.unwrap();
         assert_eq!(trade.quantity, 1.5);
         assert_eq!(trade.contract_multiplier, 10.0);
