@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use mongodb::{
@@ -289,7 +289,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Mirror trace persistence failed","run_id":run_id})));
         }
     }
-    let summary = mongodb::bson::to_document(&serde_json::json!({
+    let summary = match mongodb::bson::to_document(&serde_json::json!({
         "run_id": run_id,
         "symbol": report.symbol,
         "venue": report.venue,
