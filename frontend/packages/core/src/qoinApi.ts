@@ -166,6 +166,12 @@ export type PaperTradeHistoryItem = {
   return_pct: number; exit_reason: string;
 };
 
+export type PaperSessionRun = PaperSessionSnapshot & { archived_at?: unknown };
+
+export function getPaperSessionRuns(limit = 20): Promise<{ runs: PaperSessionRun[] }> {
+  return flowRequest<{ runs: PaperSessionRun[] }>(`/internal/paper-session/runs?limit=${limit}`);
+}
+
 export function getPaperSessionHistory(symbol?: string, limit = 50): Promise<{ decisions: PaperMirrorEvent[]; trades: PaperTradeHistoryItem[] }> {
   const query = new URLSearchParams({ limit: String(limit) });
   if (symbol) query.set("symbol", symbol);
