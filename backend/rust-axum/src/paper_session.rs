@@ -379,6 +379,8 @@ mod tests {
         assert_eq!(trade.quantity, 1.5);
         assert_eq!(trade.contract_multiplier, 10.0);
         assert!((trade.gross_pnl - 11.99175).abs() < 1e-8);
+        let snapshot = session.snapshot();
+        assert!((snapshot.accounts[0].cash - (20_000.0 + trade.net_pnl)).abs() < 1e-8);
     }
 
     #[test]
