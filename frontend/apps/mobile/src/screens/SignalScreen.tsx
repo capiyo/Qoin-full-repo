@@ -49,7 +49,7 @@ export function SignalScreen() {
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
-    const refreshCycle = () => getOperatingCycle().then((snapshot) => { setCycle(snapshot); if (!snapshot.active) setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
+    const refreshCycle = () => getOperatingCycle().then(setCycle).catch(() => setCycle(null));
     refreshCycle();
     const timer = setInterval(refreshCycle, 5000);
     return () => clearInterval(timer);
