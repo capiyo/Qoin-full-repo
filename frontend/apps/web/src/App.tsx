@@ -298,10 +298,12 @@ export default function App() {
             <div className="live-state-grid">
               <div><span>Last price</span><strong>{marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</strong></div>
               <div><span>Spread (bps)</span><strong>{marketState?.spread_bps?.toFixed(3) ?? "—"}</strong></div>
+              <div><span>Signed flow</span><strong>{marketState?.signed_flow?.toFixed(4) ?? "—"}</strong></div>
               <div><span>Order flow imbalance</span><strong>{marketState?.order_flow_imbalance?.toFixed(4) ?? "—"}</strong></div>
               <div><span>Funding rate</span><strong>{marketState?.funding_rate?.toFixed(6) ?? "—"}</strong></div>
               <div><span>Open interest</span><strong>{marketState?.open_interest?.toLocaleString() ?? "—"}</strong></div>
               <div><span>Liquidations</span><strong>{marketState?.liquidation_events ?? "—"}</strong></div>
+              <div><span>Last liquidation side</span><strong>{marketState?.last_liquidation_side || "—"}</strong></div>
               <div><span>Event count</span><strong>{marketState?.event_count ?? "—"}</strong></div>
               <div><span>Total trade size</span><strong>{marketState?.total_trade_size?.toFixed(4) ?? "—"}</strong></div>
               <div><span>Event intensity</span><strong>{marketState?.event_intensity?.toFixed(3) ?? "—"}</strong></div>
