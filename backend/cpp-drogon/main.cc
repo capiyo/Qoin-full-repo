@@ -141,6 +141,28 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/state" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/vector/history", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto limit = req->getParameter("limit");
+        std::string path = "/internal/vector/history";
+        if (!symbol.empty() || !limit.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !limit.empty()) path += "&";
+            if (!limit.empty()) path += "limit=" + drogon::utils::urlEncode(limit);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/instruments", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/instruments");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/news", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto category = req->getParameter("category");
+        proxyGet(req, std::move(cb), "/internal/news" + (category.empty() ? "" : "?category=" + drogon::utils::urlEncode(category)));
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/vector", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
