@@ -132,7 +132,7 @@ export function SignalScreen() {
             <Text style={styles.panelTitle}>Operating cycle</Text>
             <Text style={styles.counter}>{(cycle?.phase ?? "loading").replace(/_/g, " ").toUpperCase()}</Text>
           </View>
-          <Text style={styles.fieldHelp}>5-minute observation → 60-minute signal diagnostics → paper monitoring. Weights stay fixed; no online self-training.</Text>
+          <Text style={styles.fieldHelp}>5-minute observation → 60-minute feature/attention diagnostics → paper monitoring. Coefficients stay fixed; no online self-training.</Text>
           {([
             ["observation_minutes", "Observation (min)"],
             ["weight_evaluation_minutes", "Weight evaluation (min)"],
@@ -150,6 +150,18 @@ export function SignalScreen() {
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Observations / evaluations</Text><Text style={styles.metricValue}>{cycle?.observations ?? 0} / {cycle?.signal_evaluations ?? 0}</Text></View>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>Mean |score| / alignment</Text><Text style={styles.metricValue}>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"} / {cycle?.mean_alignment?.toFixed(3) ?? "—"}</Text></View>
           <View style={styles.metricRow}><Text style={styles.metricLabel}>BUY / SELL / WAIT</Text><Text style={styles.metricValue}>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</Text></View>
+          {cycle && Object.keys(cycle.mean_feature_values).length > 0 ? <>
+            <Text style={styles.panelTitle}>Mean feature activations</Text>
+            {Object.entries(cycle.mean_feature_values).map(([name, value]) => (
+              <View key={name} style={styles.metricRow}><Text style={styles.metricLabel}>{name}</Text><Text style={styles.metricValue}>{value.toFixed(3)}</Text></View>
+            ))}
+          </> : null}
+          {cycle && cycle.mean_attention.length > 0 ? <>
+            <Text style={styles.panelTitle}>Mean attention matrix</Text>
+            {cycle.mean_attention.map((values, index) => (
+              <Text key={index} style={styles.fieldHelp}>Row {index + 1}: {values.map((value) => value.toFixed(3)).join(" · ")}</Text>
+            ))}
+          </> : null}
           <View style={styles.cycleButtons}>
             <Pressable onPress={saveCycle} disabled={cycleBusy || !!cycle?.active} style={[styles.secondaryButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.secondaryButtonText}>Save</Text></Pressable>
             <Pressable onPress={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active} style={[styles.cycleButton, (cycleBusy || !!cycle?.active) && styles.disabled]}><Text style={styles.buttonText}>Start</Text></Pressable>
