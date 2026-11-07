@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Instrument = {
@@ -24,6 +24,7 @@ const seed: Instrument[] = [
 ];
 
 type Tab = "Archive" | "Explore";
+type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
@@ -117,6 +118,17 @@ export default function App() {
   const [newsCategory, setNewsCategory] = useState("general");
   const [macroEvents, setMacroEvents] = useState<QoinMacroEvent[]>([]);
   const [calendarStatus, setCalendarStatus] = useState("loading");
+  const [notifications, setNotifications] = useState<QoinNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const previousActionRef = useRef<Record<string, string>>({});
+  const notifiedEventIdsRef = useRef<Set<string>>(new Set());
+  const unreadNotifications = notifications.filter((item) => !item.read).length;
+  function addNotification(notification: QoinNotification) {
+    setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      try { new Notification(notification.title, { body: notification.body, tag: notification.id }); } catch { /* browser policy */ }
+    }
+  }
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
   useEffect(() => {
@@ -206,6 +218,21 @@ export default function App() {
       if (!active) return;
       if (update.type === "market.update" && update.symbol) {
         const symbol = update.symbol.toUpperCase();
+        if (update.decision?.action) {
+          const action = update.decision.action.toUpperCase();
+          const previous = previousActionRef.current[symbol];
+          if ((action === "BUY" || action === "SELL") && previous !== action) {
+            addNotification({ id: "signal-" + symbol + "-" + action + "-" + (update.server_ts_ms || Date.now()), symbol, title: symbol + " research signal: " + action, body: (update.decision.reason || "The engine decision changed.") + " Magnitude " + (update.decision.magnitude ?? 0).toFixed(3) + ". Research only; no order was placed.", kind: "signal", createdAt: update.server_ts_ms || Date.now(), read: false, details: JSON.stringify(update.decision, null, 2) });
+          }
+          previousActionRef.current[symbol] = action;
+        }
+        if (update.event && (update.event.event_type === "liquidation" || update.event.liquidation_side)) {
+          const eventId = update.event.event_id || symbol + "-" + (update.event.ts_ms || update.server_ts_ms || Date.now());
+          if (!notifiedEventIdsRef.current.has(eventId)) {
+            notifiedEventIdsRef.current.add(eventId);
+            addNotification({ id: "liquidation-" + eventId, symbol, title: symbol + " liquidation event", body: "Liquidation side: " + (update.event.liquidation_side || update.event.side || "not supplied") + ". Price: " + (update.event.price ?? "not supplied") + ".", kind: "liquidation", createdAt: update.event.ts_ms || update.server_ts_ms || Date.now(), read: false, details: JSON.stringify(update.event, null, 2) });
+          }
+        }
         setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
         if (selected?.engineSymbol.toUpperCase() === symbol) {
           if (update.state) setMarketState(update.state);
