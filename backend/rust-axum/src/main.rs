@@ -385,6 +385,8 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         "executed_entries": report.executed_entries,
         "executed_exits": report.executed_exits,
         "skipped_entries": report.skipped_entries,
+        "pending_order": report.pending_order,
+        "pending_signal_ts_ms": report.pending_signal_ts_ms,
         "win_rate_pct": report.win_rate_pct,
         "profit_factor": report.profit_factor,
         "fees_paid": report.fees_paid,
