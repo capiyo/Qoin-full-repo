@@ -59,9 +59,13 @@ export type QoinSignalRequest = {
 };
 
 export type QoinHealth = {
-  status: "ok" | string;
-  mode: "research" | string;
-  live_trading: false;
+  service?: string;
+  status: "ok" | "degraded" | string;
+  mongodb?: boolean;
+  strategy_version?: string;
+  jepa_research_inference?: string;
+  market_streams?: { binance_usdm_enabled?: boolean; finnhub_key_configured?: boolean };
+  live_order_submission?: string;
 };
 
 function getBaseUrl(): string {
