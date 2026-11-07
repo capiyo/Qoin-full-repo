@@ -149,7 +149,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
     setVectorHistory([]);
     setRawEvents([]);
     getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
-    getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
+    getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items.slice().reverse()); }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
 
@@ -357,7 +357,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <Pressable style={styles.rawTapeToggle} onPress={() => setShowRawEvents((value) => !value)}>
                 <Text style={styles.attentionTitle}>Raw event tape · {rawEvents.length} observations</Text><Text style={styles.attentionCaption}>{showRawEvents ? "Hide" : "Show"}</Text>
               </Pressable>
-              {showRawEvents ? rawEvents.slice(-200).reverse().map((event) => <View key={event.event_id} style={styles.rawEvent}>
+              {showRawEvents ? rawEvents.slice(0,200).map((event) => <View key={event.event_id} style={styles.rawEvent}>
                 <Text style={styles.newsMeta}>{event.event_type.toUpperCase()} · {new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</Text>
                 <Text style={styles.newsHeadline}>{JSON.stringify(event)}</Text>
               </View>) : null}
