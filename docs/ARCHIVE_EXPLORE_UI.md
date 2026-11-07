@@ -25,7 +25,7 @@ Message types:
 - `stream.gap`: broadcast backpressure caused dropped messages; clients must refresh REST snapshots before trusting the current display
 - `stream.error`: gateway/upstream stream failure
 
-Clients reconnect with bounded exponential backoff. The server broadcasts only after the event, state snapshot and decision have been persisted. The stream is read-only: it never submits orders.
+Clients reconnect with bounded exponential backoff. The server broadcasts only after the event, state snapshot and decision have been persisted. The stream is read-only: it never submits orders. The current public market stream is unauthenticated because it carries public market observations only; before exposing it broadly, add edge-level connection limits, rate limits and origin controls. Do not put account or portfolio-private data on this channel.
 
 ### Providers currently wired
 
