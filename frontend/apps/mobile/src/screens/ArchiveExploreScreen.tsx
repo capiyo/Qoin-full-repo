@@ -334,6 +334,22 @@ export function ArchiveExploreScreen({ mode }: Props) {
                     {strongest >= 0 ? <Text style={styles.attentionHint}>Strongest attention: {QOIN_FEATURE_NAMES[strongest]} ({weights[strongest].toFixed(2)})</Text> : null}
                   </View>;
                 })}
+                <View style={styles.contributionPanel}>
+                  <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Feature contribution ledger</Text><Text style={styles.attentionCaption}>Weight × attended feature</Text></View>
+                  {QOIN_FEATURE_NAMES.map((name,index) => {
+                    const attended = vector.attended_features?.[index] ?? 0;
+                    const bullishWeight = strategy?.bullish_weights[name] ?? 0;
+                    const bearishWeight = strategy?.bearish_weights[name] ?? 0;
+                    return <View key={name} style={styles.contributionRow}>
+                      <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
+                      <View style={styles.strategyWeightValues}>
+                        <Text style={styles.attentionCaption}>Bull {bullishWeight.toFixed(3)} × {attended.toFixed(3)} = {(bullishWeight*attended).toFixed(4)}</Text>
+                        <Text style={styles.attentionCaption}>Bear {bearishWeight.toFixed(3)} × {attended.toFixed(3)} = {(bearishWeight*attended).toFixed(4)}</Text>
+                      </View>
+                    </View>;
+                  })}
+                  <Text style={styles.disclaimer}>Signed contributions are shown before the aggregate positive clamp. The actual decision vector remains authoritative.</Text>
+                </View>
                 <View style={styles.attentionPanel}>
                   <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Attention matrix</Text><Text style={styles.attentionCaption}>Row → column weights</Text></View>
                   <View style={styles.attentionRow}>
@@ -456,6 +472,8 @@ const styles = StyleSheet.create({
   liveMetric: { width: "47%", gap: 4 },
   featureSpacePanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
   strategyPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  contributionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  contributionRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   strategyGates: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginVertical: 10 },
   strategyWeightRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   strategyWeightValues: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginTop: 5 },
