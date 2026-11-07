@@ -364,6 +364,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         "run_id": run_id,
         "symbol": report.symbol,
         "venue": report.venue,
+        "quote_currency": report.quote_currency,
         "strategy_version": report.strategy_version,
         "start_ts_ms": report.start_ts_ms,
         "end_ts_ms": report.end_ts_ms,
