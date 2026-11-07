@@ -55,7 +55,7 @@ impl PaperAccountConfig {
     fn key(&self) -> String { format!("{}::{}", self.venue, self.symbol) }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct OpenPosition {
     entry_ts_ms: i64,
