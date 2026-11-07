@@ -29,7 +29,7 @@ Clients reconnect with bounded exponential backoff. The server broadcasts only a
 
 ### Providers currently wired
 
-**Binance USD-M public WebSocket** (no API key) subscribes to trade, bookTicker, markPrice and forceOrder streams for the configured symbols. The default set is BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT and DOGEUSDT. Trade aggressor side is inferred only from Binance's buyer-maker flag. Liquidation side is derived from the liquidation order side. The adapter posts observations to the local Axum ingestion endpoint and reconnects with bounded backoff.
+**Binance USD-M public WebSocket** (no API key) subscribes to trade, bookTicker, markPrice and forceOrder streams for the configured symbols. The default set is BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT and DOGEUSDT. A separate 30-second public REST poll ingests open interest for the same symbols. Trade aggressor side is inferred only from Binance's buyer-maker flag. Liquidation side is derived from the liquidation order side. The adapter posts observations to the local Axum ingestion endpoint and reconnects with bounded backoff.
 
 **Finnhub WebSocket** is optional and requires `FINNHUB_API_KEY`. It subscribes to the configured equities, FX, index and commodity symbols and ingests actual provider trade observations. Finnhub trade messages do not provide a reliable aggressor side in this adapter, so side is left unknown; the engine must not fabricate buy/sell pressure from that field. Provider entitlements and symbol coverage vary. Backend logs expose rejected subscriptions and connection failures.
 
@@ -58,7 +58,7 @@ Selecting an instrument opens the vector detail surface:
 
 The display includes the two-component bullish/bearish decision vector and its historical path; a six-axis view of the six normalized engine input features; raw and attended feature values; the complete 6×6 attention matrix; magnitude, angle, strategy version, action and rationale; live state including price, spread, order-flow imbalance, funding, open interest, liquidation count, event count, volatility estimate and state quality; and the most recent raw event plus an expandable raw event tape.
 
-The six-axis chart is a direct visualization of the six normalized input features. It is not a trained embedding or PCA projection. The bullish/bearish plot is the engine's actual two-dimensional decision vector, not a learned latent embedding. Attention weights are deterministic baseline model internals, not causal attribution.
+The six-axis chart is a direct visualization of the six normalized input features. Open interest is visible in market state and raw events but is not currently one of the six decision features. The chart is not a trained embedding or PCA projection. The bullish/bearish plot is the engine's actual two-dimensional decision vector, not a learned latent embedding. Attention weights are deterministic baseline model internals, not causal attribution.
 
 ## Explicit integration gaps and safety boundaries
 
