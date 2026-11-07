@@ -221,3 +221,13 @@ export type QoinMarketEvent = {
 export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: string; items: QoinMarketEvent[]; count: number }> {
   return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
+
+export type QoinStrategy = {
+  strategy_key: string; version: string; status: string;
+  bullish_weights: Record<string, number>; bearish_weights: Record<string, number>;
+  angular_threshold_degrees: number; magnitude_threshold: number; max_spread_bps: number;
+  attention_scale: number; feature_scales: Record<string, number>; updated_at_ms: number;
+};
+export function getQoinStrategy(): Promise<QoinStrategy> {
+  return request<QoinStrategy>("/api/v1/strategy");
+}
