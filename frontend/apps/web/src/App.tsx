@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getQoinHealth, type QoinHealth } from "@qoin/core";
+import { getInstrumentVector, getQoinHealth, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -8,42 +8,36 @@ type Instrument = {
   description: string;
   archived: boolean;
   color: string;
-  vector: { flow: number; liquidity: number; volatility: number; positioning: number };
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", description: "Digital asset · USD", archived: true, color: "#f59e0b", vector: { flow: 0.72, liquidity: 0.48, volatility: 0.64, positioning: -0.22 } },
-  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", description: "Smart-contract network · USD", archived: true, color: "#6477df", vector: { flow: 0.36, liquidity: 0.62, volatility: 0.42, positioning: 0.18 } },
-  { symbol: "SOL/USD", name: "Solana", market: "Crypto", description: "Layer-one network · USD", archived: true, color: "#8b72e8", vector: { flow: -0.18, liquidity: 0.24, volatility: 0.78, positioning: 0.52 } },
-  { symbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", archived: false, color: "#76a85a", vector: { flow: 0.58, liquidity: 0.82, volatility: 0.46, positioning: 0.31 } },
-  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", description: "Major currency pair", archived: false, color: "#4d91d8", vector: { flow: 0.12, liquidity: 0.91, volatility: 0.19, positioning: -0.08 } },
-  { symbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", archived: false, color: "#8895a7", vector: { flow: 0.28, liquidity: 0.86, volatility: 0.27, positioning: 0.14 } },
+  { symbol: "BTC/USD", name: "Bitcoin", market: "Crypto", description: "Digital asset · USD", archived: true, color: "#f59e0b" },
+  { symbol: "ETH/USD", name: "Ethereum", market: "Crypto", description: "Smart-contract network · USD", archived: true, color: "#6477df" },
+  { symbol: "SOL/USD", name: "Solana", market: "Crypto", description: "Layer-one network · USD", archived: true, color: "#8b72e8" },
+  { symbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", archived: false, color: "#76a85a" },
+  { symbol: "EUR/USD", name: "Euro / US Dollar", market: "FX", description: "Major currency pair", archived: false, color: "#4d91d8" },
+  { symbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", archived: false, color: "#8895a7" },
 ];
 
 type Tab = "Archive" | "Explore";
 
-function VectorMap({ instrument }: { instrument: Instrument }) {
-  const v = instrument.vector;
-  const points = [
-    { label: "Order flow", x: 50 + v.flow * 34, y: 50 - v.flow * 22, color: "#2867dc" },
-    { label: "Liquidity", x: 50 + v.liquidity * 28, y: 50 + v.liquidity * 27, color: "#60a5fa" },
-    { label: "Volatility", x: 50 - v.volatility * 32, y: 50 - v.volatility * 26, color: "#8b5cf6" },
-    { label: "Positioning", x: 50 + v.positioning * 35, y: 50 - v.positioning * 30, color: "#0f9f91" },
-  ];
+function VectorMap({ decision }: { decision: QoinVectorDecision | null }) {
+  const bullish = decision?.decision_vector?.[0] ?? 0;
+  const bearish = decision?.decision_vector?.[1] ?? 0;
+  const max = Math.max(0.35, bullish, bearish);
+  const x = 10 + (bullish / max) * 80;
+  const y = 90 - (bearish / max) * 80;
   return (
     <div className="vector-map">
-      <svg viewBox="0 0 100 100" role="img" aria-label={`Illustrative vector-space map for ${instrument.symbol}`}>
+      <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish decision vector">
         <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e9eef6" strokeWidth=".45" /></pattern></defs>
         <rect width="100" height="100" fill="url(#grid)" />
-        <path d="M50 4V96 M4 50H96" stroke="#cbd5e1" strokeWidth=".7" strokeDasharray="2 2" />
-        <circle cx="50" cy="50" r="2.2" fill="#94a3b8" />
-        {points.map((p) => <g key={p.label}><line x1="50" y1="50" x2={p.x} y2={p.y} stroke={p.color} strokeWidth="1.1" strokeDasharray="2 1.5" opacity=".8" /><circle cx={p.x} cy={p.y} r="2.7" fill={p.color} stroke="white" strokeWidth="1" /></g>)}
-        <circle cx="50" cy="50" r="5.5" fill={instrument.color} stroke="white" strokeWidth="1.5" />
+        <path d="M10 8V90H94" fill="none" stroke="#cbd5e1" strokeWidth=".8" />
+        <path d="M10 90L94 90 M10 90L10 8" stroke="#cbd5e1" strokeWidth=".5" strokeDasharray="2 2" />
+        {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#2867dc" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#2867dc" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
       </svg>
-      <div className="axis-label axis-top">FLOW / MOMENTUM</div>
-      <div className="axis-label axis-bottom">LIQUIDITY / DEPTH</div>
-      <div className="axis-label axis-left">NEGATIVE</div>
-      <div className="axis-label axis-right">POSITIVE</div>
+      <div className="axis-label axis-top">BEARISH COMPONENT ↑</div>
+      <div className="axis-label axis-bottom">BULLISH COMPONENT →</div>
     </div>
   );
 }
@@ -69,6 +63,9 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
+  const [vector, setVector] = useState<QoinVectorDecision | null>(null);
+  const [vectorLoading, setVectorLoading] = useState(false);
+  const [vectorError, setVectorError] = useState("");
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); }, []);
 
@@ -116,10 +113,32 @@ export default function App() {
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
         <div className="modal-body">
-          <div className="vector-intro"><div><strong>Force map</strong><p>How this instrument can be represented across interacting market dimensions.</p></div><span className="preview-tag">VECTOR PREVIEW</span></div>
-          <VectorMap instrument={selected} />
-          <div className="vector-legend">{[["#2867dc","Order flow"],["#60a5fa","Liquidity"],["#8b5cf6","Volatility"],["#0f9f91","Positioning"]].map(([color,label]) => <span key={label}><i style={{ background: color }} />{label}</span>)}</div>
-          <div className="dimension-list">{Object.entries(selected.vector).map(([key,value]) => <div key={key}><span>{key.replace("_", " ")}</span><strong>{value > 0 ? "+" : ""}{value.toFixed(2)}</strong><div className="dimension-track"><i style={{ width: `${Math.abs(value) * 100}%`, marginLeft: value < 0 ? "auto" : 0 }} /></div></div>)}</div>
+          <div className="vector-intro"><div><strong>Force map</strong><p>How this instrument can be represented across interacting market dimensions.</p></div><span className="preview-tag">{vector ? "LIVE ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
+          <VectorMap decision={vector} />
+          {vectorLoading ? <p className="disclaimer">Loading the latest persisted engine vector…</p> : vector ? (
+            <>
+              <div className="engine-metrics">
+                <div><span>Decision</span><strong>{vector.action?.toUpperCase() || "WAIT"}</strong></div>
+                <div><span>Magnitude</span><strong>{vector.magnitude?.toFixed(3) ?? "—"}</strong></div>
+                <div><span>Angle</span><strong>{vector.angle_radians?.toFixed(3) ?? "—"} rad</strong></div>
+                <div><span>Strategy</span><strong>{vector.strategy_version || "—"}</strong></div>
+              </div>
+              <div className="dimension-list">
+                {QOIN_FEATURE_NAMES.map((name, index) => {
+                  const raw = vector.features?.[name];
+                  const attended = vector.attended_features?.[index];
+                  const weights = vector.attention?.[index] ?? [];
+                  const strongest = weights.length ? weights.indexOf(Math.max(...weights)) : -1;
+                  return <div className="engine-feature" key={name}>
+                    <span>{name.replaceAll("_", " ")}</span>
+                    <strong>{raw?.toFixed(3) ?? "—"} → {attended?.toFixed(3) ?? "—"}</strong>
+                    {strongest >= 0 && <small>Strongest attention: {QOIN_FEATURE_NAMES[strongest]} ({weights[strongest].toFixed(2)})</small>}
+                  </div>;
+                })}
+              </div>
+              <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
+            </>
+          ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
           <p className="disclaimer">Illustrative coordinates only. Live, timestamped observations and engine-produced embeddings are not connected to this preview. This is not a trading recommendation.</p>
         </div>
         <footer className="modal-footer"><button className="secondary-button" onClick={() => setSelected(null)}>Close</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
