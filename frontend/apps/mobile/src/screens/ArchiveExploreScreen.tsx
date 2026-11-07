@@ -96,7 +96,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
 
-        {mode === "Explore" ? <View style={styles.note}><Text style={styles.noteTitle}>Discovery feed</Text><Text style={styles.noteCopy}>News, macro events and instrument universes will appear when their data sources are connected. No simulated headlines are shown.</Text></View> : null}
+        {mode === "Explore" ? <View style={styles.note}><Text style={styles.noteTitle}>News & events</Text><Text style={styles.noteCopy}>Connect a sourced news and macro-events feed to populate this section. No simulated headlines are shown.</Text></View> : null}
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
       </ScrollView>
 
