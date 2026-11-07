@@ -116,6 +116,7 @@ export function stopOperatingCycle(): Promise<OperatingCycleSnapshot> {
 export type PaperBacktestRequest = {
   symbol: string;
   venue: string;
+  quote_currency: string;
   start_ts_ms: number;
   end_ts_ms: number;
   warmup_hours?: number;
@@ -162,6 +163,7 @@ export type PaperBacktestReport = {
   run_id: string;
   symbol: string;
   venue: string;
+  quote_currency: string;
   strategy_version: string;
   start_ts_ms: number;
   end_ts_ms: number;
@@ -221,7 +223,7 @@ export function runPaperBacktest(input: PaperBacktestRequest): Promise<PaperBack
 }
 
 export type PaperBacktestHistoryItem = Pick<PaperBacktestReport,
-  "run_id" | "symbol" | "venue" | "strategy_version" | "initial_cash" | "reinvest_profits" | "final_equity" |
+  "run_id" | "symbol" | "venue" | "quote_currency" | "strategy_version" | "initial_cash" | "reinvest_profits" | "final_equity" |
   "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" | "warmup_event_count" |
   "executed_entries" | "executed_exits" | "fees_paid">;
 
