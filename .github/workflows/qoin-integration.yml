@@ -102,3 +102,18 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8081/internal/operating-cycle >/tmp/cycle-restored.json
           jq -e '.phase == "stopped" and .observations == 2 and .signal_evaluations == 2' /tmp/cycle-restored.json
+          curl -fsS -X PUT http://127.0.0.1:8081/internal/operating-cycle -H 'content-type: application/json' --data '{"observation_minutes":5,"weight_evaluation_minutes":60,"session_minutes":480,"mode":"paper","paper_accounts":[{"symbol":"ETHUSDT","venue":"ci","quote_currency":"USD","initial_cash":20000,"notional_per_trade":2000,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5}]}' >/tmp/paper-cycle-config.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/start >/tmp/paper-cycle-start.json
+          curl -fsS http://127.0.0.1:8081/internal/paper-session >/tmp/paper-session-active.json
+          jq -e '.active == true and .live_execution_enabled == false and .accounts[0].symbol == "ETHUSDT"' /tmp/paper-session-active.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/operating-cycle/stop >/tmp/paper-cycle-stop.json
+          kill "$AXUM_PID"
+          wait "$AXUM_PID" 2>/dev/null || true
+          ./target/debug/qoin-flow-engine >/tmp/qoin-axum-paper-restarted.log 2>&1 &
+          AXUM_PID=$!
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/health >/tmp/health-paper-restarted.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/internal/paper-session >/tmp/paper-session-restored.json
+          jq -e '.active == false and .accounts[0].symbol == "ETHUSDT" and .live_execution_enabled == false' /tmp/paper-session-restored.json
