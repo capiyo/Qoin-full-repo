@@ -297,7 +297,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         match s.active_cycle.lock() {
             Ok(mut cycle) if cycle.is_active() => {
                 cycle.record_observation();
-                cycle.record_signal_evaluation(decision.magnitude, decision.angle_radians.cos(), decision.action);
+                let directional_score = decision.decision_vector[0] - decision.decision_vector[1];
+                let signed_alignment = (decision.angle_radians * 2.0).cos();
+                cycle.record_signal_evaluation(directional_score, signed_alignment, decision.action);
                 Some(cycle.clone())
             }
             Ok(_) => None,
