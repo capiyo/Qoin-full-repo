@@ -69,6 +69,32 @@ export default function App() {
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); }, []);
 
+  useEffect(() => {
+    if (!selected) {
+      setVector(null);
+      setVectorError("");
+      return;
+    }
+    let current = true;
+    setVector(null);
+    setVectorError("");
+    setVectorLoading(true);
+    getInstrumentVector(selected.symbol).then((result) => {
+      if (!current) return;
+      if (result.decision_vector && result.features && result.attended_features) {
+        setVector(result);
+      } else {
+        setVectorError(result.reason || "No persisted engine vector exists for this instrument yet.");
+      }
+    }).catch((error: unknown) => {
+      if (current) setVectorError(error instanceof Error ? error.message : "Engine vector is unavailable.");
+    }).finally(() => {
+      if (current) setVectorLoading(false);
+    });
+    return () => { current = false; };
+  }, [selected?.symbol]);
+
+
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
