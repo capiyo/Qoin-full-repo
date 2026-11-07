@@ -175,6 +175,7 @@ export function SignalScreen() {
           ))}
           <Text style={styles.panelTitle}>Paper accounts · {cycleConfig.paper_accounts.length}/50</Text>
           <Text style={styles.fieldHelp}>Each venue/symbol uses an isolated quote-currency ledger. Set the contract multiplier and lot step from the venue specification; no FX conversion.</Text>
+          {Object.entries(cycleConfig.paper_accounts.reduce<Record<string, number>>((totals, account) => { totals[account.quote_currency] = (totals[account.quote_currency] ?? 0) + account.initial_cash; return totals; }, {})).map(([currency, total]) => <Text key={currency} style={styles.fieldHelp}>Allocated {currency}: {total.toLocaleString()}</Text>)}
           <TextInput accessibilityLabel="Paper symbol" placeholder="Symbol e.g. BTCUSDT" value={paperAccountDraft.symbol} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, symbol: value }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Exact venue" placeholder="Exact ingestion venue ID" value={paperAccountDraft.venue} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, venue: value }))} style={styles.input} editable={!cycle?.active} />
           <TextInput accessibilityLabel="Quote currency" placeholder="Quote currency e.g. USDT" value={paperAccountDraft.quote_currency} onChangeText={(value) => setPaperAccountDraft((v) => ({ ...v, quote_currency: value }))} style={styles.input} editable={!cycle?.active} />
