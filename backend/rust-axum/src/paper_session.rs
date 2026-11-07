@@ -89,6 +89,14 @@ impl PaperAccount {
             entries: 0, exits: 0, skipped_entries: 0, max_drawdown_pct: 0.0, last_bid: None,
         }
     }
+    fn unrealized_pnl(&self) -> f64 {
+        self.position.as_ref().map(|position| {
+            let bid = self.last_bid.unwrap_or(position.entry_price);
+            let exit_price = bid * (1.0 - self.config.slippage_bps / 10_000.0);
+            let exit_fee = position.quantity * exit_price * self.config.fee_bps / 10_000.0;
+            position.quantity * (exit_price - position.entry_price) - position.entry_fee - exit_fee
+        }).unwrap_or(0.0)
+    }
     fn equity(&self) -> f64 {
         let marked = self.position.as_ref().map(|p| {
             let bid = self.last_bid.unwrap_or(p.entry_price);
@@ -214,13 +222,19 @@ pub struct PaperTradeRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PaperOpenPositionSnapshot {
+    pub entry_ts_ms: i64, pub quantity: f64, pub entry_price: f64, pub entry_fee: f64,
+    pub unrealized_pnl: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PaperAccountSnapshot {
     pub symbol: String, pub venue: String, pub quote_currency: String,
     pub initial_cash: f64, pub cash: f64, pub equity: f64, pub net_pnl: f64,
-    pub realized_pnl: f64, pub fees_paid: f64, pub max_drawdown_pct: f64,
+    pub realized_pnl: f64, pub unrealized_pnl: f64, pub fees_paid: f64, pub max_drawdown_pct: f64,
     pub events: u64, pub decisions: u64, pub buy_signals: u64, pub sell_signals: u64,
     pub wait_signals: u64, pub entries: u64, pub exits: u64, pub skipped_entries: u64,
-    pub has_open_position: bool, pub pending_action: Option<String>,
+    pub has_open_position: bool, pub open_position: Option<PaperOpenPositionSnapshot>, pub pending_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -266,11 +280,15 @@ impl PaperSession {
                 quote_currency: account.config.quote_currency.to_uppercase(),
                 initial_cash: account.config.initial_cash, cash: account.cash, equity,
                 net_pnl: equity - account.config.initial_cash, realized_pnl: account.realized_pnl,
-                fees_paid: account.fees_paid, max_drawdown_pct: account.max_drawdown_pct,
+                unrealized_pnl: account.unrealized_pnl(), fees_paid: account.fees_paid, max_drawdown_pct: account.max_drawdown_pct,
                 events: account.events, decisions: account.decisions, buy_signals: account.buy_signals,
                 sell_signals: account.sell_signals, wait_signals: account.wait_signals,
                 entries: account.entries, exits: account.exits, skipped_entries: account.skipped_entries,
                 has_open_position: account.position.is_some(),
+                open_position: account.position.as_ref().map(|position| PaperOpenPositionSnapshot {
+                    entry_ts_ms: position.entry_ts_ms, quantity: position.quantity, entry_price: position.entry_price,
+                    entry_fee: position.entry_fee, unrealized_pnl: account.unrealized_pnl(),
+                }),
                 pending_action: account.pending.as_ref().map(|pending| pending.action.clone()),
             }
         }).collect();
