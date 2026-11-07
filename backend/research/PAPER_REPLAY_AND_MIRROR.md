@@ -21,6 +21,7 @@ Example request:
   "warmup_hours": 24,
   "initial_cash": 20000,
   "notional_per_trade": 2000,
+  "reinvest_profits": true,
   "fee_bps": 10,
   "slippage_bps": 5,
   "max_events": 100000
@@ -31,7 +32,7 @@ Example request:
 - The warmup window (1–168 hours) updates causal feature state before the measurement window. Warmup events do not create signals or trades.
 - The replay is capped at 100,000 fetched events per request. Narrow the time window if the cap is reached.
 - A fill is possible only on an event containing a valid bid and ask. Entries pay the ask plus slippage; exits receive the bid less slippage. Fees are charged on both sides.
-- The current simulator is long-only, one position at a time, fixed notional per entry, no leverage, no shorting, no stop-loss, no funding/financing debit, and no partial fills. It is a baseline simulator, not a broker-specific execution model.
+- The current simulator is long-only, one position at a time, no leverage, no shorting, no stop-loss, no funding/financing debit, and no partial fills. `notional_per_trade` is the starting notional. With `reinvest_profits=true` (default), subsequent entry notional scales in proportion to current cash so both gains and losses compound; false keeps the starting notional fixed. The entry is capped by available cash after the entry-fee reserve. This is a baseline simulator, not a broker-specific execution model.
 - Open positions are marked to estimated liquidation value including exit slippage and fee. They are not force-closed at the end of the replay.
 
 ## Durable Mirror records
