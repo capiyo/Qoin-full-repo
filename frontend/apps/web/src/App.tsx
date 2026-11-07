@@ -113,7 +113,7 @@ export default function App() {
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
         <div className="modal-body">
-          <div className="vector-intro"><div><strong>Force map</strong><p>How this instrument can be represented across interacting market dimensions.</p></div><span className="preview-tag">{vector ? "LIVE ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
+          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{vector ? "LIVE ENGINE VECTOR" : "ENGINE VECTOR"}</span></div>
           <VectorMap decision={vector} />
           {vectorLoading ? <p className="disclaimer">Loading the latest persisted engine vector…</p> : vector ? (
             <>
@@ -139,7 +139,7 @@ export default function App() {
               <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
           ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
-          <p className="disclaimer">Illustrative coordinates only. Live, timestamped observations and engine-produced embeddings are not connected to this preview. This is not a trading recommendation.</p>
+          <p className="disclaimer">The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</p>
         </div>
         <footer className="modal-footer"><button className="secondary-button" onClick={() => setSelected(null)}>Close</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
       </section></div>}
