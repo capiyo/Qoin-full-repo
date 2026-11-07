@@ -185,7 +185,7 @@ impl PaperAccount {
                         quote_currency: self.config.quote_currency.to_uppercase(), entry_ts_ms: open.entry_ts_ms,
                         exit_ts_ms: event.ts_ms, quantity: open.quantity, entry_price: open.entry_price,
                         exit_price, gross_pnl: gross, fees: total_fees, net_pnl: net,
-                        return_pct: net / (open.quantity * open.entry_price) * 100.0,
+                        return_pct: net / (open.quantity * open.entry_price * self.config.contract_multiplier) * 100.0,
                         exit_reason: "strategy_sell".into(),
                     });
                     execution = if action.signal_ts_ms == event.ts_ms { "exited_long" } else { "filled_pending_sell" }.into();
@@ -235,7 +235,7 @@ pub struct PaperTradeRecord {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PaperOpenPositionSnapshot {
-    pub entry_ts_ms: i64, pub quantity: f64, pub entry_price: f64, pub entry_fee: f64,
+    pub entry_ts_ms: i64, pub quantity: f64, pub contract_multiplier: f64, pub entry_price: f64, pub entry_fee: f64,
     pub unrealized_pnl: f64,
 }
 
@@ -300,7 +300,7 @@ impl PaperSession {
                 entries: account.entries, exits: account.exits, skipped_entries: account.skipped_entries,
                 has_open_position: account.position.is_some(),
                 open_position: account.position.as_ref().map(|position| PaperOpenPositionSnapshot {
-                    entry_ts_ms: position.entry_ts_ms, quantity: position.quantity, entry_price: position.entry_price,
+                    entry_ts_ms: position.entry_ts_ms, quantity: position.quantity, contract_multiplier: account.config.contract_multiplier, entry_price: position.entry_price,
                     entry_fee: position.entry_fee, unrealized_pnl: account.unrealized_pnl(),
                 }),
                 pending_action: account.pending.as_ref().map(|pending| pending.action.clone()),
