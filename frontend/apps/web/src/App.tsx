@@ -107,7 +107,7 @@ export default function App() {
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
-  const [showRawEvents, setShowRawEvents] = useState(false);
+  const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
@@ -193,8 +193,8 @@ export default function App() {
     let active = true;
     setVectorHistory([]);
     setRawEvents([]);
-    getInstrumentVectorHistory(selected.engineSymbol, 120).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
-    getQoinEvents(selected.engineSymbol, 200).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
+    getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items); }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
 
@@ -273,11 +273,11 @@ export default function App() {
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
-            {news.length ? <div className="news-list">{news.slice(0, 30).map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
+            {news.length ? <div className="news-list">{news.map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
           </section>
           <section className="macro-section">
             <div className="news-heading"><div><p className="eyebrow">UPCOMING CATALYSTS</p><h3>Economic calendar</h3><p>Scheduled releases from the configured provider, with actual, estimate and previous values where published.</p></div><span className="news-status">{calendarStatus}</span></div>
-            {macroEvents.length ? <div className="macro-list">{macroEvents.slice(0,40).map((item,index) => <article className="macro-item" key={item.time + item.country + item.event + index}>
+            {macroEvents.length ? <div className="macro-list">{macroEvents.map((item,index) => <article className="macro-item" key={item.time + item.country + item.event + index}>
               <div><strong>{item.event}</strong><small>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</small></div>
               <div className="macro-values"><span>Actual <b>{item.actual ?? "—"}</b></span><span>Estimate <b>{item.estimate ?? "—"}</b></span><span>Previous <b>{item.previous ?? "—"}</b></span></div>
             </article>)}</div> : <p className="provider-empty">{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</p>}
@@ -375,7 +375,7 @@ export default function App() {
           </section>
           <section className="raw-tape">
             <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Raw event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
-            {showRawEvents && <div className="raw-event-list">{rawEvents.slice(-100).reverse().map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
+            {showRawEvents && <div className="raw-event-list">{rawEvents.slice(-200).reverse().map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
           </section>
           <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
