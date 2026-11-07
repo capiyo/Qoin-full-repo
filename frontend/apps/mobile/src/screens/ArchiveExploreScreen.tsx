@@ -13,6 +13,7 @@ type Instrument = {
   detail: string;
   venue: string;
   provider: string;
+  providerStatus?: string;
   archived: boolean;
   tint: string;
 };
@@ -82,7 +83,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
       const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
       setItems(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, detail: item.description, venue: item.venue, provider: item.provider,
+        market: item.asset_class, detail: item.description, venue: item.venue, provider: item.provider, providerStatus: item.provider_status,
         archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), tint: colors[index % colors.length],
       })));
     }).catch(() => undefined);
@@ -222,7 +223,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
               <Text style={styles.arrow}>↗</Text>
             </Pressable>
-            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO SIGNAL"}</Text></View>
+            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO SIGNAL"}</Text></View>
             {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
