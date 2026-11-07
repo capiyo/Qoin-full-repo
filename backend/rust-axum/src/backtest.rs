@@ -221,8 +221,10 @@ pub fn run_backtest(
             spread_bps: state.spread_bps, execution,
         });
         let marked_position = position.as_ref().map(|open| {
-            let mark = last_bid.unwrap_or(open.entry_price);
-            open.quantity * mark
+            let bid = last_bid.unwrap_or(open.entry_price);
+            let liquidation_price = bid * (1.0 - request.slippage_bps / 10_000.0);
+            let estimated_exit_fee = open.quantity * liquidation_price * request.fee_bps / 10_000.0;
+            open.quantity * liquidation_price - estimated_exit_fee
         }).unwrap_or(0.0);
         let equity = cash + marked_position;
         peak_equity = peak_equity.max(equity);
@@ -232,10 +234,17 @@ pub fn run_backtest(
     }
 
     let unrealized_pnl = position.as_ref().map(|open| {
-        let mark = last_bid.unwrap_or(open.entry_price);
-        open.quantity * (mark - open.entry_price) - open.entry_fee
+        let bid = last_bid.unwrap_or(open.entry_price);
+        let liquidation_price = bid * (1.0 - request.slippage_bps / 10_000.0);
+        let estimated_exit_fee = open.quantity * liquidation_price * request.fee_bps / 10_000.0;
+        open.quantity * (liquidation_price - open.entry_price) - open.entry_fee - estimated_exit_fee
     }).unwrap_or(0.0);
-    let final_equity = cash + position.as_ref().map(|open| open.quantity * last_bid.unwrap_or(open.entry_price)).unwrap_or(0.0);
+    let final_equity = cash + position.as_ref().map(|open| {
+        let bid = last_bid.unwrap_or(open.entry_price);
+        let liquidation_price = bid * (1.0 - request.slippage_bps / 10_000.0);
+        let estimated_exit_fee = open.quantity * liquidation_price * request.fee_bps / 10_000.0;
+        open.quantity * liquidation_price - estimated_exit_fee
+    }).unwrap_or(0.0);
     let net_pnl = final_equity - request.initial_cash;
     let closed = trades.iter().filter_map(|trade| trade.net_pnl).collect::<Vec<_>>();
     let winners = closed.iter().filter(|pnl| **pnl > 0.0).count();
@@ -256,7 +265,7 @@ pub fn run_backtest(
         signal_count, buy_signals, sell_signals, wait_signals, executed_entries, executed_exits,
         skipped_entries, win_rate_pct: if closed.is_empty() { None } else { Some(winners as f64 / closed.len() as f64 * 100.0) },
         profit_factor: if gross_loss > 0.0 { Some(gross_profit / gross_loss) } else { None },
-        fees_paid, assumptions: "Long-only; one position at a time; fixed cash notional per entry; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
+        fees_paid, assumptions: "Long-only; one position at a time; fixed cash notional per entry; marketable fills at observed ask/bid plus configured slippage; fees charged on both sides; open positions are marked to estimated liquidation value including exit slippage and fee; no leverage, no shorting, no stop-loss, no financing/funding debit, no partial fills. Only events carrying a fresh valid bid and ask can fill. Results depend on data completeness and supplied cost assumptions.".into(),
         open_position, trades, decisions,
     })
 }
@@ -269,5 +278,17 @@ mod tests {
         let request = BacktestRequest { symbol: "BTCUSDT".into(), start_ts_ms: 10, end_ts_ms: 20,
             initial_cash: 1000.0, notional_per_trade: 100.0, fee_bps: 101.0, slippage_bps: 5.0, max_events: 100 };
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn empty_history_returns_flat_equity_without_inventing_trades() {
+        let request = BacktestRequest { symbol: "BTCUSDT".into(), start_ts_ms: 10, end_ts_ms: 20,
+            initial_cash: 20_000.0, notional_per_trade: 2_000.0, fee_bps: 10.0, slippage_bps: 5.0, max_events: 100 };
+        let report = run_backtest(&request, &[], &EdgeStrategy::baseline(), "empty-run".into()).unwrap();
+        assert_eq!(report.event_count, 0);
+        assert_eq!(report.final_equity, 20_000.0);
+        assert_eq!(report.net_pnl, 0.0);
+        assert!(report.trades.is_empty());
+        assert!(report.decisions.is_empty());
     }
 }
