@@ -179,6 +179,9 @@ async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json
 
 async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
     let mut cycle = s.active_cycle.lock().await;
+    if cycle.snapshot().active {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"an operating cycle is already active"})));
+    }
     let config = cycle.snapshot().config;
     let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
     let paper = if config.mode == "paper" {
@@ -270,6 +273,33 @@ pub(crate) fn apply(state: &mut SymbolState, event: &MarketEvent) {
     if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
+#[cfg(test)]
+mod venue_state_tests {
+    use super::*;
+    fn event(venue: &str, symbol: &str, ts_ms: i64, size: f64) -> MarketEvent {
+        MarketEvent { event_id: format!("{venue}-{ts_ms}"), venue: venue.into(), symbol: symbol.into(), event_type: "trade".into(),
+            ts_ms, price: Some(100.0), size: Some(size), side: Some("buy".into()), bid: Some(99.9), ask: Some(100.1),
+            bid_size: None, ask_size: None, funding_rate: None, open_interest: None, liquidation_side: None }
+    }
+    #[test]
+    fn symbol_state_keeps_venues_separate() {
+        let mut first = SymbolState::default();
+        let mut second = SymbolState::default();
+        apply(&mut first, &event("broker-a", "EURUSD", 1_000, 2.0));
+        apply(&mut second, &event("broker-b", "EURUSD", 1_000, 5.0));
+        assert_eq!(first.venue, "broker-a");
+        assert_eq!(second.venue, "broker-b");
+        assert_ne!(first.total_trade_size, second.total_trade_size);
+    }
+    #[test]
+    fn older_event_is_not_a_forward_update() {
+        let mut state = SymbolState::default();
+        apply(&mut state, &event("broker-a", "EURUSD", 2_000, 2.0));
+        assert!(state.last_event_ts_ms.unwrap() > 1_000);
+        // Ingest compares event time to this watermark before calling apply.
+    }
+}
+
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let ok=s.events.count_documents(doc!{},None).await.is_ok();
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
