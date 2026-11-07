@@ -303,6 +303,10 @@ export default function App() {
               <div><span>Open interest</span><strong>{marketState?.open_interest?.toLocaleString() ?? "—"}</strong></div>
               <div><span>Liquidations</span><strong>{marketState?.liquidation_events ?? "—"}</strong></div>
               <div><span>Event count</span><strong>{marketState?.event_count ?? "—"}</strong></div>
+              <div><span>Total trade size</span><strong>{marketState?.total_trade_size?.toFixed(4) ?? "—"}</strong></div>
+              <div><span>Event intensity</span><strong>{marketState?.event_intensity?.toFixed(3) ?? "—"}</strong></div>
+              <div><span>EWMA abs return</span><strong>{marketState?.ewma_abs_return?.toFixed(6) ?? "—"}</strong></div>
+              <div><span>Last event time</span><strong>{marketState?.last_event_ts_ms ? new Date(marketState.last_event_ts_ms).toLocaleTimeString() : "—"}</strong></div>
               <div><span>State quality</span><strong>{marketState?.state_quality?.toFixed(3) ?? "—"}</strong></div>
             </div>
             <p className="disclaimer">A dash means the provider has not supplied that field. Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}.</p>
