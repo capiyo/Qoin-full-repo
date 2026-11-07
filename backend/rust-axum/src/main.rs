@@ -552,6 +552,8 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         "win_rate_pct": report.win_rate_pct,
         "profit_factor": report.profit_factor,
         "fees_paid": report.fees_paid,
+        "trades": &report.trades,
+        "open_position": &report.open_position,
         "assumptions": report.assumptions,
         "created_at": chrono::Utc::now().timestamp_millis()
     })) {
