@@ -104,16 +104,16 @@ export default function App() {
       </section>
       <section className="panel cycle-panel">
         <div className="panel-heading"><div><p className="eyebrow">OPERATING POLICY</p><h2>Observation → validation → session</h2></div><span className="counter">{cycle?.phase?.replaceAll("_", " ").toUpperCase() ?? "LOADING"}</span></div>
-        <p className="hint">Five-minute initial observation, one-hour weight diagnostics, then a configurable paper session. Existing coefficients remain locked; this phase evaluates them rather than silently training on recent outcomes.</p>
+        <p className="hint">Five-minute initial observation, one-hour signal/weight diagnostics, then a configurable paper-monitoring session. Existing coefficients remain locked; diagnostics do not silently train on recent outcomes.</p>
         <div className="cycle-grid">
           <label className="cycle-field"><span>Observation (minutes)</span><input type="number" min="1" max="120" value={cycleConfig.observation_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, observation_minutes: Number(e.target.value) }))} /></label>
           <label className="cycle-field"><span>Weight evaluation (minutes)</span><input type="number" min="1" max="720" value={cycleConfig.weight_evaluation_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, weight_evaluation_minutes: Number(e.target.value) }))} /></label>
           <label className="cycle-field"><span>Paper session (minutes)</span><input type="number" min="1" max="1440" value={cycleConfig.session_minutes} disabled={!!cycle?.active} onChange={(e) => setCycleConfig((v) => ({ ...v, session_minutes: Number(e.target.value) }))} /></label>
         </div>
-        <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span></div>
+        <div className="cycle-meta"><span>Time remaining: <strong>{cycle ? formatRemaining(cycle.phase_seconds_remaining) : "—"}</strong></span><span>Observations: <strong>{cycle?.observations ?? 0}</strong></span><span>Evaluations: <strong>{cycle?.signal_evaluations ?? 0}</strong></span><span>Mode: <strong>{cycle?.config.mode ?? "paper"}</strong></span><span>Mean |score|: <strong>{cycle?.mean_absolute_score?.toFixed(3) ?? "—"}</strong></span><span>Mean alignment: <strong>{cycle?.mean_alignment?.toFixed(3) ?? "—"}</strong></span><span>BUY / SELL / WAIT: <strong>{cycle?.buy_signals ?? 0} / {cycle?.sell_signals ?? 0} / {cycle?.wait_signals ?? 0}</strong></span></div>
         <div className="cycle-actions"><button className="secondary" onClick={saveCycle} disabled={cycleBusy || !!cycle?.active}>Save schedule</button><button className="primary cycle-start" onClick={() => runCycle("start")} disabled={cycleBusy || !!cycle?.active}>Start cycle</button><button className="secondary" onClick={() => runCycle("stop")} disabled={cycleBusy || !cycle?.active}>Stop cycle</button></div>
         {cycleError && <p className="error" role="alert">{cycleError}</p>}
-        <p className="cycle-safety">Paper/research only · live execution disabled · five-minute observation is not a replacement for historical lookback.</p>
+        <p className="cycle-safety">Signal monitoring only: no simulated fills or orders yet · live execution disabled · five-minute observation is not a replacement for historical lookback.</p>
       </section>
       <div className="layout">
         <section className="panel forces-panel">
