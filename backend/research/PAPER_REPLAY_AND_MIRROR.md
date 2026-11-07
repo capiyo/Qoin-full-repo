@@ -40,9 +40,10 @@ Raw events remain in `market_events`; ingestion state snapshots and decisions re
 
 Each replay writes:
 - `backtest_runs`: run summary, capital/cost assumptions, strategy version and performance metrics.
-- `backtest_decisions`: append-only per-event decision trace, including event ID/time, venue, action, reason, vector magnitude/angle, spread and simulated execution outcome.
+- `backtest_decisions`: append-only per-event decision trace, including event ID/time, venue, action, reason, full feature vector, attention matrix, attended features, decision vector, magnitude/angle, spread and simulated execution outcome.
+- `operating_cycles`: the current five-minute observation / one-hour diagnostic / session state, including counters and score/alignment aggregates. The flow API restores this record on restart and updates it as new ingested events are evaluated.
 
-Retrieve the latest 50 runs with `GET /internal/backtests?symbol=BTCUSDT`, or a specific run and its trace with `GET /internal/backtests/{run_id}`. These collections survive service restarts.
+Retrieve the latest 50 runs with `GET /internal/backtests?symbol=BTCUSDT`, or a specific run and its trace with `GET /internal/backtests/{run_id}`. Configure/start/stop/read the persistent operating cycle through `/internal/operating-cycle`, `/internal/operating-cycle/start`, and `/internal/operating-cycle/stop`. These collections survive service restarts.
 
 ## Interpretation and limits
 
@@ -54,3 +55,6 @@ The API is internal research infrastructure. Keep it on a trusted network; do no
 ## Local client configuration
 
 The flow service defaults to loopback at `127.0.0.1:8081`, and the shared frontend client defaults to `http://127.0.0.1:8081`. Set `VITE_QOIN_FLOW_API_URL` for the web build and `EXPO_PUBLIC_QOIN_FLOW_API_URL` for Expo/mobile when the service is hosted elsewhere. For a physical device on a trusted development LAN, bind the service to a LAN-reachable interface with `QOIN_AXUM_ADDR` and point the app to that machine's LAN address. Do not expose this internal service to the public internet.
+
+
+The operating-cycle session currently records and monitors incoming research decisions; it does not yet generate forward simulated fills or send broker orders. The historical replay endpoint is the current paper-fill simulator. The one-hour diagnostic phase reports score/alignment and decision distributions but does not automatically retune coefficients.
