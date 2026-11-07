@@ -502,10 +502,21 @@ async fn main(){
         memory:Arc::new(RwLock::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active))
     };
-    let cors = CorsLayer::new()\n        .allow_origin([\n            HeaderValue::from_static("http://localhost:5173"),\n            HeaderValue::from_static("http://127.0.0.1:5173"),\n            HeaderValue::from_static("http://localhost:3000"),\n            HeaderValue::from_static("http://127.0.0.1:3000"),\n        ])\n        .allow_methods([Method::GET, Method::POST, Method::PUT])\n        .allow_headers([CONTENT_TYPE]);\n    let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
+    let cors = CorsLayer::new()
+        .allow_origin([
+            HeaderValue::from_static("http://localhost:5173"),
+            HeaderValue::from_static("http://127.0.0.1:5173"),
+            HeaderValue::from_static("http://localhost:3000"),
+            HeaderValue::from_static("http://127.0.0.1:3000"),
+        ])
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
+        .allow_headers([CONTENT_TYPE]);
+    let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/jepa",get(get_jepa_prediction))
-        .route("/internal/backtest",post(run_paper_backtest))\n        .route("/internal/backtests",get(list_backtest_runs))\n        .route("/internal/backtests/:run_id",get(get_backtest_run))
+        .route("/internal/backtest",post(run_paper_backtest))
+        .route("/internal/backtests",get(list_backtest_runs))
+        .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(cors).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
