@@ -49,6 +49,7 @@ pub(crate) struct MarketEvent {
 }
 #[derive(Debug, Clone, Serialize, Default)]
 pub(crate) struct SymbolState {
+    pub(crate) venue: String,
     pub(crate) symbol: String,
     pub(crate) event_count: usize,
     pub(crate) last_event_ts_ms: Option<i64>,
@@ -86,7 +87,7 @@ struct AppState {
     active_strategy: Arc<RwLock<EdgeStrategy>>,
 }
 #[derive(Deserialize)]
-struct SymbolQuery { symbol: Option<String> }
+struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 
 async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
     let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
@@ -201,6 +202,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 pub(crate) fn apply(state: &mut SymbolState, event: &MarketEvent) {
+    state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
@@ -248,10 +250,21 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
-    let snapshot={
+    let state_key = format!("{}::{}", event.venue, event.symbol);
+    let (snapshot, out_of_order) = {
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let state=guard.entry(state_key.clone()).or_default();
+        let late = state.last_event_ts_ms.map(|last| event.ts_ms < last).unwrap_or(false);
+        if !late { apply(state,&event); }
+        (state.clone(), late)
     };
+    if out_of_order {
+        return (StatusCode::ACCEPTED, Json(serde_json::json!({
+            "status":"stored_out_of_order_event_not_applied", "event_id":event.event_id,
+            "venue":event.venue, "symbol":event.symbol,
+            "note":"Event is retained for chronological historical replay but excluded from the forward state and paper session."
+        })));
+    }
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.states.insert_one(state_doc,None).await{
@@ -262,7 +275,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     // changes the existing Version 1 vector decision.
     let jepa_window = if let Some(client) = s.jepa_client.as_ref() {
         match s.jepa_history.write() {
-            Ok(mut histories) => histories.entry(snapshot.symbol.clone()).or_default()
+            Ok(mut histories) => histories.entry(state_key.clone()).or_default()
                 .push_if_due(event.ts_ms, jepa::features_from_state(&snapshot),
                     client.context_steps(), client.min_interval_ms()),
             Err(_) => {
@@ -313,6 +326,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
+    decision_doc.insert("venue", &event.venue);
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
@@ -539,18 +553,28 @@ async fn list_backtest_runs(Query(query): Query<SymbolQuery>, State(s): State<Ap
 
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
-    match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let venue=q.venue;
+    if let Ok(g)=s.memory.read(){
+        let found = if let Some(ref venue) = venue { g.get(&format!("{}::{}", venue, symbol)) }
+            else { g.values().filter(|state| state.symbol == symbol).max_by_key(|state| state.last_event_ts_ms) };
+        if let Some(value)=found { return (StatusCode::OK,Json(serde_json::to_value(value).unwrap_or_default())); }
+    }
+    let mut filter=doc!{"symbol":&symbol};
+    if let Some(ref venue)=venue { filter.insert("venue", venue); }
+    match s.states.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":venue,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state storage unavailable"})))
     }
 }
 async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    match s.decisions.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let venue=q.venue;
+    let mut filter=doc!{"symbol":&symbol};
+    if let Some(ref venue)=venue { filter.insert("venue", venue); }
+    match s.decisions.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"action":"wait","reason":"no decision available"}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":venue,"action":"wait","reason":"no decision available"}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
@@ -617,8 +641,8 @@ async fn main(){
         .build(),None).await.expect("market event replay index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
-    states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
-    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    states.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"stored_at":-1}).build(),None).await.expect("venue-isolated state lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"stored_at":-1}).build(),None).await.expect("venue-isolated decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     backtest_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"run_id":1})
