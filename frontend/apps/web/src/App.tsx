@@ -274,7 +274,12 @@ export default function App() {
     <main className="qoin-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
-        <div className="topbar-right"><span className={`connection-dot ${health ? "connected" : ""}`} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar">Q</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="notification-trigger" aria-label={"Notifications, " + unreadNotifications + " unread"} onClick={() => setNotificationsOpen((value) => !value)}>♧{unreadNotifications > 0 && <i>{unreadNotifications > 99 ? "99+" : unreadNotifications}</i>}</button><button className="avatar">Q</button></div>
+        {notificationsOpen && <section className="notification-panel" aria-label="Notification centre">
+          <div className="notification-panel-heading"><div><strong>Notifications</strong><small>{unreadNotifications} unread · live engine events</small></div><button onClick={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}>Mark read</button></div>
+          {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && <button className="notification-permission" onClick={() => { if ("Notification" in window) void Notification.requestPermission(); }}>Enable desktop alerts</button>}
+          <div className="notification-list">{notifications.length ? notifications.map((item) => <article className={"notification-item " + (item.read ? "is-read" : "")} key={item.id}><div className="notification-item-top"><span>{item.kind.toUpperCase()} · {item.symbol}</span><time>{new Date(item.createdAt).toLocaleTimeString()}</time></div><strong>{item.title}</strong><p>{item.body}</p><details><summary>Inspect trigger payload</summary><pre>{item.details}</pre></details></article>) : <p className="notification-empty">No alerts yet. Signal transitions and liquidation events from the live stream will appear here.</p>}</div>
+        </section>}
       </header>
 
       <section className="welcome">
