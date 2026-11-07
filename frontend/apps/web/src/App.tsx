@@ -173,6 +173,7 @@ export default function App() {
             <div><small>Events / signals</small><strong>{backtest.event_count} / {backtest.signal_count}</strong></div>
             <div><small>Warmup events</small><strong>{backtest.warmup_event_count}</strong></div>
             <div><small>Entries skipped</small><strong>{backtest.skipped_entries}</strong></div>
+            <div><small>Pending intent</small><strong>{backtest.pending_order ?? "—"}</strong></div>
           </div>
           <div className="cycle-meta"><span>Run: <strong>{backtest.run_id}</strong></span><span>Venue: <strong>{backtest.venue}</strong></span><span>Capital unit: <strong>{backtest.quote_currency}</strong></span><span>Compounding: <strong>{backtest.reinvest_profits ? "ON" : "OFF"}</strong></span><span>Strategy: <strong>{backtest.strategy_version}</strong></span><span>Mirror decisions saved: <strong>{backtest.decisions.length}</strong></span></div>
           <p className="hint">{backtest.assumptions}</p>
