@@ -70,6 +70,7 @@ pub struct CycleSnapshot {
     pub mean_absolute_score: Option<f64>,
     pub mean_alignment: Option<f64>,
     pub mean_feature_values: BTreeMap<String, f64>,
+    pub mean_weight_contributions: BTreeMap<String, [f64; 2]>,
     pub mean_attention: Vec<Vec<f64>>,
     pub buy_signals: u64,
     pub sell_signals: u64,
@@ -92,6 +93,8 @@ pub struct OperatingCycle {
     alignment_sum: f64,
     feature_sums: BTreeMap<String, f64>,
     feature_counts: BTreeMap<String, u64>,
+    weight_contribution_sums: BTreeMap<String, [f64; 2]>,
+    weight_contribution_counts: BTreeMap<String, u64>,
     attention_sums: Vec<Vec<f64>>,
     attention_observations: u64,
     buy_signals: u64,
@@ -112,6 +115,8 @@ impl Default for OperatingCycle {
             alignment_sum: 0.0,
             feature_sums: BTreeMap::new(),
             feature_counts: BTreeMap::new(),
+            weight_contribution_sums: BTreeMap::new(),
+            weight_contribution_counts: BTreeMap::new(),
             attention_sums: Vec::new(),
             attention_observations: 0,
             buy_signals: 0,
@@ -141,6 +146,8 @@ impl OperatingCycle {
         self.alignment_sum = 0.0;
         self.feature_sums.clear();
         self.feature_counts.clear();
+        self.weight_contribution_sums.clear();
+        self.weight_contribution_counts.clear();
         self.attention_sums.clear();
         self.attention_observations = 0;
         self.buy_signals = 0;
@@ -170,6 +177,9 @@ impl OperatingCycle {
         decision: &str,
         features: &BTreeMap<String, f64>,
         attention: &[Vec<f64>],
+        attended_features: &[f64],
+        bullish_weights: &BTreeMap<String, f64>,
+        bearish_weights: &BTreeMap<String, f64>,
     ) {
         if self.active && score.is_finite() && alignment.is_finite() {
             self.signal_evaluations = self.signal_evaluations.saturating_add(1);
@@ -179,6 +189,16 @@ impl OperatingCycle {
                 if value.is_finite() {
                     *self.feature_sums.entry(name.clone()).or_insert(0.0) += value;
                     *self.feature_counts.entry(name.clone()).or_insert(0) += 1;
+                }
+            }
+            for (index, name) in crate::edge_strategy::FEATURE_NAMES.iter().enumerate() {
+                if let (Some(attended), Some(bullish), Some(bearish)) = (attended_features.get(index), bullish_weights.get(*name), bearish_weights.get(*name)) {
+                    if attended.is_finite() && bullish.is_finite() && bearish.is_finite() {
+                        let sum = self.weight_contribution_sums.entry((*name).to_owned()).or_insert([0.0, 0.0]);
+                        sum[0] += attended * bullish;
+                        sum[1] += attended * bearish;
+                        *self.weight_contribution_counts.entry((*name).to_owned()).or_insert(0) += 1;
+                    }
                 }
             }
             if !attention.is_empty() && attention.iter().all(|row| row.iter().all(|value| value.is_finite())) {
@@ -238,6 +258,10 @@ impl OperatingCycle {
                 let count = self.feature_counts.get(name).copied().unwrap_or(0);
                 (name.clone(), if count > 0 { sum / count as f64 } else { 0.0 })
             }).collect(),
+            mean_weight_contributions: self.weight_contribution_sums.iter().map(|(name, sums)| {
+                let count = self.weight_contribution_counts.get(name).copied().unwrap_or(0);
+                (name.clone(), if count > 0 { [sums[0] / count as f64, sums[1] / count as f64] } else { [0.0, 0.0] })
+            }).collect(),
             mean_attention: if self.attention_observations > 0 {
                 self.attention_sums.iter().map(|row| row.iter().map(|value| value / self.attention_observations as f64).collect()).collect()
             } else { Vec::new() },
@@ -287,11 +311,14 @@ mod tests {
         cycle.start();
         let features = BTreeMap::from([("ofi".to_owned(), 0.8), ("volatility".to_owned(), 0.2)]);
         cycle.record_observation();
-        cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]]);
+        let weights = BTreeMap::from([("ofi".to_owned(), 0.7), ("volatility".to_owned(), -0.1)]);
+        let bearish = BTreeMap::from([("ofi".to_owned(), -0.7), ("volatility".to_owned(), -0.1)]);
+        cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]], &[0.5, 0.2], &weights, &bearish);
         let snapshot = cycle.snapshot();
         assert_eq!(snapshot.signal_evaluations, 1);
         assert_eq!(snapshot.mean_feature_values.get("ofi"), Some(&0.8));
         assert_eq!(snapshot.mean_attention, vec![vec![0.25, 0.75]]);
+        assert_eq!(snapshot.mean_weight_contributions.get("ofi"), Some(&[0.35, -0.35]));
         assert!(!snapshot.live_execution_enabled);
     }
 }
