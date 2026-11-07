@@ -120,8 +120,8 @@ export type QoinMarketState = {
 export type QoinStreamUpdate = {
   type: string; symbol?: string;
   event?: { event_id?: string; venue?: string; symbol?: string; ts_ms?: number; event_type?: string; price?: number | null; size?: number | null; side?: string | null;
-    bid?: number | null; ask?: number | null; funding_rate?: number | null;
-    liquidation_side?: string | null };
+    bid?: number | null; ask?: number | null; bid_size?: number | null; ask_size?: number | null; funding_rate?: number | null;
+    open_interest?: number | null; liquidation_side?: string | null };
   state?: QoinMarketState; decision?: QoinVectorDecision; server_ts_ms?: number;
   missed_updates?: number; note?: string; subscribed_symbols?: string[];
 };
