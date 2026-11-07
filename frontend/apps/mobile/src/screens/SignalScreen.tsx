@@ -4,8 +4,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   evaluateQoinSignal,
   getQoinHealth,
+  getOperatingCycle,
+  configureOperatingCycle,
+  startOperatingCycle,
+  stopOperatingCycle,
   type MarketForceObservation,
   type QoinSignal,
+  type OperatingCycleConfig,
+  type OperatingCycleSnapshot,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -34,11 +40,19 @@ export function SignalScreen() {
   const [signal, setSignal] = useState<QoinSignal | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");\n  const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);\n  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });\n  const [cycleBusy, setCycleBusy] = useState(false);\n  const [cycleError, setCycleError] = useState("");
+  const [error, setError] = useState("");
+  const [cycle, setCycle] = useState<OperatingCycleSnapshot | null>(null);
+  const [cycleConfig, setCycleConfig] = useState<OperatingCycleConfig>({ observation_minutes: 5, weight_evaluation_minutes: 60, session_minutes: 480, mode: "paper" });
+  const [cycleBusy, setCycleBusy] = useState(false);
+  const [cycleError, setCycleError] = useState("");
 
   useEffect(() => {
     getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
       .catch(() => setApiOnline(false));
+    const refreshCycle = () => getOperatingCycle().then((snapshot) => setCycle(snapshot)).catch(() => setCycle(null));
+    refreshCycle();
+    const timer = setInterval(refreshCycle, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   const activeCount = useMemo(
@@ -46,7 +60,35 @@ export function SignalScreen() {
     [forces],
   );
 
-  async function saveCycle() {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(await configureOperatingCycle(cycleConfig)); }\n    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not save cycle configuration"); }\n    finally { setCycleBusy(false); }\n  }\n\n  async function runCycle(action: "start" | "stop") {\n    setCycleBusy(true); setCycleError("");\n    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }\n    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }\n    finally { setCycleBusy(false); }\n  }\n\n  async function evaluate() {
+  async function saveCycle() {
+    setCycleBusy(true); setCycleError("");
+    try { setCycle(await configureOperatingCycle(cycleConfig)); }
+    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not save cycle configuration"); }
+    finally { setCycleBusy(false); }
+  }
+
+  async function runCycle(action: "start" | "stop") {
+    setCycleBusy(true); setCycleError("");
+    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
+    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
+    finally { setCycleBusy(false); }
+  }
+
+  async function saveCycle() {
+    setCycleBusy(true); setCycleError("");
+    try { setCycle(await configureOperatingCycle(cycleConfig)); }
+    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not save cycle configuration"); }
+    finally { setCycleBusy(false); }
+  }
+
+  async function runCycle(action: "start" | "stop") {
+    setCycleBusy(true); setCycleError("");
+    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
+    catch (err) { setCycleError(err instanceof Error ? err.message : "Could not update operating cycle"); }
+    finally { setCycleBusy(false); }
+  }
+
+  async function evaluate() {
     setBusy(true);
     setError("");
     try {
@@ -186,7 +228,12 @@ const styles = StyleSheet.create({
   fieldHelp: { color: colors.textMuted, fontSize: 10, marginTop: 3 },
   input: { width: 92, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 8, textAlign: "right", fontSize: 13 },
   button: { backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", paddingVertical: 13, marginTop: 18 },
-  disabled: { opacity: 0.55 },\n  cycleButtons: { flexDirection: "row", gap: 8, marginTop: 14 },\n  cycleButton: { flex: 1, backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },\n  secondaryButton: { flex: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },\n  secondaryButtonText: { color: colors.textPrimary, fontSize: 11, fontWeight: "800" },\n  cycleSafety: { color: colors.accentCyan, fontSize: 9, fontWeight: "800", marginTop: 12, letterSpacing: 0.6 },
+  disabled: { opacity: 0.55 },
+  cycleButtons: { flexDirection: "row", gap: 8, marginTop: 14 },
+  cycleButton: { flex: 1, backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },
+  secondaryButton: { flex: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },
+  secondaryButtonText: { color: colors.textPrimary, fontSize: 11, fontWeight: "800" },
+  cycleSafety: { color: colors.accentCyan, fontSize: 9, fontWeight: "800", marginTop: 12, letterSpacing: 0.6 },
   buttonText: { color: colors.bgPrimary, fontSize: 12, fontWeight: "800" },
   error: { color: colors.bearish, fontSize: 11, marginTop: 10 },
   decision: { fontSize: 30, fontWeight: "900", letterSpacing: 2, marginVertical: 8 },
