@@ -158,6 +158,10 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/instruments");
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/calendar", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/calendar");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/news", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto category = req->getParameter("category");
