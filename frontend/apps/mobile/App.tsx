@@ -7,8 +7,6 @@ import { View, Pressable, Text, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import { SettingsScreen } from "./src/screens/SettingsScreen";
-import { SignalScreen } from "./src/screens/SignalScreen";
 import { ArchiveExploreScreen } from "./src/screens/ArchiveExploreScreen";
 
 export type RootStackParamList = {
@@ -18,10 +16,10 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
-type MainTab = "Archive" | "Explore" | "Signal" | "Settings";
+type MainTab = "Archive" | "Explore";
 
 function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainTab) => void }) {
-  const tabs: MainTab[] = ["Archive", "Explore", "Signal", "Settings"];
+  const tabs: MainTab[] = ["Archive", "Explore"];
   return (
     <View style={styles.tabBar}>
       {tabs.map((tab) => (
@@ -40,8 +38,6 @@ function MainTabs() {
     <View style={styles.main}>
       <View style={styles.screen}>
         {tab === "Archive" || tab === "Explore" ? <ArchiveExploreScreen mode={tab} /> : null}
-        {tab === "Signal" ? <SignalScreen /> : null}
-        {tab === "Settings" ? <SettingsScreen /> : null}
       </View>
       <TabBar current={tab} onChange={setTab} />
     </View>
