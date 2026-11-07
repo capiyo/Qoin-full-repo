@@ -196,6 +196,23 @@ export function SignalScreen() {
             ))}
             <Text style={styles.fieldHelp}>Run {backtest.run_id} · {backtest.decisions.length} Mirror decisions persisted · {backtest.strategy_version}</Text>
             <Text style={styles.fieldHelp}>{backtest.assumptions}</Text>
+            <Text style={styles.panelTitle}>Mirror trace · latest decisions</Text>
+            {backtest.decisions.slice(-8).reverse().map((item) => (
+              <View key={item.sequence + "-" + item.event_id} style={styles.mirrorEntry}>
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>{item.action.toUpperCase()} · {item.execution.replace(/_/g, " ")}</Text>
+                  <Text style={styles.metricValue}>{item.magnitude.toFixed(3)}</Text>
+                </View>
+                <Text style={styles.fieldHelp}>{item.reason}</Text>
+              </View>
+            ))}
+            <Text style={styles.panelTitle}>Closed trade ledger · latest 5</Text>
+            {backtest.trades.slice(-5).reverse().map((trade, index) => (
+              <View key={trade.entry_ts_ms + "-" + index} style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Net {trade.net_pnl?.toFixed(2) ?? "—"} · {trade.return_pct?.toFixed(2) ?? "—"}%</Text>
+                <Text style={styles.metricValue}>{trade.exit_reason ?? "open"}</Text>
+              </View>
+            ))}
             {backtest.event_count === 0 ? <Text style={styles.error}>No events found. Ingest historical market data before interpreting this result.</Text> : null}
           </> : null}
         </View>
@@ -284,7 +301,7 @@ const styles = StyleSheet.create({
   cycleButton: { flex: 1, backgroundColor: colors.accentCyan, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },
   secondaryButton: { flex: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingVertical: 12 },
   secondaryButtonText: { color: colors.textPrimary, fontSize: 11, fontWeight: "800" },
-  cycleSafety: { color: colors.accentCyan, fontSize: 9, fontWeight: "800", marginTop: 12, letterSpacing: 0.6 },
+  cycleSafety: { color: colors.accentCyan, fontSize: 9, fontWeight: "800", marginTop: 12, letterSpacing: 0.6 },\n  mirrorEntry: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
   buttonText: { color: colors.bgPrimary, fontSize: 12, fontWeight: "800" },
   error: { color: colors.bearish, fontSize: 11, marginTop: 10 },
   decision: { fontSize: 30, fontWeight: "900", letterSpacing: 2, marginVertical: 8 },
