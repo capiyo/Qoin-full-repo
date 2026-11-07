@@ -425,7 +425,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     };
     if cycle_phase == "paper_session" {
         let mut paper = s.active_paper_session.lock().await;
-        if let Some((mirror, trade)) = paper.process_event(&event, &decision) {
+        if let Some((mut mirror, trade)) = paper.process_event(&event, &decision) {
+            mirror.bullish_weights = strategy.bullish_weights.clone();
+            mirror.bearish_weights = strategy.bearish_weights.clone();
             let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
                 Ok(value) => value,
                 Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
