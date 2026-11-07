@@ -73,11 +73,13 @@ function getBaseUrl(): string {
   // A blank Expo URL falls back to loopback for local simulators only.
   const runtime = globalThis as typeof globalThis & {
     process?: { env?: Record<string, string | undefined> };
+    __QOIN_API_URL?: string;
+    __QOIN_WS_URL?: string;
   };
   const env = runtime.process?.env;
   const location = (globalThis as typeof globalThis & { location?: { protocol?: string; host?: string } }).location;
   const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_API_URL : undefined;
-  const configured = expoConfigured ?? env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
+  const configured = expoConfigured ?? runtime.__QOIN_API_URL ?? env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.VITE_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
   if (configured) return configured.replace(/\/$/, "");
   if (location?.host) return (location.protocol === "https:" ? "https://" : "http://") + location.host;
   return "http://127.0.0.1:8080";
@@ -143,7 +145,7 @@ function getWebSocketBaseUrl(): string {
   const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } };
   const env = runtime.process?.env;
   const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_WS_URL : undefined;
-  const configured = expoConfigured ?? env?.EXPO_PUBLIC_QOIN_WS_URL ?? env?.VITE_QOIN_WS_URL;
+  const configured = expoConfigured ?? runtime.__QOIN_WS_URL ?? env?.EXPO_PUBLIC_QOIN_WS_URL ?? env?.VITE_QOIN_WS_URL;
   if (configured) return configured.replace(/\/$/, "");
   return getBaseUrl().replace(/^https:/, "wss:").replace(/^http:/, "ws:");
 }
