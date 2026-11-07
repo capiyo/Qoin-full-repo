@@ -355,6 +355,20 @@ mod tests {
         assert_eq!(filled.execution, "filled_pending_buy");
     }
     #[test]
+    fn applies_contract_multiplier_and_rounds_to_venue_quantity_step() {
+        let mut instrument = config();
+        instrument.contract_multiplier = 10.0;
+        instrument.quantity_step = 0.5;
+        let mut session = PaperSession::start("cycle-multiplier".into(), &[instrument]).unwrap();
+        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy", 1_000)).unwrap();
+        let (_, trade) = session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell", 2_000)).unwrap();
+        let trade = trade.unwrap();
+        assert_eq!(trade.quantity, 1.5);
+        assert_eq!(trade.contract_multiplier, 10.0);
+        assert!((trade.gross_pnl - 13.5).abs() < 1e-8);
+    }
+
+    #[test]
     fn rejects_duplicate_and_overallocated_accounts() {
         assert!(PaperSession::start("cycle".into(), &[config(), config()]).is_err());
         let mut invalid = config(); invalid.notional_per_trade = 20_001.0;
