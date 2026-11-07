@@ -309,16 +309,16 @@ mod tests {
     fn aggregates_feature_activations_and_attention_without_mutating_weights() {
         let mut cycle = OperatingCycle::default();
         cycle.start();
-        let features = BTreeMap::from([("ofi".to_owned(), 0.8), ("volatility".to_owned(), 0.2)]);
+        let features = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.8), ("funding_pressure".to_owned(), 0.2)]);
         cycle.record_observation();
-        let weights = BTreeMap::from([("ofi".to_owned(), 0.7), ("volatility".to_owned(), -0.1)]);
-        let bearish = BTreeMap::from([("ofi".to_owned(), -0.7), ("volatility".to_owned(), -0.1)]);
+        let weights = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.7), ("funding_pressure".to_owned(), -0.1)]);
+        let bearish = BTreeMap::from([("order_flow_imbalance".to_owned(), -0.7), ("funding_pressure".to_owned(), -0.1)]);
         cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]], &[0.5, 0.2], &weights, &bearish);
         let snapshot = cycle.snapshot();
         assert_eq!(snapshot.signal_evaluations, 1);
-        assert_eq!(snapshot.mean_feature_values.get("ofi"), Some(&0.8));
+        assert_eq!(snapshot.mean_feature_values.get("order_flow_imbalance"), Some(&0.8));
         assert_eq!(snapshot.mean_attention, vec![vec![0.25, 0.75]]);
-        assert_eq!(snapshot.mean_weight_contributions.get("ofi"), Some(&[0.35, -0.35]));
+        assert_eq!(snapshot.mean_weight_contributions.get("order_flow_imbalance"), Some(&[0.35, -0.35]));
         assert!(!snapshot.live_execution_enabled);
     }
 }
