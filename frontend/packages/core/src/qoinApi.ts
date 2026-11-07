@@ -66,6 +66,7 @@ export type QoinHealth = {
   jepa_research_inference?: string;
   market_streams?: { binance_usdm_enabled?: boolean; finnhub_key_configured?: boolean };
   live_order_submission?: string;
+  live_trading?: boolean | string;
 };
 
 function getBaseUrl(): string {
@@ -142,7 +143,7 @@ export type QoinVectorHistory = {
   magnitude: number; angle_radians: number; action: string; stored_at?: string;
 };
 function getWebSocketBaseUrl(): string {
-  const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } };
+  const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> }; __QOIN_WS_URL?: string };
   const env = runtime.process?.env;
   const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_WS_URL : undefined;
   const configured = expoConfigured || runtime.__QOIN_WS_URL || env?.EXPO_PUBLIC_QOIN_WS_URL || env?.VITE_QOIN_WS_URL;
