@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -101,6 +101,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
+  const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
@@ -117,7 +118,7 @@ export default function App() {
   const [macroEvents, setMacroEvents] = useState<QoinMacroEvent[]>([]);
   const [calendarStatus, setCalendarStatus] = useState("loading");
 
-  useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); }, []);
+  useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
   useEffect(() => {
     let active = true;
     getQoinInstruments().then(({ items }) => {
@@ -350,7 +351,25 @@ export default function App() {
                   ))}
                 </div>
               </section>
-              <section className="raw-tape">
+              <section className="strategy-map-panel">
+            <div className="attention-heading"><strong>Active strategy map</strong><span>{strategy?.version || "Strategy unavailable"} · {strategy?.status || "unknown status"}</span></div>
+            {strategy ? <>
+              <div className="strategy-gates">
+                <div><span>Angular threshold</span><strong>{strategy.angular_threshold_degrees.toFixed(2)}°</strong></div>
+                <div><span>Magnitude threshold</span><strong>{strategy.magnitude_threshold.toFixed(3)}</strong></div>
+                <div><span>Maximum spread</span><strong>{strategy.max_spread_bps.toFixed(2)} bps</strong></div>
+                <div><span>Attention scale</span><strong>{strategy.attention_scale.toFixed(3)}</strong></div>
+              </div>
+              <div className="strategy-weights">{QOIN_FEATURE_NAMES.map((name) => <div className="strategy-weight-row" key={name}>
+                <strong>{name.replaceAll("_", " ")}</strong>
+                <span>Bullish <b>{strategy.bullish_weights[name]?.toFixed(3) ?? "—"}</b></span>
+                <span>Bearish <b>{strategy.bearish_weights[name]?.toFixed(3) ?? "—"}</b></span>
+                <span>Scale <b>{strategy.feature_scales[name]?.toFixed(3) ?? "—"}</b></span>
+              </div>)}</div>
+              <p className="disclaimer">MongoDB-backed active strategy parameters. Last update: {new Date(strategy.updated_at_ms).toLocaleString()}.</p>
+            </> : <p className="provider-empty">The active strategy map could not be loaded.</p>}
+          </section>
+          <section className="raw-tape">
             <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Raw event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
             {showRawEvents && <div className="raw-event-list">{rawEvents.slice(-100).reverse().map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
           </section>
