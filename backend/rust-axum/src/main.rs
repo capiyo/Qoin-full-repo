@@ -224,7 +224,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
     let warmup_start = request.start_ts_ms.saturating_sub((request.warmup_hours as i64).saturating_mul(3_600_000));
-    let filter = doc! {"symbol": &request.symbol, "ts_ms": {"$gte": warmup_start, "$lte": request.end_ts_ms}};
+    let filter = doc! {"symbol": &request.symbol, "venue": &request.venue, "ts_ms": {"$gte": warmup_start, "$lte": request.end_ts_ms}};
     let options = FindOptions::builder()
         .sort(doc! {"ts_ms": 1, "event_id": 1})
         .limit(request.max_events as i64 + 1)
@@ -262,7 +262,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
             "max_events":request.max_events
         })));
     }
-    let run_id = format!("{}-{}", request.symbol, chrono::Utc::now().timestamp_millis());
+    let run_id = format!("{}-{}-{}", request.venue, request.symbol, chrono::Utc::now().timestamp_micros());
     let mut report = match run_backtest(&request, &events, &strategy, run_id.clone()) {
         Ok(value) => value,
         Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
@@ -292,6 +292,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
     let summary = mongodb::bson::to_document(&serde_json::json!({
         "run_id": run_id,
         "symbol": report.symbol,
+        "venue": report.venue,
         "strategy_version": report.strategy_version,
         "start_ts_ms": report.start_ts_ms,
         "end_ts_ms": report.end_ts_ms,
@@ -453,7 +454,7 @@ async fn main(){
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     let backtest_runs:Collection<Document>=db.collection("backtest_runs");
     let backtest_decisions:Collection<Document>=db.collection("backtest_decisions");
-    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":1})\n        .build(),None).await.expect("market event replay index");\n    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
