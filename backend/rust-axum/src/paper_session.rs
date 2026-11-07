@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn no_quote_queues_signal_and_next_valid_quote_fills() {
         let mut session = PaperSession::start("cycle-1".into(), &[config()]).unwrap();
-        let (queued, _) = session.process_event(&event(1000, None, None), &decision("buy", 1000)).unwrap();
+        let (queued, _) = session.process_event(&event(1000, None, None), &decision("buy")).unwrap();
         assert_eq!(queued.execution, "queued_buy_waiting_for_quote");
         let (filled, _) = session.process_event(&event(2000, Some(99.9), Some(100.1)), &decision("wait")).unwrap();
         assert_eq!(filled.execution, "filled_pending_buy");
