@@ -216,6 +216,7 @@ export function SignalScreen() {
               ["Events / signals", backtest.event_count + " / " + backtest.signal_count],
               ["Warmup events", String(backtest.warmup_event_count)],
               ["Skipped entries", String(backtest.skipped_entries)],
+              ["Pending intent", backtest.pending_order ?? "—"],
             ] as const).map(([label, value]) => (
               <View key={label} style={styles.metricRow}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>
             ))}
