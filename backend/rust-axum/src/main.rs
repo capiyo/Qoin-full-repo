@@ -241,6 +241,38 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
+    if symbols.is_empty() { return; }
+    let client=reqwest::Client::new();
+    let endpoint=format!("http://{axum_addr}/internal/events");
+    loop {
+        for symbol in &symbols {
+            let response=client.get("https://fapi.binance.com/fapi/v1/openInterest")
+                .query(&[("symbol",symbol.as_str())]).send().await;
+            let response=match response {
+                Ok(value) if value.status().is_success()=>value,
+                Ok(value)=>{tracing::warn!(symbol=%symbol,status=%value.status(),"Binance open-interest endpoint rejected request");continue;}
+                Err(error)=>{tracing::warn!(symbol=%symbol,error=%error,"Binance open-interest request failed");continue;}
+            };
+            let payload:serde_json::Value=match response.json().await {
+                Ok(value)=>value,Err(error)=>{tracing::warn!(symbol=%symbol,error=%error,"invalid Binance open-interest JSON");continue;}
+            };
+            let Some(open_interest)=stream_number(payload.get("openInterest")) else {
+                tracing::warn!(symbol=%symbol,payload=?payload,"Binance open-interest response missing numeric value");
+                continue;
+            };
+            let ts_ms=payload.get("time").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+            let event=MarketEvent {
+                event_id:format!("open_interest:{ts_ms}"),venue:"binance_usdm".into(),symbol:symbol.clone(),
+                event_type:"open_interest".into(),ts_ms,price:None,size:None,side:None,
+                bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,
+                open_interest:Some(open_interest),liquidation_side:None,
+            };
+            submit_market_event(&client,&endpoint,&event,"binance_usdm_open_interest").await;
+        }
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+}
 async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<String>) {
     if symbols.is_empty() { return; }
     let url = format!("wss://ws.finnhub.io?token={token}");
@@ -720,7 +752,10 @@ async fn main(){
         let symbols=env::var("QOIN_BINANCE_STREAM_SYMBOLS").unwrap_or_else(|_|"BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(|v|v.to_ascii_uppercase()).collect::<Vec<_>>();
         let adapter_addr=addr.clone();
+        let open_interest_addr=addr.clone();
+        let open_interest_symbols=symbols.clone();
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
+        tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
     if let Ok(token) = env::var("FINNHUB_API_KEY") {
       if !token.trim().is_empty() {
