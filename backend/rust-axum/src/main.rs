@@ -89,6 +89,8 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
+#[derive(Deserialize)]
+struct PaperHistoryQuery { symbol: Option<String>, limit: Option<i64> }
 
 async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
     let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
@@ -106,6 +108,39 @@ async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(
     s.paper_sessions.update_one(doc! {"session_key": "active"}, doc! {"$set": document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
+}
+
+async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>) -> impl IntoResponse {
+    let cycle_id = s.active_paper_session.lock().await.snapshot().cycle_id;
+    let mut filter = Document::new();
+    if let Some(cycle_id) = cycle_id { filter.insert("cycle_id", cycle_id); }
+    if let Some(symbol) = query.symbol { filter.insert("symbol", symbol); }
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let mut decisions_cursor = match s.paper_session_decisions.find(filter.clone(), FindOptions::builder().sort(doc! {"ts_ms": -1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper Mirror history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history unavailable"}))); }
+    };
+    let mut decisions = Vec::new();
+    loop {
+        match decisions_cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); decisions.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
+        }
+    }
+    let mut trades_cursor = match s.paper_session_trades.find(filter, FindOptions::builder().sort(doc! {"exit_ts_ms": -1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper trade history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"}))); }
+    };
+    let mut trades = Vec::new();
+    loop {
+        match trades_cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); trades.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history read interrupted"}))),
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"decisions":decisions,"trades":trades})))
 }
 
 async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
@@ -705,6 +740,7 @@ async fn main(){
     };
     let mut restored_memory = HashMap::new();
     let state_pipeline = vec![
+        doc! {"$match": {"venue": {"$exists": true}, "symbol": {"$exists": true}}},
         doc! {"$sort": {"stored_at": -1}},
         doc! {"$group": {"_id": {"venue": "$venue", "symbol": "$symbol"}, "latest": {"$first": "$ROOT"}}},
     ];
@@ -752,6 +788,7 @@ async fn main(){
         .route("/internal/operating-cycle/start",post(start_operating_cycle))
         .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
         .route("/internal/paper-session",get(get_paper_session))
+        .route("/internal/paper-session/history",get(get_paper_session_history))
         .route("/internal/backtests",get(list_backtest_runs))
         .route("/internal/backtests/:run_id",get(get_backtest_run))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
