@@ -21,6 +21,8 @@ const seed: Instrument[] = [
 
 type Tab = "Archive" | "Explore";
 
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
+
 function VectorMap({ decision }: { decision: QoinVectorDecision | null }) {
   const bullish = decision?.decision_vector?.[0] ?? 0;
   const bearish = decision?.decision_vector?.[1] ?? 0;
@@ -148,6 +150,8 @@ export default function App() {
                 <div><span>Magnitude</span><strong>{vector.magnitude?.toFixed(3) ?? "—"}</strong></div>
                 <div><span>Angle</span><strong>{vector.angle_radians?.toFixed(3) ?? "—"} rad</strong></div>
                 <div><span>Strategy</span><strong>{vector.strategy_version || "—"}</strong></div>
+                <div><span>Bullish component</span><strong>{vector.decision_vector?.[0].toFixed(3) ?? "—"}</strong></div>
+                <div><span>Bearish component</span><strong>{vector.decision_vector?.[1].toFixed(3) ?? "—"}</strong></div>
               </div>
               <div className="dimension-list">
                 {QOIN_FEATURE_NAMES.map((name, index) => {
@@ -162,6 +166,27 @@ export default function App() {
                   </div>;
                 })}
               </div>
+              <section className="attention-panel" aria-label="Six by six attention weight matrix">
+                <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
+                <div className="attention-grid">
+                  <span className="attention-corner" />
+                  {QOIN_FEATURE_SHORT_NAMES.map((name) => <span className="attention-axis" key={`col-${name}`}>{name}</span>)}
+                  {QOIN_FEATURE_NAMES.map((rowName, rowIndex) => (
+                    <React.Fragment key={rowName}>
+                      <span className="attention-axis attention-row-label">{QOIN_FEATURE_SHORT_NAMES[rowIndex]}</span>
+                      {QOIN_FEATURE_NAMES.map((columnName, columnIndex) => {
+                        const weight = vector.attention?.[rowIndex]?.[columnIndex] ?? 0;
+                        return <span
+                          className="attention-cell"
+                          key={columnName}
+                          title={`${rowName} → ${columnName}: ${weight.toFixed(3)}`}
+                          style={{ background: `rgba(40, 103, 220, ${0.08 + weight * 0.82})`, color: weight > 0.55 ? "#FFFFFF" : "#2B4160" }}
+                        >{weight.toFixed(2)}</span>;
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </section>
               <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
           ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
