@@ -121,6 +121,7 @@ export type PaperBacktestRequest = {
   warmup_hours?: number;
   initial_cash: number;
   notional_per_trade: number;
+  reinvest_profits: boolean;
   fee_bps: number;
   slippage_bps: number;
   max_events?: number;
@@ -165,6 +166,7 @@ export type PaperBacktestReport = {
   start_ts_ms: number;
   end_ts_ms: number;
   initial_cash: number;
+  reinvest_profits: boolean;
   final_equity: number;
   realized_pnl: number;
   unrealized_pnl: number;
@@ -219,7 +221,7 @@ export function runPaperBacktest(input: PaperBacktestRequest): Promise<PaperBack
 }
 
 export type PaperBacktestHistoryItem = Pick<PaperBacktestReport,
-  "run_id" | "symbol" | "venue" | "strategy_version" | "initial_cash" | "final_equity" |
+  "run_id" | "symbol" | "venue" | "strategy_version" | "initial_cash" | "reinvest_profits" | "final_equity" |
   "net_pnl" | "return_pct" | "max_drawdown_pct" | "event_count" | "warmup_event_count" |
   "executed_entries" | "executed_exits" | "fees_paid">;
 
