@@ -274,10 +274,12 @@ export function ArchiveExploreScreen({ mode }: Props) {
                 {[
                   ["Last price", marketState?.last_price?.toString() ?? "—"],
                   ["Spread (bps)", marketState?.spread_bps?.toFixed(3) ?? "—"],
+                  ["Signed flow", marketState?.signed_flow?.toFixed(4) ?? "—"],
                   ["Order flow", marketState?.order_flow_imbalance?.toFixed(4) ?? "—"],
                   ["Funding", marketState?.funding_rate?.toFixed(6) ?? "—"],
                   ["Open interest", marketState?.open_interest?.toString() ?? "—"],
                   ["Liquidations", marketState?.liquidation_events?.toString() ?? "—"],
+                  ["Last liquidation side", marketState?.last_liquidation_side ?? "—"],
                   ["Events", marketState?.event_count?.toString() ?? "—"],
                   ["Total trade size", marketState?.total_trade_size?.toFixed(4) ?? "—"],
                   ["Event intensity", marketState?.event_intensity?.toFixed(3) ?? "—"],
