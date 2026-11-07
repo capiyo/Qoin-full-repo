@@ -211,11 +211,11 @@ export default function App() {
           if (update.state) setMarketState(update.state);
           if (update.event) {
             setLastEvent(update.event);
-            setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 200));
+            setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 1000));
           }
           if (update.decision) {
             setVector(update.decision);
-            setVectorHistory((current) => [...current.slice(-119), {
+            setVectorHistory((current) => [...current.slice(-499), {
               symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
               magnitude: update.decision!.magnitude || 0, angle_radians: update.decision!.angle_radians || 0,
               action: update.decision!.action || "wait", strategy_version: update.decision!.strategy_version,
@@ -375,7 +375,7 @@ export default function App() {
           </section>
           <section className="raw-tape">
             <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Raw event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
-            {showRawEvents && <div className="raw-event-list">{rawEvents.slice(0,200).map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
+            {showRawEvents && <div className="raw-event-list">{rawEvents.slice(0,1000).map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
           </section>
           <p className="disclaimer">{vector.reason || "Engine research output. It is not an order or a profitability claim."}</p>
             </>
