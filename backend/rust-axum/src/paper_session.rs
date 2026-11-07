@@ -87,6 +87,10 @@ struct PaperAccount {
     wait_signals: u64,
     entries: u64,
     exits: u64,
+    wins: u64,
+    losses: u64,
+    gross_profit: f64,
+    gross_loss: f64,
     skipped_entries: u64,
     peak_equity: f64,
     max_drawdown_pct: f64,
@@ -99,7 +103,8 @@ impl PaperAccount {
             cash: config.initial_cash, peak_equity: config.initial_cash, config,
             realized_pnl: 0.0, fees_paid: 0.0, position: None, pending: None,
             events: 0, decisions: 0, buy_signals: 0, sell_signals: 0, wait_signals: 0,
-            entries: 0, exits: 0, skipped_entries: 0, max_drawdown_pct: 0.0, last_bid: None,
+            entries: 0, exits: 0, wins: 0, losses: 0, gross_profit: 0.0, gross_loss: 0.0,
+            skipped_entries: 0, max_drawdown_pct: 0.0, last_bid: None,
         }
     }
     fn unrealized_pnl(&self) -> f64 {
@@ -183,6 +188,8 @@ impl PaperAccount {
                     let net = gross - total_fees;
                     self.cash += open.quantity * exit_price * self.config.contract_multiplier - exit_fee;
                     self.fees_paid += exit_fee; self.realized_pnl += net; self.exits += 1;
+                    if net > 0.0 { self.wins = self.wins.saturating_add(1); self.gross_profit += net; }
+                    else if net < 0.0 { self.losses = self.losses.saturating_add(1); self.gross_loss += -net; }
                     trade = Some(PaperTradeRecord {
                         cycle_id: cycle_id.to_owned(), symbol: self.config.symbol.clone(), venue: self.config.venue.clone(),
                         quote_currency: self.config.quote_currency.to_uppercase(), strategy_version: open.strategy_version.clone(),
@@ -260,7 +267,8 @@ pub struct PaperAccountSnapshot {
     pub initial_cash: f64, pub cash: f64, pub equity: f64, pub net_pnl: f64,
     pub realized_pnl: f64, pub unrealized_pnl: f64, pub fees_paid: f64, pub max_drawdown_pct: f64,
     pub events: u64, pub decisions: u64, pub buy_signals: u64, pub sell_signals: u64,
-    pub wait_signals: u64, pub entries: u64, pub exits: u64, pub skipped_entries: u64,
+    pub wait_signals: u64, pub entries: u64, pub exits: u64, pub wins: u64, pub losses: u64,
+    pub win_rate_pct: f64, pub gross_profit: f64, pub gross_loss: f64, pub profit_factor: Option<f64>, pub skipped_entries: u64,
     pub has_open_position: bool, pub open_position: Option<PaperOpenPositionSnapshot>, pub pending_action: Option<String>,
 }
 
@@ -311,7 +319,11 @@ impl PaperSession {
                 unrealized_pnl: account.unrealized_pnl(), fees_paid: account.fees_paid, max_drawdown_pct: account.max_drawdown_pct,
                 events: account.events, decisions: account.decisions, buy_signals: account.buy_signals,
                 sell_signals: account.sell_signals, wait_signals: account.wait_signals,
-                entries: account.entries, exits: account.exits, skipped_entries: account.skipped_entries,
+                entries: account.entries, exits: account.exits, wins: account.wins, losses: account.losses,
+                win_rate_pct: if account.exits > 0 { account.wins as f64 / account.exits as f64 * 100.0 } else { 0.0 },
+                gross_profit: account.gross_profit, gross_loss: account.gross_loss,
+                profit_factor: if account.gross_loss > 0.0 { Some(account.gross_profit / account.gross_loss) } else { None },
+                skipped_entries: account.skipped_entries,
                 has_open_position: account.position.is_some(),
                 open_position: account.position.as_ref().map(|position| PaperOpenPositionSnapshot {
                     entry_ts_ms: position.entry_ts_ms, entry_event_id: position.entry_event_id.clone(), strategy_version: position.strategy_version.clone(),
