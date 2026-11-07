@@ -338,13 +338,13 @@ export function ArchiveExploreScreen({ mode }: Props) {
                   <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Feature contribution ledger</Text><Text style={styles.attentionCaption}>Weight × attended feature</Text></View>
                   {QOIN_FEATURE_NAMES.map((name,index) => {
                     const attended = vector.attended_features?.[index] ?? 0;
-                    const bullishWeight = strategy?.bullish_weights[name] ?? 0;
-                    const bearishWeight = strategy?.bearish_weights[name] ?? 0;
+                    const bullishWeight = strategy?.bullish_weights[name];
+                    const bearishWeight = strategy?.bearish_weights[name];
                     return <View key={name} style={styles.contributionRow}>
                       <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
                       <View style={styles.strategyWeightValues}>
-                        <Text style={styles.attentionCaption}>Bull {bullishWeight.toFixed(3)} × {attended.toFixed(3)} = {(bullishWeight*attended).toFixed(4)}</Text>
-                        <Text style={styles.attentionCaption}>Bear {bearishWeight.toFixed(3)} × {attended.toFixed(3)} = {(bearishWeight*attended).toFixed(4)}</Text>
+                        <Text style={styles.attentionCaption}>{bullishWeight == null ? "Bullish weight unavailable" : "Bull " + bullishWeight.toFixed(3) + " × " + attended.toFixed(3) + " = " + (bullishWeight*attended).toFixed(4)}</Text>
+                        <Text style={styles.attentionCaption}>{bearishWeight == null ? "Bearish weight unavailable" : "Bear " + bearishWeight.toFixed(3) + " × " + attended.toFixed(3) + " = " + (bearishWeight*attended).toFixed(4)}</Text>
                       </View>
                     </View>;
                   })}
