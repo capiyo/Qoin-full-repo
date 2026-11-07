@@ -116,7 +116,7 @@ impl OperatingCycle {
     }
 
     pub fn snapshot(&self) -> CycleSnapshot {
-        let now = Utc::now().timestamp_millis();
+        let now = now_ms();
         let elapsed_seconds = self.started_at_ms
             .map(|started| ((now - started).max(0) / 1000) as u64)
             .unwrap_or(0);
