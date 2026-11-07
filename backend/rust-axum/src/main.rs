@@ -223,7 +223,8 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         Ok(value) => value.clone(),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
-    let filter = doc! {"symbol": &request.symbol, "ts_ms": {"$gte": request.start_ts_ms, "$lte": request.end_ts_ms}};
+    let warmup_start = request.start_ts_ms.saturating_sub((request.warmup_hours as i64).saturating_mul(3_600_000));
+    let filter = doc! {"symbol": &request.symbol, "ts_ms": {"$gte": warmup_start, "$lte": request.end_ts_ms}};
     let options = FindOptions::builder()
         .sort(doc! {"ts_ms": 1, "event_id": 1})
         .limit(request.max_events as i64 + 1)
@@ -302,6 +303,7 @@ async fn run_paper_backtest(State(s): State<AppState>, Json(request): Json<Backt
         "return_pct": report.return_pct,
         "max_drawdown_pct": report.max_drawdown_pct,
         "event_count": report.event_count,
+        "warmup_event_count": report.warmup_event_count,
         "signal_count": report.signal_count,
         "buy_signals": report.buy_signals,
         "sell_signals": report.sell_signals,
