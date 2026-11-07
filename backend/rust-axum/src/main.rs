@@ -328,7 +328,7 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     loop {
         match cursor.try_next().await {
             Ok(Some(mut document))=>{
-                let stored_at=document.get_datetime("stored_at").ok().map(|value|chrono::DateTime::from_timestamp_millis(value.timestamp_millis()).map(|v|v.to_rfc3339()).unwrap_or_default());
+                let stored_at=document.get_datetime("stored_at").ok().map(|value|chrono::DateTime::<chrono::Utc>::from_timestamp_millis(value.timestamp_millis()).map(|v|v.to_rfc3339()).unwrap_or_default());
                 document.remove("_id"); document.remove("stored_at");
                 let mut value= mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default();
                 if let (Some(object),Some(timestamp))=(value.as_object_mut(),stored_at){object.insert("stored_at".into(),serde_json::Value::String(timestamp));}
