@@ -108,10 +108,17 @@ async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(
 
 async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
     let cycle = s.active_cycle.lock().await;
-    let cycle_active = cycle.snapshot().phase == "paper_session" && cycle.snapshot().config.mode == "paper";
+    let cycle_snapshot = cycle.snapshot();
+    let cycle_active = cycle_snapshot.active && cycle_snapshot.config.mode == "paper";
     drop(cycle);
     let mut session = s.active_paper_session.lock().await;
-    if !cycle_active && session.is_active() { session.stop(); }
+    if !cycle_active && session.is_active() {
+        session.stop();
+        if let Err(error) = persist_paper_session(&s, &session).await {
+            tracing::error!(error=%error, "paper session completion persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state unavailable"})));
+        }
+    }
     (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
 }
 
