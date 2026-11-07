@@ -46,7 +46,7 @@ export default function App() {
 
   useEffect(() => {
     getQoinHealth().then(setHealth).catch(() => setHealth(null));
-    const refreshCycle = () => getOperatingCycle().then((snapshot) => { setCycle(snapshot); }).catch(() => setCycle(null));
+    const refreshCycle = () => getOperatingCycle().then((snapshot) => { setCycle(snapshot); if (!snapshot.active) setCycleConfig(snapshot.config); }).catch(() => setCycle(null));
     refreshCycle();
     const timer = window.setInterval(refreshCycle, 5000);
     return () => window.clearInterval(timer);
@@ -74,20 +74,6 @@ export default function App() {
   function formatRemaining(seconds: number) {
     const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60); const secs = seconds % 60;
     return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;
-  }
-
-  async function saveCycle() {
-    setCycleBusy(true); setCycleError("");
-    try { setCycle(await configureOperatingCycle(cycleConfig)); }
-    catch (e) { setCycleError(e instanceof Error ? e.message : "Could not save cycle configuration"); }
-    finally { setCycleBusy(false); }
-  }
-
-  async function runCycle(action: "start" | "stop") {
-    setCycleBusy(true); setCycleError("");
-    try { setCycle(action === "start" ? await startOperatingCycle() : await stopOperatingCycle()); }
-    catch (e) { setCycleError(e instanceof Error ? e.message : "Could not update operating cycle"); }
-    finally { setCycleBusy(false); }
   }
 
   async function evaluate() {
