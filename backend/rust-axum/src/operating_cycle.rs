@@ -268,4 +268,18 @@ mod tests {
         cycle.start();
         assert!(cycle.configure(CycleConfig::default()).is_err());
     }
+
+    #[test]
+    fn aggregates_feature_activations_and_attention_without_mutating_weights() {
+        let mut cycle = OperatingCycle::default();
+        cycle.start();
+        let features = BTreeMap::from([("ofi".to_owned(), 0.8), ("volatility".to_owned(), 0.2)]);
+        cycle.record_observation();
+        cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]]);
+        let snapshot = cycle.snapshot();
+        assert_eq!(snapshot.signal_evaluations, 1);
+        assert_eq!(snapshot.mean_feature_values.get("ofi"), Some(&0.8));
+        assert_eq!(snapshot.mean_attention, vec![vec![0.25, 0.75]]);
+        assert!(!snapshot.live_execution_enabled);
+    }
 }
