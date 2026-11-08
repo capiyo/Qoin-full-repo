@@ -48,7 +48,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
     }
     let mut state=ReplayState::default();
     let mut cash=initial_capital; let mut position=0.0; let mut position_entry_cost=0.0; let mut fees=0.0; let mut slippage=0.0;
-    let mut peak=initial_capital; let mut max_dd=0.0; let mut fills=Vec::new();
+    let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     for event in &events {
         if let Some(price)=event.price.filter(|v|*v>0.0) {
