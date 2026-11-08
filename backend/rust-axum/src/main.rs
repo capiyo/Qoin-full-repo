@@ -252,6 +252,76 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+
+#[derive(Deserialize)]
+struct BacktestQuery {
+    symbol: Option<String>,
+    from_ts_ms: Option<i64>,
+    to_ts_ms: Option<i64>,
+    limit: Option<i64>,
+    initial_capital: Option<f64>,
+    fee_bps: Option<f64>,
+    slippage_bps: Option<f64>,
+}
+async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
+    let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
+    if symbol.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol is required"})));
+    }
+    let from_ts_ms = q.from_ts_ms.unwrap_or(0);
+    let to_ts_ms = q.to_ts_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    if from_ts_ms < 0 || to_ts_ms <= 0 || from_ts_ms > to_ts_ms {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid replay time range"})));
+    }
+    let limit = q.limit.unwrap_or(50_000).clamp(1, 50_000);
+    let filter = doc! {"symbol": &symbol, "ts_ms": {"$gte": from_ts_ms, "$lte": to_ts_ms}};
+    let options = FindOptions::builder()
+        .sort(doc! {"ts_ms": 1, "event_id": 1})
+        .limit(limit)
+        .build();
+    let mut cursor = match s.events.find(filter, Some(options)).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(error=%error, symbol=%symbol, "backtest event query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"historical events unavailable"})));
+        }
+    };
+    let mut events = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document)) => {
+                document.remove("_id");
+                match mongodb::bson::from_document::<backtest::ReplayEvent>(document) {
+                    Ok(event) => events.push(event),
+                    Err(error) => {
+                        tracing::error!(error=%error, symbol=%symbol, "stored event could not be decoded for replay");
+                        return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored event schema is not replay-compatible"})));
+                    }
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                tracing::error!(error=%error, symbol=%symbol, "backtest event cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"historical event read failed"})));
+            }
+        }
+    }
+    let strategy = match s.active_strategy.read() {
+        Ok(strategy) => strategy.clone(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
+    };
+    match backtest::replay(
+        events,
+        &strategy,
+        q.initial_capital.unwrap_or(10_000.0),
+        q.fee_bps.unwrap_or(10.0),
+        q.slippage_bps.unwrap_or(5.0),
+    ) {
+        Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
+        Err(message) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":message}))),
+    }
+}
+
 async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
     if symbols.is_empty() { return; }
     let client=reqwest::Client::new();
