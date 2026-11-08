@@ -182,6 +182,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [notifications, setNotifications] = useState<QoinNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -450,11 +451,19 @@ export function ArchiveExploreScreen({ mode }: Props) {
       <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
         <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={(event) => event.stopPropagation()}>
           <View style={styles.accountIdentity}><View style={styles.accountAvatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || "Qoin member"}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || "Signed in"}</Text></View></View>
-          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); Alert.alert("Profile", firebaseUser?.email || "Your Qoin profile"); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
+          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setProfileOpen(true); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
           <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setNotificationsOpen(true); }}><Text style={styles.accountActionText}>Notifications {unreadNotifications ? "· " + unreadNotifications + " unread" : ""}</Text></Pressable>
           <Pressable style={styles.accountAction} disabled={avatarBusy} onPress={() => void chooseAvatar()}><Text style={styles.accountActionText}>{avatarBusy ? "Uploading picture…" : "Change profile picture"}</Text></Pressable>
           <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); void signOutQoinUser().catch((error) => Alert.alert("Sign out failed", error instanceof Error ? error.message : "Try again.")); }}><Text style={styles.accountActionText}>Sign out</Text></Pressable>
         </Pressable></Pressable>
+      </Modal>
+      <Modal visible={profileOpen} transparent animationType="fade" onRequestClose={() => setProfileOpen(false)}>
+        <View style={styles.modalShade}><View style={styles.profileModal}>
+          <View style={styles.modalHeader}><View><Text style={styles.kicker}>YOUR ACCOUNT</Text><Text style={styles.modalTitle}>Profile</Text></View><Pressable onPress={() => setProfileOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
+          <View style={styles.profileIdentity}><View style={styles.profileAvatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || "Qoin member"}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || ""}</Text></View></View>
+          <Text style={styles.profileUidLabel}>FIREBASE USER ID</Text><Text selectable style={styles.profileUid}>{firebaseUser?.uid || ""}</Text>
+          <Pressable style={styles.backtestRun} onPress={() => { setProfileOpen(false); setAccountOpen(true); }}><Text style={styles.backtestRunText}>Account options</Text></Pressable>
+        </View></View>
       </Modal>
       <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
         <View style={styles.modalShade}><View style={styles.notificationModal}>
@@ -657,6 +666,11 @@ const styles = StyleSheet.create({
   accountEmail: { color: "#8794A7", fontSize: 9, marginTop: 3 },
   accountAction: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 11 },
   accountActionText: { color: "#43546C", fontSize: 11, fontWeight: "600" },
+  profileModal: { width: "100%", paddingBottom: 20, borderTopLeftRadius: 21, borderTopRightRadius: 21, backgroundColor: "#FFFFFF", overflow: "hidden" },
+  profileIdentity: { flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 18, paddingVertical: 16 },
+  profileAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  profileUidLabel: { color: "#8996A8", fontSize: 8, fontWeight: "800", letterSpacing: 1, paddingHorizontal: 18, marginTop: 8 },
+  profileUid: { color: "#52637A", fontSize: 9, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 15 },
   hero: { paddingTop: 24, paddingBottom: 25 },
   kicker: { color: "#2867DC", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
   heroTitle: { color: "#1B2C45", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
