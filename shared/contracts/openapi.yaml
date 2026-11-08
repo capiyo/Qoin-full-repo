@@ -87,6 +87,10 @@ paths:
           name: max_participation_rate
           description: Maximum fraction of observed trade size or side-specific top-of-book size that one fill may consume.
           schema: { type: number, exclusiveMinimum: 0, maximum: 1, default: 0.1 }
+        - in: query
+          name: market_impact_bps
+          description: Maximum impact coefficient; each fill applies coefficient times squared participation ratio. Combined with slippage it must remain below 10000 bps.
+          schema: { type: number, minimum: 0, maximum: 1000, default: 5 }
       responses:
         '200': { description: Replay metrics, fills, and assumptions }
         '413': { description: Replay event limit reached }

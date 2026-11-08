@@ -156,7 +156,7 @@ int main() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/backtest", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        const auto names = {"symbol", "venue", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps", "latency_ms", "max_participation_rate"};
+        const auto names = {"symbol", "venue", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps", "latency_ms", "max_participation_rate", "market_impact_bps"};
         std::string path = "/internal/backtest";
         bool first = true;
         for (const auto* name : names) {

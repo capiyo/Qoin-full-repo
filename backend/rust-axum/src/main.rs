@@ -265,6 +265,7 @@ struct BacktestQuery {
     slippage_bps: Option<f64>,
     latency_ms: Option<i64>,
     max_participation_rate: Option<f64>,
+    market_impact_bps: Option<f64>,
 }
 async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
     let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
@@ -334,6 +335,7 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
         q.slippage_bps.unwrap_or(5.0),
         q.latency_ms.unwrap_or(0),
         q.max_participation_rate.unwrap_or(0.10),
+        q.market_impact_bps.unwrap_or(5.0),
     ) {
         Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
         Err(message) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":message}))),

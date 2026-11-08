@@ -192,6 +192,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   const [slippage,setSlippage]=useState("5");
   const [latency,setLatency]=useState("0");
   const [participation,setParticipation]=useState("0.1");
+  const [impact,setImpact]=useState("5");
   const [from,setFrom]=useState("");
   const [to,setTo]=useState("");
   const [result,setResult]=useState<QoinBacktestResult|null>(null);
@@ -203,7 +204,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
     setBusy(true);setStatus("");setResult(null);
     try {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
-      const initialCapital=Number(capital); const feeBps=Number(fee); const slippageBps=Number(slippage); const latencyMs=Number(latency); const participationRate=Number(participation);
+      const initialCapital=Number(capital); const feeBps=Number(fee); const slippageBps=Number(slippage); const latencyMs=Number(latency); const participationRate=Number(participation); const impactBps=Number(impact);
       if(from && !Number.isFinite(fromMs)) throw new Error("Invalid start date");
       if(to && !Number.isFinite(toMs)) throw new Error("Invalid end date");
       if(fromMs !== undefined && toMs !== undefined && fromMs > toMs) throw new Error("Start date must be before or equal to end date.");
@@ -212,8 +213,9 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
       if(!Number.isFinite(slippageBps) || slippageBps < 0) throw new Error("Slippage must be a finite, non-negative number of basis points.");
       if(!Number.isInteger(latencyMs) || latencyMs < 0 || latencyMs > 60000) throw new Error("Latency must be a whole number between 0 and 60000 milliseconds.");
       if(!Number.isFinite(participationRate) || participationRate <= 0 || participationRate > 1) throw new Error("Maximum liquidity participation must be greater than 0 and no more than 1.");
+      if(!Number.isFinite(impactBps) || impactBps < 0 || impactBps > 1000 || slippageBps + impactBps >= 10000) throw new Error("Market impact must be 0–1000 bps and combined slippage/impact must stay below 10000 bps.");
       const output=await runQoinBacktest({symbol,venue,from_ts_ms:fromMs,to_ts_ms:toMs,
-        initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,latency_ms:latencyMs,max_participation_rate:participationRate,limit:10000});
+        initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,latency_ms:latencyMs,max_participation_rate:participationRate,market_impact_bps:impactBps,limit:10000});
       setResult(output);setStatus("Replay completed from persisted events.");
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
     finally {setBusy(false);}
@@ -232,6 +234,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
       <label>Slippage (bps) <input type="number" min="0" step="any" value={slippage} onChange={e=>setSlippage(e.target.value)} /></label>
       <label>Latency (ms) <input type="number" min="0" max="60000" step="1" value={latency} onChange={e=>setLatency(e.target.value)} /></label>
       <label>Max liquidity participation (0–1) <input type="number" min="0.001" max="1" step="0.01" value={participation} onChange={e=>setParticipation(e.target.value)} /></label>
+      <label>Market impact (bps) <input type="number" min="0" max="1000" step="any" value={impact} onChange={e=>setImpact(e.target.value)} /></label>
       <button onClick={run} disabled={busy}>{busy?"Replaying…":"Run replay"}</button>
     </div>
     {status && <p className="disclaimer" role="status">{status}</p>}
@@ -249,12 +252,14 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
         <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
         <div><span>Submission latency</span><strong>{result.latency_ms} ms</strong></div>
         <div><span>Max liquidity participation</span><strong>{(result.max_participation_rate * 100).toFixed(1)}%</strong></div>
+        <div><span>Impact coefficient</span><strong>{result.market_impact_bps.toFixed(2)} bps</strong></div>
+        <div><span>Market impact cost</span><strong>{result.market_impact_paid.toFixed(4)}</strong></div>
         <div><span>Net funding (received +)</span><strong>{result.net_funding_cashflow.toFixed(4)}</strong></div>
         <div><span>Funding settlements</span><strong>{result.funding_settlements}</strong></div>
       </div>
       <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
-      <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Order</th><th>Decision / submission / fill</th><th>Action</th><th>Price</th><th>This fill / cumulative / target / remaining</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
-      <tbody>{result.fills.map((fill,index)=><tr key={fill.order_id+"-"+fill.event_id+"-"+index}><td>{fill.order_id} · {fill.status}</td><td>{new Date(fill.decision_ts_ms).toLocaleTimeString()} / {new Date(fill.submitted_ts_ms).toLocaleTimeString()} / {new Date(fill.ts_ms).toLocaleTimeString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)} / {fill.filled_quantity.toPrecision(6)} / {fill.target_quantity.toPrecision(6)} / {fill.remaining_quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
+      <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Order</th><th>Decision / submission / fill</th><th>Action</th><th>Price</th><th>This fill / cumulative / target / remaining</th><th>Fee</th><th>Slippage</th><th>Impact (bps / cost)</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
+      <tbody>{result.fills.map((fill,index)=><tr key={fill.order_id+"-"+fill.event_id+"-"+index}><td>{fill.order_id} · {fill.status}</td><td>{new Date(fill.decision_ts_ms).toLocaleTimeString()} / {new Date(fill.submitted_ts_ms).toLocaleTimeString()} / {new Date(fill.ts_ms).toLocaleTimeString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)} / {fill.filled_quantity.toPrecision(6)} / {fill.target_quantity.toPrecision(6)} / {fill.remaining_quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.market_impact_bps.toFixed(3)} / {fill.market_impact_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
       {result.unfilled_pending_order && <p className="disclaimer">Unfilled {result.unfilled_pending_order.status} {result.unfilled_pending_order.action.toUpperCase()} order {result.unfilled_pending_order.order_id} · filled {result.unfilled_pending_order.filled_quantity.toPrecision(6)} / {result.unfilled_pending_order.target_quantity?.toPrecision(6) ?? "not sized"} · remaining {result.unfilled_pending_order.remaining_quantity?.toPrecision(6) ?? "not sized"} · submitted {new Date(result.unfilled_pending_order.submitted_ts_ms).toLocaleString()}.</p>}
       <details className="trace-details"><summary>Replay assumptions and full result</summary><ul>{result.assumptions.map((item,index)=><li key={index}>{item}</li>)}</ul><pre>{JSON.stringify(result,null,2)}</pre></details>
     </>}
