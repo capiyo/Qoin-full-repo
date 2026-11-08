@@ -19,7 +19,7 @@ pub struct ParticleInput {
 
 fn default_weight() -> f32 { 1.0 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 pub struct ParticleOutput {
     pub id: u32,
     pub x: f32,
