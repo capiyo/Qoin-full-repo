@@ -197,3 +197,16 @@ The existing decision equations and action gates are unchanged by this observabi
 Interpretation note: weighted feature terms are the signed coefficient multiplied by the attended feature. The final bullish/bearish components apply the existing non-negative floor after summing those terms. Attention weights show the model's deterministic interaction calculation; they must not be interpreted as causal attribution or learned feature importance. Missing funding is represented as a zero input in the calculation while the raw input record preserves null. Missing spread is represented by the strategy's existing conservative fallback for the feature calculation, while the liquidity gate remains failed.
 
 This is a full calculation trace for the current deterministic baseline, not a claim that every future algorithm will use the same mathematics. Each future algorithm must publish its own versioned explanation schema and all intermediate operations relevant to its implementation.
+
+
+## User-facing transparency surfaces (implemented 2026-11-08)
+
+Both web and React Native instrument detail views render the baseline's full calculation trace:
+
+- triggering event identity, venue, event type and timestamp, plus the accumulated state event count;
+- a horizontally inspectable feature ledger with raw observation, transform name, scale, normalized value, clamped value and bullish/bearish post-attention weighted terms;
+- every decision gate as an explicit pass/fail result and the configured thresholds;
+- exact raw inputs (including nulls), liquidation side, the full parameter snapshot and the complete serialized decision payload;
+- the six-by-six attention matrix and the vector trajectory already present in the instrument workspace.
+
+The UI uses the strategy snapshot attached to the decision for contribution and threshold displays. It does not silently substitute a newer active strategy when inspecting an older decision. This is important for reproducibility: an old decision must be interpreted using the exact parameters that produced it.
