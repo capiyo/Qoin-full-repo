@@ -79,3 +79,19 @@
 
 /* Account, profile and Firebase sign-in surfaces */
 .topbar{position:relative}.avatar{display:grid;place-items:center;overflow:hidden;width:36px;height:36px;padding:0;margin-left:8px;border:0;border-radius:50%;background:#e8efff;color:#2867dc;font-weight:800}.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}.account-menu,.auth-panel{position:absolute;z-index:30;right:0;top:62px;width:min(290px,calc(100vw - 32px));padding:12px;border:1px solid #e7edf6;border-radius:18px;background:#fff;box-shadow:0 16px 45px #1729431c}.account-menu{display:flex;flex-direction:column;gap:4px}.account-identity{display:flex;flex-direction:column;gap:4px;padding:9px 10px 12px}.account-identity strong{color:#24344d;font-size:13px}.account-identity small{color:#8794a7;font-size:10px;overflow-wrap:anywhere}.account-menu>button,.account-switch{display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px;border:0;border-radius:11px;background:transparent;color:#43546c;text-align:left;font-size:12px}.account-menu>button:hover,.account-switch:hover{background:#f2f6fd}.profile-menu{top:66px}.auth-panel form{display:flex;flex-direction:column;gap:10px}.auth-panel label{display:flex;flex-direction:column;gap:5px;color:#65748a;font-size:11px}.auth-panel input{width:100%;padding:10px 11px;border:1px solid #e5eaf2;border-radius:10px;outline:none;color:#24344d}.auth-panel input:focus{border-color:#9ab8f1}.auth-panel p{margin:0;color:#c24141;font-size:11px}.auth-panel .primary-button{width:100%}.account-switch{justify-content:center;color:#2867dc;font-size:10px}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+
+/* Compact floating primary navigation: only Archive and Explore. */
+.qoin-shell{padding-bottom:112px}
+.floating-navigation{position:fixed;z-index:40;left:50%;bottom:max(18px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:5px;transform:translateX(-50%);padding:6px;border:1px solid #e5ebf4;border-radius:999px;background:rgba(255,255,255,.96);box-shadow:0 12px 36px #1e3b6820;backdrop-filter:blur(14px)}
+.floating-nav-item{display:flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:transparent;color:#7d8ba0;font-size:11px;font-weight:800;transition:background .16s,color .16s}
+.floating-nav-icon{display:grid;place-items:center;width:22px;height:22px;font-size:17px;line-height:1}
+.floating-nav-item.active{background:#eaf1ff;color:#2367d8}
+.floating-nav-item:focus-visible,.avatar:focus-visible{outline:2px solid #3475e8;outline-offset:3px}
+.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 36px;width:36px;height:36px;border:0;border-radius:50%;background:#eaf1ff;color:#2867dc;font-size:12px;font-weight:800}
+.avatar img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.account-menu{width:min(250px,calc(100vw - 28px));padding:9px;border-radius:16px}
+.account-identity{padding:8px 9px 9px}
+.account-menu>button{padding:9px;border-radius:999px}
+@media(max-width:580px){.qoin-shell{padding:0 17px 108px}.floating-navigation{bottom:max(12px,env(safe-area-inset-bottom));gap:3px;padding:5px}.floating-nav-item{min-height:40px;padding:0 15px;font-size:10px}.account-menu{top:56px}}
+@media(prefers-reduced-motion:reduce){.floating-nav-item{transition:none}}
