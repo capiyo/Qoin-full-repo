@@ -76,7 +76,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         if state.total_trade_size>0.0 {state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
         let decision=strategy.decide(&symbol,state.ofi,state.funding_rate,state.spread_bps,state.ewma_abs_return,
             state.event_intensity,state.liquidation_events,state.last_liquidation_side.as_deref())?;
-        match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
+        match decision.action { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
         let mark=event.price.filter(|v|*v>0.0).or(state.last_price);
         if let (Some(price),true)= (mark, decision.action=="buy" && position==0.0) {
             let execution=price*(1.0+slippage_bps/10_000.0);
