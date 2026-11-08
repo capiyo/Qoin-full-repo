@@ -87,12 +87,13 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
                 quantity,fee,slippage_cost:slip,realized_pnl:0.0,equity_after:cash+position*price,reason:decision.reason.clone()});
         } else if let (Some(price),true)=(mark,decision.action=="sell" && position>0.0) {
             let execution=price*(1.0-slippage_bps/10_000.0);
-            let fee=position*execution*fee_bps/10_000.0;
-            let slip=position*(price-execution); let proceeds=position*execution-fee;
+            let quantity=position;
+            let fee=quantity*execution*fee_bps/10_000.0;
+            let slip=quantity*(price-execution); let proceeds=quantity*execution-fee;
             let realized_pnl=proceeds-position_entry_cost;
             cash+=proceeds; position=0.0; position_entry_cost=0.0; fees+=fee; slippage+=slip;
             fills.push(ReplayFill{ts_ms:event.ts_ms,event_id:event.event_id.clone(),action:"SELL".into(),price:execution,
-                quantity:0.0,fee,slippage_cost:slip,realized_pnl, equity_after:cash,reason:decision.reason.clone()});
+                quantity,fee,slippage_cost:slip,realized_pnl, equity_after:cash,reason:decision.reason.clone()});
         }
         if let Some(price)=mark {
             let equity=cash+position*price; peak=peak.max(equity);
