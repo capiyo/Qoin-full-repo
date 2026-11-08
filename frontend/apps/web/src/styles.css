@@ -55,3 +55,24 @@
 .backtest-metrics>div{display:flex;flex-direction:column;gap:5px;padding:11px;border-radius:10px;background:#f5f8fd}
 .backtest-metrics span{font-size:10px;color:#718096}.backtest-metrics strong{font-size:14px;color:#24344d}
 @media(max-width:640px){.backtest-panel{padding:12px;border-radius:14px}.backtest-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.coverage-preview{margin:24px 0 25px;padding:17px 0;border-top:1px solid #e8edf4;border-bottom:1px solid #e8edf4}
+.coverage-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:13px}
+.coverage-heading h3{margin:0;color:#1d2e47;font-family:Manrope,sans-serif;font-size:19px;letter-spacing:-.035em}
+.coverage-heading p:not(.eyebrow){margin:5px 0 0;color:#8794a7;font-size:10px;line-height:1.5}
+.coverage-status{padding:6px 9px;border-radius:20px;background:#edf3ff;color:#2867d8;font-size:8px;font-weight:800;letter-spacing:.1em;white-space:nowrap}
+.coverage-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.coverage-card{min-width:0;padding:13px;border:1px solid #e7edf5;border-radius:13px;background:#fff}
+.coverage-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.coverage-card-top strong{color:#243750;font-size:12px}
+.coverage-card-top span{color:#8a97a9;font-size:8px;text-transform:uppercase}
+.coverage-primary{display:flex;align-items:baseline;gap:6px;margin:13px 0}
+.coverage-primary b{color:#2867d8;font-family:Manrope,sans-serif;font-size:27px}
+.coverage-primary span{color:#8794a7;font-size:9px}
+.coverage-card dl{display:grid;gap:8px;margin:0}
+.coverage-card dl div{display:grid;gap:3px}
+.coverage-card dt{color:#9aa5b4;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.coverage-card dd{margin:0;color:#52637a;font-size:9px;line-height:1.45;overflow-wrap:anywhere}
+.coverage-card>p,.coverage-disclaimer,.coverage-unavailable{margin:11px 0 0;color:#8b98aa;font-size:9px;line-height:1.55}
+.coverage-disclaimer{margin-top:12px}
+@media(max-width:700px){.coverage-grid{grid-template-columns:1fr}.coverage-heading{align-items:flex-start;flex-direction:column}.coverage-status{align-self:flex-start}}
