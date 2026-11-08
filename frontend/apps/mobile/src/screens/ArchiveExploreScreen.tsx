@@ -105,8 +105,9 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   const [result, setResult] = useState<QoinBacktestResult | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingRun, setPendingRun] = useState(false);
   const run = async () => {
-    if (!authenticated) { onRequireAuth(); setStatus("Sign in to run a historical research replay."); return; }
+    if (!authenticated) { setPendingRun(true); onRequireAuth(); setStatus("Sign in to continue the historical research replay."); return; }
     const initialCapital = Number(capital), feeBps = Number(fee), slippageBps = Number(slippage);
     if (!Number.isFinite(initialCapital) || initialCapital <= 0 || !Number.isFinite(feeBps) || feeBps < 0 ||
         !Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10_000) {
@@ -121,6 +122,9 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
       setStatus(error instanceof Error ? error.message : "Historical replay unavailable.");
     } finally { setBusy(false); }
   };
+  useEffect(() => {
+    if (authenticated && pendingRun && !busy) { setPendingRun(false); void run(); }
+  }, [authenticated, pendingRun, busy]);
   return <View style={styles.mobileBacktest}>
     <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Historical event replay</Text><Text style={styles.attentionCaption}>Paper only · no orders</Text></View>
     <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. This is a research simulation, not expected performance.</Text>
@@ -187,6 +191,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const archivedSymbolsRef = useRef<string[] | null>(null);
+  const pendingArchiveSymbolRef = useRef<string | null>(null);
   useEffect(() => {
     let active = true;
     let generation = 0;
@@ -202,8 +207,15 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         }
         void getQoinArchivedSymbols().then((symbols) => {
           if (!active || requestGeneration !== generation) return;
-          archivedSymbolsRef.current = symbols;
-          setItems((current) => current.map((item) => ({ ...item, archived: symbols.includes(item.symbol) })));
+          const pendingSymbol = pendingArchiveSymbolRef.current;
+          const nextSymbols = pendingSymbol && !symbols.includes(pendingSymbol) ? [...symbols, pendingSymbol] : symbols;
+          pendingArchiveSymbolRef.current = null;
+          archivedSymbolsRef.current = nextSymbols;
+          setItems((current) => current.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
+          if (pendingSymbol) {
+            setSelected((current) => current?.symbol === pendingSymbol ? { ...current, archived: true } : current);
+            if (nextSymbols !== symbols) void saveQoinArchivedSymbols(nextSymbols).catch((error) => Alert.alert("Archive could not be saved", error instanceof Error ? error.message : "Try again."));
+          }
         }).catch((error) => {
           if (active && requestGeneration === generation) Alert.alert("Archive unavailable", error instanceof Error ? error.message : "Could not load your archive.");
         });
@@ -232,7 +244,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
   const toggle = (symbol: string) => {
-    if (!firebaseUser) { requireAuthentication(); return; }
+    if (!firebaseUser) { pendingArchiveSymbolRef.current = symbol; requireAuthentication(); return; }
     const target = items.find((item) => item.symbol === symbol);
     if (!target) return;
     const nextSymbols = target.archived

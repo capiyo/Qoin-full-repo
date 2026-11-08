@@ -131,8 +131,9 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   const [result,setResult]=useState<QoinBacktestResult|null>(null);
   const [status,setStatus]=useState("");
   const [busy,setBusy]=useState(false);
+  const [pendingRun,setPendingRun]=useState(false);
   const run=async()=>{
-    if (!authenticated) { onRequireAuth(); setStatus("Sign in to run and save a research replay."); return; }
+    if (!authenticated) { setPendingRun(true); onRequireAuth(); setStatus("Sign in to continue the historical research replay."); return; }
     setBusy(true);setStatus("");setResult(null);
     try {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
@@ -144,6 +145,9 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
     finally {setBusy(false);}
   };
+  useEffect(() => {
+    if (authenticated && pendingRun && !busy) { setPendingRun(false); void run(); }
+  }, [authenticated, pendingRun, busy]);
   return <section className="backtest-panel">
     <div className="attention-heading"><strong>Historical event replay</strong><span>Paper simulation · no orders</span></div>
     <p className="disclaimer">Replays only raw observations already stored in Qoin. It does not download missing history. Empty dates use the full stored range for this instrument.</p>
@@ -207,6 +211,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const archivedSymbolsRef = useRef<string[] | null>(null);
+  const pendingArchiveSymbolRef = useRef<string | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [query, setQuery] = useState("");
@@ -248,8 +253,14 @@ export default function App() {
         }
         void getQoinArchivedSymbols().then((symbols) => {
           if (requestGeneration !== generation) return;
-          archivedSymbolsRef.current = symbols;
-          setInstruments((items) => items.map((item) => ({ ...item, archived: symbols.includes(item.symbol) })));
+          const pendingSymbol = pendingArchiveSymbolRef.current;
+          const nextSymbols = pendingSymbol && !symbols.includes(pendingSymbol) ? [...symbols, pendingSymbol] : symbols;
+          pendingArchiveSymbolRef.current = null;
+          archivedSymbolsRef.current = nextSymbols;
+          setInstruments((items) => items.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
+          if (pendingSymbol && nextSymbols !== symbols) {
+            void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
+          }
         }).catch((error) => {
           if (requestGeneration === generation) setAuthError(error instanceof Error ? error.message : "Could not load your archive.");
         });
@@ -419,7 +430,7 @@ export default function App() {
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
-    if (!firebaseUser) { requireAuthentication(); return; }
+    if (!firebaseUser) { pendingArchiveSymbolRef.current = symbol; requireAuthentication(); return; }
     const target = instruments.find((item) => item.symbol === symbol);
     if (!target) return;
     const nextSymbols = target.archived ? archived.filter((item) => item.symbol !== symbol).map((item) => item.symbol) : [...archived.map((item) => item.symbol), symbol];
