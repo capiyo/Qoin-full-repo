@@ -191,7 +191,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const archivedSymbolsRef = useRef<string[] | null>(null);
-  const pendingArchiveSymbolRef = useRef<string | null>(null);
+  const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   useEffect(() => {
     let active = true;
     let generation = 0;
@@ -207,13 +207,15 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         }
         void getQoinArchivedSymbols().then((symbols) => {
           if (!active || requestGeneration !== generation) return;
-          const pendingSymbol = pendingArchiveSymbolRef.current;
-          const nextSymbols = pendingSymbol && !symbols.includes(pendingSymbol) ? [...symbols, pendingSymbol] : symbols;
-          pendingArchiveSymbolRef.current = null;
+          const pendingAction = pendingArchiveActionRef.current;
+          let nextSymbols = symbols;
+          if (pendingAction?.archived && !symbols.includes(pendingAction.symbol)) nextSymbols = [...symbols, pendingAction.symbol];
+          if (pendingAction && !pendingAction.archived) nextSymbols = symbols.filter((symbol) => symbol !== pendingAction.symbol);
+          pendingArchiveActionRef.current = null;
           archivedSymbolsRef.current = nextSymbols;
           setItems((current) => current.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
-          if (pendingSymbol) {
-            setSelected((current) => current?.symbol === pendingSymbol ? { ...current, archived: true } : current);
+          if (pendingAction) {
+            setSelected((current) => current?.symbol === pendingAction.symbol ? { ...current, archived: pendingAction.archived } : current);
             if (nextSymbols !== symbols) void saveQoinArchivedSymbols(nextSymbols).catch((error) => Alert.alert("Archive could not be saved", error instanceof Error ? error.message : "Try again."));
           }
         }).catch((error) => {
@@ -244,14 +246,17 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
   const toggle = (symbol: string) => {
-    if (!firebaseUser || archivedSymbolsRef.current === null) {
-      pendingArchiveSymbolRef.current = symbol;
-      if (!firebaseUser) requireAuthentication();
-      else Alert.alert("Archive syncing", "Your change will be applied as soon as your saved archive finishes loading.");
-      return;
-    }
     const target = items.find((item) => item.symbol === symbol);
     if (!target) return;
+    if (!firebaseUser) {
+      pendingArchiveActionRef.current = { symbol, archived: !target.archived };
+      requireAuthentication();
+      return;
+    }
+    if (archivedSymbolsRef.current === null) {
+      Alert.alert("Archive syncing", "Your saved archive is still loading. Please try again in a moment.");
+      return;
+    }
     const previousSymbols = archivedSymbolsRef.current;
     const nextSymbols = target.archived
       ? previousSymbols.filter((value) => value !== symbol)

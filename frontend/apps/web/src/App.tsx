@@ -211,7 +211,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const archivedSymbolsRef = useRef<string[] | null>(null);
-  const pendingArchiveSymbolRef = useRef<string | null>(null);
+  const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [query, setQuery] = useState("");
@@ -253,12 +253,14 @@ export default function App() {
         }
         void getQoinArchivedSymbols().then((symbols) => {
           if (requestGeneration !== generation) return;
-          const pendingSymbol = pendingArchiveSymbolRef.current;
-          const nextSymbols = pendingSymbol && !symbols.includes(pendingSymbol) ? [...symbols, pendingSymbol] : symbols;
-          pendingArchiveSymbolRef.current = null;
+          const pendingAction = pendingArchiveActionRef.current;
+          let nextSymbols = symbols;
+          if (pendingAction?.archived && !symbols.includes(pendingAction.symbol)) nextSymbols = [...symbols, pendingAction.symbol];
+          if (pendingAction && !pendingAction.archived) nextSymbols = symbols.filter((symbol) => symbol !== pendingAction.symbol);
+          pendingArchiveActionRef.current = null;
           archivedSymbolsRef.current = nextSymbols;
           setInstruments((items) => items.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
-          if (pendingSymbol && nextSymbols !== symbols) {
+          if (pendingAction && nextSymbols !== symbols) {
             void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
           }
         }).catch((error) => {
@@ -430,14 +432,17 @@ export default function App() {
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
-    if (!firebaseUser || archivedSymbolsRef.current === null) {
-      pendingArchiveSymbolRef.current = symbol;
-      if (!firebaseUser) requireAuthentication();
-      else setAuthError("Your archive is still syncing. This change will be applied when it finishes loading.");
-      return;
-    }
     const target = instruments.find((item) => item.symbol === symbol);
     if (!target) return;
+    if (!firebaseUser) {
+      pendingArchiveActionRef.current = { symbol, archived: !target.archived };
+      requireAuthentication();
+      return;
+    }
+    if (archivedSymbolsRef.current === null) {
+      setAuthError("Your archive is still syncing. Please try again in a moment.");
+      return;
+    }
     const previousSymbols = archivedSymbolsRef.current;
     const nextSymbols = target.archived ? previousSymbols.filter((value) => value !== symbol) : [...previousSymbols, symbol];
     archivedSymbolsRef.current = nextSymbols;
