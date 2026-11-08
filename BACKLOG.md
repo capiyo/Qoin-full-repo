@@ -12,8 +12,8 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [ ] Run the integration workflow and verify it is green on the resulting commit; record exact commit and job result.
 
 ## 2. Make historical replay causally executable
-- [ ] Separate observation time, decision time, order submission time, and fill time.
-- [ ] Prevent fills at the same observation price that generated the signal; use a subsequent eligible quote/trade or explicit conservative no-fill.
+- [x] Separate decision timestamp from fill timestamp and preserve both event IDs in the fill record.\n- [ ] Model an explicit order-submission timestamp and order lifecycle separately from decision and fill.
+- [x] Prevent same-event and same-timestamp fills; use a strictly later executable trade or side-specific book quote, otherwise leave the signal unfilled.
 - [ ] Model bid/ask-side execution, spread, latency, partial fills, depth constraints, and market impact with bounded assumptions.
 - [ ] Add deterministic tests for event ordering, same-timestamp events, stale quotes, missing next observations, and no-look-ahead guarantees.
 - [ ] Publish execution assumptions and sensitivity/stress scenarios in each replay result.
