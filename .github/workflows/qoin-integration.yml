@@ -53,10 +53,27 @@ jobs:
           export QOIN_DROGON_PORT=8080
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
+          cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          # The gateway proxies its first /health request to Axum. Wait for the
+          # upstream to be ready before starting Drogon so CI does not race its
+          # first outbound HttpClient connection during process initialization.
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/health >/tmp/axum-health.json; then break; fi
+            if ! kill -0 "$AXUM_PID" 2>/dev/null; then
+              echo "Axum exited before becoming healthy"
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ ! -s /tmp/axum-health.json ]]; then
+            echo "Axum health endpoint did not become ready"
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
           ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
           DROGON_PID=$!
-          cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
-          trap cleanup EXIT
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
             if ! kill -0 "$DROGON_PID" 2>/dev/null; then
