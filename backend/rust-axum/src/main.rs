@@ -702,6 +702,7 @@ async fn main(){
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
