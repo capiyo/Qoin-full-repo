@@ -20,6 +20,7 @@ use tower_http::trace::TraceLayer;
 mod algorithm_catalogue;
 mod algorithm_entitlements;
 mod edge_strategy;
+mod backtest;
 mod jepa;
 mod vector_engine;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
@@ -751,7 +752,7 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
-        .route("/internal/vector/history",get(get_vector_history)).route("/internal/instruments",get(get_instruments))
+        .route("/internal/vector/history",get(get_vector_history))\n        .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
