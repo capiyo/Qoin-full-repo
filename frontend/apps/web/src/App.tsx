@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -115,6 +115,58 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
       <h4>Exact strategy parameters used for this decision</h4><pre>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</pre>
       <h4>Complete decision object</h4><pre>{JSON.stringify(decision, null, 2)}</pre>
     </details>
+  </section>;
+}
+
+function BacktestPanel({ symbol }: { symbol: string }) {
+  const [capital,setCapital]=useState("10000");
+  const [fee,setFee]=useState("10");
+  const [slippage,setSlippage]=useState("5");
+  const [from,setFrom]=useState("");
+  const [to,setTo]=useState("");
+  const [result,setResult]=useState<QoinBacktestResult|null>(null);
+  const [status,setStatus]=useState("");
+  const [busy,setBusy]=useState(false);
+  const run=async()=>{
+    setBusy(true);setStatus("");setResult(null);
+    try {
+      const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
+      if(from && !Number.isFinite(fromMs)) throw new Error("Invalid start date");
+      if(to && !Number.isFinite(toMs)) throw new Error("Invalid end date");
+      const output=await runQoinBacktest({symbol,from_ts_ms:fromMs,to_ts_ms:toMs,
+        initial_capital:Number(capital),fee_bps:Number(fee),slippage_bps:Number(slippage),limit:10000});
+      setResult(output);setStatus("Replay completed from persisted events.");
+    } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
+    finally {setBusy(false);}
+  };
+  return <section className="backtest-panel">
+    <div className="attention-heading"><strong>Historical event replay</strong><span>Paper simulation · no orders</span></div>
+    <p className="disclaimer">Replays only raw observations already stored in Qoin. It does not download missing history. Empty dates use the full stored range for this instrument.</p>
+    <div className="backtest-controls">
+      <label>From <input type="datetime-local" value={from} onChange={e=>setFrom(e.target.value)} /></label>
+      <label>To <input type="datetime-local" value={to} onChange={e=>setTo(e.target.value)} /></label>
+      <label>Starting capital <input type="number" min="0.01" step="any" value={capital} onChange={e=>setCapital(e.target.value)} /></label>
+      <label>Fee (bps) <input type="number" min="0" step="any" value={fee} onChange={e=>setFee(e.target.value)} /></label>
+      <label>Slippage (bps) <input type="number" min="0" step="any" value={slippage} onChange={e=>setSlippage(e.target.value)} /></label>
+      <button onClick={run} disabled={busy}>{busy?"Replaying…":"Run replay"}</button>
+    </div>
+    {status && <p className="disclaimer" role="status">{status}</p>}
+    {result && <>
+      <div className="backtest-metrics">
+        <div><span>Net P/L</span><strong>{result.net_pnl.toFixed(2)}</strong></div>
+        <div><span>Net return</span><strong>{result.net_return_pct.toFixed(3)}%</strong></div>
+        <div><span>Max drawdown</span><strong>{result.max_drawdown_pct.toFixed(3)}%</strong></div>
+        <div><span>Final equity</span><strong>{result.final_equity.toFixed(2)}</strong></div>
+        <div><span>Events / decisions</span><strong>{result.events_replayed} / {result.decisions}</strong></div>
+        <div><span>BUY / SELL / WAIT</span><strong>{result.buy_decisions} / {result.sell_decisions} / {result.wait_decisions}</strong></div>
+        <div><span>Fees paid</span><strong>{result.fees_paid.toFixed(4)}</strong></div>
+        <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
+      </div>
+      <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
+      <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Time</th><th>Fill</th><th>Price</th><th>Quantity</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
+      <tbody>{result.fills.map((fill,index)=><tr key={fill.event_id+"-"+index}><td>{new Date(fill.ts_ms).toLocaleString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
+      <details className="trace-details"><summary>Replay assumptions and full result</summary><ul>{result.assumptions.map((item,index)=><li key={index}>{item}</li>)}</ul><pre>{JSON.stringify(result,null,2)}</pre></details>
+    </>}
   </section>;
 }
 
@@ -421,7 +473,7 @@ export default function App() {
                 })}
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
-              <DecisionTracePanel decision={vector} />
+              <DecisionTracePanel decision={vector} />\n              <BacktestPanel symbol={selected.engineSymbol} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
