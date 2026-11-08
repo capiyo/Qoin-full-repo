@@ -108,7 +108,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         // A decision made on an earlier event may only fill on this later,
         // executable trade/book observation. Funding and mark events are not fills.
         if let Some(pending) = pending_order.clone() {
-            if let Some(price) = event_execution_price(event, &pending.action) {
+            if let Some(price) = if event.ts_ms > pending.decision_ts_ms { event_execution_price(event, &pending.action) } else { None } {
                 let mark = current_mark_price.unwrap_or(price);
                 if pending.action == "buy" && position == 0.0 {
                     let execution = price * (1.0 + slippage_bps / 10_000.0);
@@ -332,9 +332,15 @@ mod tests {
                 bid: None, ask: None, bid_size: None, ask_size: None,
                 funding_rate: None, open_interest: None, liquidation_side: None,
             },
+            ReplayEvent {
+                event_id: "z-same-time-book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 2, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(5.0), ask_size: Some(4.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
         ];
         let result = replay(events, &strategy, 1_000.0, 10.0, 5.0).unwrap();
-        assert!(result.fills.is_empty(), "the signal event cannot fill itself");
+        assert!(result.fills.is_empty(), "same-timestamp events cannot fill a decision");
         let pending = result.unfilled_pending_order.unwrap();
         assert_eq!(pending.action, "buy");
         assert_eq!(pending.decision_ts_ms, 2);
