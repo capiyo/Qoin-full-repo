@@ -194,7 +194,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
                 || (decision.action == "sell" && position > 0.0);
             if should_queue {
                 pending_order = Some(ReplayPendingOrder {
-                    action: decision.action.clone(),
+                    action: decision.action.to_string(),
                     decision_ts_ms: event.ts_ms,
                     decision_event_id: event.event_id.clone(),
                     reason: decision.reason.clone(),
