@@ -677,6 +677,6 @@ mod tests {
         assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 0.0, 5.0).is_err());
         assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 1.01, 5.0).is_err());
         assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 0.5, 1_001.0).is_err());
-        assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 9_999.0, 5.0, 0, 0.5, 5.0).is_err());
+        assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 9_999.0, 0, 0.5, 5.0).is_err());
     }
 }
