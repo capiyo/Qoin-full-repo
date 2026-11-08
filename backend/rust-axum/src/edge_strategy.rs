@@ -21,10 +21,44 @@ pub struct EdgeStrategy {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FeatureTrace {
+    pub name: String,
+    pub raw_value: f64,
+    pub scale: f64,
+    pub normalized_value: f64,
+    pub clamped_value: f64,
+    pub bullish_weight: f64,
+    pub bearish_weight: f64,
+    pub bullish_weighted_term: f64,
+    pub bearish_weighted_term: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DecisionDiagnostics {
+    pub spread_present: bool,
+    pub spread_within_limit: bool,
+    pub event_intensity_positive: bool,
+    pub magnitude_passed: bool,
+    pub buy_angle_passed: bool,
+    pub sell_angle_passed: bool,
+    pub bullish_exceeds_bearish: bool,
+    pub bearish_exceeds_bullish: bool,
+    pub spread_limit_bps: f64,
+    pub magnitude_limit: f64,
+    pub angle_limit_degrees: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct EdgeDecision {
     pub symbol: String,
     pub strategy_key: String,
     pub strategy_version: String,
+    /// Exact raw observations passed into this strategy evaluation.
+    pub raw_inputs: BTreeMap<String, Option<f64>>,
+    /// Full feature-by-feature normalization and weighted-term ledger.
+    pub feature_trace: Vec<FeatureTrace>,
+    /// Exact parameter snapshot used for this decision.
+    pub strategy_parameters: EdgeStrategy,
     pub features: BTreeMap<String, f64>,
     pub attention: Vec<Vec<f64>>,
     pub attended_features: Vec<f64>,
@@ -34,6 +68,8 @@ pub struct EdgeDecision {
     pub angular_threshold_radians: f64,
     pub action: &'static str,
     pub reason: String,
+    pub diagnostics: DecisionDiagnostics,
+    pub angle_degrees: f64,
     pub research_only: bool,
 }
 
@@ -159,12 +195,60 @@ impl EdgeStrategy {
         } else {
             ("wait", "vector is outside both mapped angular boundaries".to_owned())
         };
+        let raw_inputs = [
+            ("order_flow_imbalance", Some(order_flow_imbalance)),
+            ("funding_rate", funding_rate),
+            ("spread_bps", spread_bps),
+            ("ewma_abs_return", Some(ewma_abs_return)),
+            ("event_intensity", Some(event_intensity)),
+            ("liquidation_events", Some(liquidation_events as f64)),
+        ].into_iter().map(|(name, value)| (name.to_owned(), value)).collect();
+        let feature_trace = FEATURE_NAMES.iter().enumerate().map(|(i, name)| {
+            let raw_value = raw[i];
+            let scale = match *name {
+                "order_flow_imbalance" => 1.0,
+                "funding_pressure" => scale("funding_pressure"),
+                "liquidity_stress" => scale("liquidity_stress"),
+                "volatility_shock" => scale("volatility_shock"),
+                "event_intensity" => scale("event_intensity"),
+                "liquidation_pressure" => scale("liquidation_pressure"),
+                _ => 1.0,
+            };
+            let bullish_weight = self.bullish_weights[*name];
+            let bearish_weight = self.bearish_weights[*name];
+            FeatureTrace {
+                name: (*name).to_owned(),
+                raw_value,
+                scale,
+                normalized_value: raw_value,
+                clamped_value: features_vec[i],
+                bullish_weight,
+                bearish_weight,
+                bullish_weighted_term: bullish_weight * attended[i],
+                bearish_weighted_term: bearish_weight * attended[i],
+            }
+        }).collect();
+        let diagnostics = DecisionDiagnostics {
+            spread_present: spread_bps.is_some(),
+            spread_within_limit: spread_ok,
+            event_intensity_positive: event_intensity > 0.0,
+            magnitude_passed: magnitude >= self.magnitude_threshold,
+            buy_angle_passed: angle <= threshold,
+            sell_angle_passed: (std::f64::consts::FRAC_PI_2 - angle).abs() <= threshold,
+            bullish_exceeds_bearish: bullish > bearish,
+            bearish_exceeds_bullish: bearish > bullish,
+            spread_limit_bps: self.max_spread_bps,
+            magnitude_limit: self.magnitude_threshold,
+            angle_limit_degrees: self.angular_threshold_degrees,
+        };
         let features = FEATURE_NAMES.iter().enumerate().map(|(i, name)| ((*name).to_owned(), features_vec[i])).collect();
         Ok(EdgeDecision {
             symbol: symbol.to_owned(), strategy_key: self.strategy_key.clone(),
-            strategy_version: self.version.clone(), features, attention, attended_features: attended,
+            strategy_version: self.version.clone(), raw_inputs, feature_trace,
+            strategy_parameters: self.clone(), features, attention, attended_features: attended,
             decision_vector: [bullish, bearish], magnitude, angle_radians: angle,
-            angular_threshold_radians: threshold, action, reason, research_only: true,
+            angular_threshold_radians: threshold, action, reason, diagnostics,
+            angle_degrees: angle.to_degrees(), research_only: true,
         })
     }
 }
