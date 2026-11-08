@@ -369,6 +369,11 @@ export type QoinBacktestFill = {
   target_quantity: number; filled_quantity: number; remaining_quantity: number;
   market_impact_bps: number; market_impact_cost: number;
 };
+export type QoinExecutionStressScenario = {
+  name: string; cost_multiplier: number; fees_paid: number; slippage_paid: number;
+  market_impact_paid: number; estimated_net_pnl: number; estimated_return_pct: number;
+  fills_recomputed: boolean;
+};
 export type QoinBacktestResult = {
   symbol: string; venue: string; strategy_key: string; strategy_version: string; from_ts_ms: number; to_ts_ms: number;
   events_replayed: number; max_event_gap_ms: number; event_gaps_over_5m: number;
@@ -378,7 +383,8 @@ export type QoinBacktestResult = {
   fee_bps: number; slippage_bps: number; latency_ms: number; max_participation_rate: number;
   market_impact_bps: number; market_impact_paid: number;
   fills: QoinBacktestFill[]; last_decision?: QoinVectorDecision | null;
-  unfilled_pending_order?: QoinBacktestPendingOrder | null; assumptions: string[];
+  unfilled_pending_order?: QoinBacktestPendingOrder | null;
+  execution_stress_scenarios: QoinExecutionStressScenario[]; assumptions: string[];
 };
 export type QoinBacktestRequest = {
   symbol: string; venue?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;

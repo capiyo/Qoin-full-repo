@@ -50,7 +50,9 @@ paths:
         routing latency is not modeled. A final signal without a later eligible observation is
         returned as unfilled_pending_order. Returns fees, slippage, recorded funding cashflows,
         raw-event gap diagnostics, fills, drawdown, exact strategy version and assumptions. This
-        is not a historical data download or a guarantee of complete market coverage.
+        is not a historical data download or a guarantee of complete market coverage. Results
+        also include 1.0x baseline, 1.5x moderate, and 2.0x severe cost-only stress estimates;
+        these reprice realized fees, slippage and impact without recomputing fills or liquidity.
       parameters:
         - in: query
           name: symbol
