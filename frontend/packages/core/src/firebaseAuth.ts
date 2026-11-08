@@ -68,14 +68,18 @@ async function saveProfile(user: User): Promise<void> {
 export async function registerQoinUser(email: string, password: string): Promise<UserCredential> {
   if (!authInstance) throw new Error("Firebase is not configured.");
   const credential = await createUserWithEmailAndPassword(authInstance, email.trim(), password);
-  await saveProfile(credential.user);
+  await saveProfile(credential.user).catch((error: unknown) => {
+    console.warn("Qoin profile metadata could not be synchronized after registration.", error);
+  });
   return credential;
 }
 
 export async function signInQoinUser(email: string, password: string): Promise<UserCredential> {
   if (!authInstance) throw new Error("Firebase is not configured.");
   const credential = await signInWithEmailAndPassword(authInstance, email.trim(), password);
-  await saveProfile(credential.user);
+  await saveProfile(credential.user).catch((error: unknown) => {
+    console.warn("Qoin profile metadata could not be synchronized after sign-in.", error);
+  });
   return credential;
 }
 
@@ -95,7 +99,9 @@ export async function uploadQoinAvatar(file: Blob): Promise<string> {
   await uploadBytes(object, file, { contentType: file.type });
   const photoURL = await getDownloadURL(object);
   await updateProfile(user, { photoURL });
-  await saveProfile(user);
+  await saveProfile(user).catch((error: unknown) => {
+    console.warn("Qoin profile metadata could not be synchronized after avatar upload.", error);
+  });
   return photoURL;
 }
 
