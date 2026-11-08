@@ -51,6 +51,7 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
       setNativeMotion([]);
       return () => { cancelled = true; };
     }
+    setNativeMotion([]);
     const particles = points.slice(-300).map((item, index) => ({
       id: index,
       x: Math.max(-1, Math.min(1, item.decision_vector[0] / max)),
