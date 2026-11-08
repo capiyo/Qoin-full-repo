@@ -50,11 +50,23 @@ pub struct DecisionDiagnostics {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct DecisionInputEvent {
+    pub event_id: String,
+    pub venue: String,
+    pub event_type: String,
+    pub event_ts_ms: i64,
+    pub state_event_count: usize,
+    pub state_last_event_ts_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct EdgeDecision {
     pub symbol: String,
     pub strategy_key: String,
     pub strategy_version: String,
     /// Exact raw observations passed into this strategy evaluation.
+    pub input_event: Option<DecisionInputEvent>,
+    pub liquidation_side: Option<String>,
     pub raw_inputs: BTreeMap<String, Option<f64>>,
     /// Full feature-by-feature normalization and weighted-term ledger.
     pub feature_trace: Vec<FeatureTrace>,
@@ -263,7 +275,8 @@ impl EdgeStrategy {
         let features = FEATURE_NAMES.iter().enumerate().map(|(i, name)| ((*name).to_owned(), features_vec[i])).collect();
         Ok(EdgeDecision {
             symbol: symbol.to_owned(), strategy_key: self.strategy_key.clone(),
-            strategy_version: self.version.clone(), raw_inputs, feature_trace,
+            strategy_version: self.version.clone(), input_event: None,
+            liquidation_side: last_liquidation_side.map(str::to_owned), raw_inputs, feature_trace,
             strategy_parameters: self.clone(), features, attention, attended_features: attended,
             decision_vector: [bullish, bearish], magnitude, angle_radians: angle,
             angular_threshold_radians: threshold, action, reason, diagnostics,
@@ -288,5 +301,21 @@ mod tests {
         let s = EdgeStrategy::baseline();
         let d = s.decide("BTCUSDT", 0.9, None, None, 0.001, 4.0, 0, None).unwrap();
         assert_eq!(d.action, "wait");
+    }
+
+    #[test]
+    fn decision_exposes_reproducible_feature_and_gate_ledger() {
+        let s = EdgeStrategy::baseline();
+        let d = s.decide("BTCUSDT", 0.4, Some(0.001), Some(3.0), 0.001, 4.0, 1, Some("short")).unwrap();
+        assert_eq!(d.feature_trace.len(), FEATURE_NAMES.len());
+        assert_eq!(d.feature_trace[0].raw_value, 0.4);
+        assert_eq!(d.feature_trace[1].normalized_value, 0.1);
+        assert_eq!(d.feature_trace[1].clamped_value, 0.1);
+        assert_eq!(d.feature_trace[0].bullish_weight, s.bullish_weights["order_flow_imbalance"]);
+        assert_eq!(d.strategy_parameters.version, s.version);
+        assert!(d.diagnostics.spread_present);
+        assert!(d.diagnostics.spread_within_limit);
+        assert_eq!(d.angle_degrees, d.angle_radians.to_degrees());
+        assert_eq!(d.liquidation_side.as_deref(), Some("short"));
     }
 }
