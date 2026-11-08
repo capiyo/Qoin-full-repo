@@ -232,8 +232,16 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
   const toggle = (symbol: string) => {
     if (!firebaseUser) { requireAuthentication(); return; }
+    const target = items.find((item) => item.symbol === symbol);
+    if (!target) return;
+    const nextSymbols = target.archived
+      ? archived.filter((item) => item.symbol !== symbol).map((item) => item.symbol)
+      : [...archived.map((item) => item.symbol), symbol];
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
+    void saveQoinArchivedSymbols(nextSymbols).catch((error) => {
+      Alert.alert("Archive could not be saved", error instanceof Error ? error.message : "Try again.");
+    });
   };
   useEffect(() => { let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, []);
   useEffect(() => {
