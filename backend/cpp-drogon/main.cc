@@ -154,6 +154,20 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/backtest", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto names = {"symbol", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps"};
+        std::string path = "/internal/backtest";
+        bool first = true;
+        for (const auto* name : names) {
+            const auto value = req->getParameter(name);
+            if (value.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += std::string(name) + "=" + drogon::utils::urlEncode(value);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/instruments", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/instruments");
