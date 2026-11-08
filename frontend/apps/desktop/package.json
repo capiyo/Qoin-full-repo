@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "pnpm tauri:icons && tauri build",
+    "tauri:icons": "tauri icon src-tauri/icons/qoin.svg"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"
