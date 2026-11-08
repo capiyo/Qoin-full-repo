@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
+import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
@@ -233,13 +234,13 @@ export default function App() {
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { try { return subscribeQoinAuth(setFirebaseUser); } catch { setFirebaseUser(null); return undefined; } }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
-  async function submitAuthentication(event: React.FormEvent<HTMLFormElement>) {
+  async function submitAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthError(""); setAuthBusy(true);
     try { if (authMode === "register") await registerQoinUser(authEmail, authPassword); else await signInQoinUser(authEmail, authPassword); setAuthPanelOpen(false); setAccountOpen(false); setAuthPassword(""); }
     catch (error) { setAuthError(error instanceof Error ? error.message : "Authentication failed."); }
     finally { setAuthBusy(false); }
   }
-  async function changeAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+  async function changeAvatar(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file) return;
     try { await uploadQoinAvatar(file); setAuthError(""); }
     catch (error) { setAuthError(error instanceof Error ? error.message : "Avatar upload failed."); }
