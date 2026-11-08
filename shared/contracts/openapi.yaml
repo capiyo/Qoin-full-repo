@@ -79,6 +79,10 @@ paths:
           name: slippage_bps
           description: Must be below 10000 basis points.
           schema: { type: number, minimum: 0, exclusiveMaximum: 10000, default: 5 }
+        - in: query
+          name: latency_ms
+          description: Minimum delay from order submission to an eligible fill; 0 still requires a strictly later event.
+          schema: { type: integer, minimum: 0, maximum: 60000, default: 0 }
       responses:
         '200': { description: Replay metrics, fills, and assumptions }
         '413': { description: Replay event limit reached }

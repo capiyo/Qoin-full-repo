@@ -263,6 +263,7 @@ struct BacktestQuery {
     initial_capital: Option<f64>,
     fee_bps: Option<f64>,
     slippage_bps: Option<f64>,
+    latency_ms: Option<i64>,
 }
 async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
     let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
@@ -324,12 +325,13 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
         Ok(strategy) => strategy.clone(),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
     };
-    match backtest::replay(
+    match backtest::replay_with_latency(
         events,
         &strategy,
         q.initial_capital.unwrap_or(10_000.0),
         q.fee_bps.unwrap_or(10.0),
         q.slippage_bps.unwrap_or(5.0),
+        q.latency_ms.unwrap_or(0),
     ) {
         Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
         Err(message) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":message}))),
