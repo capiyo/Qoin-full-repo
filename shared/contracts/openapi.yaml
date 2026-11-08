@@ -108,6 +108,7 @@ paths:
   /api/v1/instruments:
     get:
       summary: Get the supported multi-asset instrument registry
+      description: Each instrument exposes a display venue and canonical venue_id; use venue_id when filtering persisted market events or running historical replay.
       responses:
         '200': { description: Crypto, equities, FX, indices and commodities catalog with provider status }
   /api/v1/news:
