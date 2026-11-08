@@ -18,6 +18,7 @@ struct ReplayState {
 #[serde(rename_all = "snake_case")]
 pub enum ReplayOrderStatus {
     Pending,
+    PartiallyFilled,
     Filled,
 }
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +30,9 @@ pub struct ReplayPendingOrder {
     pub decision_event_id: String,
     pub submitted_ts_ms: i64,
     pub submitted_event_id: String,
+    pub target_quantity: Option<f64>,
+    pub filled_quantity: f64,
+    pub remaining_quantity: Option<f64>,
     pub reason: String,
 }
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +44,7 @@ pub struct ReplayFill {
     pub equity_after: f64, pub reason: String,
     pub decision_ts_ms: i64, pub decision_event_id: String,
     pub submitted_ts_ms: i64, pub submitted_event_id: String,
+    pub target_quantity: f64, pub filled_quantity: f64, pub remaining_quantity: f64,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
@@ -51,6 +56,7 @@ pub struct ReplayResult {
     pub net_pnl: f64, pub net_return_pct: f64, pub max_drawdown_pct: f64,
     pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
     pub fee_bps: f64, pub slippage_bps: f64, pub latency_ms: i64,
+    pub max_participation_rate: f64,
     pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
     pub unfilled_pending_order: Option<ReplayPendingOrder>,
     pub assumptions: Vec<String>,
@@ -83,18 +89,35 @@ fn event_execution_price(event: &ReplayEvent, action: &str) -> Option<f64> {
     price.filter(|value| value.is_finite() && *value > 0.0)
 }
 
-pub fn replay(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
-              fee_bps: f64, slippage_bps: f64) -> Result<ReplayResult, String> {
-    replay_with_latency(events, strategy, initial_capital, fee_bps, slippage_bps, 0)
+fn event_available_liquidity(event: &ReplayEvent, action: &str) -> Option<f64> {
+    let quantity = match (event.event_type.as_str(), action) {
+        ("trade", "buy" | "sell") => event.size,
+        ("book", "buy") => event.ask_size,
+        ("book", "sell") => event.bid_size,
+        _ => None,
+    };
+    quantity.filter(|value| value.is_finite() && *value > 0.0)
 }
 
-pub fn replay_with_latency(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
+pub fn replay(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
+              fee_bps: f64, slippage_bps: f64) -> Result<ReplayResult, String> {
+    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, 0, 0.10)
+}
+
+pub fn replay_with_latency(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64) -> Result<ReplayResult, String> {
+    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, latency_ms, 0.10)
+}
+
+pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
+              fee_bps: f64, slippage_bps: f64, latency_ms: i64,
+              max_participation_rate: f64) -> Result<ReplayResult, String> {
     strategy.validate()?;
     if !initial_capital.is_finite() || initial_capital <= 0.0 || !fee_bps.is_finite()
         || fee_bps < 0.0 || !slippage_bps.is_finite() || !(0.0..10_000.0).contains(&slippage_bps)
-        || !(0..=60_000).contains(&latency_ms) {
-        return Err("capital must be positive; fee/slippage must be finite and non-negative; latency must be between 0 and 60000 ms".into());
+        || !(0..=60_000).contains(&latency_ms) || !max_participation_rate.is_finite()
+        || max_participation_rate <= 0.0 || max_participation_rate > 1.0 {
+        return Err("capital must be positive; fee/slippage must be finite and non-negative; latency must be between 0 and 60000 ms; max participation must be in (0, 1]".into());
     }
     if events.is_empty() { return Err("no persisted market events in the requested replay window".into()); }
     events.sort_by(|a,b| a.ts_ms.cmp(&b.ts_ms).then_with(||a.event_id.cmp(&b.event_id)));
@@ -126,58 +149,109 @@ pub fn replay_with_latency(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy
 
         // A decision made on an earlier event may only fill on this later,
         // executable trade/book observation. Funding and mark events are not fills.
-        if let Some(pending) = pending_order.clone() {
-            if let Some(price) = if event.ts_ms > pending.decision_ts_ms
-                && event.ts_ms >= pending.submitted_ts_ms.saturating_add(latency_ms) {
-                event_execution_price(event, &pending.action)
-            } else { None } {
-                let mark = current_mark_price.unwrap_or(price);
-                if pending.action == "buy" && position == 0.0 {
-                    let execution = price * (1.0 + slippage_bps / 10_000.0);
-                    let quantity = (cash / (execution * (1.0 + fee_bps / 10_000.0))).max(0.0);
-                    let fee = quantity * execution * fee_bps / 10_000.0;
-                    let slip = quantity * (execution - price);
-                    cash -= quantity * execution + fee;
-                    position = quantity;
-                    position_entry_cost = quantity * execution + fee;
-                    fees += fee;
-                    slippage += slip;
-                    fills.push(ReplayFill {
-                        order_id: pending.order_id,
-                        status: ReplayOrderStatus::Filled,
-                        ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "BUY".into(),
-                        price: execution, quantity, fee, slippage_cost: slip, realized_pnl: 0.0,
-                        equity_after: cash + position * mark, reason: pending.reason,
-                        decision_ts_ms: pending.decision_ts_ms,
-                        decision_event_id: pending.decision_event_id,
-                        submitted_ts_ms: pending.submitted_ts_ms,
-                        submitted_event_id: pending.submitted_event_id,
+        if let Some(mut pending) = pending_order.take() {
+            let eligible = event.ts_ms > pending.decision_ts_ms
+                && event.ts_ms >= pending.submitted_ts_ms.saturating_add(latency_ms);
+            let mut keep_pending = true;
+            if eligible {
+                if let (Some(price), Some(available_liquidity)) = (
+                    event_execution_price(event, &pending.action),
+                    event_available_liquidity(event, &pending.action),
+                ) {
+                    let mark = current_mark_price.unwrap_or(price);
+                    let target_quantity = pending.target_quantity.unwrap_or_else(|| {
+                        if pending.action == "buy" {
+                            (cash / (price * (1.0 + fee_bps / 10_000.0))).max(0.0)
+                        } else {
+                            position
+                        }
                     });
-                } else if pending.action == "sell" && position > 0.0 {
-                    let execution = price * (1.0 - slippage_bps / 10_000.0);
-                    let quantity = position;
-                    let fee = quantity * execution * fee_bps / 10_000.0;
-                    let slip = quantity * (price - execution);
-                    let proceeds = quantity * execution - fee;
-                    let realized_pnl = proceeds - position_entry_cost;
-                    cash += proceeds;
-                    position = 0.0;
-                    position_entry_cost = 0.0;
-                    fees += fee;
-                    slippage += slip;
-                    fills.push(ReplayFill {
-                        order_id: pending.order_id,
-                        status: ReplayOrderStatus::Filled,
-                        ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "SELL".into(),
-                        price: execution, quantity, fee, slippage_cost: slip, realized_pnl,
-                        equity_after: cash, reason: pending.reason,
-                        decision_ts_ms: pending.decision_ts_ms,
-                        decision_event_id: pending.decision_event_id,
-                        submitted_ts_ms: pending.submitted_ts_ms,
-                        submitted_event_id: pending.submitted_event_id,
-                    });
+                    pending.target_quantity = Some(target_quantity);
+                    let remaining_before = (target_quantity - pending.filled_quantity).max(0.0);
+                    let liquidity_cap = available_liquidity * max_participation_rate;
+                    let quantity = remaining_before.min(liquidity_cap);
+                    if quantity > 0.0 {
+                        let filled_after = pending.filled_quantity + quantity;
+                        let remaining_after = (target_quantity - filled_after).max(0.0);
+                        let status = if remaining_after <= 1e-12 {
+                            ReplayOrderStatus::Filled
+                        } else {
+                            ReplayOrderStatus::PartiallyFilled
+                        };
+                        if pending.action == "buy" && cash > 0.0 {
+                            let execution = price * (1.0 + slippage_bps / 10_000.0);
+                            let affordable_quantity = (cash / (execution * (1.0 + fee_bps / 10_000.0))).max(0.0);
+                            let quantity = quantity.min(affordable_quantity);
+                            if quantity > 0.0 {
+                                let fee = quantity * execution * fee_bps / 10_000.0;
+                                let slip = quantity * (execution - price);
+                                cash -= quantity * execution + fee;
+                                position += quantity;
+                                position_entry_cost += quantity * execution + fee;
+                                fees += fee;
+                                slippage += slip;
+                                let filled_after = pending.filled_quantity + quantity;
+                                let remaining_after = (target_quantity - filled_after).max(0.0);
+                                let status = if remaining_after <= 1e-12 { ReplayOrderStatus::Filled } else { ReplayOrderStatus::PartiallyFilled };
+                                fills.push(ReplayFill {
+                                    order_id: pending.order_id.clone(), status,
+                                    ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "BUY".into(),
+                                    price: execution, quantity, fee, slippage_cost: slip, realized_pnl: 0.0,
+                                    equity_after: cash + position * mark, reason: pending.reason.clone(),
+                                    decision_ts_ms: pending.decision_ts_ms,
+                                    decision_event_id: pending.decision_event_id.clone(),
+                                    submitted_ts_ms: pending.submitted_ts_ms,
+                                    submitted_event_id: pending.submitted_event_id.clone(),
+                                    target_quantity, filled_quantity: filled_after, remaining_quantity: remaining_after,
+                                });
+                                pending.filled_quantity = filled_after;
+                                pending.remaining_quantity = Some(remaining_after);
+                                pending.status = status;
+                                keep_pending = status != ReplayOrderStatus::Filled;
+                            }
+                        } else if pending.action == "sell" && position > 0.0 {
+                            let quantity = quantity.min(position);
+                            let execution = price * (1.0 - slippage_bps / 10_000.0);
+                            let fee = quantity * execution * fee_bps / 10_000.0;
+                            let slip = quantity * (price - execution);
+                            let proceeds = quantity * execution - fee;
+                            let entry_cost_portion = position_entry_cost * (quantity / position);
+                            let realized_pnl = proceeds - entry_cost_portion;
+                            cash += proceeds;
+                            position -= quantity;
+                            position_entry_cost = (position_entry_cost - entry_cost_portion).max(0.0);
+                            if position <= 1e-12 {
+                                position = 0.0;
+                                position_entry_cost = 0.0;
+                            }
+                            fees += fee;
+                            slippage += slip;
+                            let filled_after = pending.filled_quantity + quantity;
+                            let remaining_after = (target_quantity - filled_after).max(0.0);
+                            let status = if remaining_after <= 1e-12 { ReplayOrderStatus::Filled } else { ReplayOrderStatus::PartiallyFilled };
+                            fills.push(ReplayFill {
+                                order_id: pending.order_id.clone(), status,
+                                ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "SELL".into(),
+                                price: execution, quantity, fee, slippage_cost: slip, realized_pnl,
+                                equity_after: cash + position * mark, reason: pending.reason.clone(),
+                                decision_ts_ms: pending.decision_ts_ms,
+                                decision_event_id: pending.decision_event_id.clone(),
+                                submitted_ts_ms: pending.submitted_ts_ms,
+                                submitted_event_id: pending.submitted_event_id.clone(),
+                                target_quantity, filled_quantity: filled_after, remaining_quantity: remaining_after,
+                            });
+                            pending.filled_quantity = filled_after;
+                            pending.remaining_quantity = Some(remaining_after);
+                            pending.status = status;
+                            keep_pending = status != ReplayOrderStatus::Filled;
+                        }
+                    } else {
+                        pending.remaining_quantity = Some(remaining_before);
+                    }
                 }
-                pending_order = None;
+            }
+            if keep_pending {
+                pending_order = Some(pending);
             }
         }
         if let Some(price)=event.price.filter(|v|*v>0.0) {
@@ -232,6 +306,17 @@ pub fn replay_with_latency(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy
                     // The current simulator assumes immediate submission after the signal.
                     submitted_ts_ms: event.ts_ms,
                     submitted_event_id: event.event_id.clone(),
+                    target_quantity: if decision.action == "buy" {
+                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + fee_bps / 10_000.0))).max(0.0))
+                    } else {
+                        Some(position)
+                    },
+                    filled_quantity: 0.0,
+                    remaining_quantity: if decision.action == "buy" {
+                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + fee_bps / 10_000.0))).max(0.0))
+                    } else {
+                        Some(position)
+                    },
                     reason: decision.reason.clone(),
                 });
             }
@@ -245,12 +330,13 @@ pub fn replay_with_latency(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
-        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,fills,last_decision,
+        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,fills,last_decision,
         unfilled_pending_order: pending_order,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "A decision is submitted immediately at its signal event in this model, then can only fill on a strictly later executable trade or book event; the observation that generated the decision is never reused as its fill.".into(),
         "Submission-to-fill latency is a minimum event-timestamp delay in milliseconds; routing jitter, acknowledgements and queue priority are not modeled. A final pending order without a later eligible executable observation remains unfilled and is returned as unfilled_pending_order.".into(),
+        "Fills are capped at the configured fraction of observed trade size or side-specific top-of-book size; partial orders persist across later events. Hidden liquidity and queue position are not modeled.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
         "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Trade fills use the observed trade price; book fills use ask for buys and bid for sells. Equity is marked to the latest trade or book midpoint. No forced liquidation or borrow cost model.".into(),
