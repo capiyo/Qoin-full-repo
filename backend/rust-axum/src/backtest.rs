@@ -200,6 +200,38 @@ mod tests {
             &EdgeStrategy::baseline(),1000.0,10.0,10_000.0).is_err());
     }
     #[test]
+    fn replay_settles_funding_only_after_a_long_position_is_open() {
+        let mut strategy = EdgeStrategy::baseline();
+        strategy.bullish_weights.values_mut().for_each(|weight| *weight = 5.0);
+        strategy.bearish_weights.values_mut().for_each(|weight| *weight = 0.0);
+        strategy.angular_threshold_degrees = 90.0;
+        strategy.magnitude_threshold = 0.001;
+        let events = vec![
+            ReplayEvent {
+                event_id: "book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(5.0), ask_size: Some(4.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "trade".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "trade".into(), ts_ms: 2, price: Some(100.0), size: Some(1.0), side: Some("buy".into()),
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "funding".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "funding".into(), ts_ms: 3, price: Some(100.0), size: None, side: None,
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: Some(0.001), open_interest: None, liquidation_side: None,
+            },
+        ];
+        let result = replay(events, &strategy, 1_000.0, 10.0, 5.0).unwrap();
+        assert_eq!(result.funding_settlements, 1);
+        assert!(result.net_funding_cashflow < 0.0);
+        assert!(result.fills.iter().any(|fill| fill.action == "BUY"));
+    }
+    #[test]
     fn funding_cashflow_charges_longs_on_positive_rates_and_credits_negative_rates() {
         assert!((funding_cashflow(2.0, 100.0, 0.001) + 0.2).abs() < 1e-12);
         assert!((funding_cashflow(2.0, 100.0, -0.001) - 0.2).abs() < 1e-12);
