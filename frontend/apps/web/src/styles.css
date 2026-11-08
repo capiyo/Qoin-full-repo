@@ -116,3 +116,27 @@
 .algorithm-card dd{margin:0;color:#43546c;font-size:10px;overflow-wrap:anywhere}
 .algorithm-card-footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px;border-top:1px solid #f0f3f8;color:#8795a8;font-size:9px;text-transform:uppercase;letter-spacing:.035em}
 @media(max-width:580px){.algorithm-catalogue{margin:22px 0;padding:18px 0}.algorithm-card{padding:14px}}
+
+
+/* Native desktop workstation layout. The same React client and API contracts
+   are reused; only the desktop presentation changes inside the Tauri shell. */
+html[data-qoin-platform="desktop"] body{min-width:1024px;min-height:100vh;background:#f5f7fb}
+html[data-qoin-platform="desktop"] .qoin-shell{width:100%;max-width:1720px;margin:0 auto;padding:0 44px 90px 118px}
+html[data-qoin-platform="desktop"] .topbar{height:70px}
+html[data-qoin-platform="desktop"] .welcome{min-height:210px;padding-top:34px;padding-bottom:30px}
+html[data-qoin-platform="desktop"] .welcome-orbit{width:150px;height:150px;margin-right:10%}
+html[data-qoin-platform="desktop"] .instrument-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+html[data-qoin-platform="desktop"] .instrument-card{padding:19px;border-radius:18px}
+html[data-qoin-platform="desktop"] .content-section{padding-top:27px}
+html[data-qoin-platform="desktop"] .floating-navigation{left:22px;top:50%;bottom:auto;flex-direction:column;gap:7px;width:76px;padding:9px;border-radius:24px;transform:translateY(-50%)}
+html[data-qoin-platform="desktop"] .floating-nav-item{width:58px;min-height:58px;flex-direction:column;gap:4px;padding:7px 3px;border-radius:17px;font-size:9px}
+html[data-qoin-platform="desktop"] .floating-nav-icon{font-size:20px}
+html[data-qoin-platform="desktop"] .vector-modal{width:min(1120px,calc(100vw - 180px));max-height:calc(100vh - 64px);border-radius:24px}
+html[data-qoin-platform="desktop"] .modal-header{padding:24px 30px 18px}
+html[data-qoin-platform="desktop"] .modal-body{padding:22px 30px 28px}
+html[data-qoin-platform="desktop"] .vector-map{width:min(100%,480px)}
+html[data-qoin-platform="desktop"] .feature-space-panel svg{max-height:360px}
+html[data-qoin-platform="desktop"] .trace-table-wrap{max-height:360px}
+html[data-qoin-platform="desktop"] .raw-event-list{max-height:420px;overflow:auto}
+html[data-qoin-platform="desktop"] .footer{padding-bottom:20px}
+html[data-qoin-platform="desktop"] button{user-select:none}
