@@ -22,7 +22,7 @@ mod algorithm_entitlements;
 mod edge_strategy;
 mod jepa;
 mod vector_engine;
-use edge_strategy::{EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -208,10 +208,18 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
 
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
-    let decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
+    let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
+    decision.input_event = Some(DecisionInputEvent {
+        event_id: event.event_id.clone(),
+        venue: event.venue.clone(),
+        event_type: event.event_type.clone(),
+        event_ts_ms: event.ts_ms,
+        state_event_count: snapshot.event_count,
+        state_last_event_ts_ms: snapshot.last_event_ts_ms,
+    });
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
