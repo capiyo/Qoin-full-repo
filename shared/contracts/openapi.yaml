@@ -54,7 +54,8 @@ paths:
       description: |
         Deterministic read-only paper simulation. Uses only events already stored in MongoDB,
         sorts by event timestamp then event ID, and never submits orders. Returns fees,
-        slippage, fills, drawdown, exact strategy version and simulation assumptions.
+        slippage, funding cashflows for recorded funding events, fills, drawdown, exact
+        strategy version and simulation assumptions.
         This endpoint is not a historical market-data download or a guarantee of complete coverage.
       parameters:
         - in: query
