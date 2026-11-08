@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -192,6 +192,8 @@ export default function App() {
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
+  const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
+  const [catalogueStatus, setCatalogueStatus] = useState("loading");
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
@@ -220,6 +222,7 @@ export default function App() {
   }
 
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
+  useEffect(() => { let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, []);
   useEffect(() => {
     let active = true;
     getQoinInstruments().then(({ items }) => {
@@ -391,6 +394,16 @@ export default function App() {
           <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
           <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
           <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
+          <section className="coverage-preview" aria-label="Market access tier preview">
+            <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
+            {catalogue?.market_access_tiers?.length ? <div className="coverage-grid">{catalogue.market_access_tiers.map((tier) => <article className="coverage-card" key={tier.tier_id}>
+              <div className="coverage-card-top"><strong>{tier.display_name}</strong><span>{tier.status}</span></div>
+              <div className="coverage-primary"><b>{tier.max_active_instruments}</b><span>active instruments</span></div>
+              <dl><div><dt>Markets</dt><dd>{tier.asset_classes.join(" · ")}</dd></div><div><dt>History</dt><dd>{tier.historical_depth_days} days</dd></div><div><dt>Timeframes</dt><dd>{tier.supported_timeframes.join(" · ")}</dd></div><div><dt>Data providers</dt><dd>{tier.market_data_providers.join(" · ") || "None listed"}</dd></div><div><dt>Execution brokers</dt><dd>{tier.execution_brokers.length ? tier.execution_brokers.join(" · ") : "None — research only"}</dd></div></dl>
+              <p>{tier.notes}</p>
+            </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading proposed market coverage…" : "Market coverage catalogue could not be loaded. Instrument availability remains provider-dependent."}</p>}
+            <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
+          </section>
           {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => setSelected(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
@@ -473,7 +486,8 @@ export default function App() {
                 })}
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
-              <DecisionTracePanel decision={vector} />\n              <BacktestPanel symbol={selected.engineSymbol} />
+              <DecisionTracePanel decision={vector} />
+              <BacktestPanel symbol={selected.engineSymbol} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
