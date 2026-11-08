@@ -70,6 +70,10 @@ cmake --build build/drogon
 
 The default gateway binds to loopback at `127.0.0.1:8080`; Axum binds to `127.0.0.1:8081`. Do not expose Axum directly to the public internet. Configure `QOIN_MONGODB_URI`, `QOIN_MONGODB_DATABASE`, `QOIN_AXUM_ADDR`, `QOIN_AXUM_URL` and `QOIN_DROGON_PORT` as required.
 
+## Firebase account setup
+
+Web and mobile use shared Firebase Authentication, private Firestore profiles and Firebase Storage avatars. See [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) for Console configuration, environment variables, and security-rule deployment. Archive selections are saved per Firebase user and shared across clients.
+
 ## Frontend commands
 
 ```bash
