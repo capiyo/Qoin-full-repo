@@ -12,7 +12,7 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { ArchiveExploreScreen } from "./src/screens/ArchiveExploreScreen";
 import { initializeQoinFirebase, subscribeQoinAuth } from "@qoin/core";
 
-export type RootStackParamList = { Login: undefined; Dashboard: undefined };
+export type RootStackParamList = { Login: { mode?: "signin" | "register" } | undefined; Dashboard: undefined };
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 type MainTab = "Archive" | "Explore";
@@ -36,7 +36,7 @@ function MainTabs({ navigation }: MainTabsProps) {
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        <ArchiveExploreScreen mode={tab} onSignInRequested={() => navigation.navigate("Login")} />
+        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} />
       </View>
       <TabBar current={tab} onChange={setTab} />
     </View>
@@ -62,10 +62,7 @@ export default function App() {
     }
     try {
       initializeQoinFirebase(config, getReactNativePersistence(AsyncStorage));
-      return subscribeQoinAuth((user) => {
-        void user;
-        setAuthReady(true);
-      });
+      return subscribeQoinAuth(() => setAuthReady(true));
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Firebase initialization failed.");
       setAuthReady(true);

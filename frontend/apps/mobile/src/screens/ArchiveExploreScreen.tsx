@@ -31,7 +31,7 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#8895A7" },
 ];
 
-type Props = { mode: "Archive" | "Explore"; onSignInRequested: () => void };
+type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void };
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
@@ -156,7 +156,7 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   </View>;
 }
 
-export function ArchiveExploreScreen({ mode, onSignInRequested }: Props) {
+export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
@@ -457,8 +457,8 @@ export function ArchiveExploreScreen({ mode, onSignInRequested }: Props) {
             <Pressable style={styles.accountAction} disabled={avatarBusy} onPress={() => void chooseAvatar()}><Text style={styles.accountActionText}>{avatarBusy ? "Uploading picture…" : "Change profile picture"}</Text></Pressable>
             <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); void signOutQoinUser().catch((error) => Alert.alert("Sign out failed", error instanceof Error ? error.message : "Try again.")); }}><Text style={styles.accountActionText}>Sign out</Text></Pressable>
           </> : <>
-            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onSignInRequested(); }}><Text style={styles.accountActionText}>Sign in</Text></Pressable>
-            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onSignInRequested(); }}><Text style={styles.accountActionText}>Create account</Text></Pressable>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onAuthRequested("signin"); }}><Text style={styles.accountActionText}>Sign in</Text></Pressable>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onAuthRequested("register"); }}><Text style={styles.accountActionText}>Create account</Text></Pressable>
           </>}
         </Pressable></Pressable>
       </Modal>

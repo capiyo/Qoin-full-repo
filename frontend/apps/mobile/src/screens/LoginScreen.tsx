@@ -8,10 +8,10 @@ import type { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login"> & { configurationError?: string };
 
-export function LoginScreen({ configurationError, navigation }: Props) {
+export function LoginScreen({ configurationError, navigation, route }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [register, setRegister] = useState(false);
+  const [register, setRegister] = useState(route.params?.mode === "register");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submit = async () => {
