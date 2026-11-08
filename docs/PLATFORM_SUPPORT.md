@@ -32,5 +32,5 @@ The Desktop GitHub Actions workflow builds on Windows, macOS and Ubuntu and uplo
 
 - No provider, exchange, Firebase-admin or MongoDB secrets are bundled into the desktop app.
 - No filesystem, shell, updater or order-placement capability is granted by the default Tauri capability.
-- Desktop uses the same Firebase user authorization and server-side entitlement checks as the other clients.
+- Desktop uses the same Firebase client identity and shared API contracts as the other clients. Server-side Firebase ID-token verification and paid entitlement enforcement are not yet complete; desktop packaging does not grant privileged access.
 - The app remains research/paper-only. A native installer does not enable live trading.
