@@ -7,6 +7,7 @@ on:
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
       - "frontend/packages/**"
+      - "backend/rust-axum/crates/qoin-vector-motion/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
