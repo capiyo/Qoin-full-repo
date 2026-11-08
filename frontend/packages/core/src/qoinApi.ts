@@ -359,14 +359,14 @@ export type QoinBacktestFill = {
   fee: number; slippage_cost: number; realized_pnl: number; equity_after: number; reason: string;
 };
 export type QoinBacktestResult = {
-  symbol: string; strategy_key: string; strategy_version: string; from_ts_ms: number; to_ts_ms: number;
+  symbol: string; venue: string; strategy_key: string; strategy_version: string; from_ts_ms: number; to_ts_ms: number;
   events_replayed: number; decisions: number; buy_decisions: number; sell_decisions: number; wait_decisions: number;
   initial_capital: number; final_equity: number; net_pnl: number; net_return_pct: number; max_drawdown_pct: number;
   fees_paid: number; slippage_paid: number; fee_bps: number; slippage_bps: number;
   fills: QoinBacktestFill[]; last_decision?: QoinVectorDecision | null; assumptions: string[];
 };
 export type QoinBacktestRequest = {
-  symbol: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
+  symbol: string; venue?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
   initial_capital?: number; fee_bps?: number; slippage_bps?: number;
 };
 /** Replays only persisted, time-ordered raw observations. No orders are submitted. */
