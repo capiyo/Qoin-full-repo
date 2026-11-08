@@ -90,7 +90,7 @@ export async function uploadQoinAvatar(file: Blob): Promise<string> {
   if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type.toLowerCase())) {
     throw new Error("Choose a JPEG, PNG, or WebP image.");
   }
-  const storage = getStorage(user.app);
+  const storage = getStorage(authInstance!.app);
   const object = ref(storage, `users/${user.uid}/avatar`);
   await uploadBytes(object, file, { contentType: file.type });
   const photoURL = await getDownloadURL(object);
