@@ -59,8 +59,20 @@ jobs:
           trap cleanup EXIT
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            if ! kill -0 "$DROGON_PID" 2>/dev/null; then
+              echo "Drogon exited before becoming healthy"
+              cat /tmp/qoin-drogon.log
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
             sleep 1
           done
+          if [[ ! -s /tmp/health.json ]]; then
+            echo "Gateway health endpoint did not become ready"
+            cat /tmp/qoin-drogon.log
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
           jq -e '.status == "ok" and .mongodb == true' /tmp/health.json
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
