@@ -32,6 +32,8 @@ type QoinNotification = { id: string; symbol: string; title: string; body: strin
 
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
+type NativeMotionPoint = { id: number; x: number; y: number; vx: number; vy: number };
+
 function VectorMap({ decision, history }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[] }) {
   const bullish = decision?.decision_vector?.[0] ?? 0;
   const bearish = decision?.decision_vector?.[1] ?? 0;
@@ -41,15 +43,40 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
   const x = 10 + (bullish / max) * 80;
   const y = 90 - (bearish / max) * 80;
   const trajectory = points.map((item) => project(item).join(",")).join(" ");
+  const [nativeMotion, setNativeMotion] = useState<NativeMotionPoint[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const runtime = globalThis as typeof globalThis & { __TAURI_INTERNALS__?: unknown };
+    if (!runtime.__TAURI_INTERNALS__ || !points.length) {
+      setNativeMotion([]);
+      return () => { cancelled = true; };
+    }
+    const particles = points.slice(-300).map((item, index) => ({
+      id: index,
+      x: Math.max(-1, Math.min(1, item.decision_vector[0] / max)),
+      y: Math.max(-1, Math.min(1, item.decision_vector[1] / max)),
+      vx: 0,
+      vy: 0,
+      weight: 1,
+    }));
+    void import("@tauri-apps/api/core").then(({ invoke }) =>
+      invoke<NativeMotionPoint[]>("simulate_vector_motion", {
+        particles,
+        config: { bullish: Math.max(-1, Math.min(1, bullish)), bearish: Math.max(-1, Math.min(1, bearish)), iterations: 64, repulsion: 0.012, damping: 0.88 },
+      })
+    ).then((result) => { if (!cancelled) setNativeMotion(result); })
+      .catch((error: unknown) => { if (!cancelled) console.error("Native vector motion unavailable; retaining SVG fallback.", error); });
+    return () => { cancelled = true; };
+  }, [decision?.decision_vector?.[0], decision?.decision_vector?.[1], history, max, bullish, bearish]);
   return (
     <div className="vector-map">
-      <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish decision vector">
+      <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish vector space with native Rust motion on desktop">
         <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e9eef6" strokeWidth=".45" /></pattern></defs>
         <rect width="100" height="100" fill="url(#grid)" />
         <path d="M10 8V90H94" fill="none" stroke="#cbd5e1" strokeWidth=".8" />
         <path d="M10 90L94 90 M10 90L10 8" stroke="#cbd5e1" strokeWidth=".5" strokeDasharray="2 2" />
         {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#9bb9f3" strokeWidth="1.1" strokeLinejoin="round" />}
-        {history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#9bb9f3" />; })}
+        {nativeMotion.length ? nativeMotion.map((item) => <circle key={item.id} cx={10 + (item.x + 1) * 40} cy={90 - (item.y + 1) * 40} r="1.25" fill="#76a5ed" opacity=".78" style={{ transition: "cx 420ms ease, cy 420ms ease" }} />) : history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#9bb9f3" />; })}
         {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#2867dc" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#2867dc" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
       </svg>
       <div className="axis-label axis-top">BEARISH COMPONENT ↑</div>
