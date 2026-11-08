@@ -13,7 +13,7 @@ pnpm install
 pnpm dev:desktop
 ```
 
-The desktop shell starts the shared web app on Vite and opens it in a native window. The local Drogon gateway remains at `http://127.0.0.1:8080` by default; start the Rust engine and gateway separately using the root scripts.
+The desktop shell starts the shared web app on Vite and opens it in a native window. On desktop, the Force map calls the native Rust spatial-force solver through Tauri IPC; browser builds retain the SVG fallback. The local Drogon gateway remains at `http://127.0.0.1:8080` by default; start the Rust engine and gateway separately using the root scripts.
 
 ## Build installers
 
