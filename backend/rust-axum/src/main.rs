@@ -256,6 +256,7 @@ struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
 #[derive(Deserialize)]
 struct BacktestQuery {
     symbol: Option<String>,
+    venue: Option<String>,
     from_ts_ms: Option<i64>,
     to_ts_ms: Option<i64>,
     limit: Option<i64>,
@@ -273,11 +274,17 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
     if from_ts_ms < 0 || to_ts_ms <= 0 || from_ts_ms > to_ts_ms {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid replay time range"})));
     }
-    let limit = q.limit.unwrap_or(50_000).clamp(1, 50_000);
-    let filter = doc! {"symbol": &symbol, "ts_ms": {"$gte": from_ts_ms, "$lte": to_ts_ms}};
+    let limit = q.limit.unwrap_or(50_000);
+    if !(1..=50_000).contains(&limit) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"limit must be between 1 and 50000"})));
+    }
+    let mut filter = doc! {"symbol": &symbol, "ts_ms": {"$gte": from_ts_ms, "$lte": to_ts_ms}};
+    if let Some(venue) = q.venue.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        filter.insert("venue", venue);
+    }
     let options = FindOptions::builder()
         .sort(doc! {"ts_ms": 1, "event_id": 1})
-        .limit(limit)
+        .limit(limit + 1)
         .build();
     let mut cursor = match s.events.find(filter, Some(options)).await {
         Ok(cursor) => cursor,
@@ -305,6 +312,13 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
                 return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"historical event read failed"})));
             }
         }
+    }
+    if events.len() as i64 > limit {
+        return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"replay window exceeds the event limit; narrow the timestamp range or select a venue",
+            "limit":limit,
+            "truncated":true
+        })));
     }
     let strategy = match s.active_strategy.read() {
         Ok(strategy) => strategy.clone(),
