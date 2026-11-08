@@ -431,4 +431,16 @@ mod tests {
     fn replay_rejects_empty_or_invalid_cost_assumptions() {
         assert!(replay(vec![],&EdgeStrategy::baseline(),1000.0,0.0,0.0).is_err());
     }
+
+    #[test]
+    fn replay_rejects_latency_outside_the_bounded_range() {
+        let event = ReplayEvent {
+            event_id: "trade".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+            event_type: "trade".into(), ts_ms: 1, price: Some(100.0), size: Some(1.0),
+            side: Some("buy".into()), bid: None, ask: None, bid_size: None, ask_size: None,
+            funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        assert!(replay_with_latency(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, -1).is_err());
+        assert!(replay_with_latency(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 60_001).is_err());
+    }
 }
