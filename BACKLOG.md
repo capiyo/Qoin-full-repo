@@ -13,7 +13,7 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 
 ## 2. Make historical replay causally executable
 - [x] Separate decision timestamp from fill timestamp and preserve both event IDs in the fill record.
-- [ ] Model an explicit order-submission timestamp and order lifecycle separately from decision and fill.
+- [x] Record a replay-scoped order ID, pending/filled status, and decision, submission, and fill timestamps with source event IDs. Submission is explicitly assumed immediate; latency remains a later execution-model item.
 - [x] Prevent same-event and same-timestamp fills; use a strictly later executable trade or side-specific book quote, otherwise leave the signal unfilled.
 - [ ] Model bid/ask-side execution, spread, latency, partial fills, depth constraints, and market impact with bounded assumptions.
 - [ ] Add deterministic tests for event ordering, same-timestamp events, stale quotes, missing next observations, and no-look-ahead guarantees.
