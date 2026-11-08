@@ -513,6 +513,58 @@ mod tests {
     }
 
     #[test]
+    fn replay_partially_fills_sell_orders_and_realizes_cost_basis_proportionally() {
+        let mut strategy = EdgeStrategy::baseline();
+        strategy.bullish_weights.values_mut().for_each(|weight| *weight = 0.0);
+        strategy.bearish_weights.values_mut().for_each(|weight| *weight = 0.0);
+        strategy.bullish_weights.insert("order_flow_imbalance".into(), 5.0);
+        strategy.bearish_weights.insert("funding_pressure".into(), 5.0);
+        strategy.angular_threshold_degrees = 90.0;
+        strategy.magnitude_threshold = 0.001;
+        let trade = |event_id: &str, ts_ms: i64, price: f64, size: f64, side: &str| ReplayEvent {
+            event_id: event_id.into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+            event_type: "trade".into(), ts_ms, price: Some(price), size: Some(size), side: Some(side.into()),
+            bid: None, ask: None, bid_size: None, ask_size: None,
+            funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        let events = vec![
+            ReplayEvent {
+                event_id: "book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(10.0), ask_size: Some(10.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            trade("buy-signal", 2, 100.0, 1.0, "buy"),
+            trade("buy-fill", 3, 100.0, 20.0, "buy"),
+            ReplayEvent {
+                event_id: "funding".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "funding".into(), ts_ms: 4, price: Some(100.0), size: None, side: None,
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: Some(0.01), open_interest: None, liquidation_side: None,
+            },
+            trade("sell-signal", 5, 102.0, 4.0, "sell"),
+            trade("sell-partial-1", 6, 105.0, 4.0, "sell"),
+            trade("sell-partial-2", 7, 110.0, 4.0, "sell"),
+        ];
+        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5).unwrap();
+        let sell_fills: Vec<_> = result.fills.iter().filter(|fill| fill.action == "SELL").collect();
+        assert_eq!(sell_fills.len(), 2);
+        assert!(matches!(result.fills[0].status, ReplayOrderStatus::Filled));
+        assert!(matches!(sell_fills[0].status, ReplayOrderStatus::PartiallyFilled));
+        assert!(matches!(sell_fills[1].status, ReplayOrderStatus::PartiallyFilled));
+        assert_eq!(sell_fills[0].order_id, sell_fills[1].order_id);
+        assert!((sell_fills[0].quantity - 2.0).abs() < 1e-12);
+        assert!((sell_fills[1].quantity - 2.0).abs() < 1e-12);
+        assert!(sell_fills.iter().all(|fill| fill.realized_pnl > 0.0));
+        assert!((sell_fills[1].filled_quantity - 4.0).abs() < 1e-12);
+        let pending = result.unfilled_pending_order.unwrap();
+        assert!(matches!(pending.status, ReplayOrderStatus::PartiallyFilled));
+        assert_eq!(pending.action, "sell");
+        assert!((pending.filled_quantity - 4.0).abs() < 1e-12);
+        assert!(pending.remaining_quantity.unwrap() > 5.0);
+    }
+
+    #[test]
     fn final_signal_is_reported_unfilled_without_a_later_executable_event() {
         let mut strategy = EdgeStrategy::baseline();
         strategy.bullish_weights.values_mut().for_each(|weight| *weight = 5.0);
