@@ -47,7 +47,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         return Err("replay contains invalid timestamps, prices or sizes".into());
     }
     let mut state=ReplayState::default();
-    let mut cash=initial_capital; let mut position=0.0; let mut fees=0.0; let mut slippage=0.0;
+    let mut cash=initial_capital; let mut position=0.0; let mut position_entry_cost=0.0; let mut fees=0.0; let mut slippage=0.0;
     let mut peak=initial_capital; let mut max_dd=0.0; let mut fills=Vec::new();
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     for event in &events {
@@ -82,7 +82,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
             let execution=price*(1.0+slippage_bps/10_000.0);
             let quantity=(cash/(execution*(1.0+fee_bps/10_000.0))).max(0.0);
             let fee=quantity*execution*fee_bps/10_000.0; let slip=quantity*(execution-price);
-            cash-=quantity*execution+fee; position=quantity; fees+=fee; slippage+=slip;
+            cash-=quantity*execution+fee; position=quantity; position_entry_cost=quantity*execution+fee; fees+=fee; slippage+=slip;
             fills.push(ReplayFill{ts_ms:event.ts_ms,event_id:event.event_id.clone(),action:"BUY".into(),price:execution,
                 quantity,fee,slippage_cost:slip,realized_pnl:0.0,equity_after:cash+position*price,reason:decision.reason.clone()});
         } else if let (Some(price),true)=(mark,decision.action=="sell" && position>0.0) {
@@ -91,7 +91,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
             let slip=position*(price-execution); let proceeds=position*execution-fee;
             cash+=proceeds; position=0.0; fees+=fee; slippage+=slip;
             fills.push(ReplayFill{ts_ms:event.ts_ms,event_id:event.event_id.clone(),action:"SELL".into(),price:execution,
-                quantity:0.0,fee,slippage_cost:slip,realized_pnl:gross-fee, equity_after:cash,reason:decision.reason.clone()});
+                quantity:0.0,fee,slippage_cost:slip,realized_pnl, equity_after:cash,reason:decision.reason.clone()});
         }
         if let Some(price)=mark {
             let equity=cash+position*price; peak=peak.max(equity);
