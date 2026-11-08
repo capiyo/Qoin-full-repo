@@ -1,0 +1,61 @@
+name: Desktop
+
+on:
+  push:
+    branches: [main, qoin-archive-explore-vector-ui]
+    paths:
+      - "frontend/apps/desktop/**"
+      - "frontend/apps/web/**"
+      - "frontend/packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "frontend/apps/desktop/**"
+      - "frontend/apps/web/**"
+      - "frontend/packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build native desktop bundle
+        run: pnpm build:desktop
+      - name: Upload desktop installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: qoin-desktop-${{ runner.os }}
+          path: frontend/apps/desktop/src-tauri/target/release/bundle/
+          if-no-files-found: warn
