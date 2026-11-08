@@ -8,7 +8,7 @@ import type { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login"> & { configurationError?: string };
 
-export function LoginScreen({ navigation, configurationError }: Props) {
+export function LoginScreen({ configurationError }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [register, setRegister] = useState(false);
@@ -21,7 +21,6 @@ export function LoginScreen({ navigation, configurationError }: Props) {
     try {
       if (register) await registerQoinUser(email, password);
       else await signInQoinUser(email, password);
-      navigation.replace("Dashboard");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Authentication failed.");
     } finally { setBusy(false); }
