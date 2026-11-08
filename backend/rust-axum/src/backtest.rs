@@ -22,7 +22,7 @@ pub struct ReplayFill {
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
-    pub symbol: String, pub strategy_key: String, pub strategy_version: String,
+    pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
     pub from_ts_ms: i64, pub to_ts_ms: i64, pub events_replayed: usize,
     pub decisions: usize, pub buy_decisions: usize, pub sell_decisions: usize,
     pub wait_decisions: usize, pub initial_capital: f64, pub final_equity: f64,
@@ -31,20 +31,42 @@ pub struct ReplayResult {
     pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
     pub assumptions: Vec<String>,
 }
+fn event_execution_price(event: &ReplayEvent) -> Option<f64> {
+    event.price.filter(|price| price.is_finite() && *price > 0.0).or_else(|| {
+        match (event.bid, event.ask) {
+            (Some(bid), Some(ask)) if bid.is_finite() && ask.is_finite() && bid > 0.0 && ask >= bid => {
+                let mid = (bid + ask) / 2.0;
+                (mid.is_finite() && mid > 0.0).then_some(mid)
+            }
+            _ => None,
+        }
+    })
+}
+
 pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64) -> Result<ReplayResult, String> {
     strategy.validate()?;
     if !initial_capital.is_finite() || initial_capital <= 0.0 || !fee_bps.is_finite()
-        || fee_bps < 0.0 || !slippage_bps.is_finite() || slippage_bps < 0.0 {
+        || fee_bps < 0.0 || !slippage_bps.is_finite() || !(0.0..10_000.0).contains(&slippage_bps) {
         return Err("capital must be positive and fee/slippage assumptions must be finite and non-negative".into());
     }
     if events.is_empty() { return Err("no persisted market events in the requested replay window".into()); }
     events.sort_by(|a,b| a.ts_ms.cmp(&b.ts_ms).then_with(||a.event_id.cmp(&b.event_id)));
     let symbol=events[0].symbol.clone();
-    if events.iter().any(|e|e.symbol != symbol) { return Err("replay events must contain exactly one canonical symbol".into()); }
-    if events.iter().any(|e|e.ts_ms <= 0 || e.price.map(|v|!v.is_finite() || v<=0.0).unwrap_or(false)
-        || e.size.map(|v|!v.is_finite() || v<0.0).unwrap_or(false)) {
-        return Err("replay contains invalid timestamps, prices or sizes".into());
+    if events.iter().any(|e| e.symbol != symbol) { return Err("replay events must contain exactly one canonical symbol".into()); }
+    let venue = events[0].venue.clone();
+    if venue.trim().is_empty() || events.iter().any(|e| e.venue != venue) {
+        return Err("replay events must contain exactly one non-empty venue; select a venue before replaying mixed-provider symbols".into());
+    }
+    if events.iter().any(|e| {
+        e.ts_ms <= 0
+            || [e.price, e.size, e.bid, e.ask, e.bid_size, e.ask_size, e.funding_rate, e.open_interest]
+                .into_iter().flatten().any(|v| !v.is_finite())
+            || e.price.map(|v| v <= 0.0).unwrap_or(false)
+            || [e.size, e.bid_size, e.ask_size, e.open_interest].into_iter().flatten().any(|v| v < 0.0)
+            || matches!((e.bid, e.ask), (Some(bid), Some(ask)) if bid <= 0.0 || ask < bid)
+    }) {
+        return Err("replay contains invalid timestamps, prices, sizes, book values or provider metrics".into());
     }
     let mut state=ReplayState::default();
     let mut cash=initial_capital; let mut position=0.0; let mut position_entry_cost=0.0; let mut fees=0.0; let mut slippage=0.0;
@@ -77,15 +99,16 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         let decision=strategy.decide(&symbol,state.ofi,state.funding_rate,state.spread_bps,state.ewma_abs_return,
             state.event_intensity,state.liquidation_events,state.last_liquidation_side.as_deref())?;
         match decision.action { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
-        let mark=event.price.filter(|v|*v>0.0).or(state.last_price);
-        if let (Some(price),true)= (mark, decision.action=="buy" && position==0.0) {
+        let execution_price = event_execution_price(event);
+        let mark = execution_price.or(state.last_price);
+        if let (Some(price),true)= (execution_price, decision.action=="buy" && position==0.0) {
             let execution=price*(1.0+slippage_bps/10_000.0);
             let quantity=(cash/(execution*(1.0+fee_bps/10_000.0))).max(0.0);
             let fee=quantity*execution*fee_bps/10_000.0; let slip=quantity*(execution-price);
             cash-=quantity*execution+fee; position=quantity; position_entry_cost=quantity*execution+fee; fees+=fee; slippage+=slip;
             fills.push(ReplayFill{ts_ms:event.ts_ms,event_id:event.event_id.clone(),action:"BUY".into(),price:execution,
                 quantity,fee,slippage_cost:slip,realized_pnl:0.0,equity_after:cash+position*price,reason:decision.reason.clone()});
-        } else if let (Some(price),true)=(mark,decision.action=="sell" && position>0.0) {
+        } else if let (Some(price),true)=(execution_price,decision.action=="sell" && position>0.0) {
             let execution=price*(1.0-slippage_bps/10_000.0);
             let quantity=position;
             let fee=quantity*execution*fee_bps/10_000.0;
@@ -102,7 +125,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         last_decision=Some(decision);
     }
     let final_mark=state.last_price.unwrap_or(0.0); let final_equity=cash+position*final_mark;
-    Ok(ReplayResult{symbol,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
+    Ok(ReplayResult{symbol,venue,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
@@ -110,8 +133,8 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
-        "Fees and slippage are constant user-supplied basis-point assumptions; funding cashflows are not yet settled.".into(),
-        "Open positions are marked to the last observed trade price; no forced liquidation or borrow cost model.".into(),
+        "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Funding cashflows are not yet settled.".into(),
+        "Fills require a price or valid bid/ask midpoint on the triggering event; equity is marked to the latest available trade or book midpoint. No forced liquidation or borrow cost model.".into(),
         "Results are a research simulation, not live or expected performance.".into()]})
 }
 #[cfg(test)]
@@ -132,6 +155,32 @@ mod tests {
         assert_eq!(result.from_ts_ms,1); assert_eq!(result.to_ts_ms,2);
         assert_eq!(result.events_replayed,2); assert!(result.fees_paid>=0.0);
         assert_eq!(result.strategy_version,EdgeStrategy::baseline().version);
+    }
+    #[test]
+    fn execution_requires_a_current_price_or_book_midpoint() {
+        let mut event = ReplayEvent {
+            event_id:"book".into(), venue:"binance_usdm".into(), symbol:"BTCUSDT".into(),
+            event_type:"book".into(), ts_ms:1, price:None, size:None, side:None,
+            bid:Some(100.0), ask:Some(102.0), bid_size:None, ask_size:None,
+            funding_rate:None, open_interest:None, liquidation_side:None,
+        };
+        assert_eq!(event_execution_price(&event), Some(101.0));
+        event.bid = None;
+        event.ask = None;
+        assert_eq!(event_execution_price(&event), None);
+    }
+    #[test]
+    fn replay_rejects_mixed_venues_and_unsafe_slippage() {
+        let event = |id: &str, venue: &str| ReplayEvent {
+            event_id:id.into(), venue:venue.into(), symbol:"BTCUSDT".into(), event_type:"trade".into(),
+            ts_ms:1, price:Some(100.0), size:Some(1.0), side:Some("buy".into()),
+            bid:None, ask:None, bid_size:None, ask_size:None, funding_rate:None,
+            open_interest:None, liquidation_side:None,
+        };
+        assert!(replay(vec![event("a","binance_usdm"),event("b","finnhub")],
+            &EdgeStrategy::baseline(),1000.0,10.0,5.0).is_err());
+        assert!(replay(vec![event("a","binance_usdm")],
+            &EdgeStrategy::baseline(),1000.0,10.0,10_000.0).is_err());
     }
     #[test]
     fn replay_rejects_empty_or_invalid_cost_assumptions() {
