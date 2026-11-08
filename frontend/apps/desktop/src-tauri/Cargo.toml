@@ -10,7 +10,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-qoin-vector-motion = { path = "crates/qoin-vector-motion" }
+qoin-vector-motion = { path = "../../../../backend/rust-axum/crates/qoin-vector-motion" }
 
 [features]
 default = ["custom-protocol"]
