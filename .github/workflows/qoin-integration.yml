@@ -77,7 +77,9 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
-          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
+          public_strategy_write_status=$(curl -sS -o /tmp/public-strategy-write.json -w '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$public_strategy_write_status" = "405"
+          curl -fsS -X PUT http://127.0.0.1:8081/internal/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
           jq -e '.status == "strategy_updated" and .strategy.version == "edge-map-ci-smoke-v2"' /tmp/strategy-put.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
@@ -89,9 +91,11 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"finnhub","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.02,"size":1,"side":"buy"}' >/tmp/other-venue.json
+          public_event_write_status=$(curl -sS -o /tmp/public-event-write.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"public-forbidden","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000200,"price":100.03,"size":1,"side":"buy"}')
+          test "$public_event_write_status" = "405"
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"finnhub","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.02,"size":1,"side":"buy"}' >/tmp/other-venue.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000&fee_bps=10&slippage_bps=5' >/tmp/backtest.json
           jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2" and .net_funding_cashflow == 0 and .funding_settlements == 0 and .max_event_gap_ms == 100 and .event_gaps_over_5m == 0' /tmp/backtest.json
