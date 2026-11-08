@@ -12,7 +12,7 @@ import {
   type User,
   type UserCredential,
 } from "firebase/auth";
-import { doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 export type QoinFirebaseConfig = FirebaseOptions;
@@ -101,4 +101,20 @@ export async function uploadQoinAvatar(file: Blob): Promise<string> {
 
 export function toQoinProfile(user: User): QoinProfile {
   return { uid: user.uid, email: user.email, displayName: user.displayName, photoURL: user.photoURL };
+}
+
+export async function getQoinArchivedSymbols(): Promise<string[]> {
+  const { user } = requireQoinFirebase();
+  const snapshot = await getDoc(doc(getFirestore(authInstance!.app), "users", user.uid));
+  const value = snapshot.data()?.archivedSymbols;
+  return Array.isArray(value) ? value.filter((symbol): symbol is string => typeof symbol === "string") : [];
+}
+
+export async function saveQoinArchivedSymbols(symbols: string[]): Promise<void> {
+  const { user } = requireQoinFirebase();
+  const archivedSymbols = [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))];
+  await setDoc(doc(getFirestore(authInstance!.app), "users", user.uid), {
+    archivedSymbols,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
