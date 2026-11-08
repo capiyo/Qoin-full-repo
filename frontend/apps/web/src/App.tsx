@@ -8,6 +8,7 @@ type Instrument = {
   engineSymbol: string;
   description: string;
   venue: string;
+  engineVenue: string;
   provider: string;
   providerStatus?: string;
   archived: boolean;
@@ -15,12 +16,12 @@ type Instrument = {
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#f59e0b" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#6477df" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", provider: "Binance", archived: true, color: "#8b72e8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, color: "#76a85a" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", provider: "Finnhub", archived: false, color: "#4d91d8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", provider: "Finnhub", archived: false, color: "#8895a7" },
+  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#f59e0b" },
+  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#6477df" },
+  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#8b72e8" },
+  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#76a85a" },
+  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#4d91d8" },
+  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
 ];
 
 type Tab = "Archive" | "Explore";
@@ -232,7 +233,7 @@ export default function App() {
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, description: item.description, venue: item.venue,
+        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
         provider: item.provider, providerStatus: item.provider_status,
         archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
       })));
@@ -489,7 +490,7 @@ export default function App() {
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
-              <BacktestPanel symbol={selected.engineSymbol} venue={selected.provider === "Binance" ? "binance_usdm" : "finnhub"} />
+              <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
