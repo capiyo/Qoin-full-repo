@@ -164,7 +164,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                     let mark = current_mark_price.unwrap_or(price);
                     let target_quantity = pending.target_quantity.unwrap_or_else(|| {
                         if pending.action == "buy" {
-                            (cash / (price * (1.0 + (fee_bps + slippage_bps + market_impact_bps) / 10_000.0))).max(0.0)
+                            (cash / (price * (1.0 + (slippage_bps + market_impact_bps) / 10_000.0) * (1.0 + fee_bps / 10_000.0))).max(0.0)
                         } else {
                             position
                         }
@@ -316,13 +316,13 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                     submitted_ts_ms: event.ts_ms,
                     submitted_event_id: event.event_id.clone(),
                     target_quantity: if decision.action == "buy" {
-                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + (fee_bps + slippage_bps + market_impact_bps) / 10_000.0))).max(0.0))
+                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + (slippage_bps + market_impact_bps) / 10_000.0) * (1.0 + fee_bps / 10_000.0))).max(0.0))
                     } else {
                         Some(position)
                     },
                     filled_quantity: 0.0,
                     remaining_quantity: if decision.action == "buy" {
-                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + (fee_bps + slippage_bps + market_impact_bps) / 10_000.0))).max(0.0))
+                        mark.filter(|price| *price > 0.0).map(|price| (cash / (price * (1.0 + (slippage_bps + market_impact_bps) / 10_000.0) * (1.0 + fee_bps / 10_000.0))).max(0.0))
                     } else {
                         Some(position)
                     },
