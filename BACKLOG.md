@@ -20,7 +20,8 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Bound fill quantity by observed trade size or side-specific top-of-book size; persist partial orders across observations and allocate sell cost basis proportionally.
 - [x] Add bounded market impact as coefficient × squared per-fill participation, capped by the configured coefficient and reported separately from base slippage.
 - [x] Expose fees, slippage, latency, max participation, market-impact coefficient, per-fill applied impact, and aggregate impact cost through the API and replay report.
-- [x] Test timestamp ordering, same-timestamp no-fill, missing-next-observation pending orders, and no same-event look-ahead.\n- [ ] Add an explicit stale/out-of-order quote regression.
+- [x] Test timestamp ordering, same-timestamp no-fill, missing-next-observation pending orders, and no same-event look-ahead.
+- [ ] Add an explicit stale/out-of-order quote regression.
 - [ ] Publish execution assumptions and sensitivity/stress scenarios in each replay result.
 
 ## 3. Establish historical market-data completeness
