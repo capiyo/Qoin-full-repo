@@ -458,7 +458,7 @@ export default function App() {
                 <span>Bearish <b>{decisionStrategy.bearish_weights[name]?.toFixed(3) ?? "—"}</b></span>
                 <span>Scale <b>{decisionStrategy.feature_scales[name]?.toFixed(3) ?? "—"}</b></span>
               </div>)}</div>
-              <p className="disclaimer">MongoDB-backed active strategy parameters. Last update: {new Date(strategy.updated_at_ms).toLocaleString()}.</p>
+              <p className="disclaimer">MongoDB-backed active strategy parameters. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</p>
             </> : <p className="provider-empty">The active strategy map could not be loaded.</p>}
           </section>
           <section className="raw-tape">
