@@ -48,6 +48,17 @@ pub struct ReplayFill {
     pub market_impact_bps: f64, pub market_impact_cost: f64,
 }
 #[derive(Debug, Clone, Serialize)]
+pub struct ExecutionStressScenario {
+    pub name: String,
+    pub cost_multiplier: f64,
+    pub fees_paid: f64,
+    pub slippage_paid: f64,
+    pub market_impact_paid: f64,
+    pub estimated_net_pnl: f64,
+    pub estimated_return_pct: f64,
+    pub fills_recomputed: bool,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
     pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
     pub from_ts_ms: i64, pub to_ts_ms: i64, pub events_replayed: usize,
@@ -60,6 +71,7 @@ pub struct ReplayResult {
     pub max_participation_rate: f64, pub market_impact_bps: f64, pub market_impact_paid: f64,
     pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
     pub unfilled_pending_order: Option<ReplayPendingOrder>,
+    pub execution_stress_scenarios: Vec<ExecutionStressScenario>,
     pub assumptions: Vec<String>,
 }
 fn funding_cashflow(position: f64, mark_price: f64, funding_rate: f64) -> f64 {
@@ -333,14 +345,35 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
         last_decision=Some(decision);
     }
     let final_mark=state.last_mark_price.or(state.last_price).unwrap_or(0.0); let final_equity=cash+position*final_mark;
+    let net_pnl = final_equity - initial_capital;
+    let net_return_pct = (final_equity / initial_capital - 1.0) * 100.0;
+    let realized_execution_costs = fees + slippage + market_impact_paid;
+    let execution_stress_scenarios = [
+        ("baseline", 1.0),
+        ("moderate_cost_stress", 1.5),
+        ("severe_cost_stress", 2.0),
+    ].into_iter().map(|(name, cost_multiplier)| {
+        let estimated_net_pnl = net_pnl - realized_execution_costs * (cost_multiplier - 1.0);
+        ExecutionStressScenario {
+            name: name.into(),
+            cost_multiplier,
+            fees_paid: fees * cost_multiplier,
+            slippage_paid: slippage * cost_multiplier,
+            market_impact_paid: market_impact_paid * cost_multiplier,
+            estimated_net_pnl,
+            estimated_return_pct: estimated_net_pnl / initial_capital * 100.0,
+            fills_recomputed: false,
+        }
+    }).collect();
     Ok(ReplayResult{symbol,venue,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         max_event_gap_ms:events.windows(2).map(|pair|pair[1].ts_ms-pair[0].ts_ms).max().unwrap_or(0),
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
-        final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
+        final_equity,net_pnl,net_return_pct,
         max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps,market_impact_paid,fills,last_decision,
         unfilled_pending_order: pending_order,
+        execution_stress_scenarios,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "A decision is submitted immediately at its signal event in this model, then can only fill on a strictly later executable trade or book event; the observation that generated the decision is never reused as its fill.".into(),
@@ -348,6 +381,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
         "Fills are capped at the configured fraction of observed trade size or side-specific top-of-book size; partial orders persist across later events. Hidden liquidity and queue position are not modeled.".into(),
         "Market impact is modeled as the configured coefficient multiplied by the squared per-fill participation ratio; impact is bounded by the configured coefficient and reported separately from base slippage. Cross-level depth, hidden liquidity and queue priority are not modeled.".into(),
         "Buy order sizing reserves the configured maximum slippage and impact before fees so a fill cannot spend more than available cash under the configured cost bound.".into(),
+        "Execution stress scenarios reprice realized fees, base slippage and market-impact costs at 1.0x, 1.5x and 2.0x; they are cost-only estimates and do not recompute fills, quantities or liquidity.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
         "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Trade fills use the observed trade price; book fills use ask for buys and bid for sells. Equity is marked to the latest trade or book midpoint. No forced liquidation or borrow cost model.".into(),
@@ -520,6 +554,14 @@ mod tests {
         assert_eq!(result.slippage_paid, 0.0);
         assert!((result.market_impact_paid - fill.market_impact_cost).abs() < 1e-12);
         assert_eq!(result.market_impact_bps, 10.0);
+        assert_eq!(result.execution_stress_scenarios.len(), 3);
+        assert_eq!(result.execution_stress_scenarios[0].cost_multiplier, 1.0);
+        assert_eq!(result.execution_stress_scenarios[1].cost_multiplier, 1.5);
+        assert_eq!(result.execution_stress_scenarios[2].cost_multiplier, 2.0);
+        assert!((result.execution_stress_scenarios[0].estimated_net_pnl - result.net_pnl).abs() < 1e-12);
+        assert!(result.execution_stress_scenarios[1].estimated_net_pnl < result.net_pnl);
+        assert!(result.execution_stress_scenarios[2].estimated_net_pnl < result.execution_stress_scenarios[1].estimated_net_pnl);
+        assert!(result.execution_stress_scenarios.iter().all(|scenario| !scenario.fills_recomputed));
     }
 
     #[test]
