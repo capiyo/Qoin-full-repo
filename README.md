@@ -9,7 +9,8 @@ Qoin-full-repo/
 ├── frontend/
 │   ├── apps/
 │   │   ├── web/                 # React + TypeScript + Vite web client
-│   │   └── mobile/              # Expo / React Native mobile client
+│   │   ├── mobile/              # Expo / React Native mobile client
+│   │   └── desktop/             # Tauri 2 native desktop shell around shared React client
 │   ├── packages/core/           # Shared types, API client, theme and utilities
 │   └── archive/next-web/        # Preserved legacy Next.js app; not active
 ├── backend/
