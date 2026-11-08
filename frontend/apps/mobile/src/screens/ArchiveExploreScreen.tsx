@@ -186,7 +186,32 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const archivedSymbolsRef = useRef<string[] | null>(null);
-  useEffect(() => { let active = true; try { const unsubscribe = subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); archivedSymbolsRef.current = null; if (user) { void getQoinArchivedSymbols().then((symbols) => { if (!active) return; archivedSymbolsRef.current = symbols; setItems((current) => current.map((item) => ({ ...item, archived: symbols.includes(item.symbol) }))); }).catch((error) => { if (active) Alert.alert("Archive unavailable", error instanceof Error ? error.message : "Could not load your archive."); }); } }); return () => { active = false; unsubscribe(); }; } catch { return () => { active = false; }; } }, []);
+  useEffect(() => {
+    let active = true;
+    let generation = 0;
+    try {
+      const unsubscribe = subscribeQoinAuth((user) => {
+        const requestGeneration = ++generation;
+        setFirebaseUser(user);
+        setAvatarUrl(null);
+        archivedSymbolsRef.current = null;
+        if (!user) {
+          setItems((current) => current.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          return;
+        }
+        void getQoinArchivedSymbols().then((symbols) => {
+          if (!active || requestGeneration !== generation) return;
+          archivedSymbolsRef.current = symbols;
+          setItems((current) => current.map((item) => ({ ...item, archived: symbols.includes(item.symbol) })));
+        }).catch((error) => {
+          if (active && requestGeneration === generation) Alert.alert("Archive unavailable", error instanceof Error ? error.message : "Could not load your archive.");
+        });
+      });
+      return () => { active = false; unsubscribe(); };
+    } catch {
+      return () => { active = false; };
+    }
+  }, []);
   const chooseAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { Alert.alert("Photo access needed", "Allow Qoin to access your photo library to change your profile picture."); return; }
