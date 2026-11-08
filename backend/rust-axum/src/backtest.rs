@@ -27,10 +27,16 @@ pub struct ReplayResult {
     pub decisions: usize, pub buy_decisions: usize, pub sell_decisions: usize,
     pub wait_decisions: usize, pub initial_capital: f64, pub final_equity: f64,
     pub net_pnl: f64, pub net_return_pct: f64, pub max_drawdown_pct: f64,
-    pub fees_paid: f64, pub slippage_paid: f64, pub fee_bps: f64, pub slippage_bps: f64,
+    pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
+    pub fee_bps: f64, pub slippage_bps: f64,
     pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
     pub assumptions: Vec<String>,
 }
+fn funding_cashflow(position: f64, mark_price: f64, funding_rate: f64) -> f64 {
+    if position <= 0.0 || mark_price <= 0.0 { return 0.0; }
+    -position * mark_price * funding_rate
+}
+
 fn event_execution_price(event: &ReplayEvent) -> Option<f64> {
     event.price.filter(|price| price.is_finite() && *price > 0.0).or_else(|| {
         match (event.bid, event.ask) {
@@ -71,6 +77,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
     let mut state=ReplayState::default();
     let mut cash=initial_capital; let mut position=0.0; let mut position_entry_cost=0.0; let mut fees=0.0; let mut slippage=0.0;
     let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
+    let mut net_funding_cashflow=0.0; let mut funding_settlements=0usize;
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     for event in &events {
         let current_execution_price = event_execution_price(event);
@@ -85,6 +92,14 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
             let mid=(bid+ask)/2.0;
             state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
             if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
+        }
+        if event.event_type == "funding" && position > 0.0 {
+            if let (Some(rate), Some(mark_price)) = (event.funding_rate, current_execution_price.or(state.last_mark_price).or(state.last_price)) {
+                let cashflow = funding_cashflow(position, mark_price, rate);
+                cash += cashflow;
+                net_funding_cashflow += cashflow;
+                funding_settlements += 1;
+            }
         }
         match event.event_type.as_str() {
             "trade" => { let size=event.size.unwrap_or(0.0); match event.side.as_deref() {
@@ -131,11 +146,11 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
-        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,fee_bps,slippage_bps,fills,last_decision,
+        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,fills,last_decision,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
-        "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Funding cashflows are not yet settled.".into(),
+        "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received.".into(),
         "Fills require a price or valid bid/ask midpoint on the triggering event; equity is marked to the latest available trade or book midpoint. No forced liquidation or borrow cost model.".into(),
         "Results are a research simulation, not live or expected performance.".into()]})
 }
@@ -183,6 +198,12 @@ mod tests {
             &EdgeStrategy::baseline(),1000.0,10.0,5.0).is_err());
         assert!(replay(vec![event("a","binance_usdm")],
             &EdgeStrategy::baseline(),1000.0,10.0,10_000.0).is_err());
+    }
+    #[test]
+    fn funding_cashflow_charges_longs_on_positive_rates_and_credits_negative_rates() {
+        assert!((funding_cashflow(2.0, 100.0, 0.001) + 0.2).abs() < 1e-12);
+        assert!((funding_cashflow(2.0, 100.0, -0.001) - 0.2).abs() < 1e-12);
+        assert_eq!(funding_cashflow(0.0, 100.0, 0.001), 0.0);
     }
     #[test]
     fn replay_rejects_empty_or_invalid_cost_assumptions() {
