@@ -14,7 +14,7 @@ struct ReplayState {
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     liquidation_events: usize, last_liquidation_side: Option<String>,
 }
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReplayOrderStatus {
     Pending,
@@ -171,13 +171,6 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                     let liquidity_cap = available_liquidity * max_participation_rate;
                     let quantity = remaining_before.min(liquidity_cap);
                     if quantity > 0.0 {
-                        let filled_after = pending.filled_quantity + quantity;
-                        let remaining_after = (target_quantity - filled_after).max(0.0);
-                        let status = if remaining_after <= 1e-12 {
-                            ReplayOrderStatus::Filled
-                        } else {
-                            ReplayOrderStatus::PartiallyFilled
-                        };
                         if pending.action == "buy" && cash > 0.0 {
                             let execution = price * (1.0 + slippage_bps / 10_000.0);
                             let affordable_quantity = (cash / (execution * (1.0 + fee_bps / 10_000.0))).max(0.0);
@@ -470,6 +463,47 @@ mod tests {
     }
 
     #[test]
+    fn replay_partially_fills_orders_within_observed_liquidity() {
+        let mut strategy = EdgeStrategy::baseline();
+        strategy.bullish_weights.values_mut().for_each(|weight| *weight = 5.0);
+        strategy.bearish_weights.values_mut().for_each(|weight| *weight = 0.0);
+        strategy.angular_threshold_degrees = 90.0;
+        strategy.magnitude_threshold = 0.001;
+        let event = |event_id: &str, event_type: &str, ts_ms: i64, size: f64| ReplayEvent {
+            event_id: event_id.into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+            event_type: event_type.into(), ts_ms,
+            price: if event_type == "trade" { Some(100.0 + ts_ms as f64 / 100.0) } else { None },
+            size: if event_type == "trade" { Some(size) } else { None },
+            side: if event_type == "trade" { Some("buy".into()) } else { None },
+            bid: if event_type == "book" { Some(99.99) } else { None },
+            ask: if event_type == "book" { Some(100.01) } else { None },
+            bid_size: if event_type == "book" { Some(10.0) } else { None },
+            ask_size: if event_type == "book" { Some(10.0) } else { None },
+            funding_rate: None, open_interest: None, liquidation_side: None,
+        };
+        let events = vec![
+            event("book", "book", 1, 0.0),
+            event("signal", "trade", 2, 1.0),
+            event("partial-1", "trade", 3, 2.0),
+            event("partial-2", "trade", 4, 4.0),
+        ];
+        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5).unwrap();
+        assert_eq!(result.max_participation_rate, 0.5);
+        assert_eq!(result.fills.len(), 2);
+        assert!((result.fills[0].quantity - 1.0).abs() < 1e-12);
+        assert!((result.fills[1].quantity - 2.0).abs() < 1e-12);
+        assert!(matches!(result.fills[0].status, ReplayOrderStatus::PartiallyFilled));
+        assert!(matches!(result.fills[1].status, ReplayOrderStatus::PartiallyFilled));
+        assert_eq!(result.fills[0].order_id, result.fills[1].order_id);
+        assert!((result.fills[1].filled_quantity - 3.0).abs() < 1e-12);
+        assert!(result.fills[1].remaining_quantity > 6.0);
+        let pending = result.unfilled_pending_order.unwrap();
+        assert!(matches!(pending.status, ReplayOrderStatus::PartiallyFilled));
+        assert!((pending.filled_quantity - 3.0).abs() < 1e-12);
+        assert!(pending.remaining_quantity.unwrap() > 6.0);
+    }
+
+    #[test]
     fn final_signal_is_reported_unfilled_without_a_later_executable_event() {
         let mut strategy = EdgeStrategy::baseline();
         strategy.bullish_weights.values_mut().for_each(|weight| *weight = 5.0);
@@ -527,6 +561,8 @@ mod tests {
             funding_rate: None, open_interest: None, liquidation_side: None,
         };
         assert!(replay_with_latency(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, -1).is_err());
-        assert!(replay_with_latency(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 60_001).is_err());
+        assert!(replay_with_latency(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 60_001).is_err());
+        assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 0.0).is_err());
+        assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 1.01).is_err());
     }
 }
