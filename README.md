@@ -32,7 +32,8 @@ Qoin-full-repo/
 
 ## Service boundaries
 
-1. Frontend web and mobile call the gateway/API contracts and never implement trading decisions.
+1. Frontend web, mobile and desktop call the same gateway/API contracts and never implement trading decisions.
+2. Desktop is a Tauri 2 native shell around the shared React/Vite client. It adds a desktop workstation layout and native installers without creating a separate trading engine or a forked strategy implementation.
 2. C++ Drogon is the public HTTP/WebSocket gateway for read-only queries and market updates. Provider ingestion and strategy mutation use Axum's loopback-only internal routes; they are not exposed as public gateway writes. Drogon must not duplicate strategy, vector, or risk logic.
 3. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
 4. MongoDB is the durable persistence layer.
@@ -80,7 +81,9 @@ Web and mobile use shared Firebase Authentication, private Firestore profiles an
 pnpm install
 pnpm dev:web
 pnpm dev:mobile
+pnpm dev:desktop
 pnpm --filter @qoin/react-web build
+pnpm build:desktop
 ```
 
 ## Validation
