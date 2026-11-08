@@ -410,7 +410,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
       </ScrollView>
 
       <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
-        <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={() => undefined}>
+        <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={(event) => event.stopPropagation()}>
           <View style={styles.accountIdentity}><View style={styles.accountAvatar}>{firebaseUser?.photoURL ? <Image source={{ uri: firebaseUser.photoURL }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || "Qoin member"}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || "Signed in"}</Text></View></View>
           <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); Alert.alert("Profile", firebaseUser?.email || "Your Qoin profile"); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
           <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setNotificationsOpen(true); }}><Text style={styles.accountActionText}>Notifications {unreadNotifications ? "· " + unreadNotifications + " unread" : ""}</Text></Pressable>
