@@ -22,7 +22,8 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Expose fees, slippage, latency, max participation, market-impact coefficient, per-fill applied impact, and aggregate impact cost through the API and replay report.
 - [x] Test timestamp ordering, same-timestamp no-fill, missing-next-observation pending orders, and no same-event look-ahead.
 - [x] Add an explicit stale/out-of-order quote regression; replay timestamp-sorts the stale observation before the later signal so it cannot fill that signal.
-- [ ] Publish execution assumptions and sensitivity/stress scenarios in each replay result.
+- [x] Publish the active execution assumptions in every replay result.
+- [ ] Add cost-only 1.5× and 2× fee/slippage/impact stress scenarios; label clearly that fills and liquidity are not recomputed.
 
 ## 3. Establish historical market-data completeness
 - [ ] Inventory provider coverage, licensing constraints, canonical symbols/venues, and available history.
