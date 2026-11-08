@@ -426,7 +426,10 @@ mod tests {
         assert_eq!(entry.decision_event_id, "trade");
         assert_eq!(entry.submitted_ts_ms, 2);
         assert_eq!(entry.submitted_event_id, "trade");
-        assert!(matches!(entry.status, ReplayOrderStatus::Filled));
+        assert!(matches!(entry.status, ReplayOrderStatus::PartiallyFilled));
+        let pending = result.unfilled_pending_order.unwrap();
+        assert!(matches!(pending.status, ReplayOrderStatus::PartiallyFilled));
+        assert!(pending.remaining_quantity.unwrap() > 0.0);
     }
 
     #[test]
