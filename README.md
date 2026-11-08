@@ -1,6 +1,6 @@
 # Qoin — Market-Force Trading Research Monorepo
 
-Qoin is a multi-client research and paper-trading system. The repository is explicitly divided into `frontend/` and `backend/`. React web and React Native share TypeScript packages. Rust/Axum owns event ingestion, market state, strategy-map and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The strategy is a research baseline, not a validated or proven profitable edge.
+Qoin is a multi-client research and paper-trading system. The repository is explicitly divided into `frontend/` and `backend/`. React web, React Native and the native desktop shell share TypeScript packages. Rust/Axum owns event ingestion, market state, strategy-map and vector decisions; C++/Drogon is the HTTP gateway; MongoDB is the durable store. The strategy is a research baseline, not a validated or proven profitable edge.
 
 ## Repository structure
 
@@ -34,10 +34,10 @@ Qoin-full-repo/
 
 1. Frontend web, mobile and desktop call the same gateway/API contracts and never implement trading decisions.
 2. Desktop is a Tauri 2 native shell around the shared React/Vite client. It adds a desktop workstation layout and native installers without creating a separate trading engine or a forked strategy implementation.
-2. C++ Drogon is the public HTTP/WebSocket gateway for read-only queries and market updates. Provider ingestion and strategy mutation use Axum's loopback-only internal routes; they are not exposed as public gateway writes. Drogon must not duplicate strategy, vector, or risk logic.
-3. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
-4. MongoDB is the durable persistence layer.
-5. The JEPA world model is research-only; it cannot override Axum decision authority or bypass risk controls.
+3. C++ Drogon is the public HTTP/WebSocket gateway for read-only queries and market updates. Provider ingestion and strategy mutation use Axum's loopback-only internal routes; they are not exposed as public gateway writes. Drogon must not duplicate strategy, vector, or risk logic.
+4. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
+5. MongoDB is the durable persistence layer.
+6. The JEPA world model is research-only; it cannot override Axum decision authority or bypass risk controls.
 
 The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
 
@@ -73,7 +73,7 @@ The default gateway binds to loopback at `127.0.0.1:8080`; Axum binds to `127.0.
 
 ## Firebase account setup
 
-Web and mobile use shared Firebase Authentication, private Firestore profiles and Firebase Storage avatars. See [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) for Console configuration, environment variables, and security-rule deployment. Archive selections are saved per Firebase user and shared across clients.
+Web, mobile and desktop use shared Firebase Authentication, private Firestore profiles and Firebase Storage avatars. See [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) for Console configuration, environment variables, and security-rule deployment. Archive selections are saved per Firebase user and shared across clients.
 
 ## Frontend commands
 
