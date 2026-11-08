@@ -37,3 +37,4 @@ Updated: 2026-10-23
 - Latest head before backlog initialization: `eb650cf58fbf397f22887be8ce938c21af807273`.
 - The Axum–Drogon–MongoDB integration job failed after the mixed-venue replay assertion, when the next gateway request received an empty reply and Drogon terminated with `std::length_error`. A failed-job rerun was started to establish reproducibility; no root-cause fix is claimed yet.
 - The first backlog item is the integration failure. No feature work is started ahead of that verification gate.
+- Follow-up: the failed integration job was rerun on the same code SHA; attempt 2 passed all integration steps. The original Drogon `std::length_error` is still unexplained and is tracked in root `BLOCKERS.md`; the backlog item remains open.
