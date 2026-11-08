@@ -364,6 +364,12 @@ mod tests {
         };
         assert_eq!(event_execution_price(&event, "buy"), Some(102.0));
         assert_eq!(event_execution_price(&event, "sell"), Some(100.0));
+        event.bid_size = Some(3.0);
+        event.ask_size = Some(4.0);
+        assert_eq!(event_available_liquidity(&event, "buy"), Some(4.0));
+        assert_eq!(event_available_liquidity(&event, "sell"), Some(3.0));
+        event.bid_size = None;
+        event.ask_size = None;
         event.bid = None;
         event.ask = None;
         assert_eq!(event_execution_price(&event, "buy"), None);
