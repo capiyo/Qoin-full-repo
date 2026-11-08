@@ -14,6 +14,18 @@ pub enum AlgorithmStatus {
     Preview,
     Deprecated,
     Disabled,
+
+    #[test]
+    fn access_tiers_expand_coverage_without_claiming_broker_execution() {
+        let tiers = market_access_tiers();
+        assert_eq!(tiers.len(), 3);
+        assert!(!tiers[0].asset_classes.contains(&"commodities"));
+        assert!(tiers[2].asset_classes.contains(&"commodities"));
+        assert!(tiers[0].historical_depth_days < tiers[1].historical_depth_days);
+        assert!(tiers[1].historical_depth_days < tiers[2].historical_depth_days);
+        assert!(tiers.iter().all(|tier| tier.execution_brokers.is_empty()));
+        assert!(tiers.iter().all(|tier| tier.status == "preview"));
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,6 +36,9 @@ pub struct AlgorithmManifest {
     pub version: &'static str,
     pub status: AlgorithmStatus,
     pub supported_asset_classes: &'static [&'static str],
+    pub supported_market_data_providers: &'static [&'static str],
+    pub supported_venues: &'static [&'static str],
+    pub supported_instrument_groups: &'static [&'static str],
     pub supported_timeframes: &'static [&'static str],
     pub required_features: &'static [&'static str],
     pub optional_features: &'static [&'static str],
@@ -62,6 +77,9 @@ pub fn registered_algorithms() -> Vec<AlgorithmManifest> {
         version: "edge-map-v1",
         status: AlgorithmStatus::Active,
         supported_asset_classes: &["crypto"],
+        supported_market_data_providers: &["binance_public"],
+        supported_venues: &["binance_usdm"],
+        supported_instrument_groups: &["crypto_perpetuals"],
         supported_timeframes: &["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
         required_features: &["order_flow_imbalance", "liquidity_stress", "event_intensity"],
         optional_features: &["funding_pressure", "volatility_shock", "liquidation_pressure"],
@@ -69,6 +87,50 @@ pub fn registered_algorithms() -> Vec<AlgorithmManifest> {
         execution_mode: "research_only",
         evaluation_status: "not_independently_validated",
     }]
+}
+
+
+/// Commercial access packages describe market-data coverage, not strategy quality.
+/// These are preview definitions only: no prices, payments or authorization are active.
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAccessTier {
+    pub tier_id: &'static str,
+    pub display_name: &'static str,
+    pub status: &'static str,
+    pub market_data_providers: &'static [&'static str],
+    pub venues: &'static [&'static str],
+    pub asset_classes: &'static [&'static str],
+    pub instrument_groups: &'static [&'static str],
+    pub max_active_instruments: u16,
+    pub historical_depth_days: u16,
+    pub supported_timeframes: &'static [&'static str],
+    pub max_stream_subscriptions: u16,
+    pub execution_brokers: &'static [&'static str],
+    pub notes: &'static str,
+}
+pub fn market_access_tiers() -> Vec<MarketAccessTier> {
+    vec![
+        MarketAccessTier { tier_id:"qoin_starter", display_name:"Starter", status:"preview",
+            market_data_providers:&["binance_public"], venues:&["binance_usdm"],
+            asset_classes:&["crypto"], instrument_groups:&["crypto_major_perpetuals"],
+            max_active_instruments:5, historical_depth_days:7,
+            supported_timeframes:&["5m","15m","1h","4h","1d"], max_stream_subscriptions:5,
+            execution_brokers:&[], notes:"Narrow crypto universe; no commodities or broker execution." },
+        MarketAccessTier { tier_id:"qoin_plus", display_name:"Plus", status:"preview",
+            market_data_providers:&["binance_public","finnhub_optional"], venues:&["binance_usdm","finnhub_covered_markets"],
+            asset_classes:&["crypto","equities","forex"],
+            instrument_groups:&["crypto_perpetuals","large_cap_equities","major_fx"],
+            max_active_instruments:25, historical_depth_days:90,
+            supported_timeframes:&["1m","5m","15m","30m","1h","4h","1d"], max_stream_subscriptions:15,
+            execution_brokers:&[], notes:"Expanded provider and instrument coverage; Finnhub requires configured credentials and provider entitlement." },
+        MarketAccessTier { tier_id:"qoin_pro", display_name:"Pro", status:"preview",
+            market_data_providers:&["binance_public","finnhub_optional"], venues:&["binance_usdm","finnhub_covered_markets"],
+            asset_classes:&["crypto","equities","forex","indices","commodities"],
+            instrument_groups:&["crypto_perpetuals","equities","major_fx","indices","energy","metals","agriculture"],
+            max_active_instruments:100, historical_depth_days:365,
+            supported_timeframes:&["1m","5m","15m","30m","1h","4h","1d"], max_stream_subscriptions:50,
+            execution_brokers:&[], notes:"Broadest planned research universe; actual instruments depend on live provider coverage and licensing. No broker execution is currently enabled." }
+    ]
 }
 
 pub fn validate_catalogue() -> Result<(), &'static str> {
@@ -94,7 +156,9 @@ pub async fn get_algorithms() -> impl IntoResponse {
     }
     let algorithms = registered_algorithms();
     (StatusCode::OK, Json(serde_json::json!({
-        "catalogue_version": 1,
+        "catalogue_version": 2,
+        "market_access_tiers": market_access_tiers(),
+        "market_access_tiers_enabled": false,
         "algorithms": algorithms,
         "selection_enabled": false,
         "entitlements_enabled": false,
@@ -119,6 +183,8 @@ mod tests {
     fn every_registered_algorithm_has_explicit_capabilities() {
         for algorithm in registered_algorithms() {
             assert!(!algorithm.supported_asset_classes.is_empty());
+            assert!(!algorithm.supported_market_data_providers.is_empty());
+            assert!(!algorithm.supported_venues.is_empty());
             assert!(!algorithm.supported_timeframes.is_empty());
             assert!(!algorithm.required_features.is_empty());
             assert_eq!(algorithm.evaluation_status, "not_independently_validated");
