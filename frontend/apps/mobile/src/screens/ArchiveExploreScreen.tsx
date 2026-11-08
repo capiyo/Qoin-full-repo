@@ -135,7 +135,8 @@ function MobileBacktestPanel({ symbol, venue }: { symbol: string; venue: string 
         {[
           ["Net P/L", result.net_pnl.toFixed(4)], ["Return", result.net_return_pct.toFixed(3) + "%"],
           ["Max drawdown", result.max_drawdown_pct.toFixed(3) + "%"], ["Final equity", result.final_equity.toFixed(4)],
-          ["Events", String(result.events_replayed)], ["BUY / SELL / WAIT", result.buy_decisions + " / " + result.sell_decisions + " / " + result.wait_decisions],
+          ["Events", String(result.events_replayed)], ["Largest raw-event gap", (result.max_event_gap_ms / 1000).toFixed(1) + "s"],
+          ["Gaps over 5 minutes", String(result.event_gaps_over_5m)], ["BUY / SELL / WAIT", result.buy_decisions + " / " + result.sell_decisions + " / " + result.wait_decisions],
           ["Fees", result.fees_paid.toFixed(4)], ["Slippage", result.slippage_paid.toFixed(4)],
           ["Net funding · received +", result.net_funding_cashflow.toFixed(4)], ["Funding settlements", String(result.funding_settlements)],
         ].map(([label, value]) => <View key={label} style={styles.backtestMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
