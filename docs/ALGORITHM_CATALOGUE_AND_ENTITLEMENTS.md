@@ -219,3 +219,22 @@ A read-only replay endpoint is now available through `GET /api/v1/backtest` (Axu
 The simulation currently models long-only, all-available-cash entries on BUY and full exits on SELL. Fee and slippage assumptions are explicit query parameters (basis points); the response reports fills, decision counts, gross realized fill P&L, net equity/P&L, drawdown, fees, slippage, strategy version and assumptions. It rejects invalid data/cost assumptions and caps a replay at 50,000 observations.
 
 Important limitations: this replays only raw events already present in MongoDB. It does not backfill Binance/Finnhub history, guarantee continuous coverage, model short positions, leverage, funding cashflows, borrow costs, liquidation, partial fills, latency or market impact. An open position is marked to the last observed trade. The strategy is the currently active baseline snapshot at replay start; the response identifies its exact version. These results are research simulations, not live or expected performance. A dedicated historical provider/backfill pipeline, immutable strategy selection per historical timestamp, and richer execution simulator remain separate work.
+
+
+## Market coverage tiers (preview design)
+
+Market coverage is a separate product dimension from algorithm performance. A tier may restrict which market-data providers, venues, asset classes, instrument groups, timeframes, historical depth, active instruments and simultaneous stream subscriptions a user can access. It must not silently change the coefficients, normalization, decision gates or version of an algorithm. If a strategy itself is different, it must have a distinct algorithm ID/version and independent evaluation record.
+
+The Axum catalogue now exposes three **preview-only** market-access package examples. These are product-design defaults, not active offers, prices, paid entitlements or enforced limits:
+
+| Preview package | Providers / markets | Asset coverage | Instrument cap | Historical depth | Stream cap |
+|---|---|---|---:|---:|---:|
+| Starter | Binance public / USD-M | Major crypto perpetuals | 5 | 7 days | 5 |
+| Plus | Binance public + optional Finnhub | Crypto, large-cap equities, major FX | 25 | 90 days | 15 |
+| Pro | Binance public + optional Finnhub | Crypto, equities, FX, indices, commodities (energy, metals, agriculture) | 100 | 365 days | 50 |
+
+Timeframe availability is also tiered. Starter begins at 5m; Plus and Pro include 1m. Finnhub coverage requires a configured key, provider entitlements and actual instrument support. Listing a provider or asset class in a preview tier does not guarantee a quote, historical series or licensed availability for every instrument.
+
+**Broker distinction:** the current product is research-only and does not submit live orders. All preview tiers therefore expose an empty `execution_brokers` list. Binance and Finnhub in this catalogue are market-data providers/venues, not broker integrations. A future broker capability must be separately integrated, licensed, risk-controlled and tested before it can appear in an active tier.
+
+The response advertises `market_access_tiers_enabled: false`; the existing entitlement rules are not yet connected to authenticated API authorization or payment reconciliation. The tier definitions do not currently enforce API, stream, instrument or history limits. Prices and commercial terms remain intentionally unspecified. A later enforcement layer must resolve a verified user grant and apply these limits server-side on every protected request; hiding instruments in the frontend is not access control.
