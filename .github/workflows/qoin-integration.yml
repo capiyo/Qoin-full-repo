@@ -83,7 +83,8 @@ jobs:
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000&fee_bps=10&slippage_bps=5' >/tmp/backtest.json
           jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2"' /tmp/backtest.json
-          if curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100' >/tmp/mixed-venue-backtest.json; then echo 'mixed-venue replay unexpectedly succeeded'; exit 1; fi
+          mixed_status=$(curl -sS -o /tmp/mixed-venue-backtest.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
+          test "$mixed_status" = "422"
           jq -e '.error | contains("exactly one")' /tmp/mixed-venue-backtest.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
           jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
