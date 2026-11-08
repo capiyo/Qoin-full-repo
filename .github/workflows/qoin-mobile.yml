@@ -1,7 +1,7 @@
 name: Qoin React Native
 on:
   push:
-    branches: [main]
+    branches: [main, qoin-archive-explore-vector-ui]
   pull_request:
     branches: [main]
   workflow_dispatch:
