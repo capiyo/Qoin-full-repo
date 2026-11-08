@@ -43,3 +43,15 @@
   .decision-trace-panel { padding: 12px; border-radius: 14px; }
   .trace-gates { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+
+
+.backtest-panel{display:flex;flex-direction:column;gap:14px;padding:18px;border:1px solid #e6ebf2;border-radius:16px;background:#fff}
+.backtest-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.backtest-controls label{display:flex;flex-direction:column;gap:6px;color:#718096;font-size:11px;font-weight:650}
+.backtest-controls input{width:100%;min-width:0;padding:9px 10px;border:1px solid #e1e8f1;border-radius:9px;background:#fff;color:#24344d;font:inherit}
+.backtest-controls button{min-height:38px;padding:8px 14px;border:0;border-radius:999px;background:#2867dc;color:#fff;font-weight:700;cursor:pointer}
+.backtest-controls button:disabled{opacity:.55;cursor:wait}
+.backtest-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}
+.backtest-metrics>div{display:flex;flex-direction:column;gap:5px;padding:11px;border-radius:10px;background:#f5f8fd}
+.backtest-metrics span{font-size:10px;color:#718096}.backtest-metrics strong{font-size:14px;color:#24344d}
+@media(max-width:640px){.backtest-panel{padding:12px;border-radius:14px}.backtest-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
