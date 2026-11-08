@@ -83,6 +83,10 @@ paths:
           name: latency_ms
           description: Minimum delay from order submission to an eligible fill; 0 still requires a strictly later event.
           schema: { type: integer, minimum: 0, maximum: 60000, default: 0 }
+        - in: query
+          name: max_participation_rate
+          description: Maximum fraction of observed trade size or side-specific top-of-book size that one fill may consume.
+          schema: { type: number, exclusiveMinimum: 0, maximum: 1, default: 0.1 }
       responses:
         '200': { description: Replay metrics, fills, and assumptions }
         '413': { description: Replay event limit reached }

@@ -354,17 +354,19 @@ export function getQoinStrategy(): Promise<QoinStrategy> {
 }
 
 
-export type QoinReplayOrderStatus = "pending" | "filled";
+export type QoinReplayOrderStatus = "pending" | "partially_filled" | "filled";
 export type QoinBacktestPendingOrder = {
   order_id: string; status: QoinReplayOrderStatus; action: string;
   decision_ts_ms: number; decision_event_id: string; submitted_ts_ms: number;
-  submitted_event_id: string; reason: string;
+  submitted_event_id: string; target_quantity: number | null;
+  filled_quantity: number; remaining_quantity: number | null; reason: string;
 };
 export type QoinBacktestFill = {
   order_id: string; status: QoinReplayOrderStatus;
   ts_ms: number; event_id: string; action: string; price: number; quantity: number;
   fee: number; slippage_cost: number; realized_pnl: number; equity_after: number; reason: string;
   decision_ts_ms: number; decision_event_id: string; submitted_ts_ms: number; submitted_event_id: string;
+  target_quantity: number; filled_quantity: number; remaining_quantity: number;
 };
 export type QoinBacktestResult = {
   symbol: string; venue: string; strategy_key: string; strategy_version: string; from_ts_ms: number; to_ts_ms: number;
@@ -372,13 +374,13 @@ export type QoinBacktestResult = {
   decisions: number; buy_decisions: number; sell_decisions: number; wait_decisions: number;
   initial_capital: number; final_equity: number; net_pnl: number; net_return_pct: number; max_drawdown_pct: number;
   fees_paid: number; slippage_paid: number; net_funding_cashflow: number; funding_settlements: number;
-  fee_bps: number; slippage_bps: number; latency_ms: number;
+  fee_bps: number; slippage_bps: number; latency_ms: number; max_participation_rate: number;
   fills: QoinBacktestFill[]; last_decision?: QoinVectorDecision | null;
   unfilled_pending_order?: QoinBacktestPendingOrder | null; assumptions: string[];
 };
 export type QoinBacktestRequest = {
   symbol: string; venue?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
-  initial_capital?: number; fee_bps?: number; slippage_bps?: number; latency_ms?: number;
+  initial_capital?: number; fee_bps?: number; slippage_bps?: number; latency_ms?: number; max_participation_rate?: number;
 };
 /** Replays only persisted, time-ordered raw observations. No orders are submitted. */
 export function runQoinBacktest(input: QoinBacktestRequest): Promise<QoinBacktestResult> {
