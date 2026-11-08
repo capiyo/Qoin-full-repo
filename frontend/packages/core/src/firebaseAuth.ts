@@ -46,7 +46,7 @@ export function requireQoinFirebase() {
   if (!authInstance) throw new Error("Firebase is not configured. Set the Qoin Firebase client environment variables.");
   const user = authInstance.currentUser;
   if (!user) throw new Error("Sign in to continue.");
-  return { auth: authInstance, user, app: user.app };
+  return { auth: authInstance, user, app: authInstance.app };
 }
 
 export function subscribeQoinAuth(callback: (user: User | null) => void) {
@@ -55,7 +55,7 @@ export function subscribeQoinAuth(callback: (user: User | null) => void) {
 }
 
 async function saveProfile(user: User): Promise<void> {
-  const db = getFirestore(user.app);
+  const db = getFirestore(user.auth.app);
   await setDoc(doc(db, "users", user.uid), {
     uid: user.uid,
     email: user.email,
