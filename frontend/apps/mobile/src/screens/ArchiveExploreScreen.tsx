@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -91,6 +91,62 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     <Text selectable style={styles.traceJson}>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</Text>
     <Text style={styles.traceSubhead}>Complete serialized decision</Text>
     <Text selectable style={styles.traceJson}>{JSON.stringify(decision, null, 2)}</Text>
+  </View>;
+}
+
+function MobileBacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
+  const [capital, setCapital] = useState("10000");
+  const [fee, setFee] = useState("10");
+  const [slippage, setSlippage] = useState("5");
+  const [result, setResult] = useState<QoinBacktestResult | null>(null);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    const initialCapital = Number(capital), feeBps = Number(fee), slippageBps = Number(slippage);
+    if (!Number.isFinite(initialCapital) || initialCapital <= 0 || !Number.isFinite(feeBps) || feeBps < 0 ||
+        !Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10_000) {
+      setStatus("Enter positive capital, non-negative fees and slippage below 10,000 bps.");
+      return;
+    }
+    setBusy(true); setStatus(""); setResult(null);
+    try {
+      const replay = await runQoinBacktest({ symbol, venue, initial_capital: initialCapital, fee_bps: feeBps, slippage_bps: slippageBps, limit: 10_000 });
+      setResult(replay); setStatus("Replay completed from persisted events only.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Historical replay unavailable.");
+    } finally { setBusy(false); }
+  };
+  return <View style={styles.mobileBacktest}>
+    <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Historical event replay</Text><Text style={styles.attentionCaption}>Paper only · no orders</Text></View>
+    <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. This is a research simulation, not expected performance.</Text>
+    <View style={styles.backtestInputs}>
+      {[["Capital", capital, setCapital], ["Fee (bps)", fee, setFee], ["Slippage (bps)", slippage, setSlippage]].map(([label, value, setter]) => (
+        <View key={String(label)} style={styles.backtestInputWrap}>
+          <Text style={styles.engineLabel}>{String(label)}</Text>
+          <TextInput value={String(value)} onChangeText={setter as (value: string) => void} keyboardType="decimal-pad" style={styles.backtestInput} />
+        </View>
+      ))}
+    </View>
+    <Pressable onPress={run} disabled={busy} style={[styles.backtestRun, busy && styles.backtestDisabled]}><Text style={styles.backtestRunText}>{busy ? "Replaying…" : "Run historical replay"}</Text></Pressable>
+    {status ? <Text style={styles.disclaimer}>{status}</Text> : null}
+    {result ? <>
+      <View style={styles.backtestMetrics}>
+        {[
+          ["Net P/L", result.net_pnl.toFixed(4)], ["Return", result.net_return_pct.toFixed(3) + "%"],
+          ["Max drawdown", result.max_drawdown_pct.toFixed(3) + "%"], ["Final equity", result.final_equity.toFixed(4)],
+          ["Events", String(result.events_replayed)], ["BUY / SELL / WAIT", result.buy_decisions + " / " + result.sell_decisions + " / " + result.wait_decisions],
+          ["Fees", result.fees_paid.toFixed(4)], ["Slippage", result.slippage_paid.toFixed(4)],
+          ["Net funding · received +", result.net_funding_cashflow.toFixed(4)], ["Funding settlements", String(result.funding_settlements)],
+        ].map(([label, value]) => <View key={label} style={styles.backtestMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+      </View>
+      <Text style={styles.disclaimer}>Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {result.events_replayed} observations.</Text>
+      {result.fills.map((fill, index) => <View key={fill.event_id + index} style={styles.backtestFill}>
+        <Text style={styles.newsMeta}>{fill.action} · {new Date(fill.ts_ms).toLocaleString()}</Text>
+        <Text style={styles.engineValue}>Price {fill.price.toPrecision(8)} · Qty {fill.quantity.toPrecision(6)}</Text>
+        <Text style={styles.disclaimer}>Fee {fill.fee.toFixed(4)} · Slippage {fill.slippage_cost.toFixed(4)} · Realized {fill.realized_pnl.toFixed(4)}</Text>
+      </View>)}
+      <Text style={styles.traceJson}>{result.assumptions.join("\n")}</Text>
+    </> : null}
   </View>;
 }
 
@@ -382,6 +438,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
             </View>
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
+            <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.venue} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
               {decisionStrategy ? <>
@@ -482,6 +539,16 @@ export function ArchiveExploreScreen({ mode }: Props) {
 
 const styles = StyleSheet.create({
   tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
+  mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
+  backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  backtestInputWrap: { flexGrow: 1, flexBasis: "30%", minWidth: 85, gap: 5 },
+  backtestInput: { borderWidth: 1, borderColor: "#E1E8F1", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, color: "#24344D", fontSize: 12 },
+  backtestRun: { alignItems: "center", paddingVertical: 11, borderRadius: 22, backgroundColor: "#2867DC" },
+  backtestDisabled: { opacity: 0.55 },
+  backtestRunText: { color: "#FFFFFF", fontWeight: "800", fontSize: 11 },
+  backtestMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  backtestMetric: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#F5F8FD" },
+  backtestFill: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#E8EDF5", gap: 4 },
   traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#F5F8FD" },
   traceValue: { color: "#30445F", fontSize: 10, fontWeight: "700" },
   traceTableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E8EDF5" },
