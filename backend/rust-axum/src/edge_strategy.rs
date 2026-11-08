@@ -24,6 +24,7 @@ pub struct EdgeStrategy {
 pub struct FeatureTrace {
     pub name: String,
     pub raw_value: f64,
+    pub transform: String,
     pub scale: f64,
     pub normalized_value: f64,
     pub clamped_value: f64,
@@ -152,6 +153,14 @@ impl EdgeStrategy {
             (liquidation_events as f64 / scale("liquidation_pressure"))
                 * match last_liquidation_side { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
         ];
+        let source_raw = [
+            order_flow_imbalance,
+            funding_rate.unwrap_or(0.0),
+            spread_bps.unwrap_or(self.max_spread_bps * 4.0),
+            ewma_abs_return,
+            event_intensity,
+            liquidation_events as f64,
+        ];
         if raw.iter().any(|v| !v.is_finite()) { return Err("non-finite feature input".into()); }
         let features_vec: Vec<f64> = raw.iter().enumerate().map(|(i, v)| {
             let name = FEATURE_NAMES[i];
@@ -204,7 +213,7 @@ impl EdgeStrategy {
             ("liquidation_events", Some(liquidation_events as f64)),
         ].into_iter().map(|(name, value)| (name.to_owned(), value)).collect();
         let feature_trace = FEATURE_NAMES.iter().enumerate().map(|(i, name)| {
-            let raw_value = raw[i];
+            let raw_value = source_raw[i];
             let scale = match *name {
                 "order_flow_imbalance" => 1.0,
                 "funding_pressure" => scale("funding_pressure"),
@@ -214,13 +223,23 @@ impl EdgeStrategy {
                 "liquidation_pressure" => scale("liquidation_pressure"),
                 _ => 1.0,
             };
+            let transform = match *name {
+                "order_flow_imbalance" => "identity",
+                "funding_pressure" => "multiply_then_clamp",
+                "liquidity_stress" => "divide_then_clamp",
+                "volatility_shock" => "divide_then_clamp",
+                "event_intensity" => "divide_then_clamp",
+                "liquidation_pressure" => "divide_apply_side_sign_then_clamp",
+                _ => "identity",
+            }.to_owned();
             let bullish_weight = self.bullish_weights[*name];
             let bearish_weight = self.bearish_weights[*name];
             FeatureTrace {
                 name: (*name).to_owned(),
                 raw_value,
+                transform,
                 scale,
-                normalized_value: raw_value,
+                normalized_value: raw[i],
                 clamped_value: features_vec[i],
                 bullish_weight,
                 bearish_weight,
