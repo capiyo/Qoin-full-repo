@@ -436,7 +436,7 @@ export default function App() {
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
           {firebaseUser ? <>
-            <button onClick={() => { setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
+            <button onClick={() => { setAccountOpen(false); setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
             <button onClick={() => { setNotificationsOpen((value) => !value); setAccountOpen(false); }}>Notifications <span>{unreadNotifications ? unreadNotifications : ""}</span></button>
             <button onClick={() => avatarInputRef.current?.click()}>Change profile picture</button>
             <button onClick={() => { void signOutQoinUser(); setAccountOpen(false); }}>Sign out</button>
@@ -446,7 +446,7 @@ export default function App() {
           </>}
         </section>}
         <input ref={avatarInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={changeAvatar} />
-        {profileOpen && firebaseUser && <section className="account-menu profile-menu"><div className="account-identity"><strong>Profile</strong><small>{firebaseUser.email}</small></div><button onClick={() => { setProfileOpen(false); setAccountOpen(false); }}>Close</button></section>}
+        {profileOpen && firebaseUser && <section className="account-menu profile-menu"><div className="account-identity"><strong>{firebaseUser.displayName || "Profile"}</strong><small>{firebaseUser.email}</small><small>{firebaseUser.uid}</small></div><button onClick={() => { setProfileOpen(false); setAccountOpen(false); }}>Close</button></section>}
         {authPanelOpen && <section className="auth-panel"><form onSubmit={submitAuthentication}><div className="account-identity"><strong>{authMode === "register" ? "Create your Qoin account" : "Sign in to Qoin"}</strong><small>Firebase-secured account</small></div><label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required /></label><label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>{authError && <p role="alert">{authError}</p>}<button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button><button type="button" className="account-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already registered? Sign in" : "New to Qoin? Create an account"}</button><button type="button" className="account-switch" onClick={() => setAuthPanelOpen(false)}>Close</button></form></section>}
         {notificationsOpen && <section className="notification-panel" aria-label="Notification centre">
           <div className="notification-panel-heading"><div><strong>Notifications</strong><small>{unreadNotifications} unread · live engine events</small></div><button onClick={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}>Mark read</button></div>
