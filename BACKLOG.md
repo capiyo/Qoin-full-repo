@@ -18,9 +18,9 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Use ask for book buys and bid for book sells; include the observed spread in executable prices.
 - [x] Add a configurable 0–60,000 ms minimum delay between submission and the first eligible fill; zero still requires a strictly later event.
 - [x] Bound fill quantity by observed trade size or side-specific top-of-book size; persist partial orders across observations and allocate sell cost basis proportionally.
-- [ ] Add a bounded market-impact model tied to participation and available depth.
-- [ ] Expose all execution assumptions in the API and replay report, with deterministic regression tests.
-- [ ] Add deterministic tests for event ordering, same-timestamp events, stale quotes, missing next observations, and no-look-ahead guarantees.
+- [x] Add bounded market impact as coefficient × squared per-fill participation, capped by the configured coefficient and reported separately from base slippage.
+- [x] Expose fees, slippage, latency, max participation, market-impact coefficient, per-fill applied impact, and aggregate impact cost through the API and replay report.
+- [x] Test timestamp ordering, same-timestamp no-fill, missing-next-observation pending orders, and no same-event look-ahead.\n- [ ] Add an explicit stale/out-of-order quote regression.
 - [ ] Publish execution assumptions and sensitivity/stress scenarios in each replay result.
 
 ## 3. Establish historical market-data completeness
