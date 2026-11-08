@@ -184,7 +184,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  useEffect(() => { try { return subscribeQoinAuth(setFirebaseUser); } catch { return undefined; } }, []);
+  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); }); } catch { return undefined; } }, []);
   const chooseAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { Alert.alert("Photo access needed", "Allow Qoin to access your photo library to change your profile picture."); return; }
