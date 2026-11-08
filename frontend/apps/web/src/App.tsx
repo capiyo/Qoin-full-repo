@@ -81,6 +81,43 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   </section>;
 }
 
+
+function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
+  const gates = decision.diagnostics;
+  const yesNo = (value?: boolean) => value == null ? "Not reported" : value ? "PASS" : "FAIL";
+  return <section className="decision-trace-panel">
+    <div className="attention-heading"><strong>Decision trace · nothing hidden</strong><span>{decision.strategy_version || "Unversioned"}</span></div>
+    <p className="disclaimer">This is the exact calculation record returned by the engine for this decision, including the source event and parameter snapshot.</p>
+    {decision.input_event && <div className="trace-source">
+      <strong>Triggering source event</strong>
+      <span>{decision.input_event.event_type} · {decision.input_event.venue} · {decision.input_event.event_id}</span>
+      <small>{new Date(decision.input_event.event_ts_ms).toLocaleString()} · {decision.input_event.state_event_count} accumulated events · state through {decision.input_event.state_last_event_ts_ms ? new Date(decision.input_event.state_last_event_ts_ms).toLocaleString() : "unknown"}</small>
+    </div>}
+    <div className="trace-table-wrap"><table className="trace-table">
+      <thead><tr><th>Feature</th><th>Raw</th><th>Transform</th><th>Scale</th><th>Normalized</th><th>Clamped</th><th>Bull term</th><th>Bear term</th></tr></thead>
+      <tbody>{(decision.feature_trace || []).map((item) => <tr key={item.name}>
+        <td>{item.name.replaceAll("_", " ")}</td><td>{item.raw_value.toPrecision(5)}</td><td>{item.transform}</td><td>{item.scale}</td>
+        <td>{item.normalized_value.toFixed(5)}</td><td>{item.clamped_value.toFixed(5)}</td>
+        <td>{item.bullish_weighted_term.toFixed(5)}</td><td>{item.bearish_weighted_term.toFixed(5)}</td>
+      </tr>)}</tbody>
+    </table></div>
+    <div className="trace-gates">
+      {gates && [
+        ["Spread supplied", yesNo(gates.spread_present)], ["Spread within limit", yesNo(gates.spread_within_limit)],
+        ["Event evidence", yesNo(gates.event_intensity_positive)], ["Magnitude threshold", yesNo(gates.magnitude_passed)],
+        ["Buy angle", yesNo(gates.buy_angle_passed)], ["Sell angle", yesNo(gates.sell_angle_passed)],
+        ["Bullish > bearish", yesNo(gates.bullish_exceeds_bearish)], ["Bearish > bullish", yesNo(gates.bearish_exceeds_bullish)],
+      ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
+    </div>
+    <p className="disclaimer">Angle: {decision.angle_degrees?.toFixed(4) ?? "—"}° ({decision.angle_radians?.toFixed(6) ?? "—"} rad) · angular gate: {gates?.angle_limit_degrees ?? "—"}° · magnitude gate: {gates?.magnitude_limit ?? "—"} · spread gate: {gates?.spread_limit_bps ?? "—"} bps. Final action: {decision.action?.toUpperCase() || "WAIT"} — {decision.reason || "No reason supplied"}.</p>
+    <details className="trace-details"><summary>Inspect exact raw inputs, parameters and full serialized calculation</summary>
+      <h4>Raw inputs (null means the provider did not supply the field)</h4><pre>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</pre>
+      <h4>Exact strategy parameters used for this decision</h4><pre>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</pre>
+      <h4>Complete decision object</h4><pre>{JSON.stringify(decision, null, 2)}</pre>
+    </details>
+  </section>;
+}
+
 function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision } }) {
   return (
     <article className="instrument-card">
@@ -263,6 +300,7 @@ export default function App() {
   }, [selected?.engineSymbol, liveBySymbol]);
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
+  const decisionStrategy = vector?.strategy_parameters || strategy;
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
@@ -372,8 +410,9 @@ export default function App() {
                 <div className="attention-heading"><strong>Feature contribution ledger</strong><span>Coefficient × attended feature</span></div>
                 {QOIN_FEATURE_NAMES.map((name,index) => {
                   const attended = vector.attended_features?.[index] ?? 0;
-                  const bullishWeight = strategy?.bullish_weights[name];
-                  const bearishWeight = strategy?.bearish_weights[name];
+                  const trace = vector.feature_trace?.find((item) => item.name === name);
+                  const bullishWeight = trace?.bullish_weight;
+                  const bearishWeight = trace?.bearish_weight;
                   return <div className="contribution-row" key={name}>
                     <strong>{name.replaceAll("_"," ")}</strong>
                     <span>{bullishWeight == null ? "Bullish weight unavailable" : <>Bull {bullishWeight.toFixed(3)} × {attended.toFixed(3)} = <b>{(bullishWeight*attended).toFixed(4)}</b></>}</span>
@@ -382,6 +421,7 @@ export default function App() {
                 })}
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
+              <DecisionTracePanel decision={vector} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
@@ -404,19 +444,19 @@ export default function App() {
                 </div>
               </section>
               <section className="strategy-map-panel">
-            <div className="attention-heading"><strong>Active strategy map</strong><span>{strategy?.version || "Strategy unavailable"} · {strategy?.status || "unknown status"}</span></div>
-            {strategy ? <>
+            <div className="attention-heading"><strong>Active strategy map</strong><span>{decisionStrategy?.version || "Strategy unavailable"} · {decisionStrategy?.status || "unknown status"}</span></div>
+            {decisionStrategy ? <>
               <div className="strategy-gates">
-                <div><span>Angular threshold</span><strong>{strategy.angular_threshold_degrees.toFixed(2)}°</strong></div>
-                <div><span>Magnitude threshold</span><strong>{strategy.magnitude_threshold.toFixed(3)}</strong></div>
-                <div><span>Maximum spread</span><strong>{strategy.max_spread_bps.toFixed(2)} bps</strong></div>
-                <div><span>Attention scale</span><strong>{strategy.attention_scale.toFixed(3)}</strong></div>
+                <div><span>Angular threshold</span><strong>{decisionStrategy.angular_threshold_degrees.toFixed(2)}°</strong></div>
+                <div><span>Magnitude threshold</span><strong>{decisionStrategy.magnitude_threshold.toFixed(3)}</strong></div>
+                <div><span>Maximum spread</span><strong>{decisionStrategy.max_spread_bps.toFixed(2)} bps</strong></div>
+                <div><span>Attention scale</span><strong>{decisionStrategy.attention_scale.toFixed(3)}</strong></div>
               </div>
               <div className="strategy-weights">{QOIN_FEATURE_NAMES.map((name) => <div className="strategy-weight-row" key={name}>
                 <strong>{name.replaceAll("_", " ")}</strong>
-                <span>Bullish <b>{strategy.bullish_weights[name]?.toFixed(3) ?? "—"}</b></span>
-                <span>Bearish <b>{strategy.bearish_weights[name]?.toFixed(3) ?? "—"}</b></span>
-                <span>Scale <b>{strategy.feature_scales[name]?.toFixed(3) ?? "—"}</b></span>
+                <span>Bullish <b>{decisionStrategy.bullish_weights[name]?.toFixed(3) ?? "—"}</b></span>
+                <span>Bearish <b>{decisionStrategy.bearish_weights[name]?.toFixed(3) ?? "—"}</b></span>
+                <span>Scale <b>{decisionStrategy.feature_scales[name]?.toFixed(3) ?? "—"}</b></span>
               </div>)}</div>
               <p className="disclaimer">MongoDB-backed active strategy parameters. Last update: {new Date(strategy.updated_at_ms).toLocaleString()}.</p>
             </> : <p className="provider-empty">The active strategy map could not be loaded.</p>}
