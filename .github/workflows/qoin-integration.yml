@@ -98,5 +98,7 @@ jobs:
           mixed_status=$(curl -sS -o /tmp/mixed-venue-backtest.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
           test "$mixed_status" = "422"
           jq -e '.error | contains("exactly one")' /tmp/mixed-venue-backtest.json
+          curl -fsS http://127.0.0.1:8080/api/v1/instruments >/tmp/instruments.json
+          jq -e '[.items[] | select(.symbol == "BTC/USD")][0].venue_id == "binance_usdm" and [.items[] | select(.symbol == "NVDA")][0].venue_id == "finnhub"' /tmp/instruments.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
           jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
