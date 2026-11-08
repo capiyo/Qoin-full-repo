@@ -33,7 +33,7 @@ Qoin-full-repo/
 ## Service boundaries
 
 1. Frontend web and mobile call the gateway/API contracts and never implement trading decisions.
-2. C++ Drogon is the HTTP gateway and forwards market events and queries to Axum. It must not duplicate strategy, vector, or risk logic.
+2. C++ Drogon is the public HTTP/WebSocket gateway for read-only queries and market updates. Provider ingestion and strategy mutation use Axum's loopback-only internal routes; they are not exposed as public gateway writes. Drogon must not duplicate strategy, vector, or risk logic.
 3. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
 4. MongoDB is the durable persistence layer.
 5. The JEPA world model is research-only; it cannot override Axum decision authority or bypass risk controls.
