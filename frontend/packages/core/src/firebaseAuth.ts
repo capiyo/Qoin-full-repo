@@ -55,7 +55,7 @@ export function subscribeQoinAuth(callback: (user: User | null) => void) {
 }
 
 async function saveProfile(user: User): Promise<void> {
-  const db = getFirestore(user.auth.app);
+  const db = getFirestore(authInstance!.app);
   await setDoc(doc(db, "users", user.uid), {
     uid: user.uid,
     email: user.email,
