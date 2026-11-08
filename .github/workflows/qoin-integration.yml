@@ -94,7 +94,7 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"finnhub","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.02,"size":1,"side":"buy"}' >/tmp/other-venue.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000&fee_bps=10&slippage_bps=5' >/tmp/backtest.json
-          jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2" and .net_funding_cashflow == 0 and .funding_settlements == 0' /tmp/backtest.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2" and .net_funding_cashflow == 0 and .funding_settlements == 0 and .max_event_gap_ms == 100 and .event_gaps_over_5m == 0' /tmp/backtest.json
           mixed_status=$(curl -sS -o /tmp/mixed-venue-backtest.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
           test "$mixed_status" = "422"
           jq -e '.error | contains("exactly one")' /tmp/mixed-venue-backtest.json
