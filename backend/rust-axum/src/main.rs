@@ -790,6 +790,7 @@ async fn main(){
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
+    states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
@@ -828,11 +829,32 @@ async fn main(){
         }
         Err(_) => None,
     };
+    // Resume the latest per-symbol state after a process restart. Raw events and
+    // decision history remain immutable; this restores only the rolling live snapshot.
+    let mut state_cursor = states.aggregate(vec![
+        doc!{"$sort":{"stored_at":-1}},
+        doc!{"$group":{"_id":"$symbol","snapshot":{"$first":"$ROOT"}}},
+    ], None).await.expect("query latest persisted market states");
+    let mut restored_memory: HashMap<String, SymbolState> = HashMap::new();
+    while let Some(row) = state_cursor.try_next().await.expect("read latest persisted market states") {
+        if let Ok(document) = row.get_document("snapshot") {
+            match mongodb::bson::from_document::<SymbolState>(document.clone()) {
+                Ok(snapshot) if !snapshot.symbol.trim().is_empty() => {
+                    restored_memory.insert(snapshot.symbol.clone(), snapshot);
+                }
+                Ok(_) => tracing::warn!("skipping persisted market state with empty symbol"),
+                Err(error) => tracing::warn!(error=%error, "skipping malformed persisted market state during recovery"),
+            }
+        } else {
+            tracing::warn!("skipping malformed latest market-state aggregation row");
+        }
+    }
+    tracing::info!(restored_symbols=restored_memory.len(), "restored latest market snapshots from MongoDB");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
-        memory:Arc::new(RwLock::new(HashMap::new())),
+        memory:Arc::new(RwLock::new(restored_memory)),
         active_strategy:Arc::new(RwLock::new(active))
     };
     let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
