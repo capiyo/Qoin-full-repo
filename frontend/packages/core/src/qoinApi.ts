@@ -61,8 +61,18 @@ export type QoinStrategySnapshot = {
   feature_scales: Record<string, number>;
   updated_at_ms: number;
 };
+export type QoinDecisionInputEvent = {
+  event_id: string;
+  venue: string;
+  event_type: string;
+  event_ts_ms: number;
+  state_event_count: number;
+  state_last_event_ts_ms: number | null;
+};
 export type QoinVectorDecision = {
   symbol: string;
+  input_event?: QoinDecisionInputEvent | null;
+  liquidation_side?: string | null;
   strategy_key?: string;
   strategy_version?: string;
   raw_inputs?: Record<string, number | null>;
