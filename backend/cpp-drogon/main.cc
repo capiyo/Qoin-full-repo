@@ -168,6 +168,10 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/algorithms", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/algorithms");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/instruments", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/instruments");
