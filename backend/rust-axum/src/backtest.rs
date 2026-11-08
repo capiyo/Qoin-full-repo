@@ -14,19 +14,32 @@ struct ReplayState {
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     liquidation_events: usize, last_liquidation_side: Option<String>,
 }
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplayOrderStatus {
+    Pending,
+    Filled,
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayPendingOrder {
+    pub order_id: String,
+    pub status: ReplayOrderStatus,
     pub action: String,
     pub decision_ts_ms: i64,
     pub decision_event_id: String,
+    pub submitted_ts_ms: i64,
+    pub submitted_event_id: String,
     pub reason: String,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayFill {
+    pub order_id: String,
+    pub status: ReplayOrderStatus,
     pub ts_ms: i64, pub event_id: String, pub action: String, pub price: f64,
     pub quantity: f64, pub fee: f64, pub slippage_cost: f64, pub realized_pnl: f64,
     pub equity_after: f64, pub reason: String,
     pub decision_ts_ms: i64, pub decision_event_id: String,
+    pub submitted_ts_ms: i64, pub submitted_event_id: String,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
@@ -121,11 +134,15 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
                     fees += fee;
                     slippage += slip;
                     fills.push(ReplayFill {
+                        order_id: pending.order_id,
+                        status: ReplayOrderStatus::Filled,
                         ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "BUY".into(),
                         price: execution, quantity, fee, slippage_cost: slip, realized_pnl: 0.0,
                         equity_after: cash + position * mark, reason: pending.reason,
                         decision_ts_ms: pending.decision_ts_ms,
                         decision_event_id: pending.decision_event_id,
+                        submitted_ts_ms: pending.submitted_ts_ms,
+                        submitted_event_id: pending.submitted_event_id,
                     });
                 } else if pending.action == "sell" && position > 0.0 {
                     let execution = price * (1.0 - slippage_bps / 10_000.0);
@@ -140,11 +157,15 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
                     fees += fee;
                     slippage += slip;
                     fills.push(ReplayFill {
+                        order_id: pending.order_id,
+                        status: ReplayOrderStatus::Filled,
                         ts_ms: event.ts_ms, event_id: event.event_id.clone(), action: "SELL".into(),
                         price: execution, quantity, fee, slippage_cost: slip, realized_pnl,
                         equity_after: cash, reason: pending.reason,
                         decision_ts_ms: pending.decision_ts_ms,
                         decision_event_id: pending.decision_event_id,
+                        submitted_ts_ms: pending.submitted_ts_ms,
+                        submitted_event_id: pending.submitted_event_id,
                     });
                 }
                 pending_order = None;
@@ -194,9 +215,14 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
                 || (decision.action == "sell" && position > 0.0);
             if should_queue {
                 pending_order = Some(ReplayPendingOrder {
+                    order_id: format!("{}:{}:{}", event.ts_ms, event.event_id, decision.action),
+                    status: ReplayOrderStatus::Pending,
                     action: decision.action.to_string(),
                     decision_ts_ms: event.ts_ms,
                     decision_event_id: event.event_id.clone(),
+                    // The current simulator assumes immediate submission after the signal.
+                    submitted_ts_ms: event.ts_ms,
+                    submitted_event_id: event.event_id.clone(),
                     reason: decision.reason.clone(),
                 });
             }
@@ -214,8 +240,8 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         unfilled_pending_order: pending_order,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
-        "A decision can only fill on a later executable trade or book event; the observation that generated the decision is never reused as its fill.".into(),
-        "A final pending decision without a later executable observation remains unfilled and is returned as unfilled_pending_order.".into(),
+        "A decision is submitted immediately at its signal event in this model, then can only fill on a strictly later executable trade or book event; the observation that generated the decision is never reused as its fill.".into(),
+        "Submission-to-fill latency is not modeled yet. A final pending order without a later executable observation remains unfilled and is returned as unfilled_pending_order.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
         "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Trade fills use the observed trade price; book fills use ask for buys and bid for sells. Equity is marked to the latest trade or book midpoint. No forced liquidation or borrow cost model.".into(),
@@ -310,6 +336,9 @@ mod tests {
         assert_eq!(entry.ts_ms, 3);
         assert_eq!(entry.decision_ts_ms, 2);
         assert_eq!(entry.decision_event_id, "trade");
+        assert_eq!(entry.submitted_ts_ms, 2);
+        assert_eq!(entry.submitted_event_id, "trade");
+        assert!(matches!(entry.status, ReplayOrderStatus::Filled));
     }
 
     #[test]
@@ -345,6 +374,9 @@ mod tests {
         assert_eq!(pending.action, "buy");
         assert_eq!(pending.decision_ts_ms, 2);
         assert_eq!(pending.decision_event_id, "signal-trade");
+        assert_eq!(pending.submitted_ts_ms, 2);
+        assert_eq!(pending.submitted_event_id, "signal-trade");
+        assert!(matches!(pending.status, ReplayOrderStatus::Pending));
     }
 
     #[test]
