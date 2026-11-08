@@ -80,6 +80,8 @@ pub fn simulate(
     let iterations = config.iterations.clamp(1, 240);
     let bullish = config.bullish.clamp(-1.0, 1.0);
     let bearish = config.bearish.clamp(-1.0, 1.0);
+    // Bound force magnitude even when a caller supplies an extreme finite value.
+    let repulsion = config.repulsion.clamp(0.0, 0.25);
 
     for _ in 0..iterations {
         let mut grid: HashMap<(i32,i32), Vec<usize>> = HashMap::with_capacity(particles.len());
@@ -121,12 +123,12 @@ pub fn simulate(
                                     ];
                                     let direction = directions[(hash as usize) & 7];
                                     let sign = if particles[i].id < particles[j].id { 1.0 } else { -1.0 };
-                                    let strength = config.repulsion * 18.0;
+                                    let strength = repulsion * 18.0;
                                     fx += direction[0] * sign * strength;
                                     fy += direction[1] * sign * strength;
                                 } else {
                                     let inverse = distance_sq.sqrt().recip();
-                                    let strength = config.repulsion * inverse.min(18.0);
+                                    let strength = repulsion * inverse.min(18.0);
                                     fx += ox * inverse * strength;
                                     fy += oy * inverse * strength;
                                 }
@@ -204,6 +206,20 @@ mod tests {
             simulate(&particles, MotionConfig::default()),
             Err(MotionError::DuplicateParticleId)
         );
+    }
+
+    #[test]
+    fn extreme_finite_repulsion_keeps_output_finite_and_bounded() {
+        let particles = [
+            ParticleInput { id: 1, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, weight: 1.0 },
+            ParticleInput { id: 2, x: 0.001, y: 0.001, vx: 0.0, vy: 0.0, weight: 1.0 },
+        ];
+        let config = MotionConfig { repulsion: f32::MAX, ..Default::default() };
+        let output = simulate(&particles, config).unwrap();
+        assert!(output.iter().all(|p| {
+            p.x.is_finite() && p.y.is_finite() && p.vx.is_finite() && p.vy.is_finite()
+                && p.x.abs() <= 1.5 && p.y.abs() <= 1.5
+        }));
     }
 
     #[test]
