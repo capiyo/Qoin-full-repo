@@ -24,6 +24,7 @@ pub struct ReplayFill {
 pub struct ReplayResult {
     pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
     pub from_ts_ms: i64, pub to_ts_ms: i64, pub events_replayed: usize,
+    pub max_event_gap_ms: i64, pub event_gaps_over_5m: usize,
     pub decisions: usize, pub buy_decisions: usize, pub sell_decisions: usize,
     pub wait_decisions: usize, pub initial_capital: f64, pub final_equity: f64,
     pub net_pnl: f64, pub net_return_pct: f64, pub max_drawdown_pct: f64,
@@ -144,6 +145,8 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
     let final_mark=state.last_mark_price.or(state.last_price).unwrap_or(0.0); let final_equity=cash+position*final_mark;
     Ok(ReplayResult{symbol,venue,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
+        max_event_gap_ms:events.windows(2).map(|pair|pair[1].ts_ms-pair[0].ts_ms).max().unwrap_or(0),
+        event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
         max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,fills,last_decision,
@@ -170,7 +173,7 @@ mod tests {
         ];
         let result=replay(events,&EdgeStrategy::baseline(),1000.0,10.0,5.0).unwrap();
         assert_eq!(result.from_ts_ms,1); assert_eq!(result.to_ts_ms,2);
-        assert_eq!(result.events_replayed,2); assert!(result.fees_paid>=0.0);
+        assert_eq!(result.events_replayed,2); assert_eq!(result.max_event_gap_ms,1); assert_eq!(result.event_gaps_over_5m,0); assert!(result.fees_paid>=0.0);
         assert_eq!(result.strategy_version,EdgeStrategy::baseline().version);
     }
     #[test]
