@@ -21,7 +21,7 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Add bounded market impact as coefficient × squared per-fill participation, capped by the configured coefficient and reported separately from base slippage.
 - [x] Expose fees, slippage, latency, max participation, market-impact coefficient, per-fill applied impact, and aggregate impact cost through the API and replay report.
 - [x] Test timestamp ordering, same-timestamp no-fill, missing-next-observation pending orders, and no same-event look-ahead.
-- [ ] Add an explicit stale/out-of-order quote regression.
+- [x] Add an explicit stale/out-of-order quote regression; replay timestamp-sorts the stale observation before the later signal so it cannot fill that signal.
 - [ ] Publish execution assumptions and sensitivity/stress scenarios in each replay result.
 
 ## 3. Establish historical market-data completeness
