@@ -14,18 +14,6 @@ pub enum AlgorithmStatus {
     Preview,
     Deprecated,
     Disabled,
-
-    #[test]
-    fn access_tiers_expand_coverage_without_claiming_broker_execution() {
-        let tiers = market_access_tiers();
-        assert_eq!(tiers.len(), 3);
-        assert!(!tiers[0].asset_classes.contains(&"commodities"));
-        assert!(tiers[2].asset_classes.contains(&"commodities"));
-        assert!(tiers[0].historical_depth_days < tiers[1].historical_depth_days);
-        assert!(tiers[1].historical_depth_days < tiers[2].historical_depth_days);
-        assert!(tiers.iter().all(|tier| tier.execution_brokers.is_empty()));
-        assert!(tiers.iter().all(|tier| tier.status == "preview"));
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -190,4 +178,16 @@ mod tests {
             assert_eq!(algorithm.evaluation_status, "not_independently_validated");
         }
     }
+    #[test]
+    fn access_tiers_expand_coverage_without_claiming_broker_execution() {
+        let tiers = market_access_tiers();
+        assert_eq!(tiers.len(), 3);
+        assert!(!tiers[0].asset_classes.contains(&"commodities"));
+        assert!(tiers[2].asset_classes.contains(&"commodities"));
+        assert!(tiers[0].historical_depth_days < tiers[1].historical_depth_days);
+        assert!(tiers[1].historical_depth_days < tiers[2].historical_depth_days);
+        assert!(tiers.iter().all(|tier| tier.execution_brokers.is_empty()));
+        assert!(tiers.iter().all(|tier| tier.status == "preview"));
+    }
+
 }
