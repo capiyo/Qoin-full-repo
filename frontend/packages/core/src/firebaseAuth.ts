@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
   type Auth,
   type Persistence,
   type User,
@@ -45,7 +46,7 @@ export function requireQoinFirebase() {
   if (!authInstance) throw new Error("Firebase is not configured. Set the Qoin Firebase client environment variables.");
   const user = authInstance.currentUser;
   if (!user) throw new Error("Sign in to continue.");
-  return { auth: authInstance, user, app: user };
+  return { auth: authInstance, user, app: user.app };
 }
 
 export function subscribeQoinAuth(callback: (user: User | null) => void) {
@@ -93,7 +94,7 @@ export async function uploadQoinAvatar(file: Blob): Promise<string> {
   const object = ref(storage, `users/${user.uid}/avatar`);
   await uploadBytes(object, file, { contentType: file.type });
   const photoURL = await getDownloadURL(object);
-  await user.updateProfile({ photoURL });
+  await updateProfile(user, { photoURL });
   await saveProfile(user);
   return photoURL;
 }
