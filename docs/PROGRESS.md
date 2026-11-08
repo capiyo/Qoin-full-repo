@@ -30,3 +30,10 @@ Updated: 2026-10-23
 4. Build an event-driven backtester that uses the exact production signal code; include fees, spread, slippage, funding, and +50% cost stress.
 5. Add an independent risk gate, protective stops, reconciliation, circuit breakers, and recovery before even testnet execution.
 6. Keep real-money execution disabled pending explicit human approval.
+
+## Autonomous backlog initialization (2026-11-08)
+- Added root `BACKLOG.md` because no root backlog existed on the inspected branch; ordered work by verification dependencies and kept paper/research-only and approval gates explicit.
+- Re-read branch head and last five commits. GitHub reports the remote branch snapshot; no local checkout is mounted in this engineering session, so local `git status` and local command execution are unavailable.
+- Latest head before backlog initialization: `eb650cf58fbf397f22887be8ce938c21af807273`.
+- The Axum–Drogon–MongoDB integration job failed after the mixed-venue replay assertion, when the next gateway request received an empty reply and Drogon terminated with `std::length_error`. A failed-job rerun was started to establish reproducibility; no root-cause fix is claimed yet.
+- The first backlog item is the integration failure. No feature work is started ahead of that verification gate.
