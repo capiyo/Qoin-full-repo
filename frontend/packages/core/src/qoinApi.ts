@@ -291,6 +291,9 @@ export type QoinAlgorithmManifest = {
   version: string;
   status: QoinAlgorithmStatus;
   supported_asset_classes: string[];
+  supported_market_data_providers: string[];
+  supported_venues: string[];
+  supported_instrument_groups: string[];
   supported_timeframes: string[];
   required_features: string[];
   optional_features: string[];
@@ -298,8 +301,27 @@ export type QoinAlgorithmManifest = {
   execution_mode: "research_only";
   evaluation_status: "not_independently_validated" | "in_sample" | "out_of_sample" | "walk_forward" | "independently_validated";
 };
+
+export type QoinMarketAccessTier = {
+  tier_id: string;
+  display_name: string;
+  status: "preview" | "active" | "disabled";
+  market_data_providers: string[];
+  venues: string[];
+  asset_classes: string[];
+  instrument_groups: string[];
+  max_active_instruments: number;
+  historical_depth_days: number;
+  supported_timeframes: string[];
+  max_stream_subscriptions: number;
+  execution_brokers: string[];
+  notes: string;
+};
+
 export type QoinAlgorithmCatalogue = {
   catalogue_version: number;
+  market_access_tiers: QoinMarketAccessTier[];
+  market_access_tiers_enabled: boolean;
   algorithms: QoinAlgorithmManifest[];
   selection_enabled: boolean;
   entitlements_enabled: boolean;
