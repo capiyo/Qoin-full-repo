@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { User } from "firebase/auth";
+import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
@@ -119,7 +121,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </section>;
 }
 
-function BacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
+function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
   const [slippage,setSlippage]=useState("5");
@@ -129,6 +131,7 @@ function BacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
   const [status,setStatus]=useState("");
   const [busy,setBusy]=useState(false);
   const run=async()=>{
+    if (!authenticated) { onRequireAuth(); setStatus("Sign in to run and save a research replay."); return; }
     setBusy(true);setStatus("");setResult(null);
     try {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
@@ -191,6 +194,16 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "register">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [query, setQuery] = useState("");
@@ -218,6 +231,20 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { try { return subscribeQoinAuth(setFirebaseUser); } catch { setFirebaseUser(null); return undefined; } }, []);
+  function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
+  async function submitAuthentication(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setAuthError(""); setAuthBusy(true);
+    try { if (authMode === "register") await registerQoinUser(authEmail, authPassword); else await signInQoinUser(authEmail, authPassword); setAuthPanelOpen(false); setAccountOpen(false); setAuthPassword(""); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : "Authentication failed."); }
+    finally { setAuthBusy(false); }
+  }
+  async function changeAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; if (!file) return;
+    try { await uploadQoinAvatar(file); setAuthError(""); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : "Avatar upload failed."); }
+    finally { event.target.value = ""; }
+  }
   const unreadNotifications = notifications.filter((item) => !item.read).length;
   function addNotification(notification: QoinNotification) {
     setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
@@ -364,6 +391,7 @@ export default function App() {
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
+    if (!firebaseUser) { requireAuthentication(); return; }
     setInstruments((items) => items.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   }
@@ -372,7 +400,22 @@ export default function App() {
     <main className="qoin-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
-        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="notification-trigger" aria-label={"Notifications, " + unreadNotifications + " unread"} onClick={() => setNotificationsOpen((value) => !value)}>♧{unreadNotifications > 0 && <i>{unreadNotifications > 99 ? "99+" : unreadNotifications}</i>}</button><button className="avatar">Q</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{firebaseUser?.photoURL ? <img src={firebaseUser.photoURL} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
+        {accountOpen && <section className="account-menu" aria-label="Account menu">
+          <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
+          {firebaseUser ? <>
+            <button onClick={() => { setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
+            <button onClick={() => { setNotificationsOpen((value) => !value); setAccountOpen(false); }}>Notifications <span>{unreadNotifications ? unreadNotifications : ""}</span></button>
+            <button onClick={() => avatarInputRef.current?.click()}>Change profile picture</button>
+            <button onClick={() => { void signOutQoinUser(); setAccountOpen(false); }}>Sign out</button>
+          </> : <>
+            <button onClick={() => { setAuthMode("signin"); setAuthPanelOpen(true); }}>Sign in</button>
+            <button onClick={() => { setAuthMode("register"); setAuthPanelOpen(true); }}>Create account</button>
+          </>}
+        </section>}
+        <input ref={avatarInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={changeAvatar} />
+        {profileOpen && firebaseUser && <section className="account-menu profile-menu"><div className="account-identity"><strong>Profile</strong><small>{firebaseUser.email}</small></div><button onClick={() => { setProfileOpen(false); setAccountOpen(false); }}>Close</button></section>}
+        {authPanelOpen && <section className="auth-panel"><form onSubmit={submitAuthentication}><div className="account-identity"><strong>{authMode === "register" ? "Create your Qoin account" : "Sign in to Qoin"}</strong><small>Firebase-secured account</small></div><label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required /></label><label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>{authError && <p role="alert">{authError}</p>}<button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button><button type="button" className="account-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already registered? Sign in" : "New to Qoin? Create an account"}</button><button type="button" className="account-switch" onClick={() => setAuthPanelOpen(false)}>Close</button></form></section>}
         {notificationsOpen && <section className="notification-panel" aria-label="Notification centre">
           <div className="notification-panel-heading"><div><strong>Notifications</strong><small>{unreadNotifications} unread · live engine events</small></div><button onClick={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}>Mark read</button></div>
           {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && <button className="notification-permission" onClick={() => { if ("Notification" in window) void Notification.requestPermission(); }}>Enable desktop alerts</button>}
@@ -492,7 +535,7 @@ export default function App() {
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
-              <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} />
+              <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
