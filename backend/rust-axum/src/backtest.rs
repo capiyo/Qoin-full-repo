@@ -10,7 +10,7 @@ pub struct ReplayEvent {
 }
 #[derive(Debug, Clone, Default)]
 struct ReplayState {
-    last_price: Option<f64>, spread_bps: Option<f64>, signed_flow: f64, total_trade_size: f64,
+    last_price: Option<f64>, last_mark_price: Option<f64>, spread_bps: Option<f64>, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     liquidation_events: usize, last_liquidation_side: Option<String>,
 }
@@ -73,6 +73,8 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
     let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     for event in &events {
+        let current_execution_price = event_execution_price(event);
+        if let Some(price) = current_execution_price { state.last_mark_price = Some(price); }
         if let Some(price)=event.price.filter(|v|*v>0.0) {
             if let Some(previous)=state.last_price.filter(|v|*v>0.0) {
                 state.ewma_abs_return=0.94*state.ewma_abs_return+0.06*(price/previous).ln().abs();
@@ -99,8 +101,8 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         let decision=strategy.decide(&symbol,state.ofi,state.funding_rate,state.spread_bps,state.ewma_abs_return,
             state.event_intensity,state.liquidation_events,state.last_liquidation_side.as_deref())?;
         match decision.action { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
-        let execution_price = event_execution_price(event);
-        let mark = execution_price.or(state.last_price);
+        let execution_price = current_execution_price;
+        let mark = state.last_mark_price.or(state.last_price);
         if let (Some(price),true)= (execution_price, decision.action=="buy" && position==0.0) {
             let execution=price*(1.0+slippage_bps/10_000.0);
             let quantity=(cash/(execution*(1.0+fee_bps/10_000.0))).max(0.0);
@@ -124,7 +126,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         }
         last_decision=Some(decision);
     }
-    let final_mark=state.last_price.unwrap_or(0.0); let final_equity=cash+position*final_mark;
+    let final_mark=state.last_mark_price.or(state.last_price).unwrap_or(0.0); let final_equity=cash+position*final_mark;
     Ok(ReplayResult{symbol,venue,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
