@@ -23,17 +23,60 @@ export type QoinSignal = {
 };
 
 
+export type QoinFeatureTrace = {
+  name: string;
+  raw_value: number;
+  transform: string;
+  scale: number;
+  normalized_value: number;
+  clamped_value: number;
+  bullish_weight: number;
+  bearish_weight: number;
+  bullish_weighted_term: number;
+  bearish_weighted_term: number;
+};
+export type QoinDecisionDiagnostics = {
+  spread_present: boolean;
+  spread_within_limit: boolean;
+  event_intensity_positive: boolean;
+  magnitude_passed: boolean;
+  buy_angle_passed: boolean;
+  sell_angle_passed: boolean;
+  bullish_exceeds_bearish: boolean;
+  bearish_exceeds_bullish: boolean;
+  spread_limit_bps: number;
+  magnitude_limit: number;
+  angle_limit_degrees: number;
+};
+export type QoinStrategySnapshot = {
+  strategy_key: string;
+  version: string;
+  status: string;
+  bullish_weights: Record<string, number>;
+  bearish_weights: Record<string, number>;
+  angular_threshold_degrees: number;
+  magnitude_threshold: number;
+  max_spread_bps: number;
+  attention_scale: number;
+  feature_scales: Record<string, number>;
+  updated_at_ms: number;
+};
 export type QoinVectorDecision = {
   symbol: string;
   strategy_key?: string;
   strategy_version?: string;
+  raw_inputs?: Record<string, number | null>;
+  feature_trace?: QoinFeatureTrace[];
+  strategy_parameters?: QoinStrategySnapshot;
   features?: Record<string, number>;
   attention?: number[][];
   attended_features?: number[];
   decision_vector?: [number, number];
   magnitude?: number;
   angle_radians?: number;
+  angle_degrees?: number;
   angular_threshold_radians?: number;
+  diagnostics?: QoinDecisionDiagnostics;
   action?: "buy" | "sell" | "wait" | string;
   reason?: string;
   research_only?: boolean;
