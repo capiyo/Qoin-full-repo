@@ -375,3 +375,8 @@ export function runQoinBacktest(input: QoinBacktestRequest): Promise<QoinBacktes
   for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, String(value));
   return request<QoinBacktestResult>("/api/v1/backtest?" + query.toString());
 }
+
+/** Read-only algorithm and preview market coverage catalogue. */
+export function getQoinAlgorithmCatalogue(): Promise<QoinAlgorithmCatalogue> {
+  return request<QoinAlgorithmCatalogue>("/api/v1/algorithms");
+}
