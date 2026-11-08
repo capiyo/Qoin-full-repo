@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MAX_PARTICLES: usize = 2_000;
 const GRID_SIZE: f32 = 0.16;
@@ -48,6 +48,7 @@ pub enum MotionError {
     TooManyParticles,
     NonFiniteInput,
     InvalidConfig,
+    DuplicateParticleId,
 }
 
 fn cell(value: f32) -> i32 { (value / GRID_SIZE).floor() as i32 }
@@ -62,6 +63,10 @@ pub fn simulate(
     config: MotionConfig,
 ) -> Result<Vec<ParticleOutput>, MotionError> {
     if particles.len() > MAX_PARTICLES { return Err(MotionError::TooManyParticles); }
+    let mut ids = HashSet::with_capacity(particles.len());
+    if particles.iter().any(|particle| !ids.insert(particle.id)) {
+        return Err(MotionError::DuplicateParticleId);
+    }
     if particles.iter().any(|p| ![p.x,p.y,p.vx,p.vy,p.weight].iter().all(|v| v.is_finite())) {
         return Err(MotionError::NonFiniteInput);
     }
@@ -95,11 +100,36 @@ pub fn simulate(
                             let ox = p[0] - positions[j][0];
                             let oy = p[1] - positions[j][1];
                             let distance_sq = ox*ox + oy*oy;
-                            if distance_sq > 1.0e-7 && distance_sq < GRID_SIZE*GRID_SIZE {
-                                let inverse = distance_sq.sqrt().recip();
-                                let strength = config.repulsion * inverse.min(18.0);
-                                fx += ox * inverse * strength;
-                                fy += oy * inverse * strength;
+                            if distance_sq < GRID_SIZE*GRID_SIZE {
+                                if distance_sq <= 1.0e-7 {
+                                    // Coincident particles need a stable separating direction.
+                                    // Derive it from the unordered ID pair so the force is
+                                    // deterministic and equal/opposite for the two particles.
+                                    let low = particles[i].id.min(particles[j].id);
+                                    let high = particles[i].id.max(particles[j].id);
+                                    let hash = low.wrapping_mul(0x9E37_79B9)
+                                        ^ high.wrapping_mul(0x85EB_CA6B);
+                                    let directions = [
+                                        [1.0_f32, 0.0_f32],
+                                        [0.70710677, 0.70710677],
+                                        [0.0, 1.0],
+                                        [-0.70710677, 0.70710677],
+                                        [-1.0, 0.0],
+                                        [-0.70710677, -0.70710677],
+                                        [0.0, -1.0],
+                                        [0.70710677, -0.70710677],
+                                    ];
+                                    let direction = directions[(hash as usize) & 7];
+                                    let sign = if particles[i].id < particles[j].id { 1.0 } else { -1.0 };
+                                    let strength = config.repulsion * 18.0;
+                                    fx += direction[0] * sign * strength;
+                                    fy += direction[1] * sign * strength;
+                                } else {
+                                    let inverse = distance_sq.sqrt().recip();
+                                    let strength = config.repulsion * inverse.min(18.0);
+                                    fx += ox * inverse * strength;
+                                    fy += oy * inverse * strength;
+                                }
                             }
                         }
                     }
@@ -142,6 +172,38 @@ mod tests {
     fn rejects_non_finite_inputs() {
         let particles = [ParticleInput { id: 1, x: f32::NAN, y: 0.0, vx: 0.0, vy: 0.0, weight: 1.0 }];
         assert_eq!(simulate(&particles, MotionConfig::default()), Err(MotionError::NonFiniteInput));
+    }
+
+    #[test]
+    fn separates_coincident_particles_deterministically() {
+        let particles = [
+            ParticleInput { id: 11, x: 0.25, y: -0.25, vx: 0.0, vy: 0.0, weight: 1.0 },
+            ParticleInput { id: 22, x: 0.25, y: -0.25, vx: 0.0, vy: 0.0, weight: 1.0 },
+        ];
+        let config = MotionConfig { bullish: 0.0, bearish: 0.0, iterations: 8, ..Default::default() };
+        let first = simulate(&particles, config).unwrap();
+        let second = simulate(&particles, config).unwrap();
+
+        assert_eq!(first, second);
+        assert_ne!((first[0].x, first[0].y), (first[1].x, first[1].y));
+        let dx = first[0].x - particles[0].x;
+        let dy = first[0].y - particles[0].y;
+        let other_dx = first[1].x - particles[1].x;
+        let other_dy = first[1].y - particles[1].y;
+        assert!((dx + other_dx).abs() < 1.0e-6);
+        assert!((dy + other_dy).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn rejects_duplicate_particle_ids() {
+        let particles = [
+            ParticleInput { id: 7, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, weight: 1.0 },
+            ParticleInput { id: 7, x: 0.2, y: 0.2, vx: 0.0, vy: 0.0, weight: 1.0 },
+        ];
+        assert_eq!(
+            simulate(&particles, MotionConfig::default()),
+            Err(MotionError::DuplicateParticleId)
+        );
     }
 
     #[test]
