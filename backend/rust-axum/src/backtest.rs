@@ -45,6 +45,7 @@ pub struct ReplayFill {
     pub decision_ts_ms: i64, pub decision_event_id: String,
     pub submitted_ts_ms: i64, pub submitted_event_id: String,
     pub target_quantity: f64, pub filled_quantity: f64, pub remaining_quantity: f64,
+    pub market_impact_bps: f64, pub market_impact_cost: f64,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
@@ -56,7 +57,7 @@ pub struct ReplayResult {
     pub net_pnl: f64, pub net_return_pct: f64, pub max_drawdown_pct: f64,
     pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
     pub fee_bps: f64, pub slippage_bps: f64, pub latency_ms: i64,
-    pub max_participation_rate: f64,
+    pub max_participation_rate: f64, pub market_impact_bps: f64, pub market_impact_paid: f64,
     pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
     pub unfilled_pending_order: Option<ReplayPendingOrder>,
     pub assumptions: Vec<String>,
@@ -101,23 +102,25 @@ fn event_available_liquidity(event: &ReplayEvent, action: &str) -> Option<f64> {
 
 pub fn replay(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64) -> Result<ReplayResult, String> {
-    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, 0, 0.10)
+    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, 0, 0.10, 5.0)
 }
 
 pub fn replay_with_latency(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64) -> Result<ReplayResult, String> {
-    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, latency_ms, 0.10)
+    replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, latency_ms, 0.10, 5.0)
 }
 
 pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64,
-              max_participation_rate: f64) -> Result<ReplayResult, String> {
+              max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String> {
     strategy.validate()?;
     if !initial_capital.is_finite() || initial_capital <= 0.0 || !fee_bps.is_finite()
         || fee_bps < 0.0 || !slippage_bps.is_finite() || !(0.0..10_000.0).contains(&slippage_bps)
         || !(0..=60_000).contains(&latency_ms) || !max_participation_rate.is_finite()
-        || max_participation_rate <= 0.0 || max_participation_rate > 1.0 {
-        return Err("capital must be positive; fee/slippage must be finite and non-negative; latency must be between 0 and 60000 ms; max participation must be in (0, 1]".into());
+        || max_participation_rate <= 0.0 || max_participation_rate > 1.0
+        || !market_impact_bps.is_finite() || market_impact_bps < 0.0 || market_impact_bps > 1_000.0
+        || slippage_bps + market_impact_bps >= 10_000.0 {
+        return Err("capital must be positive; fee/slippage must be finite and non-negative; latency must be between 0 and 60000 ms; max participation must be in (0, 1]; market impact must be in [0, 1000] bps and combined slippage/impact must stay below 10000 bps".into());
     }
     if events.is_empty() { return Err("no persisted market events in the requested replay window".into()); }
     events.sort_by(|a,b| a.ts_ms.cmp(&b.ts_ms).then_with(||a.event_id.cmp(&b.event_id)));
@@ -140,7 +143,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
     let mut state=ReplayState::default();
     let mut cash=initial_capital; let mut position=0.0; let mut position_entry_cost=0.0; let mut fees=0.0; let mut slippage=0.0;
     let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
-    let mut net_funding_cashflow=0.0; let mut funding_settlements=0usize;
+    let mut net_funding_cashflow=0.0; let mut funding_settlements=0usize; let mut market_impact_paid=0.0;
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     let mut pending_order: Option<ReplayPendingOrder> = None;
     for event in &events {
@@ -172,17 +175,22 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                     let quantity = remaining_before.min(liquidity_cap);
                     if quantity > 0.0 {
                         if pending.action == "buy" && cash > 0.0 {
-                            let execution = price * (1.0 + slippage_bps / 10_000.0);
-                            let affordable_quantity = (cash / (execution * (1.0 + fee_bps / 10_000.0))).max(0.0);
+                            let base_execution = price * (1.0 + slippage_bps / 10_000.0);
+                            let affordable_quantity = (cash / (base_execution * (1.0 + fee_bps / 10_000.0))).max(0.0);
                             let quantity = quantity.min(affordable_quantity);
                             if quantity > 0.0 {
+                                let participation_ratio = (quantity / available_liquidity).clamp(0.0, 1.0);
+                                let applied_impact_bps = market_impact_bps * participation_ratio.powi(2);
+                                let execution = price * (1.0 + (slippage_bps + applied_impact_bps) / 10_000.0);
                                 let fee = quantity * execution * fee_bps / 10_000.0;
-                                let slip = quantity * (execution - price);
+                                let slip = quantity * (base_execution - price);
+                                let impact_cost = quantity * (execution - base_execution);
                                 cash -= quantity * execution + fee;
                                 position += quantity;
                                 position_entry_cost += quantity * execution + fee;
                                 fees += fee;
                                 slippage += slip;
+                                market_impact_paid += impact_cost;
                                 let filled_after = pending.filled_quantity + quantity;
                                 let remaining_after = (target_quantity - filled_after).max(0.0);
                                 let status = if remaining_after <= 1e-12 { ReplayOrderStatus::Filled } else { ReplayOrderStatus::PartiallyFilled };
@@ -196,6 +204,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                                     submitted_ts_ms: pending.submitted_ts_ms,
                                     submitted_event_id: pending.submitted_event_id.clone(),
                                     target_quantity, filled_quantity: filled_after, remaining_quantity: remaining_after,
+                                    market_impact_bps: applied_impact_bps, market_impact_cost: impact_cost,
                                 });
                                 pending.filled_quantity = filled_after;
                                 pending.remaining_quantity = Some(remaining_after);
@@ -204,9 +213,13 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                             }
                         } else if pending.action == "sell" && position > 0.0 {
                             let quantity = quantity.min(position);
-                            let execution = price * (1.0 - slippage_bps / 10_000.0);
+                            let base_execution = price * (1.0 - slippage_bps / 10_000.0);
+                            let participation_ratio = (quantity / available_liquidity).clamp(0.0, 1.0);
+                            let applied_impact_bps = market_impact_bps * participation_ratio.powi(2);
+                            let execution = price * (1.0 - (slippage_bps + applied_impact_bps) / 10_000.0);
                             let fee = quantity * execution * fee_bps / 10_000.0;
-                            let slip = quantity * (price - execution);
+                            let slip = quantity * (price - base_execution);
+                            let impact_cost = quantity * (base_execution - execution);
                             let proceeds = quantity * execution - fee;
                             let entry_cost_portion = position_entry_cost * (quantity / position);
                             let realized_pnl = proceeds - entry_cost_portion;
@@ -219,6 +232,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                             }
                             fees += fee;
                             slippage += slip;
+                            market_impact_paid += impact_cost;
                             let filled_after = pending.filled_quantity + quantity;
                             let remaining_after = (target_quantity - filled_after).max(0.0);
                             let status = if remaining_after <= 1e-12 { ReplayOrderStatus::Filled } else { ReplayOrderStatus::PartiallyFilled };
@@ -232,6 +246,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                                 submitted_ts_ms: pending.submitted_ts_ms,
                                 submitted_event_id: pending.submitted_event_id.clone(),
                                 target_quantity, filled_quantity: filled_after, remaining_quantity: remaining_after,
+                                market_impact_bps: applied_impact_bps, market_impact_cost: impact_cost,
                             });
                             pending.filled_quantity = filled_after;
                             pending.remaining_quantity = Some(remaining_after);
@@ -323,13 +338,14 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl:final_equity-initial_capital,net_return_pct:(final_equity/initial_capital-1.0)*100.0,
-        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,fills,last_decision,
+        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps,market_impact_paid,fills,last_decision,
         unfilled_pending_order: pending_order,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "A decision is submitted immediately at its signal event in this model, then can only fill on a strictly later executable trade or book event; the observation that generated the decision is never reused as its fill.".into(),
         "Submission-to-fill latency is a minimum event-timestamp delay in milliseconds; routing jitter, acknowledgements and queue priority are not modeled. A final pending order without a later eligible executable observation remains unfilled and is returned as unfilled_pending_order.".into(),
         "Fills are capped at the configured fraction of observed trade size or side-specific top-of-book size; partial orders persist across later events. Hidden liquidity and queue position are not modeled.".into(),
+        "Market impact is modeled as the configured coefficient multiplied by the squared per-fill participation ratio; impact is bounded by the configured coefficient and reported separately from base slippage. Cross-level depth, hidden liquidity and queue priority are not modeled.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
         "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Trade fills use the observed trade price; book fills use ask for buys and bid for sells. Equity is marked to the latest trade or book midpoint. No forced liquidation or borrow cost model.".into(),
@@ -496,7 +512,7 @@ mod tests {
             event("partial-1", "trade", 3, 2.0),
             event("partial-2", "trade", 4, 4.0),
         ];
-        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5).unwrap();
+        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5, 5.0).unwrap();
         assert_eq!(result.max_participation_rate, 0.5);
         assert_eq!(result.fills.len(), 2);
         assert!((result.fills[0].quantity - 1.0).abs() < 1e-12);
@@ -546,7 +562,7 @@ mod tests {
             trade("sell-partial-1", 6, 105.0, 4.0, "sell"),
             trade("sell-partial-2", 7, 110.0, 4.0, "sell"),
         ];
-        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5).unwrap();
+        let result = replay_with_execution(events, &strategy, 1_000.0, 10.0, 0.0, 0, 0.5, 5.0).unwrap();
         let sell_fills: Vec<_> = result.fills.iter().filter(|fill| fill.action == "SELL").collect();
         assert_eq!(sell_fills.len(), 2);
         assert!(matches!(result.fills[0].status, ReplayOrderStatus::Filled));
@@ -623,7 +639,7 @@ mod tests {
         };
         assert!(replay_with_latency(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, -1).is_err());
         assert!(replay_with_latency(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 60_001).is_err());
-        assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 0.0).is_err());
-        assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 1.01).is_err());
+        assert!(replay_with_execution(vec![event.clone()], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 0.0, 5.0).is_err());
+        assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 5.0, 0, 1.01, 5.0).is_err());
     }
 }
