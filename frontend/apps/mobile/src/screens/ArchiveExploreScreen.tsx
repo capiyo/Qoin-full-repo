@@ -193,7 +193,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
     const selection = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (selection.canceled || !selection.assets[0]) return;
     setAvatarBusy(true);
-    try { const response = await fetch(selection.assets[0].uri); const blob = await response.blob(); const url = await uploadQoinAvatar(blob); setAvatarUrl(url); setAccountOpen(false); }
+    try { const response = await fetch(selection.assets[0].uri); const rawBlob = await response.blob(); const blob = new Blob([rawBlob], { type: selection.assets[0].mimeType || rawBlob.type || "image/jpeg" }); const url = await uploadQoinAvatar(blob); setAvatarUrl(url); setAccountOpen(false); }
     catch (error) { Alert.alert("Avatar upload failed", error instanceof Error ? error.message : "Try another image."); }
     finally { setAvatarBusy(false); }
   };
@@ -609,7 +609,7 @@ const styles = StyleSheet.create({
   notificationBody: { color: "#8391A4", fontSize: 9, lineHeight: 14, marginTop: 4 },
   notificationPayload: { color: "#8A97A9", fontSize: 7, lineHeight: 11, marginTop: 7 },
 
-  content: { paddingHorizontal: 17, paddingBottom: 25 },
+  content: { paddingHorizontal: 17, paddingBottom: 100 },
   topline: { height: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   brand: { color: "#1B2C45", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
   avatar: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center" },
