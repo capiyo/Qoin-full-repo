@@ -94,7 +94,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
             if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
         }
         if event.event_type == "funding" && position > 0.0 {
-            if let (Some(rate), Some(mark_price)) = (event.funding_rate, current_execution_price.or(state.last_mark_price).or(state.last_price)) {
+            if let (Some(rate), Some(mark_price)) = (event.funding_rate, event.price.filter(|price| price.is_finite() && *price > 0.0)) {
                 let cashflow = funding_cashflow(position, mark_price, rate);
                 cash += cashflow;
                 net_funding_cashflow += cashflow;
@@ -150,7 +150,7 @@ pub fn replay(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_cap
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
         "Events are sorted by event timestamp then event ID; each decision sees only the current and prior events.".into(),
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
-        "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received.".into(),
+        "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Fills require a price or valid bid/ask midpoint on the triggering event; equity is marked to the latest available trade or book midpoint. No forced liquidation or borrow cost model.".into(),
         "Results are a research simulation, not live or expected performance.".into()]})
 }
