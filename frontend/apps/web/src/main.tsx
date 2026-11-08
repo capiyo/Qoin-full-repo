@@ -4,6 +4,10 @@ import App from "./App";
 import { initializeQoinFirebase } from "@qoin/core";
 import "./styles.css";
 
+const qoinDesktopRuntime = globalThis as typeof globalThis & { __TAURI_INTERNALS__?: unknown };
+if (qoinDesktopRuntime.__TAURI_INTERNALS__) {
+  document.documentElement.dataset.qoinPlatform = "desktop";
+}
 const qoinEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 const qoinRuntime = globalThis as typeof globalThis & { __QOIN_API_URL?: string; __QOIN_WS_URL?: string };
 qoinRuntime.__QOIN_API_URL = qoinEnv?.VITE_QOIN_API_URL;
