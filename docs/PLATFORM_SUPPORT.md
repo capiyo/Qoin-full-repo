@@ -10,7 +10,7 @@ Qoin has three first-class client targets sharing the same account, instrument, 
 
 ## Desktop
 
-The desktop app lives at `frontend/apps/desktop`. It is a Tauri 2 shell, not a second frontend implementation. It packages the existing `@qoin/react-web` client and uses the same `@qoin/core` package, Firebase identity and Drogon/Axum API contracts. Desktop-only CSS widens the research workspace, moves primary navigation into a vertical rail, and gives the instrument/vector inspection surface more room.
+The desktop app lives at `frontend/apps/desktop`. It is a Tauri 2 shell, not a second frontend implementation. It packages the existing `@qoin/react-web` client and uses the same `@qoin/core` package, Firebase identity and Drogon/Axum API contracts. Desktop-only CSS widens the research workspace, moves primary navigation into a vertical rail, and gives the instrument/vector inspection surface more room. The Force map invokes the Rust `qoin-vector-motion` crate through Tauri IPC. That solver uses a uniform spatial hash for local-neighbour repulsion, bounded integration, finite-input checks and a 2,000-particle ceiling; the browser continues to use its SVG fallback.
 
 ### Local commands
 
