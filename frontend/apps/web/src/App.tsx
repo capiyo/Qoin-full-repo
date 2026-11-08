@@ -490,9 +490,7 @@ export default function App() {
         <div className="welcome-orbit" aria-hidden="true"><span /><span /><span /><b>q</b></div>
       </section>
 
-      <nav className="main-tabs" aria-label="Main navigation">
-        {(["Archive", "Explore"] as Tab[]).map((name) => <button key={name} className={tab === name ? "tab active" : "tab"} onClick={() => { setTab(name); setSelected(null); }}>{name}<span>{name === "Archive" ? archived.length : instruments.length - archived.length}</span></button>)}
-      </nav>
+
 
       {tab === "Archive" ? (
         <section className="content-section">
@@ -531,6 +529,15 @@ export default function App() {
       )}
 
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
+
+      <nav className="floating-navigation" aria-label="Primary navigation">
+        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}>
+          <span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span>
+        </button>
+        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}>
+          <span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span>
+        </button>
+      </nav>
 
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
