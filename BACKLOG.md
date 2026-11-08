@@ -16,7 +16,7 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Record a replay-scoped order ID, pending/filled status, and decision, submission, and fill timestamps with source event IDs. Submission is explicitly assumed immediate; latency remains a later execution-model item.
 - [x] Prevent same-event and same-timestamp fills; use a strictly later executable trade or side-specific book quote, otherwise leave the signal unfilled.
 - [x] Use ask for book buys and bid for book sells; include the observed spread in executable prices.
-- [ ] Add a configurable minimum delay between submission and the first eligible fill.
+- [x] Add a configurable 0–60,000 ms minimum delay between submission and the first eligible fill; zero still requires a strictly later event.
 - [ ] Bound fill quantity by displayed/traded liquidity and support partial fills across later observations.
 - [ ] Add a bounded market-impact model tied to participation and available depth.
 - [ ] Expose all execution assumptions in the API and replay report, with deterministic regression tests.
