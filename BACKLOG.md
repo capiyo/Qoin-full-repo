@@ -17,7 +17,7 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Prevent same-event and same-timestamp fills; use a strictly later executable trade or side-specific book quote, otherwise leave the signal unfilled.
 - [x] Use ask for book buys and bid for book sells; include the observed spread in executable prices.
 - [x] Add a configurable 0–60,000 ms minimum delay between submission and the first eligible fill; zero still requires a strictly later event.
-- [ ] Bound fill quantity by displayed/traded liquidity and support partial fills across later observations.
+- [x] Bound fill quantity by observed trade size or side-specific top-of-book size; persist partial orders across observations and allocate sell cost basis proportionally.
 - [ ] Add a bounded market-impact model tied to participation and available depth.
 - [ ] Expose all execution assumptions in the API and replay report, with deterministic regression tests.
 - [ ] Add deterministic tests for event ordering, same-timestamp events, stale quotes, missing next observations, and no-look-ahead guarantees.
