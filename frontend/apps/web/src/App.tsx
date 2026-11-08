@@ -233,7 +233,7 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); }); } catch { setFirebaseUser(null); return undefined; } }, []);
+  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); }); } catch { setFirebaseUser(null); setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in."); return undefined; } }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   async function submitAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthError(""); setAuthBusy(true);
