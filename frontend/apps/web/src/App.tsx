@@ -234,7 +234,32 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); archivedSymbolsRef.current = null; if (!user) { setInstruments((items) => items.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) }))); } if (user) { void getQoinArchivedSymbols().then((symbols) => { archivedSymbolsRef.current = symbols; setInstruments((items) => items.map((item) => ({ ...item, archived: symbols.includes(item.symbol) }))); }).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not load your archive.")); } }); } catch { setFirebaseUser(null); setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in."); return undefined; } }, []);
+  useEffect(() => {
+    let generation = 0;
+    try {
+      return subscribeQoinAuth((user) => {
+        const requestGeneration = ++generation;
+        setFirebaseUser(user);
+        setAvatarUrl(null);
+        archivedSymbolsRef.current = null;
+        if (!user) {
+          setInstruments((items) => items.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          return;
+        }
+        void getQoinArchivedSymbols().then((symbols) => {
+          if (requestGeneration !== generation) return;
+          archivedSymbolsRef.current = symbols;
+          setInstruments((items) => items.map((item) => ({ ...item, archived: symbols.includes(item.symbol) })));
+        }).catch((error) => {
+          if (requestGeneration === generation) setAuthError(error instanceof Error ? error.message : "Could not load your archive.");
+        });
+      });
+    } catch {
+      setFirebaseUser(null);
+      setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in.");
+      return undefined;
+    }
+  }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   async function submitAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthError(""); setAuthBusy(true);
