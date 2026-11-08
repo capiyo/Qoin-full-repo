@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
-import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar } from "@qoin/core";
+import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
@@ -206,6 +206,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const archivedSymbolsRef = useRef<string[] | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [query, setQuery] = useState("");
@@ -233,7 +234,7 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); }); } catch { setFirebaseUser(null); setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in."); return undefined; } }, []);
+  useEffect(() => { try { return subscribeQoinAuth((user) => { setFirebaseUser(user); setAvatarUrl(null); archivedSymbolsRef.current = null; if (user) { void getQoinArchivedSymbols().then((symbols) => { archivedSymbolsRef.current = symbols; setInstruments((items) => items.map((item) => ({ ...item, archived: symbols.includes(item.symbol) }))); }).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not load your archive.")); } }); } catch { setFirebaseUser(null); setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in."); return undefined; } }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   async function submitAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthError(""); setAuthBusy(true);
@@ -266,7 +267,7 @@ export default function App() {
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
         market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
         provider: item.provider, providerStatus: item.provider_status,
-        archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
+        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
       })));
     }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
     return () => { active = false; };
@@ -394,8 +395,12 @@ export default function App() {
 
   function toggleArchive(symbol: string) {
     if (!firebaseUser) { requireAuthentication(); return; }
+    const target = instruments.find((item) => item.symbol === symbol);
+    if (!target) return;
+    const nextSymbols = target.archived ? archived.filter((item) => item.symbol !== symbol).map((item) => item.symbol) : [...archived.map((item) => item.symbol), symbol];
     setInstruments((items) => items.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
+    void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
   }
 
   return (
