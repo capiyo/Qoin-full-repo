@@ -44,11 +44,13 @@ paths:
         Deterministic read-only paper simulation. Uses only events already stored in MongoDB,
         sorts by event timestamp then event ID, and never submits orders. A signal can only fill
         on a strictly later timestamped executable trade or book observation; same-timestamp
-        events cannot fill it. Book buys execute at ask and sells at bid. A final signal without a
-        later eligible observation is returned as unfilled_pending_order. Returns fees, slippage,
-        recorded funding cashflows, raw-event gap diagnostics, fills, drawdown, exact strategy
-        version and simulation assumptions. This is not a historical data download or a guarantee
-        of complete market coverage.
+        events cannot fill it. Book buys execute at ask and sells at bid. Each replay order has a
+        stable replay-scoped ID and pending/filled status, with decision, submission, and fill
+        timestamps plus source event IDs. Submission is assumed immediate at decision time;
+        routing latency is not modeled. A final signal without a later eligible observation is
+        returned as unfilled_pending_order. Returns fees, slippage, recorded funding cashflows,
+        raw-event gap diagnostics, fills, drawdown, exact strategy version and assumptions. This
+        is not a historical data download or a guarantee of complete market coverage.
       parameters:
         - in: query
           name: symbol
