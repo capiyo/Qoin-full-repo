@@ -118,7 +118,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </section>;
 }
 
-function BacktestPanel({ symbol }: { symbol: string }) {
+function BacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
   const [slippage,setSlippage]=useState("5");
@@ -133,7 +133,7 @@ function BacktestPanel({ symbol }: { symbol: string }) {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
       if(from && !Number.isFinite(fromMs)) throw new Error("Invalid start date");
       if(to && !Number.isFinite(toMs)) throw new Error("Invalid end date");
-      const output=await runQoinBacktest({symbol,from_ts_ms:fromMs,to_ts_ms:toMs,
+      const output=await runQoinBacktest({symbol,venue,from_ts_ms:fromMs,to_ts_ms:toMs,
         initial_capital:Number(capital),fee_bps:Number(fee),slippage_bps:Number(slippage),limit:10000});
       setResult(output);setStatus("Replay completed from persisted events.");
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
@@ -162,7 +162,7 @@ function BacktestPanel({ symbol }: { symbol: string }) {
         <div><span>Fees paid</span><strong>{result.fees_paid.toFixed(4)}</strong></div>
         <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
       </div>
-      <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
+      <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
       <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Time</th><th>Fill</th><th>Price</th><th>Quantity</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
       <tbody>{result.fills.map((fill,index)=><tr key={fill.event_id+"-"+index}><td>{new Date(fill.ts_ms).toLocaleString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
       <details className="trace-details"><summary>Replay assumptions and full result</summary><ul>{result.assumptions.map((item,index)=><li key={index}>{item}</li>)}</ul><pre>{JSON.stringify(result,null,2)}</pre></details>
@@ -487,7 +487,7 @@ export default function App() {
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
-              <BacktestPanel symbol={selected.engineSymbol} />
+              <BacktestPanel symbol={selected.engineSymbol} venue={selected.provider === "Binance" ? "binance_usdm" : "finnhub"} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
