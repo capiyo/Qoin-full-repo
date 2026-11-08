@@ -177,8 +177,8 @@ mod tests {
     #[test]
     fn separates_coincident_particles_deterministically() {
         let particles = [
-            ParticleInput { id: 11, x: 0.25, y: -0.25, vx: 0.0, vy: 0.0, weight: 1.0 },
-            ParticleInput { id: 22, x: 0.25, y: -0.25, vx: 0.0, vy: 0.0, weight: 1.0 },
+            ParticleInput { id: 11, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, weight: 1.0 },
+            ParticleInput { id: 22, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, weight: 1.0 },
         ];
         let config = MotionConfig { bullish: 0.0, bearish: 0.0, iterations: 8, ..Default::default() };
         let first = simulate(&particles, config).unwrap();
