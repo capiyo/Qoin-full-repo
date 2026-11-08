@@ -57,10 +57,10 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.textMuted, fontSize: 12, textAlign: "center", marginTop: 6, marginBottom: 18 },
   label: { color: colors.textMuted, fontSize: 12, marginTop: 12, marginBottom: 5 },
   input: { backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, color: colors.textPrimary },
-  button: { backgroundColor: colors.accentBlue, borderRadius: 14, padding: 13, alignItems: "center", marginTop: 20 },
+  button: { backgroundColor: colors.accentCyan, borderRadius: 14, padding: 13, alignItems: "center", marginTop: 20 },
   disabled: { opacity: 0.45 },
   buttonText: { color: "#FFFFFF", fontWeight: "700" },
   switch: { alignItems: "center", padding: 14 },
-  switchText: { color: colors.accentBlue, fontSize: 12, fontWeight: "700" },
+  switchText: { color: colors.accentCyan, fontSize: 12, fontWeight: "700" },
   error: { color: "#C24141", fontSize: 11, marginTop: 12 },
 });
