@@ -430,13 +430,27 @@ export default function App() {
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
-    if (!firebaseUser) { pendingArchiveSymbolRef.current = symbol; requireAuthentication(); return; }
+    if (!firebaseUser || archivedSymbolsRef.current === null) {
+      pendingArchiveSymbolRef.current = symbol;
+      if (!firebaseUser) requireAuthentication();
+      else setAuthError("Your archive is still syncing. This change will be applied when it finishes loading.");
+      return;
+    }
     const target = instruments.find((item) => item.symbol === symbol);
     if (!target) return;
-    const nextSymbols = target.archived ? archived.filter((item) => item.symbol !== symbol).map((item) => item.symbol) : [...archived.map((item) => item.symbol), symbol];
+    const previousSymbols = archivedSymbolsRef.current;
+    const nextSymbols = target.archived ? previousSymbols.filter((value) => value !== symbol) : [...previousSymbols, symbol];
+    archivedSymbolsRef.current = nextSymbols;
     setInstruments((items) => items.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
-    void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
+    void saveQoinArchivedSymbols(nextSymbols).catch((error) => {
+      if (archivedSymbolsRef.current === nextSymbols) {
+        archivedSymbolsRef.current = previousSymbols;
+        setInstruments((items) => items.map((item) => ({ ...item, archived: previousSymbols.includes(item.symbol) })));
+        setSelected((current) => current?.symbol === symbol ? { ...current, archived: target.archived } : current);
+      }
+      setAuthError(error instanceof Error ? error.message : "Could not save your archive.");
+    });
   }
 
   return (

@@ -244,15 +244,27 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
   const toggle = (symbol: string) => {
-    if (!firebaseUser) { pendingArchiveSymbolRef.current = symbol; requireAuthentication(); return; }
+    if (!firebaseUser || archivedSymbolsRef.current === null) {
+      pendingArchiveSymbolRef.current = symbol;
+      if (!firebaseUser) requireAuthentication();
+      else Alert.alert("Archive syncing", "Your change will be applied as soon as your saved archive finishes loading.");
+      return;
+    }
     const target = items.find((item) => item.symbol === symbol);
     if (!target) return;
+    const previousSymbols = archivedSymbolsRef.current;
     const nextSymbols = target.archived
-      ? archived.filter((item) => item.symbol !== symbol).map((item) => item.symbol)
-      : [...archived.map((item) => item.symbol), symbol];
+      ? previousSymbols.filter((value) => value !== symbol)
+      : [...previousSymbols, symbol];
+    archivedSymbolsRef.current = nextSymbols;
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
     void saveQoinArchivedSymbols(nextSymbols).catch((error) => {
+      if (archivedSymbolsRef.current === nextSymbols) {
+        archivedSymbolsRef.current = previousSymbols;
+        setItems((current) => current.map((item) => ({ ...item, archived: previousSymbols.includes(item.symbol) })));
+        setSelected((current) => current?.symbol === symbol ? { ...current, archived: target.archived } : current);
+      }
       Alert.alert("Archive could not be saved", error instanceof Error ? error.message : "Try again.");
     });
   };
