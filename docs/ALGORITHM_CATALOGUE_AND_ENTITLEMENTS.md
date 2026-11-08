@@ -179,3 +179,21 @@ The branch now contains:
 The entitlement module is currently a domain rule library, not a live authorization endpoint. It is deliberately not wired to caller-supplied user IDs, because this branch does not yet expose a verified Axum identity extractor or middleware. It is also not connected to payment webhooks or persisted grants. Do not use it to unlock paid access until the trusted identity, grant persistence, payment reconciliation and endpoint authorization layers are implemented and integration-tested.
 
 The new module and its registration have been committed, but GitHub Actions has not yet reported a run for these connector-created commits. The Rust tests have not yet been executed in this environment; compilation and test status remain unverified.
+
+
+## Decision transparency payload (implemented 2026-11-08)
+
+Every newly persisted vector-baseline decision now carries an inspectable calculation ledger in addition to the existing output:
+
+- **Raw inputs**: order-flow imbalance, funding rate, spread, EWMA absolute return, event intensity and liquidation count used by that invocation.
+- **Feature trace**: each feature's raw observation, named transformation, scale, normalized value, clamped value, bullish/bearish coefficient and its weighted term after attention.
+- **Attention**: the complete six-by-six attention probability matrix and attended feature vector. Rows are normalized softmax weights; this is a deterministic hand-specified interaction, not a trained transformer or causal explanation.
+- **Vector result**: bullish and bearish components, magnitude, angle in radians and degrees, and the configured angular boundary.
+- **Gate diagnostics**: explicit booleans for spread availability/limit, event evidence, magnitude threshold, angular tests and directional comparison, plus the exact configured limits.
+- **Parameter snapshot**: the complete strategy weights, scales and thresholds used for that decision, alongside the strategy version.
+
+The existing decision equations and action gates are unchanged by this observability addition. The explanation is persisted with the decision and therefore is also returned by the existing latest-vector and vector-history read paths and streamed with market updates.
+
+Interpretation note: weighted feature terms are the signed coefficient multiplied by the attended feature. The final bullish/bearish components apply the existing non-negative floor after summing those terms. Attention weights show the model's deterministic interaction calculation; they must not be interpreted as causal attribution or learned feature importance. Missing funding is represented as a zero input in the calculation while the raw input record preserves null. Missing spread is represented by the strategy's existing conservative fallback for the feature calculation, while the liquidity gate remains failed.
+
+This is a full calculation trace for the current deterministic baseline, not a claim that every future algorithm will use the same mathematics. Each future algorithm must publish its own versioned explanation schema and all intermediate operations relevant to its implementation.
