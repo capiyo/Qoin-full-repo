@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -101,6 +101,8 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
+  const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
+  const [catalogueStatus, setCatalogueStatus] = useState("loading");
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
@@ -128,6 +130,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   };
+  useEffect(() => { let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, []);
   useEffect(() => {
     let active = true;
     getQoinInstruments().then(({ items }) => {
@@ -281,6 +284,20 @@ export function ArchiveExploreScreen({ mode }: Props) {
           <>
             <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
+            <View style={styles.coverageSection}>
+              <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
+              {catalogue?.market_access_tiers?.length ? catalogue.market_access_tiers.map((tier) => <View key={tier.tier_id} style={styles.coverageCard}>
+                <View style={styles.coverageCardTop}><Text style={styles.coverageName}>{tier.display_name}</Text><Text style={styles.coverageTag}>{tier.status}</Text></View>
+                <Text style={styles.coveragePrimary}>{tier.max_active_instruments} <Text style={styles.coverageUnit}>active instruments</Text></Text>
+                <Text style={styles.coverageLine}>Markets · {tier.asset_classes.join(" · ")}</Text>
+                <Text style={styles.coverageLine}>History · {tier.historical_depth_days} days</Text>
+                <Text style={styles.coverageLine}>Timeframes · {tier.supported_timeframes.join(" · ")}</Text>
+                <Text style={styles.coverageLine}>Providers · {tier.market_data_providers.join(" · ") || "None listed"}</Text>
+                <Text style={styles.coverageLine}>Execution brokers · {tier.execution_brokers.length ? tier.execution_brokers.join(" · ") : "None — research only"}</Text>
+                <Text style={styles.coverageNote}>{tier.notes}</Text>
+              </View>) : <Text style={styles.noteCopy}>{catalogueStatus === "loading" ? "Loading proposed market coverage…" : "Market coverage catalogue unavailable."}</Text>}
+              <Text style={styles.coverageDisclaimer}>Preview only: not active subscriptions, prices or enforced permissions. Finnhub data depends on a configured key and eligible access. No live broker execution is connected.</Text>
+            </View>
           </>
         ) : null}
 
@@ -514,6 +531,20 @@ const styles = StyleSheet.create({
   filterActive: { borderColor: "#D7E4FF", backgroundColor: "#EDF3FF" },
   filterText: { color: "#8290A3", fontSize: 10, fontWeight: "600" },
   filterTextActive: { color: "#2867D8" },
+  coverageSection: { marginTop: 8, marginBottom: 18, paddingTop: 15, borderTopWidth: 1, borderTopColor: "#E8EDF4", borderBottomWidth: 1, borderBottomColor: "#E8EDF4", paddingBottom: 14 },
+  coverageHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11 },
+  coverageHeadingCopy: { flex: 1 },
+  coverageSubheading: { color: "#8794A7", fontSize: 9, lineHeight: 14, marginTop: 3 },
+  coverageStatus: { color: "#2867D8", backgroundColor: "#EDF3FF", borderRadius: 14, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5, fontSize: 8, fontWeight: "800" },
+  coverageCard: { padding: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7EDF5", borderRadius: 12, marginBottom: 8 },
+  coverageCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  coverageName: { color: "#243750", fontSize: 12, fontWeight: "800" },
+  coverageTag: { color: "#8A97A9", fontSize: 8, textTransform: "uppercase" },
+  coveragePrimary: { color: "#2867D8", fontSize: 23, fontWeight: "800", marginVertical: 8 },
+  coverageUnit: { color: "#8794A7", fontSize: 9, fontWeight: "500" },
+  coverageLine: { color: "#52637A", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  coverageNote: { color: "#8B98AA", fontSize: 9, lineHeight: 14, marginTop: 8 },
+  coverageDisclaimer: { color: "#8B98AA", fontSize: 9, lineHeight: 14, marginTop: 5 },
   card: { padding: 14, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF4", borderRadius: 14, marginBottom: 9 },
   cardMain: { flexDirection: "row", alignItems: "center" },
   assetMark: { width: 37, height: 37, borderRadius: 12, alignItems: "center", justifyContent: "center" },
