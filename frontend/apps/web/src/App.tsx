@@ -137,10 +137,15 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
     setBusy(true);setStatus("");setResult(null);
     try {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
+      const initialCapital=Number(capital); const feeBps=Number(fee); const slippageBps=Number(slippage);
       if(from && !Number.isFinite(fromMs)) throw new Error("Invalid start date");
       if(to && !Number.isFinite(toMs)) throw new Error("Invalid end date");
+      if(fromMs !== undefined && toMs !== undefined && fromMs > toMs) throw new Error("Start date must be before or equal to end date.");
+      if(!Number.isFinite(initialCapital) || initialCapital <= 0) throw new Error("Starting capital must be a finite amount greater than zero.");
+      if(!Number.isFinite(feeBps) || feeBps < 0) throw new Error("Fee must be a finite, non-negative number of basis points.");
+      if(!Number.isFinite(slippageBps) || slippageBps < 0) throw new Error("Slippage must be a finite, non-negative number of basis points.");
       const output=await runQoinBacktest({symbol,venue,from_ts_ms:fromMs,to_ts_ms:toMs,
-        initial_capital:Number(capital),fee_bps:Number(fee),slippage_bps:Number(slippage),limit:10000});
+        initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,limit:10000});
       setResult(output);setStatus("Replay completed from persisted events.");
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
     finally {setBusy(false);}
