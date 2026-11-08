@@ -98,5 +98,5 @@ const styles = StyleSheet.create({
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
   tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
   tabTextActive: { color: colors.accentCyan, fontWeight: "800" },
-  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accentBlue },
+  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accentCyan },
 });
