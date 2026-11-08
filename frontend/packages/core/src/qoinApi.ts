@@ -360,7 +360,8 @@ export type QoinBacktestFill = {
 };
 export type QoinBacktestResult = {
   symbol: string; venue: string; strategy_key: string; strategy_version: string; from_ts_ms: number; to_ts_ms: number;
-  events_replayed: number; decisions: number; buy_decisions: number; sell_decisions: number; wait_decisions: number;
+  events_replayed: number; max_event_gap_ms: number; event_gaps_over_5m: number;
+  decisions: number; buy_decisions: number; sell_decisions: number; wait_decisions: number;
   initial_capital: number; final_equity: number; net_pnl: number; net_return_pct: number; max_drawdown_pct: number;
   fees_paid: number; slippage_paid: number; net_funding_cashflow: number; funding_settlements: number;
   fee_bps: number; slippage_bps: number;
