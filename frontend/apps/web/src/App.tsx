@@ -190,6 +190,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
   const [slippage,setSlippage]=useState("5");
+  const [latency,setLatency]=useState("0");
   const [from,setFrom]=useState("");
   const [to,setTo]=useState("");
   const [result,setResult]=useState<QoinBacktestResult|null>(null);
@@ -201,15 +202,16 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
     setBusy(true);setStatus("");setResult(null);
     try {
       const fromMs=from?Date.parse(from):undefined; const toMs=to?Date.parse(to):undefined;
-      const initialCapital=Number(capital); const feeBps=Number(fee); const slippageBps=Number(slippage);
+      const initialCapital=Number(capital); const feeBps=Number(fee); const slippageBps=Number(slippage); const latencyMs=Number(latency);
       if(from && !Number.isFinite(fromMs)) throw new Error("Invalid start date");
       if(to && !Number.isFinite(toMs)) throw new Error("Invalid end date");
       if(fromMs !== undefined && toMs !== undefined && fromMs > toMs) throw new Error("Start date must be before or equal to end date.");
       if(!Number.isFinite(initialCapital) || initialCapital <= 0) throw new Error("Starting capital must be a finite amount greater than zero.");
       if(!Number.isFinite(feeBps) || feeBps < 0) throw new Error("Fee must be a finite, non-negative number of basis points.");
       if(!Number.isFinite(slippageBps) || slippageBps < 0) throw new Error("Slippage must be a finite, non-negative number of basis points.");
+      if(!Number.isInteger(latencyMs) || latencyMs < 0 || latencyMs > 60000) throw new Error("Latency must be a whole number between 0 and 60000 milliseconds.");
       const output=await runQoinBacktest({symbol,venue,from_ts_ms:fromMs,to_ts_ms:toMs,
-        initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,limit:10000});
+        initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,latency_ms:latencyMs,limit:10000});
       setResult(output);setStatus("Replay completed from persisted events.");
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
     finally {setBusy(false);}
@@ -226,6 +228,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
       <label>Starting capital <input type="number" min="0.01" step="any" value={capital} onChange={e=>setCapital(e.target.value)} /></label>
       <label>Fee (bps) <input type="number" min="0" step="any" value={fee} onChange={e=>setFee(e.target.value)} /></label>
       <label>Slippage (bps) <input type="number" min="0" step="any" value={slippage} onChange={e=>setSlippage(e.target.value)} /></label>
+      <label>Latency (ms) <input type="number" min="0" max="60000" step="1" value={latency} onChange={e=>setLatency(e.target.value)} /></label>
       <button onClick={run} disabled={busy}>{busy?"Replaying…":"Run replay"}</button>
     </div>
     {status && <p className="disclaimer" role="status">{status}</p>}
@@ -241,12 +244,14 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
         <div><span>BUY / SELL / WAIT</span><strong>{result.buy_decisions} / {result.sell_decisions} / {result.wait_decisions}</strong></div>
         <div><span>Fees paid</span><strong>{result.fees_paid.toFixed(4)}</strong></div>
         <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
+        <div><span>Submission latency</span><strong>{result.latency_ms} ms</strong></div>
         <div><span>Net funding (received +)</span><strong>{result.net_funding_cashflow.toFixed(4)}</strong></div>
         <div><span>Funding settlements</span><strong>{result.funding_settlements}</strong></div>
       </div>
       <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
-      <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Time</th><th>Fill</th><th>Price</th><th>Quantity</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
-      <tbody>{result.fills.map((fill,index)=><tr key={fill.event_id+"-"+index}><td>{new Date(fill.ts_ms).toLocaleString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
+      <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Order</th><th>Decision / submission / fill</th><th>Action</th><th>Price</th><th>Quantity</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
+      <tbody>{result.fills.map((fill,index)=><tr key={fill.order_id+"-"+fill.event_id+"-"+index}><td>{fill.order_id} · {fill.status}</td><td>{new Date(fill.decision_ts_ms).toLocaleTimeString()} / {new Date(fill.submitted_ts_ms).toLocaleTimeString()} / {new Date(fill.ts_ms).toLocaleTimeString()}</td><td>{fill.action}</td><td>{fill.price.toPrecision(8)}</td><td>{fill.quantity.toPrecision(6)}</td><td>{fill.fee.toFixed(4)}</td><td>{fill.slippage_cost.toFixed(4)}</td><td>{fill.realized_pnl.toFixed(4)}</td><td>{fill.equity_after.toFixed(4)}</td><td>{fill.reason}</td></tr>)}</tbody></table></div>
+      {result.unfilled_pending_order && <p className="disclaimer">Unfilled {result.unfilled_pending_order.status} {result.unfilled_pending_order.action.toUpperCase()} order {result.unfilled_pending_order.order_id} · submitted {new Date(result.unfilled_pending_order.submitted_ts_ms).toLocaleString()}.</p>}
       <details className="trace-details"><summary>Replay assumptions and full result</summary><ul>{result.assumptions.map((item,index)=><li key={index}>{item}</li>)}</ul><pre>{JSON.stringify(result,null,2)}</pre></details>
     </>}
   </section>;
