@@ -196,6 +196,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -242,7 +243,7 @@ export default function App() {
   }
   async function changeAvatar(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file) return;
-    try { await uploadQoinAvatar(file); setAuthError(""); }
+    try { const url = await uploadQoinAvatar(file); setAvatarUrl(url); setAuthError(""); }
     catch (error) { setAuthError(error instanceof Error ? error.message : "Avatar upload failed."); }
     finally { event.target.value = ""; }
   }
@@ -401,7 +402,7 @@ export default function App() {
     <main className="qoin-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
-        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{firebaseUser?.photoURL ? <img src={firebaseUser.photoURL} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
           {firebaseUser ? <>
