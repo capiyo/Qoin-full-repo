@@ -95,3 +95,24 @@
 .account-menu>button{padding:9px;border-radius:999px}
 @media(max-width:580px){.qoin-shell{padding:0 17px 108px}.floating-navigation{bottom:max(12px,env(safe-area-inset-bottom));gap:3px;padding:5px}.floating-nav-item{min-height:40px;padding:0 15px;font-size:10px}.account-menu{top:56px}}
 @media(prefers-reduced-motion:reduce){.floating-nav-item{transition:none}}
+
+
+/* Versioned algorithm catalogue */
+.algorithm-catalogue{margin:28px 0 30px;padding:22px 0;border-top:1px solid #e8edf5;border-bottom:1px solid #e8edf5}
+.algorithm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin-top:16px}
+.algorithm-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border:1px solid #e8edf5;border-radius:18px;background:#fff}
+.algorithm-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.algorithm-card-top>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.algorithm-card-top strong{color:#1c2e49;font-size:14px}
+.algorithm-card-top small{color:#91a0b4;font-size:10px;overflow-wrap:anywhere}
+.algorithm-status{flex:0 0 auto;padding:5px 9px;border-radius:999px;background:#f0f4fa;color:#687a92;font-size:9px;font-weight:800;text-transform:uppercase}
+.algorithm-status.active{background:#eaf6ef;color:#28754a}
+.algorithm-status.preview{background:#edf3ff;color:#2867dc}
+.algorithm-status.deprecated,.algorithm-status.disabled{background:#f7eeee;color:#9b5555}
+.algorithm-card>p{margin:0;color:#728198;font-size:11px;line-height:1.6}
+.algorithm-card dl{display:grid;gap:8px;margin:0}
+.algorithm-card dl>div{display:grid;grid-template-columns:94px minmax(0,1fr);gap:8px}
+.algorithm-card dt{color:#94a0b2;font-size:10px}
+.algorithm-card dd{margin:0;color:#43546c;font-size:10px;overflow-wrap:anywhere}
+.algorithm-card-footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px;border-top:1px solid #f0f3f8;color:#8795a8;font-size:9px;text-transform:uppercase;letter-spacing:.035em}
+@media(max-width:580px){.algorithm-catalogue{margin:22px 0;padding:18px 0}.algorithm-card{padding:14px}}
