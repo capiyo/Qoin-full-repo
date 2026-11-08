@@ -55,7 +55,7 @@ export default function App() {
       messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
     };
-    if (!config.apiKey || !config.projectId || !config.appId) {
+    if (!config.apiKey || !config.authDomain || !config.projectId || !config.storageBucket || !config.messagingSenderId || !config.appId) {
       setAuthError("Firebase is not configured. Add the EXPO_PUBLIC_FIREBASE_* values before signing in.");
       setAuthReady(true);
       return;
