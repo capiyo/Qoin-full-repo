@@ -2,7 +2,7 @@ use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::get,
     Json, Router,
 };
 use mongodb::{
@@ -45,7 +45,7 @@ struct MarketEvent {
     #[serde(default)] open_interest: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 struct SymbolState {
     symbol: String,
     event_count: usize,
