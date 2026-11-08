@@ -51,6 +51,49 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   </View>;
 }
 
+
+function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
+  const gates = decision.diagnostics;
+  const rows = decision.feature_trace || [];
+  const gateRows: [string, boolean | undefined][] = [
+    ["Spread supplied", gates?.spread_present], ["Spread within limit", gates?.spread_within_limit],
+    ["Event evidence", gates?.event_intensity_positive], ["Magnitude threshold", gates?.magnitude_passed],
+    ["Buy angle", gates?.buy_angle_passed], ["Sell angle", gates?.sell_angle_passed],
+    ["Bullish > bearish", gates?.bullish_exceeds_bearish], ["Bearish > bullish", gates?.bearish_exceeds_bullish],
+  ];
+  return <View style={styles.tracePanel}>
+    <Text style={styles.attentionTitle}>Decision trace · nothing hidden</Text>
+    <Text style={styles.attentionCaption}>Exact calculations and parameters for {decision.strategy_version || "this decision"}</Text>
+    {decision.input_event ? <View style={styles.traceSource}>
+      <Text style={styles.engineLabel}>Trigger event · {decision.input_event.event_type} · {decision.input_event.venue}</Text>
+      <Text style={styles.traceValue}>{decision.input_event.event_id}</Text>
+      <Text style={styles.attentionCaption}>{new Date(decision.input_event.event_ts_ms).toLocaleString()} · {decision.input_event.state_event_count} accumulated events</Text>
+    </View> : null}
+    <ScrollView horizontal showsHorizontalScrollIndicator>
+      <View>
+        <View style={styles.traceTableRow}>
+          {["Feature","Raw","Transform","Scale","Normalized","Clamped","Bull term","Bear term"].map((label) => <Text key={label} style={[styles.traceCell,styles.traceHead]}>{label}</Text>)}
+        </View>
+        {rows.map((item) => <View key={item.name} style={styles.traceTableRow}>
+          {[item.name.replaceAll("_"," "),item.raw_value.toPrecision(4),item.transform,String(item.scale),item.normalized_value.toFixed(4),item.clamped_value.toFixed(4),item.bullish_weighted_term.toFixed(4),item.bearish_weighted_term.toFixed(4)].map((value,index) => <Text key={index} style={styles.traceCell}>{value}</Text>)}
+        </View>)}
+      </View>
+    </ScrollView>
+    <View style={styles.traceGateGrid}>
+      {gateRows.map(([label,value]) => <View key={label} style={styles.traceGate}>
+        <Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value == null ? "Not reported" : value ? "PASS" : "FAIL"}</Text>
+      </View>)}
+    </View>
+    <Text style={styles.disclaimer}>Angle {decision.angle_degrees?.toFixed(4) ?? "—"}° · angle limit {gates?.angle_limit_degrees ?? "—"}° · magnitude limit {gates?.magnitude_limit ?? "—"} · spread limit {gates?.spread_limit_bps ?? "—"} bps. {decision.reason || ""}</Text>
+    <Text style={styles.traceSubhead}>Raw inputs (null means not supplied)</Text>
+    <Text selectable style={styles.traceJson}>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</Text>
+    <Text style={styles.traceSubhead}>Exact strategy parameter snapshot</Text>
+    <Text selectable style={styles.traceJson}>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</Text>
+    <Text style={styles.traceSubhead}>Complete serialized decision</Text>
+    <Text selectable style={styles.traceJson}>{JSON.stringify(decision, null, 2)}</Text>
+  </View>;
+}
+
 export function ArchiveExploreScreen({ mode }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
@@ -79,6 +122,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const unreadNotifications = notifications.filter((item) => !item.read).length;
   const addNotification = (notification: QoinNotification) => setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
+  const decisionStrategy = vector?.strategy_parameters || strategy;
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const toggle = (symbol: string) => {
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
@@ -320,26 +364,27 @@ export function ArchiveExploreScreen({ mode }: Props) {
               <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
             </View>
             <FeatureSpace decision={vector} />
+            {vector ? <DecisionTracePanel decision={vector} /> : null}
             <View style={styles.strategyPanel}>
-              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{strategy?.version || "Unavailable"}</Text></View>
-              {strategy ? <>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
+              {decisionStrategy ? <>
                 <View style={styles.strategyGates}>
                   {[
-                    ["Angle", strategy.angular_threshold_degrees.toFixed(2) + "°"],
-                    ["Magnitude", strategy.magnitude_threshold.toFixed(3)],
-                    ["Max spread", strategy.max_spread_bps.toFixed(2) + " bps"],
-                    ["Attention", strategy.attention_scale.toFixed(3)],
+                    ["Angle", decisionStrategy.angular_threshold_degrees.toFixed(2) + "°"],
+                    ["Magnitude", decisionStrategy.magnitude_threshold.toFixed(3)],
+                    ["Max spread", decisionStrategy.max_spread_bps.toFixed(2) + " bps"],
+                    ["Attention", decisionStrategy.attention_scale.toFixed(3)],
                   ].map(([label,value]) => <View key={label} style={styles.liveMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
                 </View>
                 {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={styles.strategyWeightRow}>
                   <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
                   <View style={styles.strategyWeightValues}>
-                    <Text style={styles.attentionCaption}>Bullish {strategy.bullish_weights[name]?.toFixed(3) ?? "—"}</Text>
-                    <Text style={styles.attentionCaption}>Bearish {strategy.bearish_weights[name]?.toFixed(3) ?? "—"}</Text>
-                    <Text style={styles.attentionCaption}>Scale {strategy.feature_scales[name]?.toFixed(3) ?? "—"}</Text>
+                    <Text style={styles.attentionCaption}>Bullish {decisionStrategy.bullish_weights[name]?.toFixed(3) ?? "—"}</Text>
+                    <Text style={styles.attentionCaption}>Bearish {decisionStrategy.bearish_weights[name]?.toFixed(3) ?? "—"}</Text>
+                    <Text style={styles.attentionCaption}>Scale {decisionStrategy.feature_scales[name]?.toFixed(3) ?? "—"}</Text>
                   </View>
                 </View>)}
-                <Text style={styles.disclaimer}>Status: {strategy.status}. Last update: {new Date(strategy.updated_at_ms).toLocaleString()}.</Text>
+                <Text style={styles.disclaimer}>Status: {decisionStrategy.status}. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</Text>
               </> : <Text style={styles.disclaimer}>The active strategy map could not be loaded.</Text>}
             </View>
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
@@ -419,6 +464,17 @@ export function ArchiveExploreScreen({ mode }: Props) {
 }
 
 const styles = StyleSheet.create({
+  tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
+  traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#F5F8FD" },
+  traceValue: { color: "#30445F", fontSize: 10, fontWeight: "700" },
+  traceTableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E8EDF5" },
+  traceCell: { width: 104, paddingHorizontal: 7, paddingVertical: 8, color: "#52647C", fontSize: 8 },
+  traceHead: { color: "#30445F", fontWeight: "800", backgroundColor: "#F5F8FD" },
+  traceGateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  traceGate: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#F5F8FD" },
+  traceSubhead: { color: "#30445F", fontSize: 10, fontWeight: "800", marginTop: 5 },
+  traceJson: { color: "#52647C", backgroundColor: "#F5F7FB", padding: 9, borderRadius: 9, fontSize: 8, lineHeight: 12 },
+
   screen: { flex: 1, backgroundColor: "#F7F9FC" },
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EDF3FF", alignItems: "center", justifyContent: "center" },
