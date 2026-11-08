@@ -4,7 +4,7 @@ Research and paper-trading only. Live execution, broker order submission, exchan
 
 Items are ordered by dependency and risk. Do not start a lower item while a higher item has a failing verification gate.
 
-## 1. Restore the failing Axum–Drogon–MongoDB integration check
+## 1. Restore the intermittent Axum–Drogon–MongoDB integration check (open; retry green, root cause unknown)
 - [ ] Reproduce the current failure on the exact draft-branch head and preserve the failing request/response evidence.
 - [ ] Isolate whether the failure is in the gateway proxy, Axum handler, or test harness; add diagnostics that identify the failing request and process.
 - [ ] Fix the smallest root cause without widening public write routes or changing the fixed architecture.
