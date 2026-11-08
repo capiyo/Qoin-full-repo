@@ -439,7 +439,7 @@ export default function App() {
             <button onClick={() => { setAccountOpen(false); setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
             <button onClick={() => { setNotificationsOpen((value) => !value); setAccountOpen(false); }}>Notifications <span>{unreadNotifications ? unreadNotifications : ""}</span></button>
             <button onClick={() => avatarInputRef.current?.click()}>Change profile picture</button>
-            <button onClick={() => { void signOutQoinUser(); setAccountOpen(false); }}>Sign out</button>
+            <button onClick={() => { void signOutQoinUser().then(() => { setAccountOpen(false); setProfileOpen(false); setNotificationsOpen(false); setAuthError(""); }).catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}>Sign out</button>
           </> : <>
             <button onClick={() => { setAuthMode("signin"); setAuthPanelOpen(true); }}>Sign in</button>
             <button onClick={() => { setAuthMode("register"); setAuthPanelOpen(true); }}>Create account</button>
