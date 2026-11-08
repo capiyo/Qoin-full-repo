@@ -210,3 +210,12 @@ Both web and React Native instrument detail views render the baseline's full cal
 - the six-by-six attention matrix and the vector trajectory already present in the instrument workspace.
 
 The UI uses the strategy snapshot attached to the decision for contribution and threshold displays. It does not silently substitute a newer active strategy when inspecting an older decision. This is important for reproducibility: an old decision must be interpreted using the exact parameters that produced it.
+
+
+## Historical event replay (implemented 2026-11-08)
+
+A read-only replay endpoint is now available through `GET /api/v1/backtest` (Axum internal route `/internal/backtest`). It queries persisted raw observations for one symbol and an optional timestamp range, orders them by event timestamp then event ID, reconstructs the live engine's event-state updates, and calls the selected baseline strategy on each event in sequence. It never submits orders.
+
+The simulation currently models long-only, all-available-cash entries on BUY and full exits on SELL. Fee and slippage assumptions are explicit query parameters (basis points); the response reports fills, decision counts, gross realized fill P&L, net equity/P&L, drawdown, fees, slippage, strategy version and assumptions. It rejects invalid data/cost assumptions and caps a replay at 50,000 observations.
+
+Important limitations: this replays only raw events already present in MongoDB. It does not backfill Binance/Finnhub history, guarantee continuous coverage, model short positions, leverage, funding cashflows, borrow costs, liquidation, partial fills, latency or market impact. An open position is marked to the last observed trade. The strategy is the currently active baseline snapshot at replay start; the response identifies its exact version. These results are research simulations, not live or expected performance. A dedicated historical provider/backfill pipeline, immutable strategy selection per historical timestamp, and richer execution simulator remain separate work.
