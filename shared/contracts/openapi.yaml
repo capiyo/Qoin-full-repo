@@ -26,18 +26,7 @@ paths:
       responses:
         '200': { description: Raw persisted events }
         '503': { description: Storage unavailable }
-    post:
-      summary: Ingest one market event
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MarketEvent'
-      responses:
-        '200': { description: Event accepted or duplicate ignored }
-        '400': { description: Invalid event }
-        '503': { description: Persistence failure }
+    # Writes are restricted to the loopback Axum ingestion endpoint; not part of the public gateway contract.
   /api/v1/state:
     get:
       summary: Get latest state estimate for a symbol
