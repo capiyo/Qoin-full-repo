@@ -159,6 +159,8 @@ function BacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
         <div><span>Max drawdown</span><strong>{result.max_drawdown_pct.toFixed(3)}%</strong></div>
         <div><span>Final equity</span><strong>{result.final_equity.toFixed(2)}</strong></div>
         <div><span>Events / decisions</span><strong>{result.events_replayed} / {result.decisions}</strong></div>
+        <div><span>Largest raw-event gap</span><strong>{(result.max_event_gap_ms / 1000).toFixed(1)}s</strong></div>
+        <div><span>Gaps over 5 minutes</span><strong>{result.event_gaps_over_5m}</strong></div>
         <div><span>BUY / SELL / WAIT</span><strong>{result.buy_decisions} / {result.sell_decisions} / {result.wait_decisions}</strong></div>
         <div><span>Fees paid</span><strong>{result.fees_paid.toFixed(4)}</strong></div>
         <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
