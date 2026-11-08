@@ -161,6 +161,8 @@ function BacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
         <div><span>BUY / SELL / WAIT</span><strong>{result.buy_decisions} / {result.sell_decisions} / {result.wait_decisions}</strong></div>
         <div><span>Fees paid</span><strong>{result.fees_paid.toFixed(4)}</strong></div>
         <div><span>Slippage cost</span><strong>{result.slippage_paid.toFixed(4)}</strong></div>
+        <div><span>Net funding (received +)</span><strong>{result.net_funding_cashflow.toFixed(4)}</strong></div>
+        <div><span>Funding settlements</span><strong>{result.funding_settlements}</strong></div>
       </div>
       <p className="disclaimer">Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {new Date(result.from_ts_ms).toLocaleString()} → {new Date(result.to_ts_ms).toLocaleString()}</p>
       <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Time</th><th>Fill</th><th>Price</th><th>Quantity</th><th>Fee</th><th>Slippage</th><th>Realized P/L</th><th>Equity</th><th>Reason</th></tr></thead>
