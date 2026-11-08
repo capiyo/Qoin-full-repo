@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn final_signal_is_reported_unfilled_without_a_later_executable_event() {
+    fn final_signal_ignores_stale_and_same_timestamp_book_events() {
         let mut strategy = EdgeStrategy::baseline();
         strategy.bullish_weights.values_mut().for_each(|weight| *weight = 5.0);
         strategy.bearish_weights.values_mut().for_each(|weight| *weight = 0.0);
@@ -633,6 +633,12 @@ mod tests {
                 event_id: "signal-trade".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
                 event_type: "trade".into(), ts_ms: 2, price: Some(100.0), size: Some(1.0), side: Some("buy".into()),
                 bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "z-stale-book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(5.0), ask_size: Some(4.0),
                 funding_rate: None, open_interest: None, liquidation_side: None,
             },
             ReplayEvent {
