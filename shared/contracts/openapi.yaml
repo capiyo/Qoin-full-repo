@@ -62,6 +62,10 @@ paths:
           required: true
           schema: { type: string }
         - in: query
+          name: venue
+          description: Optional provider venue; required when the symbol has mixed-venue history.
+          schema: { type: string }
+        - in: query
           name: from_ts_ms
           schema: { type: integer, format: int64 }
         - in: query
@@ -78,11 +82,13 @@ paths:
           schema: { type: number, minimum: 0, default: 10 }
         - in: query
           name: slippage_bps
-          schema: { type: number, minimum: 0, default: 5 }
+          description: Must be below 10000 basis points.
+          schema: { type: number, minimum: 0, exclusiveMaximum: 10000, default: 5 }
       responses:
         '200': { description: Replay metrics, fills, and assumptions }
         '413': { description: Replay event limit reached }
-        '422': { description: Empty or invalid replay window }
+        '400': { description: Invalid replay parameters }
+        '422': { description: Empty, invalid, or mixed-venue replay window }
         '503': { description: Historical event storage unavailable }
   /api/v1/vector/history:
     get:
