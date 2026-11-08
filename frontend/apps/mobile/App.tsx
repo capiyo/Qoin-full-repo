@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ export type RootStackParamList = { Login: undefined; Dashboard: undefined };
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 type MainTab = "Archive" | "Explore";
+type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
 function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainTab) => void }) {
   return (
@@ -30,12 +31,12 @@ function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainT
   );
 }
 
-function MainTabs() {
+function MainTabs({ navigation }: MainTabsProps) {
   const [tab, setTab] = useState<MainTab>("Archive");
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        <ArchiveExploreScreen mode={tab} />
+        <ArchiveExploreScreen mode={tab} onSignInRequested={() => navigation.navigate("Login")} />
       </View>
       <TabBar current={tab} onChange={setTab} />
     </View>
@@ -44,7 +45,6 @@ function MainTabs() {
 
 export default function App() {
   const [authReady, setAuthReady] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
   const [authError, setAuthError] = useState("");
   useEffect(() => {
     const config = {
@@ -63,7 +63,7 @@ export default function App() {
     try {
       initializeQoinFirebase(config, getReactNativePersistence(AsyncStorage));
       return subscribeQoinAuth((user) => {
-        setSignedIn(Boolean(user));
+        void user;
         setAuthReady(true);
       });
     } catch (error) {
@@ -80,9 +80,10 @@ export default function App() {
           <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
-              {signedIn ? <Stack.Screen name="Dashboard" component={MainTabs} /> : <Stack.Screen name="Login">
+              <Stack.Screen name="Dashboard" component={MainTabs} />
+              <Stack.Screen name="Login">
                 {(props) => <LoginScreen {...props} configurationError={authError} />}
-              </Stack.Screen>}
+              </Stack.Screen>
             </Stack.Navigator>
           ) : null}
         </NavigationContainer>

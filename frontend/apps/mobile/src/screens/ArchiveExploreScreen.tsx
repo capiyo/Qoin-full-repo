@@ -31,7 +31,7 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#8895A7" },
 ];
 
-type Props = { mode: "Archive" | "Explore" };
+type Props = { mode: "Archive" | "Explore"; onSignInRequested: () => void };
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
@@ -156,7 +156,7 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   </View>;
 }
 
-export function ArchiveExploreScreen({ mode }: Props) {
+export function ArchiveExploreScreen({ mode, onSignInRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
@@ -450,11 +450,16 @@ export function ArchiveExploreScreen({ mode }: Props) {
 
       <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
         <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={(event) => event.stopPropagation()}>
-          <View style={styles.accountIdentity}><View style={styles.accountAvatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || "Qoin member"}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || "Signed in"}</Text></View></View>
-          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setProfileOpen(true); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
-          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setNotificationsOpen(true); }}><Text style={styles.accountActionText}>Notifications {unreadNotifications ? "· " + unreadNotifications + " unread" : ""}</Text></Pressable>
-          <Pressable style={styles.accountAction} disabled={avatarBusy} onPress={() => void chooseAvatar()}><Text style={styles.accountActionText}>{avatarBusy ? "Uploading picture…" : "Change profile picture"}</Text></Pressable>
-          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); void signOutQoinUser().catch((error) => Alert.alert("Sign out failed", error instanceof Error ? error.message : "Try again.")); }}><Text style={styles.accountActionText}>Sign out</Text></Pressable>
+          <View style={styles.accountIdentity}><View style={styles.accountAvatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || (firebaseUser ? "Qoin member" : "Guest")}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || (firebaseUser ? "Signed in" : "Browse Qoin without an account")}</Text></View></View>
+          {firebaseUser ? <>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setProfileOpen(true); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setNotificationsOpen(true); }}><Text style={styles.accountActionText}>Notifications {unreadNotifications ? "· " + unreadNotifications + " unread" : ""}</Text></Pressable>
+            <Pressable style={styles.accountAction} disabled={avatarBusy} onPress={() => void chooseAvatar()}><Text style={styles.accountActionText}>{avatarBusy ? "Uploading picture…" : "Change profile picture"}</Text></Pressable>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); void signOutQoinUser().catch((error) => Alert.alert("Sign out failed", error instanceof Error ? error.message : "Try again.")); }}><Text style={styles.accountActionText}>Sign out</Text></Pressable>
+          </> : <>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onSignInRequested(); }}><Text style={styles.accountActionText}>Sign in</Text></Pressable>
+            <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); onSignInRequested(); }}><Text style={styles.accountActionText}>Create account</Text></Pressable>
+          </>}
         </Pressable></Pressable>
       </Modal>
       <Modal visible={profileOpen} transparent animationType="fade" onRequestClose={() => setProfileOpen(false)}>
