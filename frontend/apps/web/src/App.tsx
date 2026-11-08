@@ -45,13 +45,47 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
   const trajectory = points.map((item) => project(item).join(",")).join(" ");
   const [nativeMotion, setNativeMotion] = useState<NativeMotionPoint[]>([]);
   const nativeMotionRef = useRef<NativeMotionPoint[]>([]);
+  const pendingMotionRef = useRef<{ particles: Array<{ id: number; x: number; y: number; vx: number; vy: number; weight: number }>; config: { bullish: number; bearish: number; iterations: number; repulsion: number; damping: number } } | null>(null);
+  const motionTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const motionInFlightRef = useRef(false);
+  const motionDisposedRef = useRef(false);
   useEffect(() => {
-    let cancelled = false;
+    motionDisposedRef.current = false;
+    return () => {
+      motionDisposedRef.current = true;
+      if (motionTimerRef.current !== null) window.clearTimeout(motionTimerRef.current);
+    };
+  }, []);
+  const scheduleNativeMotion = () => {
+    if (motionTimerRef.current !== null || motionInFlightRef.current) return;
+    motionTimerRef.current = window.setTimeout(() => {
+      motionTimerRef.current = null;
+      const request = pendingMotionRef.current;
+      pendingMotionRef.current = null;
+      if (!request || motionDisposedRef.current) return;
+      motionInFlightRef.current = true;
+      void import("@tauri-apps/api/core").then(({ invoke }) =>
+        invoke<NativeMotionPoint[]>("simulate_vector_motion", request)
+      ).then((result) => {
+        if (!motionDisposedRef.current) {
+          nativeMotionRef.current = result;
+          setNativeMotion(result);
+        }
+      }).catch((error: unknown) => {
+        if (!motionDisposedRef.current) console.error("Native vector motion unavailable; retaining SVG fallback.", error);
+      }).finally(() => {
+        motionInFlightRef.current = false;
+        if (pendingMotionRef.current && !motionDisposedRef.current) scheduleNativeMotion();
+      });
+    }, 80);
+  };
+  useEffect(() => {
     const runtime = globalThis as typeof globalThis & { __TAURI_INTERNALS__?: unknown };
     if (!runtime.__TAURI_INTERNALS__ || !points.length) {
+      pendingMotionRef.current = null;
       nativeMotionRef.current = [];
       setNativeMotion([]);
-      return () => { cancelled = true; };
+      return;
     }
     const particles = points.slice(-300).map((item, index) => {
       const previous = nativeMotionRef.current[index];
@@ -64,23 +98,12 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
         weight: 1,
       };
     });
-    // Coalesce rapid market updates; native force integration runs at most ~12.5 Hz.
-    const timer = window.setTimeout(() => {
-      void import("@tauri-apps/api/core").then(({ invoke }) =>
-        invoke<NativeMotionPoint[]>("simulate_vector_motion", {
-          particles,
-          config: { bullish: Math.max(-1, Math.min(1, bullish)), bearish: Math.max(-1, Math.min(1, bearish)), iterations: 64, repulsion: 0.012, damping: 0.88 },
-        })
-      ).then((result) => {
-        if (!cancelled) {
-          nativeMotionRef.current = result;
-          setNativeMotion(result);
-        }
-      }).catch((error: unknown) => {
-        if (!cancelled) console.error("Native vector motion unavailable; retaining SVG fallback.", error);
-      });
-    }, 80);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    pendingMotionRef.current = {
+      particles,
+      config: { bullish: Math.max(-1, Math.min(1, bullish)), bearish: Math.max(-1, Math.min(1, bearish)), iterations: 64, repulsion: 0.012, damping: 0.88 },
+    };
+    // True trailing throttle: market bursts replace pending inputs but cannot starve the renderer.
+    scheduleNativeMotion();
   }, [decision?.decision_vector?.[0], decision?.decision_vector?.[1], history, max, bullish, bearish]);
   return (
     <div className="vector-map">
