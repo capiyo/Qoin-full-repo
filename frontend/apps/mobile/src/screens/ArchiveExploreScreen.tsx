@@ -98,7 +98,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </View>;
 }
 
-function MobileBacktestPanel({ symbol, venue }: { symbol: string; venue: string }) {
+function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital, setCapital] = useState("10000");
   const [fee, setFee] = useState("10");
   const [slippage, setSlippage] = useState("5");
@@ -106,6 +106,7 @@ function MobileBacktestPanel({ symbol, venue }: { symbol: string; venue: string 
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const run = async () => {
+    if (!authenticated) { onRequireAuth(); setStatus("Sign in to run a historical research replay."); return; }
     const initialCapital = Number(capital), feeBps = Number(fee), slippageBps = Number(slippage);
     if (!Number.isFinite(initialCapital) || initialCapital <= 0 || !Number.isFinite(feeBps) || feeBps < 0 ||
         !Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10_000) {
@@ -202,7 +203,9 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const decisionStrategy = vector?.strategy_parameters || strategy;
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
+  const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
   const toggle = (symbol: string) => {
+    if (!firebaseUser) { requireAuthentication(); return; }
     setItems((current) => current.map((item) => item.symbol === symbol ? { ...item, archived: !item.archived } : item));
     setSelected((current) => current?.symbol === symbol ? { ...current, archived: !current.archived } : current);
   };
@@ -467,7 +470,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
             </View>
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
-            <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} />
+            <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
               {decisionStrategy ? <>
