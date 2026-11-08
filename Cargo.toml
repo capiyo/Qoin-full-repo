@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
+exclude = ["frontend/apps/desktop/src-tauri"]
 members = [
   "backend/rust-axum/crates/qoin-vector-engine",
   "backend/rust-axum-api",
   "backend/rust-axum",
-  "frontend/apps/desktop/src-tauri",
-  "frontend/apps/desktop/src-tauri/crates/qoin-vector-motion",
+  "backend/rust-axum/crates/qoin-vector-motion",
 ]
 
 [workspace.package]
