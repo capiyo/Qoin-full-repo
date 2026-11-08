@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Image } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -177,6 +180,20 @@ export function ArchiveExploreScreen({ mode }: Props) {
   const [calendarStatus, setCalendarStatus] = useState("loading");
   const [notifications, setNotifications] = useState<QoinNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  useEffect(() => { try { return subscribeQoinAuth(setFirebaseUser); } catch { return undefined; } }, []);
+  const chooseAvatar = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert("Photo access needed", "Allow Qoin to access your photo library to change your profile picture."); return; }
+    const selection = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.85 });
+    if (selection.canceled || !selection.assets[0]) return;
+    setAvatarBusy(true);
+    try { const response = await fetch(selection.assets[0].uri); const blob = await response.blob(); await uploadQoinAvatar(blob); setAccountOpen(false); }
+    catch (error) { Alert.alert("Avatar upload failed", error instanceof Error ? error.message : "Try another image."); }
+    finally { setAvatarBusy(false); }
+  };
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
   const unreadNotifications = notifications.filter((item) => !item.read).length;
@@ -334,7 +351,7 @@ export function ArchiveExploreScreen({ mode }: Props) {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.topline}><Text style={styles.brand}>qoin</Text><View style={styles.topActions}><Pressable accessibilityLabel={"Notifications, " + unreadNotifications + " unread"} onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}><Text style={styles.notificationGlyph}>♧</Text>{unreadNotifications > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications > 99 ? "99+" : unreadNotifications}</Text></View> : null}</Pressable><View style={styles.avatar}><Text style={styles.avatarText}>Q</Text></View></View></View>
+        <View style={styles.topline}><Text style={styles.brand}>qoin</Text><View style={styles.topActions}><Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{firebaseUser?.photoURL ? <Image source={{ uri: firebaseUser.photoURL }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable></View></View>
         <View style={styles.hero}><Text style={styles.kicker}>YOUR MARKET WORKSPACE</Text><Text style={styles.heroTitle}>See the market{"\n"}<Text style={styles.blue}>as a system.</Text></Text><Text style={styles.heroCopy}>Keep the instruments that matter close. Explore the forces shaping each one.</Text></View>
         <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
@@ -392,6 +409,15 @@ export function ArchiveExploreScreen({ mode }: Props) {
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
       </ScrollView>
 
+      <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
+        <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={() => undefined}>
+          <View style={styles.accountIdentity}><View style={styles.accountAvatar}>{firebaseUser?.photoURL ? <Image source={{ uri: firebaseUser.photoURL }} style={styles.accountAvatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</View><View style={{ flex: 1 }}><Text style={styles.accountName}>{firebaseUser?.displayName || "Qoin member"}</Text><Text style={styles.accountEmail}>{firebaseUser?.email || "Signed in"}</Text></View></View>
+          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); Alert.alert("Profile", firebaseUser?.email || "Your Qoin profile"); }}><Text style={styles.accountActionText}>Profile</Text></Pressable>
+          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); setNotificationsOpen(true); }}><Text style={styles.accountActionText}>Notifications {unreadNotifications ? "· " + unreadNotifications + " unread" : ""}</Text></Pressable>
+          <Pressable style={styles.accountAction} disabled={avatarBusy} onPress={() => void chooseAvatar()}><Text style={styles.accountActionText}>{avatarBusy ? "Uploading picture…" : "Change profile picture"}</Text></Pressable>
+          <Pressable style={styles.accountAction} onPress={() => { setAccountOpen(false); void signOutQoinUser().catch((error) => Alert.alert("Sign out failed", error instanceof Error ? error.message : "Try again.")); }}><Text style={styles.accountActionText}>Sign out</Text></Pressable>
+        </Pressable></Pressable>
+      </Modal>
       <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
         <View style={styles.modalShade}><View style={styles.notificationModal}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>LIVE ENGINE EVENTS</Text><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.assetMeta}>{unreadNotifications} unread · current session</Text></View><Pressable onPress={() => setNotificationsOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
@@ -583,6 +609,16 @@ const styles = StyleSheet.create({
   brand: { color: "#1B2C45", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
   avatar: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#2867DC", fontWeight: "800" },
+  avatarImage: { width: 29, height: 29, borderRadius: 15 },
+  accountShade: { flex: 1, justifyContent: "flex-start", alignItems: "flex-end", paddingTop: 58, paddingHorizontal: 16, backgroundColor: "#17294344" },
+  accountSheet: { width: 270, padding: 12, borderRadius: 19, backgroundColor: "#FFFFFF" },
+  accountIdentity: { flexDirection: "row", alignItems: "center", gap: 10, padding: 9, marginBottom: 4 },
+  accountAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  accountAvatarImage: { width: 38, height: 38, borderRadius: 19 },
+  accountName: { color: "#24344D", fontSize: 12, fontWeight: "800" },
+  accountEmail: { color: "#8794A7", fontSize: 9, marginTop: 3 },
+  accountAction: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 11 },
+  accountActionText: { color: "#43546C", fontSize: 11, fontWeight: "600" },
   hero: { paddingTop: 24, paddingBottom: 25 },
   kicker: { color: "#2867DC", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
   heroTitle: { color: "#1B2C45", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
