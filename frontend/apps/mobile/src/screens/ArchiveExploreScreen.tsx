@@ -192,6 +192,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
+  const pendingInstrumentRef = useRef<Instrument | null>(null);
   useEffect(() => {
     let active = true;
     let generation = 0;
@@ -214,6 +215,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           pendingArchiveActionRef.current = null;
           archivedSymbolsRef.current = nextSymbols;
           setItems((current) => current.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
+          const pendingInstrument = pendingInstrumentRef.current;
+          if (pendingInstrument) {
+            pendingInstrumentRef.current = null;
+            setSelected({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) });
+          }
           if (pendingAction) {
             setSelected((current) => current?.symbol === pendingAction.symbol ? { ...current, archived: pendingAction.archived } : current);
             if (nextSymbols !== symbols) void saveQoinArchivedSymbols(nextSymbols).catch((error) => Alert.alert("Archive could not be saved", error instanceof Error ? error.message : "Try again."));
@@ -244,7 +250,18 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const decisionStrategy = vector?.strategy_parameters || strategy;
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
-  const requireAuthentication = () => { setAccountOpen(true); Alert.alert("Sign in required", "Sign in to Qoin to change your archive or run a research replay."); };
+  const requireAuthentication = () => {
+    setAccountOpen(true);
+    Alert.alert("Sign in required", "Sign in to open instrument research, change your archive or run a historical replay.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Sign in", onPress: () => onAuthRequested("signin") },
+      { text: "Create account", onPress: () => onAuthRequested("register") },
+    ]);
+  };
+  const openInstrument = (item: Instrument) => {
+    if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
+    setSelected(item);
+  };
   const toggle = (symbol: string) => {
     const target = items.find((item) => item.symbol === symbol);
     if (!target) return;
@@ -446,7 +463,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 
         {data.length ? data.map((item) => (
           <View key={item.symbol} style={styles.card}>
-            <Pressable onPress={() => setSelected(item)} style={styles.cardMain}>
+            <Pressable onPress={() => openInstrument(item)} style={styles.cardMain}>
               <View style={[styles.assetMark, { backgroundColor: item.tint }]}><Text style={styles.assetMarkText}>{item.symbol.slice(0, 1)}</Text></View>
               <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
               <Text style={styles.arrow}>↗</Text>
