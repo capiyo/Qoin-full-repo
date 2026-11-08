@@ -98,6 +98,6 @@ const styles = StyleSheet.create({
   tabBar: { flexDirection: "row", backgroundColor: colors.bgSecondary, borderTopWidth: 0, paddingTop: 9, paddingBottom: 7 },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
   tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
-  tabTextActive: { color: colors.accentBlue, fontWeight: "800" },
+  tabTextActive: { color: colors.accentCyan, fontWeight: "800" },
   activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accentBlue },
 });
