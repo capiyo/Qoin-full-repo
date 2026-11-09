@@ -1,10 +1,10 @@
 # State of repository
 
-This branch contains the Qoin research and paper-trading platform foundation. The fixed architecture is Rust/Axum for authoritative vector and decision processing, C++/Drogon as the public HTTP/WebSocket gateway, MongoDB for persistence, React web and React Native clients sharing `@qoin/core`, and a Tauri 2 desktop client.
+This branch contains the Qoin multi-asset research platform and an operator-controlled private Binance USD-M execution route. The fixed architecture is Rust/Axum for authoritative vector and decision processing, C++/Drogon as the public HTTP/WebSocket gateway, MongoDB for persistence, React web and React Native clients sharing `@qoin/core`, and a Tauri 2 desktop client.
 
 ## Implemented capabilities
 
-- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs and the shared research-signal endpoint (`POST /v1/signal`).
+- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs, the shared research-signal endpoint (`POST /v1/signal`), and a token-protected private live order route (`POST /internal/orders`).
 - Drogon proxies the research-signal endpoint to Axum and exposes the optional JEPA research prediction endpoint; market ingestion and strategy mutation remain private to Axum.
 - A domain-neutral Rust core contract crate for entity identity, source-attributed observations, feature vectors and algorithm decisions. Finance remains the first implemented vertical; other verticals still require their own adapters and algorithms.
 - MongoDB persistence for raw events, state snapshots, decisions, strategy configuration and JEPA research predictions. Axum rebuilds rolling per-symbol state from the immutable raw event log on startup in deterministic `(symbol, event time, event ID, venue)` order, so events persisted before a crash but not followed by a snapshot are recovered. Malformed legacy rows are logged and skipped. In-process ingestion is serialized through 64 bounded lock stripes across persistence and decision creation to prevent concurrent same-symbol events from writing stale snapshots out of order without allowing lock-map memory growth from arbitrary symbols. Recovery replayed/skipped counts are exposed by `/health`; any skipped persisted event marks service health degraded (`503`) instead of reporting a clean startup.
@@ -18,7 +18,7 @@ This branch contains the Qoin research and paper-trading platform foundation. Th
 - Firebase client authentication, Firestore user-profile and Archive persistence, and Firebase Storage avatar rules for web and mobile.
 - Web, React Native and Tauri desktop clients, shared TypeScript contracts, algorithm catalogue preview and transparent vector inspection.
 - GitHub Actions workflows for Rust, Drogon, web, mobile, desktop and Axum–Drogon–MongoDB integration.
-- Dockerfiles for Axum and Drogon plus a Docker Compose topology with private Axum/MongoDB services, authenticated MongoDB, a least-privilege application user and a published gateway only.
+- Dockerfiles for Axum and Drogon plus a Docker Compose topology with private Axum/MongoDB services, authenticated MongoDB, a least-privilege application user and a published gateway only. Live execution settings are passed only to the private Axum container and default to disabled.
 
 ## Verification status
 
@@ -43,10 +43,11 @@ The branch has prior green CI snapshots documented in the PR history. The new pr
 - Payment reconciliation, refund/chargeback handling and paid entitlement activation are not complete.
 
 ### Trading and risk
-- No live order-submission route is registered. The isolated Binance executor is not connected to the decision path.
-- Deterministic pre-trade risk validation and a provider-neutral order lifecycle state machine exist as tested primitives, but neither is connected to a durable order store or broker adapter. Execution-report deduplication is only in-memory.
-- Exchange-side protective orders, durable idempotency, authenticated account ownership, order/position reconciliation, operational kill switch, testnet lifecycle verification and independent operational review are incomplete.
-- Keep real-money trading disabled. A configuration flag or user confirmation is not a substitute for those controls.
+- The private `POST /internal/orders` route is token-protected and not proxied through Drogon. It requires `QOIN_TRADING_MODE=live`, the explicit confirmation string, Binance API credentials and a unique durable client order ID in MongoDB.
+- The Binance USD-M adapter enforces configured per-order quantity/notional caps, checks stop direction against mark price, submits a reduce-only stop-market order for the filled quantity, and attempts a reduce-only emergency close if stop placement fails.
+- Durable client-order-ID deduplication prevents a retry from blindly submitting the same order twice. Uncertain exchange outcomes are marked `reconciliation_required`; a broker reconciliation worker is not yet implemented.
+- Portfolio-level pre-trade risk checks are not yet wired into the order route. The deterministic risk validator and provider-neutral lifecycle remain domain primitives; account ownership verification, account/position reconciliation, operational kill switch, cancellation/amendment lifecycle, testnet end-to-end validation and independent operational review remain incomplete.
+- The private execution route is operator-invoked and configuration-gated; it is not connected to autonomous strategy signals and is not an unattended production trading system.
 
 ### Operations and releases
 - The Docker Compose deployment is a baseline, not a hosted production environment. No hosting provider, production DNS/TLS, managed secret store, external monitoring, MongoDB backup/restore drill or disaster-recovery objective has been configured.
