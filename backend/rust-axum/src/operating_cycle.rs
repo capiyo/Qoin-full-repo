@@ -5,6 +5,8 @@ fn now_ms() -> i64 {
         .map(|duration| duration.as_millis() as i64).unwrap_or(0)
 }
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use crate::paper_session::PaperAccountConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -13,6 +15,8 @@ pub struct CycleConfig {
     pub weight_evaluation_minutes: u64,
     pub session_minutes: u64,
     pub mode: String,
+    #[serde(default)]
+    pub paper_accounts: Vec<PaperAccountConfig>,
 }
 
 impl Default for CycleConfig {
@@ -22,6 +26,7 @@ impl Default for CycleConfig {
             weight_evaluation_minutes: 60,
             session_minutes: 480,
             mode: "paper".to_owned(),
+            paper_accounts: Vec::new(),
         }
     }
 }
@@ -40,6 +45,14 @@ impl CycleConfig {
         if self.mode != "research" && self.mode != "paper" {
             return Err("mode must be research or paper; live mode is not supported".into());
         }
+        if self.paper_accounts.len() > 50 { return Err("at most 50 paper accounts are supported".into()); }
+        let mut keys = std::collections::BTreeSet::new();
+        for account in &self.paper_accounts {
+            account.validate()?;
+            if !keys.insert(format!("{}::{}", account.venue, account.symbol)) {
+                return Err(format!("duplicate paper account for {}::{}", account.venue, account.symbol));
+            }
+        }
         Ok(())
     }
 }
@@ -56,6 +69,9 @@ pub struct CycleSnapshot {
     pub signal_evaluations: u64,
     pub mean_absolute_score: Option<f64>,
     pub mean_alignment: Option<f64>,
+    pub mean_feature_values: BTreeMap<String, f64>,
+    pub mean_weight_contributions: BTreeMap<String, [f64; 2]>,
+    pub mean_attention: Vec<Vec<f64>>,
     pub buy_signals: u64,
     pub sell_signals: u64,
     pub close_signals: u64,
@@ -75,6 +91,12 @@ pub struct OperatingCycle {
     signal_evaluations: u64,
     absolute_score_sum: f64,
     alignment_sum: f64,
+    feature_sums: BTreeMap<String, f64>,
+    feature_counts: BTreeMap<String, u64>,
+    weight_contribution_sums: BTreeMap<String, [f64; 2]>,
+    weight_contribution_counts: BTreeMap<String, u64>,
+    attention_sums: Vec<Vec<f64>>,
+    attention_observations: u64,
     buy_signals: u64,
     sell_signals: u64,
     close_signals: u64,
@@ -91,6 +113,12 @@ impl Default for OperatingCycle {
             signal_evaluations: 0,
             absolute_score_sum: 0.0,
             alignment_sum: 0.0,
+            feature_sums: BTreeMap::new(),
+            feature_counts: BTreeMap::new(),
+            weight_contribution_sums: BTreeMap::new(),
+            weight_contribution_counts: BTreeMap::new(),
+            attention_sums: Vec::new(),
+            attention_observations: 0,
             buy_signals: 0,
             sell_signals: 0,
             close_signals: 0,
@@ -116,6 +144,12 @@ impl OperatingCycle {
         self.signal_evaluations = 0;
         self.absolute_score_sum = 0.0;
         self.alignment_sum = 0.0;
+        self.feature_sums.clear();
+        self.feature_counts.clear();
+        self.weight_contribution_sums.clear();
+        self.weight_contribution_counts.clear();
+        self.attention_sums.clear();
+        self.attention_observations = 0;
         self.buy_signals = 0;
         self.sell_signals = 0;
         self.close_signals = 0;
@@ -131,16 +165,54 @@ impl OperatingCycle {
     pub fn is_active(&self) -> bool { self.snapshot().active }
 
     pub fn record_observation(&mut self) {
-        if self.active {
+        if self.active && self.snapshot().phase == "observation" {
             self.observations = self.observations.saturating_add(1);
         }
     }
 
-    pub fn record_signal_evaluation(&mut self, score: f64, alignment: f64, decision: &str) {
-        if self.active && score.is_finite() && alignment.is_finite() {
+    pub fn record_signal_evaluation(
+        &mut self,
+        score: f64,
+        alignment: f64,
+        decision: &str,
+        features: &BTreeMap<String, f64>,
+        attention: &[Vec<f64>],
+        attended_features: &[f64],
+        bullish_weights: &BTreeMap<String, f64>,
+        bearish_weights: &BTreeMap<String, f64>,
+    ) {
+        if self.active && self.snapshot().phase == "weight_evaluation" && score.is_finite() && alignment.is_finite() {
             self.signal_evaluations = self.signal_evaluations.saturating_add(1);
             self.absolute_score_sum += score.abs();
             self.alignment_sum += alignment;
+            for (name, value) in features {
+                if value.is_finite() {
+                    *self.feature_sums.entry(name.clone()).or_insert(0.0) += value;
+                    *self.feature_counts.entry(name.clone()).or_insert(0) += 1;
+                }
+            }
+            for (index, name) in crate::edge_strategy::FEATURE_NAMES.iter().enumerate() {
+                if let (Some(attended), Some(bullish), Some(bearish)) = (attended_features.get(index), bullish_weights.get(*name), bearish_weights.get(*name)) {
+                    if attended.is_finite() && bullish.is_finite() && bearish.is_finite() {
+                        let sum = self.weight_contribution_sums.entry((*name).to_owned()).or_insert([0.0, 0.0]);
+                        sum[0] += attended * bullish;
+                        sum[1] += attended * bearish;
+                        *self.weight_contribution_counts.entry((*name).to_owned()).or_insert(0) += 1;
+                    }
+                }
+            }
+            if !attention.is_empty() && attention.iter().all(|row| row.iter().all(|value| value.is_finite())) {
+                if self.attention_sums.is_empty() {
+                    self.attention_sums = attention.iter().map(|row| vec![0.0; row.len()]).collect();
+                }
+                if self.attention_sums.len() == attention.len()
+                    && self.attention_sums.iter().zip(attention).all(|(sum, row)| sum.len() == row.len()) {
+                    for (sum_row, value_row) in self.attention_sums.iter_mut().zip(attention) {
+                        for (sum, value) in sum_row.iter_mut().zip(value_row) { *sum += value; }
+                    }
+                    self.attention_observations = self.attention_observations.saturating_add(1);
+                }
+            }
             match decision {
                 "buy" => self.buy_signals = self.buy_signals.saturating_add(1),
                 "sell" => self.sell_signals = self.sell_signals.saturating_add(1),
@@ -182,13 +254,24 @@ impl OperatingCycle {
             signal_evaluations: self.signal_evaluations,
             mean_absolute_score: if self.signal_evaluations > 0 { Some(self.absolute_score_sum / self.signal_evaluations as f64) } else { None },
             mean_alignment: if self.signal_evaluations > 0 { Some(self.alignment_sum / self.signal_evaluations as f64) } else { None },
+            mean_feature_values: self.feature_sums.iter().map(|(name, sum)| {
+                let count = self.feature_counts.get(name).copied().unwrap_or(0);
+                (name.clone(), if count > 0 { sum / count as f64 } else { 0.0 })
+            }).collect(),
+            mean_weight_contributions: self.weight_contribution_sums.iter().map(|(name, sums)| {
+                let count = self.weight_contribution_counts.get(name).copied().unwrap_or(0);
+                (name.clone(), if count > 0 { [sums[0] / count as f64, sums[1] / count as f64] } else { [0.0, 0.0] })
+            }).collect(),
+            mean_attention: if self.attention_observations > 0 {
+                self.attention_sums.iter().map(|row| row.iter().map(|value| value / self.attention_observations as f64).collect()).collect()
+            } else { Vec::new() },
             buy_signals: self.buy_signals,
             sell_signals: self.sell_signals,
             close_signals: self.close_signals,
             wait_signals: self.wait_signals,
             live_execution_enabled: false,
             weight_policy: "baseline_locked_during_session; validation_is_observational_not_online_training",
-            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates signal-score, alignment, and decision-count diagnostics; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
+            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates directional score, signed alignment, per-feature mean activations, attention-matrix means and decision counts; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
         }
     }
 }
@@ -220,5 +303,23 @@ mod tests {
         let mut cycle = OperatingCycle::default();
         cycle.start();
         assert!(cycle.configure(CycleConfig::default()).is_err());
+    }
+
+    #[test]
+    fn aggregates_feature_activations_and_attention_without_mutating_weights() {
+        let mut cycle = OperatingCycle::default();
+        cycle.start();
+        let features = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.8), ("funding_pressure".to_owned(), 0.2)]);
+        cycle.record_observation();
+        cycle.started_at_ms = Some(now_ms() - (cycle.config.observation_minutes as i64 * 60_000));
+        let weights = BTreeMap::from([("order_flow_imbalance".to_owned(), 0.7), ("funding_pressure".to_owned(), -0.1)]);
+        let bearish = BTreeMap::from([("order_flow_imbalance".to_owned(), -0.7), ("funding_pressure".to_owned(), -0.1)]);
+        cycle.record_signal_evaluation(0.6, -0.4, "buy", &features, &[vec![0.25, 0.75]], &[0.5, 0.2], &weights, &bearish);
+        let snapshot = cycle.snapshot();
+        assert_eq!(snapshot.signal_evaluations, 1);
+        assert_eq!(snapshot.mean_feature_values.get("order_flow_imbalance"), Some(&0.8));
+        assert_eq!(snapshot.mean_attention, vec![vec![0.25, 0.75]]);
+        assert_eq!(snapshot.mean_weight_contributions.get("order_flow_imbalance"), Some(&[0.35, -0.35]));
+        assert!(!snapshot.live_execution_enabled);
     }
 }
