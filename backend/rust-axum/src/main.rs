@@ -199,7 +199,22 @@ async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
-    let snapshot = s.active_paper_session.lock().await.snapshot();
+    let phase = s.active_cycle.lock().await.snapshot().phase;
+    let (snapshot, should_persist) = {
+        let mut session = s.active_paper_session.lock().await;
+        let should_stop = matches!(phase, "completed" | "stopped" | "idle");
+        if should_stop && session.is_active() {
+            session.stop();
+        }
+        (session.snapshot(), should_stop)
+    };
+    if should_persist {
+        let session = s.active_paper_session.lock().await.clone();
+        if let Err(error) = persist_paper_session(&s, &session).await {
+            tracing::error!(error=%error, "completed paper session stop persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+        }
+    }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
 
