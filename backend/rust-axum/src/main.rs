@@ -29,6 +29,8 @@ mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::market_data::{aggregate_horizon, MarketEvent as MarketEventRecord};
+use qoin_vector_engine::multi_horizon::{evaluate_multi_horizon, Horizon, HorizonInput};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -452,6 +454,102 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"action":"wait","reason":"no decision available"}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
+}
+
+#[derive(Deserialize)]
+struct MarketHorizonQuery {
+    symbol: Option<String>,
+    venue: Option<String>,
+    min_events: Option<usize>,
+}
+
+async fn evaluate_market_horizons(
+    State(s): State<AppState>,
+    Query(query): Query<MarketHorizonQuery>,
+) -> impl IntoResponse {
+    let symbol = query.symbol.unwrap_or_else(|| "BTCUSDT".to_owned());
+    let venue = query.venue.unwrap_or_else(|| "binance_usdm".to_owned());
+    if symbol.trim().is_empty() || symbol.len() > 96 || venue.trim().is_empty() || venue.len() > 64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol and venue must be non-empty and within their length limits"})));
+    }
+    let min_events = query.min_events.unwrap_or(20);
+    if !(5..=10_000).contains(&min_events) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"min_events must be between 5 and 10000"})));
+    }
+
+    let decision_ts_ms = chrono::Utc::now().timestamp_millis();
+    let cutoff_ts_ms = decision_ts_ms.saturating_sub(Horizon::OneWeek.duration_seconds() as i64 * 1_000);
+    let options = FindOptions::builder().sort(doc!{"ts_ms": 1}).limit(50_001).build();
+    let mut cursor = match s.events.find(
+        doc!{"symbol": &symbol, "venue": &venue, "ts_ms": {"$gte": cutoff_ts_ms, "$lte": decision_ts_ms}},
+        Some(options),
+    ).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(symbol=%symbol, venue=%venue, error=%error, "multi-horizon event query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event storage unavailable"})));
+        }
+    };
+    let documents: Vec<Document> = match cursor.try_collect().await {
+        Ok(documents) => documents,
+        Err(error) => {
+            tracing::error!(symbol=%symbol, venue=%venue, error=%error, "multi-horizon event cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event retrieval failed"})));
+        }
+    };
+    if documents.len() > 50_000 {
+        return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"market horizon window exceeds the 50000 event limit",
+            "limit":50000,
+            "truncated":true
+        })));
+    }
+    let events: Vec<MarketEventRecord> = documents.into_iter().filter_map(|mut document| {
+        document.remove("_id");
+        mongodb::bson::from_document(document).ok()
+    }).collect();
+
+    let horizons = [
+        Horizon::OneMinute, Horizon::FiveMinutes, Horizon::FifteenMinutes,
+        Horizon::ThirtyMinutes, Horizon::OneHour, Horizon::FourHours,
+        Horizon::OneDay, Horizon::OneWeek,
+    ];
+    let observations: Vec<_> = horizons.iter()
+        .map(|horizon| aggregate_horizon(&events, *horizon, decision_ts_ms, min_events))
+        .collect();
+    let config = EngineConfig::default();
+    let inputs: Vec<HorizonInput> = observations.iter()
+        .filter(|item| item.ready)
+        .map(|item| HorizonInput {
+            horizon: item.horizon,
+            observation: item.observation,
+            config: config.clone(),
+            config_version: "multi-horizon-market-data-v1".to_owned(),
+            has_open_position: false,
+        })
+        .collect();
+    let signals = if inputs.is_empty() {
+        None
+    } else {
+        match evaluate_multi_horizon(&inputs) {
+            Ok(result) => Some(result),
+            Err(error) => {
+                tracing::error!(symbol=%symbol, venue=%venue, error=%error, "multi-horizon signal evaluation failed");
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"signal evaluation failed"})));
+            }
+        }
+    };
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "symbol": symbol,
+        "venue": venue,
+        "decision_ts_ms": decision_ts_ms,
+        "events_loaded": events.len(),
+        "mode": "research_only",
+        "observations": observations,
+        "signals": signals,
+        "note": "Each horizon uses its own trailing event window and exact venue. Missing evidence prevents that horizon from producing a signal; unavailable fields are never fabricated."
+    })))
 }
 
 #[derive(Deserialize)]
@@ -1245,6 +1343,7 @@ async fn main(){
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/market-horizons",get(evaluate_market_horizons))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
