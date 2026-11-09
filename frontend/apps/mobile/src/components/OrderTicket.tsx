@@ -1,13 +1,14 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors } from "../theme";
+import type { TickerQuote } from "@qoin/core";
 
 /**
  * Deliberately read-only until an authenticated, risk-checked execution API
  * and exchange reconciliation are available. Never present a local UI state
  * change as a successfully filled exchange order.
  */
-export function OrderTicket({ symbol }: { symbol: string }) {
+export function OrderTicket({ symbol }: { symbol: string; quote?: TickerQuote }) {
   return (
     <View style={styles.card} accessibilityRole="summary">
       <Text style={styles.title}>Trading unavailable</Text>
