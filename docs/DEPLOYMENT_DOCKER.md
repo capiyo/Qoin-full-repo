@@ -12,6 +12,29 @@ This repository includes a Docker Compose deployment topology with a public rese
 
 Create a root `.env` file from `.env.example`. Generate both MongoDB passwords as 64-character hexadecimal strings (for example, `openssl rand -hex 32`) so they are safe to embed in the MongoDB URI. Use different values for the root and application passwords. If enabling the private execution route, generate `QOIN_EXECUTION_TOKEN` independently (for example, `openssl rand -hex 32`) and inject exchange credentials through the secret manager. Leave `QOIN_TRADING_MODE=disabled` unless intentionally enabling the operator-controlled route. Keep `.env` out of version control; the repository `.gitignore` excludes local environment files. Set `FINNHUB_API_KEY` only when the corresponding data entitlement is available. Binance public market data can be disabled independently.
 
+## Private execution route
+
+The Axum service exposes these operator-only routes on the private Compose network; Drogon does not proxy them:
+
+- `POST /internal/orders` — submit one Binance USD-M market order with a mandatory side-correct protective stop for opening orders.
+- `GET /internal/orders/{client_order_id}/reconcile` — query the entry order and its protective stop at Binance and persist the observed status.
+
+Both require the `x-qoin-execution-token` header. Every submission must use a unique 8–36 character `client_order_id`. The MongoDB ledger reserves that ID before any exchange request, so an uncertain result cannot be blindly retried. Use the reconciliation route to inspect it.
+
+Example request body:
+
+```json
+{
+  "symbol": "BTCUSDT",
+  "side": "BUY",
+  "quantity": 0.001,
+  "stop_price": 60000,
+  "client_order_id": "qoin-manual-000001"
+}
+```
+
+For testnet, set `QOIN_TRADING_MODE=testnet` and the testnet confirmation string; the adapter selects and enforces the Binance Futures testnet host. For real-money operation, use `QOIN_TRADING_MODE=live` and the live confirmation string; the adapter enforces the production host. `BINANCE_FUTURES_BASE_URL` may be left blank so the selected mode supplies the correct host. Do not expose Axum's port publicly.
+
 ## Start
 
 ```sh
