@@ -137,10 +137,13 @@ jobs:
           # Exercise the same gateway surface repeatedly. This is a stability
           # stress loop, not proof of the historical std::length_error root cause.
           for iteration in $(seq 1 20); do
+            event_ts=$((1792860000200 + iteration * 100))
             curl -fsS http://127.0.0.1:8080/health | jq -e '.status == "ok" and .mongodb == true' >/dev/null
             curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' | jq -e '.decision == "BUY"' >/dev/null
             curl -fsS http://127.0.0.1:8080/api/v1/strategy | jq -e '.strategy_key == "active"' >/dev/null
             curl -fsS http://127.0.0.1:8080/api/v1/instruments | jq -e '.items | length > 0' >/dev/null
-            curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000' | jq -e '.events_replayed == 2' >/dev/null
+            curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-repeat-${iteration}\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"event_type\":\"trade\",\"ts_ms\":${event_ts},\"price\":100.01,\"size\":1,\"side\":\"buy\"}" | jq -e '.status == "accepted"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/vector?symbol=BTCUSDT | jq -e '.symbol == "BTCUSDT"' >/dev/null
+            curl -fsS "http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=${event_ts}&initial_capital=10000" | jq -e '.events_replayed >= 2' >/dev/null
             echo "gateway integration repetition ${iteration}/20 passed"
           done
