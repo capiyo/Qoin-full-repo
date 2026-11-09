@@ -131,6 +131,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
         forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
+}
 
 void proxyPostJson(const drogon::HttpRequestPtr& incoming,
                    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
