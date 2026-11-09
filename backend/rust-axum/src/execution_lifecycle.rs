@@ -97,10 +97,10 @@ impl OrderLifecycle {
                 self.status = OrderStatus::Accepted;
             }
             BrokerEvent::PartialFill { execution_id, quantity, price } => {
-                self.apply_fill(execution_id, quantity, price, false)?;
+                return self.apply_fill(execution_id, quantity, price, false);
             }
             BrokerEvent::Filled { execution_id, quantity, price } => {
-                self.apply_fill(execution_id, quantity, price, true)?;
+                return self.apply_fill(execution_id, quantity, price, true);
             }
             BrokerEvent::CancelRequested => {
                 if !matches!(self.status, OrderStatus::Accepted | OrderStatus::PartiallyFilled) {
@@ -141,7 +141,7 @@ impl OrderLifecycle {
         quantity: f64,
         price: f64,
         final_fill: bool,
-    ) -> Result<(), LifecycleError> {
+    ) -> Result<bool, LifecycleError> {
         if !matches!(self.status, OrderStatus::Accepted | OrderStatus::PartiallyFilled | OrderStatus::CancelPending) {
             return Err(if self.status == OrderStatus::PendingSubmit {
                 LifecycleError::MissingBrokerOrderId
@@ -159,7 +159,7 @@ impl OrderLifecycle {
             return Err(LifecycleError::InvalidExecution);
         }
         if self.seen_execution_ids.contains(&execution_id) {
-            return Ok(());
+            return Ok(false);
         }
         let next_filled = self.filled_quantity + quantity;
         if !next_filled.is_finite() || next_filled > self.requested_quantity + f64::EPSILON {
@@ -175,7 +175,7 @@ impl OrderLifecycle {
         self.filled_quantity = next_filled;
         self.seen_execution_ids.insert(execution_id);
         self.status = if final_fill { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -203,8 +203,8 @@ mod tests {
     fn duplicate_execution_id_is_a_noop() {
         let mut order = accepted();
         let event = BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 4.0, price: 100.0 };
-        order.apply(event.clone()).unwrap();
-        order.apply(event).unwrap();
+        assert!(order.apply(event.clone()).unwrap());
+        assert!(!order.apply(event).unwrap());
         assert_eq!(order.filled_quantity, 4.0);
     }
 
