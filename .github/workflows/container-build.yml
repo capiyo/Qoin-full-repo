@@ -3,6 +3,7 @@ name: Qoin container build
 on:
   pull_request:
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker/**"
@@ -12,6 +13,7 @@ on:
   push:
     branches: [main, qoin-archive-explore-vector-ui]
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker/**"

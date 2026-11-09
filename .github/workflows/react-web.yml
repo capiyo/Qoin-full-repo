@@ -3,6 +3,7 @@ name: Qoin React web
 on:
   push:
     paths:
+      - "docs/READINESS.md"
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
       - "package.json"
@@ -10,6 +11,7 @@ on:
       - ".github/workflows/react-web.yml"
   pull_request:
     paths:
+      - "docs/READINESS.md"
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
       - "package.json"

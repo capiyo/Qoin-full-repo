@@ -3,11 +3,13 @@ on:
   push:
     branches: [main, feat/mongodb-edge-strategy-map]
     paths:
+      - "docs/READINESS.md"
       - "backend/cpp-drogon/**"
       - ".github/workflows/drogon-gateway.yml"
   pull_request:
     branches: [main]
     paths:
+      - "docs/READINESS.md"
       - "backend/cpp-drogon/**"
       - ".github/workflows/drogon-gateway.yml"
   workflow_dispatch:

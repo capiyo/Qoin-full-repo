@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, qoin-archive-explore-vector-ui]
     paths:
+      - "docs/READINESS.md"
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
       - "frontend/packages/**"
@@ -14,6 +15,7 @@ on:
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
+      - "docs/READINESS.md"
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
       - "frontend/packages/**"

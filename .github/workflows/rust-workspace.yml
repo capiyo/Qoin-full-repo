@@ -3,6 +3,7 @@ name: Qoin Rust workspace
 on:
   push:
     paths:
+      - "docs/READINESS.md"
       - "Cargo.toml"
       - "Cargo.lock"
       - "backend/rust-axum/crates/**"
@@ -11,6 +12,7 @@ on:
       - ".github/workflows/rust-workspace.yml"
   pull_request:
     paths:
+      - "docs/READINESS.md"
       - "Cargo.toml"
       - "Cargo.lock"
       - "backend/rust-axum/crates/**"

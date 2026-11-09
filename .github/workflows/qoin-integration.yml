@@ -3,6 +3,7 @@ on:
   push:
     branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui]
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
@@ -10,6 +11,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
