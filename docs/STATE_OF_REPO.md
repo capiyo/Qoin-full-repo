@@ -1,17 +1,55 @@
 # State of repository
 
-This branch integrates a first research-engine foundation into `capiyo/qoin_frontend-monorepo`. It adds Axum event/state/vector endpoints, a deterministic geometric baseline, an isolated Binance adapter source, a Drogon proxy, MongoDB development configuration, reference models, tests, and risk/architecture notes.
+This branch contains the Qoin research and paper-trading platform foundation. The fixed architecture is Rust/Axum for authoritative vector and decision processing, C++/Drogon as the public HTTP/WebSocket gateway, MongoDB for persistence, React web and React Native clients sharing `@qoin/core`, and a Tauri 2 desktop client.
 
-## Current verified status
-GitHub Actions passed the Python reference suite (12 tests) and Rust `cargo test` (3 vector-engine unit tests) on this branch. The event JSON schema parses in CI. The earlier audited snapshot also passed OpenAPI YAML parsing and smoke-script syntax validation.
+## Implemented capabilities
 
-## Current limitations
-- Rust compilation and its three vector-engine unit tests pass in GitHub Actions. Drogon compilation remains unverified because its development package was unavailable in the audit environment.
-- No lockfile or CI workflow is included yet.
-- State is currently held in memory and is not fully reconstructed from MongoDB after restart.
-- Model scales, weights, thresholds, and version are hardcoded; there is no versioned config contract consumed by runtime.
-- No production market-data adapters, event-driven backtester, walk-forward results, shadow mode, testnet validation, or profitability evidence.
-- No live-order route is registered. The gated Binance adapter source is deliberately isolated and not called by the signal path.
-- Authentication/authorization, rate limiting, risk engine, protective stops, position/order reconciliation, kill switch, and crash recovery are incomplete.
+- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming and read-only APIs.
+- MongoDB persistence for raw events, state snapshots, decisions, strategy configuration and JEPA research predictions. Latest per-symbol state snapshots are restored during Axum startup.
+- Historical event replay with venue filtering, deterministic event ordering, execution-cost assumptions, partial-fill simulation and explicit limitations. It is a research simulator, not a production portfolio accounting engine.
+- Market-data adapters:
+  - Binance USD-M: trades, best bid/ask, mark/funding, liquidation events and open-interest polling.
+  - Coinbase Advanced Trade: public spot trade feed.
+  - Kraken Spot WebSocket v2: public spot trade feed.
+  - Finnhub: authenticated trade feed, news and economic calendar; a valid key, subscription and symbol entitlement are required.
+- Provider-specific symbols and venue IDs keep observations from different venues separate. Provider adapters preserve source timestamps and reject malformed observations.
+- Firebase client authentication, Firestore user-profile and Archive persistence, and Firebase Storage avatar rules for web and mobile.
+- Web, React Native and Tauri desktop clients, shared TypeScript contracts, algorithm catalogue preview and transparent vector inspection.
+- GitHub Actions workflows for Rust, Drogon, web, mobile, desktop and Axum–Drogon–MongoDB integration.
+- Dockerfiles for Axum and Drogon plus a Docker Compose topology with private Axum/MongoDB services, authenticated MongoDB, a least-privilege application user and a published gateway only.
 
-Keep this system research/paper-only. Do not claim production readiness or profitability.
+## Verification status
+
+The branch has prior green CI snapshots documented in the PR history. The new provider adapters and container deployment changes are not considered verified until the corresponding checks pass on the exact current commit. A container build and full-stack smoke-test workflow has been added; its result must be checked before using the Compose stack.
+
+## Remaining production blockers
+
+### Data infrastructure
+- Coinbase and Kraken adapters currently ingest trades only; they do not yet maintain complete level-2 books.
+- Binance is the only source currently supplying funding, liquidation and open-interest observations.
+- There is no resumable historical backfill, immutable dataset versioning, complete symbol master, automatic provider arbitration/failover, or measured provider freshness/uptime SLO.
+- Finnhub coverage is plan- and symbol-entitlement-dependent. The instrument registry is curated and does not guarantee live data or redistribution rights.
+
+### Research and algorithms
+- The deterministic baseline is not independently validated as profitable.
+- Portfolio accounting across instruments/currencies, robust position sizing, correlated exposure controls, walk-forward/out-of-sample evaluation, regime analysis and reproducible dataset versioning remain incomplete.
+- The algorithm catalogue and market-access tiers are preview-only. Independent strategy runtimes and verified entitlement enforcement are not complete.
+
+### Identity and application security
+- Firebase Auth and Firestore rules protect client-owned profile/Archive documents. Axum does not yet verify Firebase ID tokens for future personalized server-side routes.
+- Public market-data routes are read-only, but ingress-level rate limits, request-size limits, WebSocket connection/origin controls, DDoS protection and audit telemetry must be configured before broad public exposure.
+- Payment reconciliation, refund/chargeback handling and paid entitlement activation are not complete.
+
+### Trading and risk
+- No live order-submission route is registered. The isolated Binance executor is not connected to the decision path.
+- Risk engine enforcement, exchange-side protective orders, order/position reconciliation, kill switch, crash recovery, testnet lifecycle verification and independent operational review are incomplete.
+- Keep real-money trading disabled. A configuration flag or user confirmation is not a substitute for those controls.
+
+### Operations and releases
+- The Docker Compose deployment is a baseline, not a hosted production environment. No hosting provider, production DNS/TLS, managed secret store, external monitoring, MongoDB backup/restore drill or disaster-recovery objective has been configured.
+- The current branch does not include a committed Rust `Cargo.lock`; reproducible dependency resolution and pinned image digests/SBOM scanning remain release requirements.
+- Desktop packaging must pass the final Windows, macOS and Linux matrix before release.
+
+## Release policy
+
+Qoin is currently a research/paper-trading system. Do not claim production readiness, investment performance, complete market coverage or safe real-money execution until the relevant gates above are implemented, tested on the exact release commit, and operationally configured.
