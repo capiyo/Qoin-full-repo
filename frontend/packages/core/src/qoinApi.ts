@@ -31,21 +31,25 @@ export type QoinHealth = {
   live_trading: false;
 };
 
+declare const process: { env: { EXPO_PUBLIC_QOIN_API_URL?: string } } | undefined;
+
 function getBaseUrl(): string {
   // Android emulator: http://10.0.2.2:8080; iOS simulator: http://127.0.0.1:8080.
   // Physical devices need a reachable host configured for the development environment.
   const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
+    location?: { origin: string };
+    document?: unknown;
   };
-  const env = runtime.process?.env;
-  const configured = env?.EXPO_PUBLIC_QOIN_API_URL ?? env?.NEXT_PUBLIC_QOIN_API_URL;
-  return (configured || "http://127.0.0.1:8080").replace(/\/$/, "");
+  const configured = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_QOIN_API_URL : undefined;
+  const sameOrigin = typeof runtime.document !== "undefined" ? runtime.location?.origin : undefined;
+  return (configured || sameOrigin || "http://127.0.0.1:8080").replace(/\/$/, "");
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function qoinRequest<T>(path: string, init?: RequestInit & { token?: string }): Promise<T> {
+  const { token, ...requestInit } = init ?? {};
   const response = await fetch(`${getBaseUrl()}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    ...requestInit,
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -55,12 +59,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getQoinHealth(): Promise<QoinHealth> {
-  return request<QoinHealth>("/health");
+  return qoinRequest<QoinHealth>("/health");
 }
 
 /** Returns a research signal only. This client never submits exchange orders. */
 export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal> {
-  return request<QoinSignal>("/v1/signal", {
+  return qoinRequest<QoinSignal>("/v1/signal", {
     method: "POST",
     body: JSON.stringify(input),
   });
