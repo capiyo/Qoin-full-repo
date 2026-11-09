@@ -57,21 +57,19 @@ public:
     }
     void handleNewConnection(const drogon::HttpRequestPtr& request,
                               const drogon::WebSocketConnectionPtr& connection) override {
+        const auto symbol = request->getParameter("symbol");
+        const auto symbols = request->getParameter("symbols");
+        if (symbol.size() + symbols.size() > kMaxStreamQueryBytes) {
+            connection->send("{\"type\":\"stream.error\",\"error\":\"stream query exceeds gateway limit\"}");
+            connection->forceClose();
+            return;
+        }
         auto session = std::make_shared<StreamProxySession>();
         session->downstream = connection;
         session->upstream_client = drogon::WebSocketClient::newWebSocketClient(upstreamWs());
         {
             std::lock_guard<std::mutex> lock(streamSessionsMutex);
             streamSessions[connection.get()] = session;
-        }
-        const auto symbol = request->getParameter("symbol");
-        const auto symbols = request->getParameter("symbols");
-        if (symbol.size() + symbols.size() > kMaxStreamQueryBytes) {
-            connection->send("{\"type\":\"stream.error\",\"error\":\"stream query exceeds gateway limit\"}");
-            connection->forceClose();
-            std::lock_guard<std::mutex> lock(streamSessionsMutex);
-            streamSessions.erase(connection.get());
-            return;
         }
         std::string path = "/internal/stream";
         if (!symbol.empty() || !symbols.empty()) {
