@@ -165,18 +165,16 @@ impl OrderLifecycle {
         if !next_filled.is_finite() || next_filled > self.requested_quantity + f64::EPSILON {
             return Err(LifecycleError::Overfill);
         }
+        // Validate the complete transition before mutating state. A malformed
+        // "filled" event must not leave a partially changed in-memory order.
+        if final_fill && (self.requested_quantity - next_filled).abs() > f64::EPSILON {
+            return Err(LifecycleError::InvalidExecution);
+        }
         let previous_notional = self.average_fill_price.unwrap_or(0.0) * self.filled_quantity;
         self.average_fill_price = Some((previous_notional + price * quantity) / next_filled);
         self.filled_quantity = next_filled;
         self.seen_execution_ids.insert(execution_id);
-        if final_fill {
-            if (self.requested_quantity - self.filled_quantity).abs() > f64::EPSILON {
-                return Err(LifecycleError::InvalidExecution);
-            }
-            self.status = OrderStatus::Filled;
-        } else {
-            self.status = OrderStatus::PartiallyFilled;
-        }
+        self.status = if final_fill { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
         Ok(())
     }
 }
