@@ -25,7 +25,7 @@ The mobile client uses Firebase Auth persistence backed by AsyncStorage. The web
 ## Data and security contract
 
 - Auth identity is the Firebase UID. No client-supplied user ID is trusted for profile writes.
-- Profile metadata and the user's `archivedSymbols` list are stored at `users/{uid}`; users can read and update only their own document. Archive changes are shared between web and mobile.
+- Profile metadata and the user's `archivedSymbols` list are stored at `users/{uid}`; users can read and update only their own document. Firestore rules whitelist the supported fields, validate profile string lengths and cap the Archive list at 500 entries. Archive changes are shared between web and mobile.
 - Avatar objects are stored at `users/{uid}/avatar`.
 - Avatar uploads are limited to JPEG, PNG, or WebP and 8 MiB.
 - Storage reads require an authenticated user. Writes and deletes require the matching UID.
