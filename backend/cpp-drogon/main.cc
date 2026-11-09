@@ -40,6 +40,11 @@ public:
     void handleNewMessage(const drogon::WebSocketConnectionPtr& connection,
                           std::string&& message,
                           const drogon::WebSocketMessageType&) override {
+        if (message.size() > kMaxWebSocketMessageBytes) {
+            connection->send("{\"type\":\"stream.error\",\"error\":\"message exceeds gateway limit\"}");
+            connection->forceClose();
+            return;
+        }
         std::shared_ptr<StreamProxySession> session;
         {
             std::lock_guard<std::mutex> lock(streamSessionsMutex);
@@ -61,6 +66,13 @@ public:
         }
         const auto symbol = request->getParameter("symbol");
         const auto symbols = request->getParameter("symbols");
+        if (symbol.size() + symbols.size() > kMaxStreamQueryBytes) {
+            connection->send("{\"type\":\"stream.error\",\"error\":\"stream query exceeds gateway limit\"}");
+            connection->forceClose();
+            std::lock_guard<std::mutex> lock(streamSessionsMutex);
+            streamSessions.erase(connection.get());
+            return;
+        }
         std::string path = "/internal/stream";
         if (!symbol.empty() || !symbols.empty()) {
             path += "?";
@@ -178,10 +190,14 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
             callback(error);
             return;
         }
+        if (response->getBody().size() > kMaxHttpResponseBytes) {
+            callback(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
+            return;
+        }
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(std::string(response->getBody()));
+        forwarded->setBody(response->getBody());
         callback(forwarded);
     });
 }
