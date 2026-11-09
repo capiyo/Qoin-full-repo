@@ -46,7 +46,7 @@ jobs:
           cmake --build build/drogon --parallel 2
       - name: Build Drogon with AddressSanitizer and UndefinedBehaviorSanitizer
         run: |
-          cmake -S backend/cpp-drogon -B build/drogon-sanitized -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake -S backend/cpp-drogon -B build/drogon-sanitized -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-g -fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -rdynamic"
           cmake --build build/drogon-sanitized --parallel 2
       - name: Verify gateway, MongoDB strategy persistence, and event flow
         shell: bash
