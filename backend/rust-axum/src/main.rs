@@ -371,6 +371,8 @@ async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRe
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let database_ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
     let recovery_ok=s.recovery_skipped_events == 0;
+    let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
+        .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
     let healthy=database_ok && recovery_ok;
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
@@ -394,6 +396,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
                 && env::var("QOIN_TESTNET_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_TESTNET_ORDERS").unwrap_or(false)))
           {"configured"}else{"disabled"},
        "live_order_adapter":"binance_usdm_with_required_protective_stop",
+       "new_order_entry_enabled":order_entry_enabled,
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
