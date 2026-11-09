@@ -1378,6 +1378,10 @@ async fn main(){
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
+    let operating_cycles:Collection<Document>=db.collection("operating_cycles");
+    let paper_sessions:Collection<Document>=db.collection("paper_sessions");
+    let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
+    let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     trading_controls.update_one(doc!{"_id":"execution"},
         doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
             "updated_at":mongodb::bson::DateTime::now()}},
@@ -1393,6 +1397,14 @@ async fn main(){
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
+    operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
+    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session decision idempotency index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1})
+        .build(),None).await.expect("paper session trade history index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
         Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
@@ -1439,9 +1451,26 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
+    let persisted_cycle = match operating_cycles.find_one(doc!{"cycle_id":"active"}, None).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default()
+        }
+        _ => OperatingCycle::default(),
+    };
+    let persisted_paper_session = match paper_sessions.find_one(doc!{"session_key":"active"}, None).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default()
+        }
+        _ => PaperSession::default(),
+    };
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,states,decisions,strategies,orders,trading_controls,
+        operating_cycles,paper_sessions,paper_session_decisions,paper_session_trades,
+        active_cycle:Arc::new(Mutex::new(persisted_cycle)),
+        active_paper_session:Arc::new(Mutex::new(persisted_paper_session)),
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
@@ -1457,6 +1486,10 @@ async fn main(){
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/market-horizons",get(evaluate_market_horizons))
+        .route("/internal/operating-cycle",get(get_operating_cycle).put(configure_operating_cycle))
+        .route("/internal/operating-cycle/start",post(start_operating_cycle))
+        .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
+        .route("/internal/paper-session",get(get_paper_session))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
