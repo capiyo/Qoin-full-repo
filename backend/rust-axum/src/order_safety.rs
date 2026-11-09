@@ -63,6 +63,7 @@ pub struct OrderIntent {
 pub enum Rejection {
     TradingDisabled,
     InvalidIdentity,
+    InvalidPolicy,
     InvalidNumericInput,
     InvalidStopDirection,
     RiskBudgetExceeded,
@@ -119,6 +120,22 @@ pub fn validate_order(
     }
     if mode == TradingMode::Live && !approval.permits_live() {
         return Err(Rejection::LiveModeNotApproved);
+    }
+    // Reject malformed policy at the boundary. A misconfigured fraction above
+    // 100%, negative freshness window, or zero position cap must never widen
+    // the effective risk envelope silently.
+    if !policy.max_risk_fraction.is_finite()
+        || !(0.0..=1.0).contains(&policy.max_risk_fraction)
+        || !policy.max_leverage.is_finite()
+        || policy.max_leverage <= 0.0
+        || !policy.max_daily_loss_fraction.is_finite()
+        || !(0.0..=1.0).contains(&policy.max_daily_loss_fraction)
+        || !policy.max_order_notional_fraction.is_finite()
+        || !(0.0..=1.0).contains(&policy.max_order_notional_fraction)
+        || policy.max_positions == 0
+        || policy.max_market_data_age_ms < 0
+    {
+        return Err(Rejection::InvalidPolicy);
     }
     if intent.client_order_id.trim().is_empty()
         || intent.client_order_id.len() > 128
@@ -255,6 +272,28 @@ mod tests {
         approval.kill_switch_healthy = true;
         approval.reconciliation_healthy = true;
         assert!(validate_order(TradingMode::Live, &RiskPolicy::default(), &approval, &intent()).is_ok());
+    }
+
+    #[test]
+    fn rejects_unsafe_policy_configuration() {
+        let mut policy = RiskPolicy::default();
+        policy.max_risk_fraction = 1.5;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &policy, &LiveApproval::default(), &intent()),
+            Err(Rejection::InvalidPolicy)
+        );
+        policy = RiskPolicy::default();
+        policy.max_market_data_age_ms = -1;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &policy, &LiveApproval::default(), &intent()),
+            Err(Rejection::InvalidPolicy)
+        );
+        policy = RiskPolicy::default();
+        policy.max_positions = 0;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &policy, &LiveApproval::default(), &intent()),
+            Err(Rejection::InvalidPolicy)
+        );
     }
 
     #[test]
