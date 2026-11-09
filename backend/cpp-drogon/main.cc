@@ -131,9 +131,43 @@ void proxyGet(const drogon::HttpRequestPtr&,
         forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
+
+void proxyPostJson(const drogon::HttpRequestPtr& incoming,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                   const std::string& path) {
+    auto client = drogon::HttpClient::newHttpClient(upstream());
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    request->setPath(path);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->addHeader("accept", "application/json");
+    request->setBody(std::string(incoming->getBody()));
+    client->sendRequest(request, [callback = std::move(callback)](
+        drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
 }
 }
 int main() {
+    drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/v1/signal");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/jepa", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        proxyGet(req, std::move(cb), "/internal/jepa" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
+    }, {drogon::Get});
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
