@@ -160,7 +160,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(response->getBody());
+        forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
 }
@@ -168,7 +168,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
 void proxyPostJson(const drogon::HttpRequestPtr& incoming,
                    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
                    const std::string& path) {
-    const auto& body = incoming->getBody();
+    const auto body = incoming->getBody();
     if (body.size() > kMaxHttpBodyBytes) {
         callback(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
         return;
@@ -179,7 +179,7 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     request->setPath(path);
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->addHeader("accept", "application/json");
-    request->setBody(body);
+    request->setBody(std::string(body));
     client->sendRequest(request, [callback = std::move(callback)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
@@ -195,7 +195,7 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(response->getBody());
+        forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
 }
@@ -276,7 +276,7 @@ int main() {
             proxyGet(req, std::move(cb), path);
             return;
         }
-        const auto& body = req->getBody();
+        const auto body = req->getBody();
         if (body.size() > kMaxHttpBodyBytes) {
             cb(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
             return;
@@ -286,7 +286,7 @@ int main() {
         request->setMethod(drogon::Post);
         request->setPath("/internal/events");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        request->setBody(body);
+        request->setBody(std::string(body));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
                 auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
@@ -301,7 +301,7 @@ int main() {
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(response->getBody());
+            forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
     }, {drogon::Get}); // Market ingestion is provider/internal-only; never expose public writes.
@@ -311,7 +311,7 @@ int main() {
             proxyGet(req, std::move(cb), "/internal/strategy");
             return;
         }
-        const auto& body = req->getBody();
+        const auto body = req->getBody();
         if (body.size() > kMaxHttpBodyBytes) {
             cb(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
             return;
@@ -321,7 +321,7 @@ int main() {
         request->setMethod(drogon::Put);
         request->setPath("/internal/strategy");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        request->setBody(body);
+        request->setBody(std::string(body));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
                 auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
@@ -336,7 +336,7 @@ int main() {
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(response->getBody());
+            forwarded->setBody(std::string(response->getBody()));
             cb(forwarded);
         });
     }, {drogon::Get}); // Strategy mutation is an operator-only operation, not a public API.
