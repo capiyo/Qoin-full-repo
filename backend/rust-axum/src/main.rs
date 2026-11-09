@@ -375,6 +375,104 @@ async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
 }
+fn parse_coinbase_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent> {
+    if payload.get("channel").and_then(|v|v.as_str()) != Some("market_trades") {
+        return Vec::new();
+    }
+    let Some(events) = payload.get("events").and_then(|v|v.as_array()) else {
+        return Vec::new();
+    };
+    let mut parsed = Vec::new();
+    for event in events {
+        let Some(trades) = event.get("trades").and_then(|v|v.as_array()) else { continue; };
+        for trade in trades {
+            let (Some(trade_id), Some(product), Some(side), Some(time)) = (
+                trade.get("trade_id").and_then(|v|v.as_str()),
+                trade.get("product_id").and_then(|v|v.as_str()),
+                trade.get("side").and_then(|v|v.as_str()),
+                trade.get("time").and_then(|v|v.as_str()),
+            ) else { continue; };
+            let Some(timestamp) = chrono::DateTime::parse_from_rfc3339(time).ok()
+                .map(|value| value.timestamp_millis()) else { continue; };
+            let symbol = product.replace('-', "").replace('/', "").to_ascii_uppercase();
+            let side = match side.to_ascii_uppercase().as_str() {
+                "BUY" => "buy",
+                "SELL" => "sell",
+                _ => continue,
+            };
+            let (Some(price), Some(size)) = (
+                stream_number(trade.get("price")),
+                stream_number(trade.get("size")),
+            ) else { continue; };
+            let observation = MarketEvent {
+                event_id: format!("coinbase_trade:{trade_id}"),
+                venue: "coinbase_advanced_trade".into(),
+                symbol,
+                event_type: "trade".into(),
+                ts_ms: timestamp,
+                price: Some(price),
+                size: Some(size),
+                side: Some(side.into()),
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            };
+            if validate_event(&observation).is_ok() {
+                parsed.push(observation);
+            }
+        }
+    }
+    parsed
+}
+
+async fn spawn_coinbase_stream(axum_addr: String, products: Vec<String>) {
+    if products.is_empty() { return; }
+    let url = "wss://advanced-trade-ws.coinbase.com";
+    let client = reqwest::Client::new();
+    let endpoint = format!("http://{axum_addr}/internal/events");
+    let mut backoff = 1_u64;
+    loop {
+        match connect_async(url).await {
+            Ok((mut socket, _)) => {
+                tracing::info!(products=?products, "connected to Coinbase Advanced Trade public market stream");
+                backoff = 1;
+                let subscription = serde_json::json!({
+                    "type":"subscribe",
+                    "channel":"market_trades",
+                    "product_ids":products
+                });
+                if let Err(error) = socket.send(tokio_tungstenite::tungstenite::Message::Text(subscription.to_string())).await {
+                    tracing::warn!(error=%error, "Coinbase subscription send failed");
+                } else {
+                    while let Some(message) = socket.next().await {
+                        let message = match message {
+                            Ok(value) => value,
+                            Err(error) => { tracing::warn!(error=%error, "Coinbase stream disconnected"); break; }
+                        };
+                        if message.is_ping() {
+                            if let Err(error) = socket.send(tokio_tungstenite::tungstenite::Message::Pong(message.into_data())).await {
+                                tracing::warn!(error=%error, "Coinbase websocket pong failed");
+                                break;
+                            }
+                            continue;
+                        }
+                        let text = match message.to_text() { Ok(value) => value, Err(_) => continue };
+                        let payload: serde_json::Value = match serde_json::from_str(text) {
+                            Ok(value) => value,
+                            Err(error) => { tracing::warn!(error=%error, "invalid Coinbase market stream JSON"); continue; }
+                        };
+                        for event in parse_coinbase_trade_message(&payload) {
+                            submit_market_event(&client, &endpoint, &event, "coinbase_advanced_trade").await;
+                        }
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(error=%error,retry_seconds=backoff,"Coinbase stream connection failed"),
+        }
+        tokio::time::sleep(Duration::from_secs(backoff)).await;
+        backoff = (backoff * 2).min(30);
+    }
+}
+
 async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<String>) {
     if symbols.is_empty() { return; }
     let url = format!("wss://ws.finnhub.io?token={token}");
@@ -887,6 +985,15 @@ async fn main(){
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
+    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    if coinbase_enabled {
+        let products=env::var("QOIN_COINBASE_STREAM_PRODUCTS").unwrap_or_else(|_|"BTC-USD,ETH-USD,SOL-USD".into())
+            .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+        let adapter_addr=internal_addr.clone();
+        tokio::spawn(async move { spawn_coinbase_stream(adapter_addr,products).await; });
+    } else {
+        tracing::info!("Coinbase public market stream disabled by configuration");
+    }
     if let Ok(token) = env::var("FINNHUB_API_KEY") {
       if !token.trim().is_empty() {
         let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:AUD_USD,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:US30_USD,OANDA:DE30_EUR,OANDA:XAU_USD,OANDA:XAG_USD,OANDA:WTICO_USD,OANDA:BCO_USD,OANDA:NATGAS_USD".into())
@@ -905,6 +1012,35 @@ async fn main(){
 #[cfg(test)]
 mod market_stream_tests {
     use super::*;
+
+    #[test]
+    fn coinbase_market_trade_messages_normalize_into_canonical_events() {
+        let payload=serde_json::json!({
+            "channel":"market_trades",
+            "events":[{"type":"update","trades":[{
+                "trade_id":"12345","product_id":"BTC-USD","price":"65000.25",
+                "size":"0.012","side":"BUY","time":"2026-11-09T12:00:00.123Z"
+            }]}]
+        });
+        let events=parse_coinbase_trade_message(&payload);
+        assert_eq!(events.len(),1);
+        assert_eq!(events[0].venue,"coinbase_advanced_trade");
+        assert_eq!(events[0].symbol,"BTCUSD");
+        assert_eq!(events[0].event_id,"coinbase_trade:12345");
+        assert_eq!(events[0].side.as_deref(),Some("buy"));
+        assert_eq!(events[0].ts_ms,1_794_225_600_123);
+    }
+
+    #[test]
+    fn coinbase_parser_rejects_wrong_channels_and_malformed_trades() {
+        assert!(parse_coinbase_trade_message(&serde_json::json!({"channel":"ticker","events":[]})).is_empty());
+        let payload=serde_json::json!({
+            "channel":"market_trades",
+            "events":[{"trades":[{"trade_id":"bad","product_id":"BTC-USD","side":"BUY",
+                "time":"not-a-time","price":"NaN","size":"1"}]}]
+        });
+        assert!(parse_coinbase_trade_message(&payload).is_empty());
+    }
 
     #[test]
     fn websocket_symbol_subscriptions_are_trimmed_uppercase_and_deduplicated() {
