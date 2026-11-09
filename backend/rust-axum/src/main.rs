@@ -20,6 +20,8 @@ use tower_http::trace::TraceLayer;
 mod algorithm_catalogue;
 mod algorithm_entitlements;
 mod edge_strategy;
+mod operating_cycle;
+mod paper_session;
 mod backtest;
 mod vector_engine;
 mod order_safety;
