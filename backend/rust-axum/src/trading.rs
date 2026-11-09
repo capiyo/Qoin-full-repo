@@ -31,30 +31,41 @@ pub struct ExecutionResponse {
 #[derive(Clone)]
 pub struct BinanceExecutor {
     client: Client, api_key: String, api_secret: String, base_url: String,
-    max_notional_usdt: f64, max_quantity: f64,
+    max_notional_usdt: f64, max_quantity: f64, mode: &'static str,
 }
 impl BinanceExecutor {
     pub fn from_env() -> Result<Self, String> {
-        if env::var("QOIN_TRADING_MODE").unwrap_or_else(|_| "disabled".into()) != "live" {
-            return Err("live execution disabled: QOIN_TRADING_MODE is not live".into());
-        }
-        if env::var("QOIN_LIVE_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_REAL_MONEY_RISK" {
-            return Err("live execution requires explicit confirmation".into());
-        }
+        let configured_mode = env::var("QOIN_TRADING_MODE").unwrap_or_else(|_| "disabled".into());
+        let mode = match configured_mode.as_str() {
+            "live" => {
+                if env::var("QOIN_LIVE_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_REAL_MONEY_RISK" {
+                    return Err("live execution requires explicit confirmation".into());
+                }
+                "live"
+            }
+            "testnet" => {
+                if env::var("QOIN_TESTNET_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_TESTNET_ORDERS" {
+                    return Err("testnet execution requires explicit confirmation".into());
+                }
+                "testnet"
+            }
+            _ => return Err("execution disabled: set QOIN_TRADING_MODE to testnet or live".into()),
+        };
         let api_key = env::var("BINANCE_API_KEY").map_err(|_| "BINANCE_API_KEY is missing".to_string())?;
         let api_secret = env::var("BINANCE_API_SECRET").map_err(|_| "BINANCE_API_SECRET is missing".to_string())?;
         if api_key.trim().is_empty() || api_secret.trim().is_empty() { return Err("API credentials must not be empty".into()); }
         let max_notional_usdt = env::var("QOIN_MAX_ORDER_NOTIONAL_USDT").unwrap_or_else(|_| "25".into()).parse::<f64>().map_err(|_| "notional cap must be numeric".to_string())?;
         let max_quantity = env::var("QOIN_MAX_ORDER_QUANTITY").unwrap_or_else(|_| "0.001".into()).parse::<f64>().map_err(|_| "quantity cap must be numeric".to_string())?;
         if !max_notional_usdt.is_finite() || max_notional_usdt <= 0.0 || !max_quantity.is_finite() || max_quantity <= 0.0 { return Err("order limits must be finite and positive".into()); }
-        let base_url = env::var("BINANCE_FUTURES_BASE_URL").unwrap_or_else(|_| "https://fapi.binance.com".into());
+        let default_base_url = if mode == "testnet" { "https://testnet.binancefuture.com" } else { "https://fapi.binance.com" };
+        let base_url = env::var("BINANCE_FUTURES_BASE_URL").unwrap_or_else(|_| default_base_url.into());
         let parsed_base_url = Url::parse(&base_url).map_err(|_| "BINANCE_FUTURES_BASE_URL must be a valid HTTPS URL".to_string())?;
         if parsed_base_url.scheme() != "https" || parsed_base_url.host_str().is_none() {
             return Err("BINANCE_FUTURES_BASE_URL must use HTTPS and include a host".into());
         }
         Ok(Self { client: Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| e.to_string())?,
             api_key, api_secret, base_url: base_url.trim_end_matches('/').to_string(),
-            max_notional_usdt, max_quantity })
+            max_notional_usdt, max_quantity, mode })
     }
     fn sign(&self, query: &str) -> Result<String, String> {
         let mut mac = HmacSha256::new_from_slice(self.api_secret.as_bytes()).map_err(|e| e.to_string())?;
@@ -118,7 +129,7 @@ impl BinanceExecutor {
         let executed_quantity_text = format!("{:.12}", executed_quantity).trim_end_matches('0').trim_end_matches('.').to_string();
         if order.reduce_only {
             return Ok(ExecutionResponse {
-                mode: "live", accepted: true, exchange: "binance_usdm_futures",
+                mode: self.mode, accepted: true, exchange: "binance_usdm_futures",
                 response, protective_stop: serde_json::Value::Null,
             });
         }
@@ -150,6 +161,6 @@ impl BinanceExecutor {
                 };
             }
         };
-        Ok(ExecutionResponse { mode: "live", accepted: true, exchange: "binance_usdm_futures", response, protective_stop })
+        Ok(ExecutionResponse { mode: self.mode, accepted: true, exchange: "binance_usdm_futures", response, protective_stop })
     }
 }
