@@ -179,3 +179,22 @@ impl BinanceExecutor {
         Ok(ExecutionResponse { mode: self.mode, accepted: true, exchange: "binance_usdm_futures", response, protective_stop })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{emergency_close_client_order_id, protective_stop_client_order_id};
+
+    #[test]
+    fn child_order_ids_are_stable_bounded_and_distinct() {
+        let parent = "qoin-entry-order-1234567890";
+        let stop = protective_stop_client_order_id(parent);
+        let close = emergency_close_client_order_id(parent);
+        assert_eq!(stop, protective_stop_client_order_id(parent));
+        assert_eq!(close, emergency_close_client_order_id(parent));
+        assert_ne!(stop, close);
+        assert!(stop.len() <= 36);
+        assert!(close.len() <= 36);
+        assert_ne!(stop, protective_stop_client_order_id("qoin-entry-order-1234567891"));
+    }
+}
