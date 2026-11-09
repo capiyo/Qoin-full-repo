@@ -18,8 +18,9 @@ The Axum service exposes these operator-only routes on the private Compose netwo
 
 - `POST /internal/orders` — submit one Binance USD-M market order with a mandatory side-correct protective stop for opening orders.
 - `GET /internal/orders/{client_order_id}/reconcile` — query the entry order and its protective stop at Binance and persist the observed status.
+- `POST /internal/trading/kill-switch` with `{"enabled":false}` — block new submissions immediately; `{"enabled":true}` reopens the entry gate. This does not cancel open orders or close positions.
 
-Both require the `x-qoin-execution-token` header. Every submission must use a unique 8–36 character `client_order_id`. The MongoDB ledger reserves that ID before any exchange request, so an uncertain result cannot be blindly retried. Use the reconciliation route to inspect it.
+All three require the `x-qoin-execution-token` header. New orders are blocked by default; explicitly enable the entry gate only after configuring and verifying the account. Every submission must use a unique 8–36 character `client_order_id`. The MongoDB ledger reserves that ID before any exchange request, so an uncertain result cannot be blindly retried. Use the reconciliation route to inspect it.
 
 Example request body:
 
