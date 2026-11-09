@@ -77,6 +77,7 @@ struct AppState {
     strategies: Collection<Document>,
     jepa_predictions: Collection<Document>,
     orders: Collection<Document>,
+    trading_controls: Collection<Document>,
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
@@ -162,18 +163,58 @@ fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
     expected.iter().zip(supplied).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
 }
 
+fn execution_token_authorized(headers: &HeaderMap) -> bool {
+    let expected = match env::var("QOIN_EXECUTION_TOKEN") {
+        Ok(token) if !token.trim().is_empty() => token,
+        _ => return false,
+    };
+    let supplied = headers.get("x-qoin-execution-token").and_then(|value| value.to_str().ok()).unwrap_or("");
+    constant_time_token_match(expected.as_bytes(), supplied.as_bytes())
+}
+
+#[derive(Deserialize)]
+struct TradingControlRequest { enabled: bool }
+
+async fn set_trading_enabled(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<TradingControlRequest>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let update = doc!{"$set":{"enabled":request.enabled,"updated_at":mongodb::bson::DateTime::now()}};
+    match s.trading_controls.update_one(doc!{"_id":"execution"}, update,
+        UpdateOptions::builder().upsert(true).build()).await {
+        Ok(_) => (StatusCode::OK, Json(serde_json::json!({
+            "execution_enabled":request.enabled,
+            "message":if request.enabled{"operator enabled order submission"}else{"kill switch engaged; new orders blocked"}
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error, "could not update trading kill switch");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"trading control store unavailable"})))
+        }
+    }
+}
+
 async fn submit_live_order(
     State(s): State<AppState>,
     headers: HeaderMap,
     Json(order): Json<trading::OrderRequest>,
 ) -> impl IntoResponse {
-    let expected_token = match env::var("QOIN_EXECUTION_TOKEN") {
-        Ok(token) if !token.trim().is_empty() => token,
-        _ => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"execution endpoint is not configured"}))),
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
+    }
+    let trading_enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
+        Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
+        Ok(None) => false,
+        Err(error) => {
+            tracing::error!(error=%error, "trading kill-switch lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"trading control unavailable; order rejected"})));
+        }
     };
-    let supplied_token = headers.get("x-qoin-execution-token").and_then(|value| value.to_str().ok()).unwrap_or("");
-    if !constant_time_token_match(expected_token.as_bytes(), supplied_token.as_bytes()) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    if !trading_enabled {
+        return (StatusCode::LOCKED, Json(serde_json::json!({"error":"trading kill switch is engaged; enable execution explicitly"})));
     }
     let executor = match trading::BinanceExecutor::from_env() {
         Ok(executor) => executor,
@@ -253,13 +294,8 @@ async fn reconcile_live_order(
     Path(client_order_id): Path<String>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let expected_token = match env::var("QOIN_EXECUTION_TOKEN") {
-        Ok(token) if !token.trim().is_empty() => token,
-        _ => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"execution endpoint is not configured"}))),
-    };
-    let supplied_token = headers.get("x-qoin-execution-token").and_then(|value| value.to_str().ok()).unwrap_or("");
-    if !constant_time_token_match(expected_token.as_bytes(), supplied_token.as_bytes()) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
     }
     let ledger = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
         Ok(Some(record)) => record,
@@ -1213,6 +1249,11 @@ async fn main(){
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     let orders:Collection<Document>=db.collection("live_orders");
+    let trading_controls:Collection<Document>=db.collection("trading_controls");
+    trading_controls.update_one(doc!{"_id":"execution"},
+        doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
+            "updated_at":mongodb::bson::DateTime::now()}},
+        UpdateOptions::builder().upsert(true).build()).await.expect("initialize trading kill switch");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
@@ -1296,7 +1337,7 @@ async fn main(){
         "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,orders,jepa_client,
+        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,orders,trading_controls,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
@@ -1309,6 +1350,7 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
+        .route("/internal/trading/kill-switch",post(set_trading_enabled))
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
