@@ -8,7 +8,7 @@ use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use url::form_urlencoded;
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OrderRequest {
     pub symbol: String,
     pub side: String,
