@@ -300,6 +300,28 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/vector" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto venue = req->getParameter("venue");
+        const auto min_events = req->getParameter("min_events");
+        std::string path = "/internal/market-horizons?";
+        bool has_parameter = false;
+        if (!symbol.empty()) {
+            path += "symbol=" + drogon::utils::urlEncode(symbol);
+            has_parameter = true;
+        }
+        if (!venue.empty()) {
+            if (has_parameter) path += "&";
+            path += "venue=" + drogon::utils::urlEncode(venue);
+            has_parameter = true;
+        }
+        if (!min_events.empty()) {
+            if (has_parameter) path += "&";
+            path += "min_events=" + drogon::utils::urlEncode(min_events);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) {
