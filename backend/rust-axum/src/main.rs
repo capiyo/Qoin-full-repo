@@ -66,6 +66,7 @@ struct SymbolState {
 #[derive(Clone)]
 struct AppState {
     stream: broadcast::Sender<serde_json::Value>,
+    database: mongodb::Database,
     events: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
@@ -132,7 +133,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
-    let ok=s.events.count_documents(doc!{},None).await.is_ok();
+    let ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
     (if ok {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
@@ -858,7 +859,7 @@ async fn main(){
     tracing::info!(restored_symbols=restored_memory.len(), "restored latest market snapshots from MongoDB");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, events,states,decisions,strategies,jepa_predictions,jepa_client,
+        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
         active_strategy:Arc::new(RwLock::new(active))
