@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod market_data;
 pub mod multi_horizon;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
