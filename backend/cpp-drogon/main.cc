@@ -126,6 +126,10 @@ std::string upstream() {
 void proxyGet(const drogon::HttpRequestPtr&,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
+    if (path.size() > kMaxStreamQueryBytes * 2U) {
+        callback(gatewayError(drogon::k400BadRequest, "upstream query exceeds gateway limit"));
+        return;
+    }
     auto client = drogon::HttpClient::newHttpClient(upstream());
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Get);
@@ -139,10 +143,14 @@ void proxyGet(const drogon::HttpRequestPtr&,
             callback(error);
             return;
         }
+        if (response->getBody().size() > kMaxHttpResponseBytes) {
+            callback(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
+            return;
+        }
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(std::string(response->getBody()));
+        forwarded->setBody(response->getBody());
         callback(forwarded);
     });
 }
@@ -150,6 +158,11 @@ void proxyGet(const drogon::HttpRequestPtr&,
 void proxyPostJson(const drogon::HttpRequestPtr& incoming,
                    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
                    const std::string& path) {
+    const auto& body = incoming->getBody();
+    if (body.size() > kMaxHttpBodyBytes) {
+        callback(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
+        return;
+    }
     auto client = drogon::HttpClient::newHttpClient(upstream());
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Post);
@@ -302,10 +315,14 @@ int main() {
                 cb(error);
                 return;
             }
+            if (response->getBody().size() > kMaxHttpResponseBytes) {
+                cb(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
+                return;
+            }
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(std::string(response->getBody()));
+            forwarded->setBody(response->getBody());
             cb(forwarded);
         });
     }, {drogon::Get}); // Strategy mutation is an operator-only operation, not a public API.
