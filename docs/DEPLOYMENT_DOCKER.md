@@ -10,7 +10,7 @@ This repository includes a Docker Compose deployment topology for the **research
 
 ## Required configuration
 
-Create a root `.env` file from `.env.example`. Set unique, strong values for `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`. Keep this file out of version control. Set `FINNHUB_API_KEY` only when the corresponding data entitlement is available. Binance public market data can be disabled independently.
+Create a root `.env` file from `.env.example`. Generate both passwords as 64-character hexadecimal strings (for example, `openssl rand -hex 32`) so they are safe to embed in the MongoDB URI. Use different values for the root and application passwords. Keep `.env` out of version control; the repository `.gitignore` excludes local environment files. Set `FINNHUB_API_KEY` only when the corresponding data entitlement is available. Binance public market data can be disabled independently.
 
 ## Start
 
