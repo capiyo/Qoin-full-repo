@@ -1,29 +1,39 @@
-# Risk policy and hard gates
+# Risk policy and hard execution gates
 
-## Current implementation status
-- The Axum vector endpoint emits research signals only. Live order submission is a separate private route (`POST /internal/orders`) and is not reachable through the public Drogon gateway.
-- `backend/rust-axum/src/order_safety.rs` implements deterministic pre-trade checks for identity, finite values, stop direction, risk-at-stop, order notional, gross leverage, daily loss, open-position count, market-data age, and exchange-side protective-stop capability. It rejects malformed policy configuration before order evaluation, including risk/daily-loss/notional fractions outside 0–100%, zero position caps, and negative market-data freshness windows.
-- Live-mode validation requires all five explicit approvals: human approval, verified exchange account, withdrawals disabled, healthy kill switch, and healthy reconciliation.
-- `backend/rust-axum/src/execution_lifecycle.rs` models broker acknowledgements, partial fills, final fills, cancellation, rejection, failure, duplicate execution IDs, and overfill rejection.
-- These are tested domain primitives only. They are not yet connected to a durable order store or an exchange adapter. The lifecycle's in-memory duplicate-ID set is not a substitute for persistent idempotency.
-- `backend/rust-axum/src/trading.rs` now requires a valid side-aware stop trigger for Binance USD-M market entries, submits a reduce-only `STOP_MARKET` protective order for the actually filled quantity, and attempts an immediate reduce-only market close if stop placement fails. The private Axum route requires `x-qoin-execution-token`, either `QOIN_TRADING_MODE=testnet` with `QOIN_TESTNET_TRADING_CONFIRM=I_UNDERSTAND_TESTNET_ORDERS` or `QOIN_TRADING_MODE=live` with `QOIN_LIVE_TRADING_CONFIRM=I_UNDERSTAND_REAL_MONEY_RISK`, and Binance API credentials. Testnet defaults to Binance Futures testnet; live defaults to Binance production. The adapter's configured per-order quantity/notional caps are not a portfolio risk engine.
-- A MongoDB-backed operator gate (`POST /internal/trading/kill-switch`) can enable or block new order submissions at runtime. It is deliberately a new-entry gate: it does not cancel existing exchange orders or flatten open positions.
-- The route writes a unique `client_order_id` intent to MongoDB before contacting the exchange. Duplicate IDs are rejected; uncertain outcomes are marked `reconciliation_required` and must not be blindly retried. `GET /internal/orders/{client_order_id}/reconcile` performs an authenticated Binance entry/protective-stop lookup and persists the observed exchange state. This is durable request idempotency plus operator-triggered reconciliation, not an automatic reconciliation worker.
-- Live order submission remains disabled and is not wired into the Axum API.
+## Non-negotiable release policy
 
-## Mandatory operational gates
-- Never expose the internal Axum service to the public internet.
-- Never commit exchange credentials or request them in chat; use a secret manager and API keys with withdrawals disabled.
-- The private live route requires an operator token, explicit live-mode confirmation, and exchange credentials. API keys must have withdrawals disabled and must be scoped to the intended account.
-- Use paper/testnet and shadow mode before any production consideration.
-- Keep the system fail-closed if risk state, market data, broker connectivity, protective orders, reconciliation, or kill-switch health is unavailable.
+Real-money execution is disabled by code policy. The only permitted execution modes before release acceptance are paper and exchange testnet. Setting `QOIN_TRADING_MODE=live`, adding credentials, or opening the operator gate must not enable production orders.
 
-## Target policy
-- Risk per trade: 0.25% of equity, calculated from stop distance.
-- Maximum leverage: 2x; enforce notional, correlated exposure, and position-count caps.
-- Exchange-side protective stop, slippage limits, daily/weekly loss limits, drawdown circuit breaker, and kill switch.
-- Durable idempotent client order IDs, timeout/partial-fill handling, exchange reconciliation, and crash recovery.
-- Reject stale, out-of-order, malformed, or low-quality market data; abstain when spread or feed quality fails.
-- Broker-specific tick/step-size validation, fees, minimum notional, margin mode, and instrument permissions.
+The private Axum execution route is not exposed through Drogon. Never expose the Axum service directly to the public internet. Never place exchange credentials in source control, frontend configuration, logs, or chat. Use a secret manager and exchange keys with withdrawals disabled.
 
-The risk and lifecycle modules and the current private order route are not proof of a complete autonomous execution system. Portfolio-level pre-trade risk integration, broker account/position reconciliation, an operational kill switch, exchange testnet lifecycle verification, order amendment/cancellation flows, and deployment controls remain outstanding. The current route is an explicitly invoked Binance USD-M adapter with a strict per-order cap and protective-stop attempt; it must not be described as an unattended production trading system.
+## Current implementation (not production approval)
+
+- `backend/rust-axum/src/trading.rs` contains an explicitly invoked Binance USD-M adapter. It supports testnet configuration, per-order quantity/notional caps, side-aware protective stop validation, reduce-only stop placement for the filled quantity, and an emergency reduce-only close attempt if stop placement fails.
+- `POST /internal/orders` requires the private execution token, a persistent MongoDB new-entry gate, a unique client order ID, testnet configuration and Binance credentials. The route writes an intent before contacting the exchange and rejects duplicate client order IDs.
+- Uncertain outcomes are marked `reconciliation_required`. `GET /internal/orders/{client_order_id}/reconcile` performs an operator-triggered exchange lookup. It is not an automatic reconciliation worker.
+- `POST /internal/trading/kill-switch` blocks new entries. It does not cancel open orders, flatten positions, or guarantee emergency risk reduction.
+- `order_safety.rs` contains deterministic risk-validation primitives. They are not fully wired into the order-submission route. The current per-order caps are not portfolio-level risk controls.
+- `execution_lifecycle.rs` contains tested domain state transitions, but the full durable exchange lifecycle is not yet integrated end to end.
+
+## Mandatory gates before any live execution is considered
+
+1. Connect the portfolio-level risk validator to every order path; prove no bypass exists.
+2. Verify exchange account ownership and permissions server-side.
+3. Persist a complete order state machine: intent, submit, acknowledgement, partial fill, fill, cancel, amend, reject, timeout and recovery.
+4. Reconcile orders, balances and positions automatically and safely after outages/restarts.
+5. Implement an operational kill switch that can cancel/manage open orders and flatten exposure under a separately tested policy.
+6. Synchronize account balances, positions, margin, funding and instrument constraints.
+7. Pass Binance testnet end-to-end tests, including partial fills, stop failures, cancellation, amendment, timeouts, duplicate requests and process restart.
+8. Complete independent security, operational and risk review; verify monitoring, alerting, backups, restore and incident procedures.
+9. Verify the exact release commit in CI and production-like staging. Obtain explicit human approval for any future live-mode activation.
+
+## Target portfolio policy
+
+- Target risk per trade: 0.25% of equity, sized from stop distance and instrument contract rules.
+- Maximum leverage: 2x unless a stricter instrument/account policy applies.
+- Enforce gross/net exposure, correlated concentration, currency exposure, position-count, daily/weekly loss and drawdown limits.
+- Reject stale, out-of-order, malformed or incomplete market data. Abstain when feed quality, spread, liquidity or protective-order capability is insufficient.
+- Enforce tick size, lot step, minimum notional, contract multiplier, margin mode, funding, fees and trading-session rules from verified instrument metadata.
+- Fail closed when risk state, account ownership, market data, broker connectivity, persistence, reconciliation or kill-switch health is unavailable.
+
+Until every mandatory gate is implemented and independently verified, Qoin is a research and paper/testnet system. No unattended or production-safe execution claim is permitted.

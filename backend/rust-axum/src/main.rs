@@ -21,13 +21,11 @@ mod algorithm_catalogue;
 mod algorithm_entitlements;
 mod edge_strategy;
 mod backtest;
-mod jepa;
 mod vector_engine;
 mod order_safety;
 mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
-use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -75,11 +73,8 @@ struct AppState {
     states: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
-    jepa_predictions: Collection<Document>,
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
-    jepa_client: Option<JepaClient>,
-    jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
@@ -381,20 +376,11 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "market_recovery":{"status":if recovery_ok{"ok"}else{"degraded"},
          "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events},
        "strategy_version":strategy_version,
-       "jepa_research_inference":if s.jepa_client.is_some(){"enabled"}else{"disabled"},
        "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
           "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
-       "live_order_submission":if matches!(env::var("QOIN_TRADING_MODE").as_deref(),Ok("live")|Ok("testnet"))
-          && env::var("QOIN_EXECUTION_TOKEN").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_SECRET").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && ((env::var("QOIN_TRADING_MODE").as_deref()==Ok("live")
-                && env::var("QOIN_LIVE_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_REAL_MONEY_RISK").unwrap_or(false))
-              || (env::var("QOIN_TRADING_MODE").as_deref()==Ok("testnet")
-                && env::var("QOIN_TESTNET_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_TESTNET_ORDERS").unwrap_or(false)))
-          {"configured"}else{"disabled"},
+       "live_order_submission":"disabled_by_code_policy",
        "live_order_adapter":"binance_usdm_with_required_protective_stop",
        "new_order_entry_enabled":order_entry_enabled,
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
@@ -424,55 +410,6 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"state snapshot persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
-    // Optional JEPA sidecar is observational only. Failure or lag never blocks or
-    // changes the existing Version 1 vector decision.
-    let jepa_window = if let Some(client) = s.jepa_client.as_ref() {
-        match s.jepa_history.write() {
-            Ok(mut histories) => histories.entry(snapshot.symbol.clone()).or_default()
-                .push_if_due(event.ts_ms, jepa::features_from_state(&snapshot),
-                    client.context_steps(), client.min_interval_ms()),
-            Err(_) => {
-                tracing::warn!("JEPA history lock poisoned; skipping research prediction");
-                None
-            }
-        }
-    } else {
-        None
-    };
-    if let (Some(client), Some(rows)) = (s.jepa_client.clone(), jepa_window) {
-        let predictions = s.jepa_predictions.clone();
-        let symbol = snapshot.symbol.clone();
-        let event_ts_ms = event.ts_ms;
-        tokio::spawn(async move {
-            match client.predict(&rows).await {
-                Ok(prediction) => {
-                    let record = JepaPredictionRecord {
-                        symbol: symbol.clone(),
-                        event_ts_ms,
-                        predicted_at_ms: chrono::Utc::now().timestamp_millis(),
-                        model_version: prediction.model_version,
-                        horizon_steps: prediction.horizon_steps,
-                        feature_names: prediction.feature_names,
-                        predicted_latent_state: prediction.predicted_latent_state,
-                        note: prediction.note,
-                    };
-                    match mongodb::bson::to_document(&record) {
-                        Ok(document) => {
-                            if let Err(error) = predictions.insert_one(document, None).await {
-                                tracing::warn!(symbol=%symbol, error=%error,
-                                    "could not persist JEPA research prediction");
-                            }
-                        }
-                        Err(error) => tracing::warn!(symbol=%symbol, error=%error,
-                            "could not serialize JEPA research prediction"),
-                    }
-                }
-                Err(error) => tracing::warn!(symbol=%symbol, error=%error,
-                    "JEPA research prediction unavailable; vector decision unchanged"),
-            }
-        });
-    }
-
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
         snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
@@ -1051,30 +988,6 @@ async fn get_news(Query(query):Query<NewsQuery>)->impl IntoResponse {
     (StatusCode::OK,Json(serde_json::json!({"source":"Finnhub","status":"ok","items":items,"count":items.len()})))
 }
 
-async fn get_jepa_prediction(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
-    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    if s.jepa_client.is_none() {
-        return (StatusCode::OK,Json(serde_json::json!({
-            "symbol":symbol,"status":"disabled","decision":null,
-            "note":"Set QOIN_JEPA_URL to enable optional loopback research inference."
-        })));
-    }
-    match s.jepa_predictions.find_one(doc!{"symbol":&symbol},
-        FindOneOptions::builder().sort(doc!{"event_ts_ms":-1}).build()).await {
-        Ok(Some(mut document)) => {
-            document.remove("_id");
-            (StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(document)
-                .unwrap_or_default()))
-        }
-        Ok(None) => (StatusCode::OK,Json(serde_json::json!({
-            "symbol":symbol,"status":"warming_up","decision":null,
-            "note":"Waiting for a complete causal context window and successful model inference."
-        }))),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
-            "error":"JEPA research prediction storage unavailable"
-        })))
-    }
-}
 fn subscription_set(symbol: Option<String>, symbols: Option<String>) -> HashSet<String> {
     symbols.or(symbol).unwrap_or_default().split(',').map(str::trim)
         .filter(|v| !v.is_empty()).map(|v| v.to_ascii_uppercase()).collect()
@@ -1250,7 +1163,6 @@ async fn main(){
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
-    let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     trading_controls.update_one(doc!{"_id":"execution"},
@@ -1268,9 +1180,6 @@ async fn main(){
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
-    jepa_predictions.create_index(mongodb::IndexModel::builder()
-        .keys(doc!{"symbol":1,"event_ts_ms":-1}).build(),None).await
-        .expect("JEPA prediction lookup index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
         Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
@@ -1282,27 +1191,6 @@ async fn main(){
         }
     };
     tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
-    let jepa_client = match env::var("QOIN_JEPA_URL") {
-        Ok(url) => {
-            let context_steps = env::var("QOIN_JEPA_CONTEXT_STEPS").ok()
-                .and_then(|value| value.parse::<usize>().ok()).unwrap_or(32);
-            let min_interval_ms = env::var("QOIN_JEPA_MIN_INTERVAL_MS").ok()
-                .and_then(|value| value.parse::<i64>().ok()).unwrap_or(1000);
-            match JepaClient::new(&url, context_steps, min_interval_ms) {
-                Ok(client) => {
-                    tracing::info!(context_steps=client.context_steps(),
-                        min_interval_ms=client.min_interval_ms(),
-                        "optional JEPA research sidecar configured; predictions will not affect vector decisions");
-                    Some(client)
-                }
-                Err(error) => {
-                    tracing::warn!(error=%error,"invalid JEPA sidecar configuration; leaving JEPA disabled");
-                    None
-                }
-            }
-        }
-        Err(_) => None,
-    };
     // Rebuild rolling state from the immutable event log on every process start.
     // Snapshot-only recovery can preserve a stale snapshot when a crash occurs
     // after event insertion but before snapshot persistence. Replaying the raw
@@ -1340,8 +1228,7 @@ async fn main(){
         "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,orders,trading_controls,jepa_client,
-        jepa_history:Arc::new(RwLock::new(HashMap::new())),
+        stream, database: db.clone(), events,states,decisions,strategies,orders,trading_controls,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
@@ -1359,7 +1246,6 @@ async fn main(){
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
-        .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());

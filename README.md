@@ -1,108 +1,72 @@
-# Qoin — Domain-Extensible Intelligence Platform
+# Qoin
 
-Qoin is a multi-client, domain-extensible intelligence and decision platform. Finance is its first application vertical, not the definition of the core. A domain-neutral Rust crate defines entities, source-attributed observations, feature vectors and algorithm decisions. The current complete application remains finance-focused research and paper trading; the baseline is not a validated or proven profitable edge.
+Qoin is a multi-client research and paper-trading platform. Finance is its first application vertical. It is not a validated or proven profitable trading system.
 
-## Repository structure
+## Fixed architecture
+
+- **Rust/Axum:** authoritative market-data ingestion, state, vector decisions, risk domain and execution controls.
+- **C++/Drogon:** public HTTP/WebSocket gateway and proxy only; it does not calculate decisions.
+- **MongoDB:** durable event, state, decision, strategy, paper ledger and application persistence.
+- **React web + React Native:** shared TypeScript contracts and API client in `@qoin/core`.
+- **Python:** research, reference models, reproducible evaluation and analysis.
+- **Tauri 2:** desktop shell; the vector-motion solver is implemented in Rust.
+
+## Repository layout
 
 ```text
-Qoin-full-repo/
-├── frontend/
-│   ├── apps/
-│   │   ├── web/                  # React + TypeScript + Vite
-│   │   ├── mobile/               # Expo / React Native
-│   │   └── desktop/              # Tauri 2 native shell
-│   ├── packages/core/            # Shared TypeScript contracts and API client
-│   └── archive/next-web/         # Preserved legacy app; not active
-├── backend/
-│   ├── rust-axum/
-│   │   ├── src/                  # Finance application and provider adapters
-│   │   └── crates/
-│   │       ├── qoin-vector-engine/
-│   │       ├── qoin-vector-motion/
-│   │       └── qoin-domain-core/ # Domain-neutral contracts
-│   ├── rust-axum-api/            # Separate compatibility/research API
-│   ├── cpp-drogon/               # HTTP/WebSocket gateway
-│   ├── jepa-world-model/         # Research-only model service
-│   ├── config/
-│   ├── research/
-│   └── tests/
-├── docker/                       # MongoDB initialization
-├── firebase/                     # Firestore and Storage rules/tests
-├── shared/contracts/             # OpenAPI and event schemas
-├── docs/
-├── scripts/
-├── .github/workflows/
-├── Cargo.toml
-├── package.json
-└── docker-compose.yml             # MongoDB + private Axum + Drogon gateway
+frontend/
+  apps/web/             React + TypeScript + Vite
+  apps/mobile/          Expo / React Native
+  apps/desktop/         Tauri 2
+  packages/core/        Shared API and domain contracts
+backend/
+  rust-axum/            Authoritative engine and application services
+    crates/qoin-vector-engine/
+    crates/qoin-vector-motion/
+    crates/qoin-domain-core/
+  cpp-drogon/           HTTP/WebSocket gateway
+  research/             Python research code
+  tests/                Python reference tests
+shared/contracts/       OpenAPI and event schemas
+firebase/               Client security rules and emulator tests
+docker/                 MongoDB initialization
+docs/                   Architecture, risk, readiness and operations
+.github/workflows/      CI matrix
+Cargo.toml              Rust workspace
+package.json            pnpm workspace
+docker-compose.yml      Private MongoDB/Axum + published gateway
 ```
 
-## Service boundaries
+## Current product boundaries
 
-1. Web, mobile and desktop use shared TypeScript contracts and never implement authoritative trading decisions.
-2. Rust/Axum owns event ingestion, state estimation, vector decisions, strategy state, the shared `POST /v1/signal` research endpoint and the domain-neutral core contracts.
-3. C++/Drogon is the public HTTP/WebSocket gateway. Provider ingestion and strategy mutation remain internal and are not exposed as public gateway writes.
-4. MongoDB stores raw observations, state snapshots, decisions and strategy configuration.
-5. Provider adapters normalize source observations into venue-scoped events. Current feeds include Binance USD-M, Coinbase Advanced Trade, Kraken Spot and optional Finnhub. See [docs/MARKET_DATA_PROVIDERS.md](docs/MARKET_DATA_PROVIDERS.md) for coverage and limitations.
-6. Domain-specific algorithms and safety policies sit above the domain-neutral contracts. The core does not assume financial instruments, trades, portfolios or orders.
-7. JEPA is research-only and cannot override Axum decision authority or bypass risk controls.
+- The deterministic Rust vector baseline is the active decision mechanism.
+- Provider capability differs by venue. Binance USD-M supplies trades, best bid/ask, funding/mark, liquidations and open-interest polling. Coinbase Advanced Trade and Kraken Spot currently supply trades only. Finnhub is optional and depends on a valid key, plan and symbol entitlement.
+- The instrument registry is curated. A listed instrument is not proof of complete live or historical coverage.
+- Historical backtests only replay events already stored in MongoDB. They do not provide a historical backfill service or complete dataset guarantee.
+- Archive and notification persistence must be evaluated separately from client-local UI state; see `docs/READINESS.md`.
+- The private Binance order adapter is operator-invoked. Real-money mode is disabled by code policy until the release gates in `docs/RISK_POLICY.md` are independently verified. Never enable it by setting environment variables alone.
 
-The separate `backend/rust-axum-api` remains a compatibility/research reference; the deployed Compose stack uses the primary Axum service for both event-flow APIs and the shared vector-engine signal endpoint.
+## Local development
 
-## Domain expansion
-
-The generic contracts can support finance, agriculture, logistics, energy, manufacturing, healthcare operations, cybersecurity and robotics. Those are architectural target verticals, not claims that complete products already exist. Each requires its own licensed data adapters, algorithms, evaluation and safety policies. See [docs/DOMAIN_NEUTRAL_CORE.md](docs/DOMAIN_NEUTRAL_CORE.md).
-
-## Requirements
-
-Docker Engine and Docker Compose; Node.js and pnpm 9; Rust stable/Cargo; C++17, CMake and Drogon development libraries; Python 3 for research/reference tests.
-
-## Start locally with Docker Compose
-
-1. Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
-2. Generate two different 64-character hexadecimal passwords:
-   ```bash
-   openssl rand -hex 32
-   ```
-   Put one in `MONGO_INITDB_ROOT_PASSWORD` and the other in `QOIN_MONGODB_APP_PASSWORD`. Replace the example placeholders before starting.
-3. Build and start the full stack:
-   ```bash
-   docker compose build
-   docker compose up -d --wait
-   docker compose ps
-   ```
-4. The gateway is available at `http://127.0.0.1:8080`. Axum and MongoDB are private to the Compose network. Follow logs with `docker compose logs -f axum gateway`.
-
-MongoDB authentication and a least-privilege application account are configured by the Compose stack. The initialization script runs only when the MongoDB data volume is first created. See [docs/DEPLOYMENT_DOCKER.md](docs/DEPLOYMENT_DOCKER.md) before deploying to a hosted environment.
-
-For manual development outside Compose, provide a reachable MongoDB URI and set `QOIN_AXUM_ADDR`, `QOIN_AXUM_INTERNAL_ADDR`, `QOIN_AXUM_URL`, `QOIN_AXUM_WS_URL` and `QOIN_DROGON_HOST` consistently. The default non-container Axum and Drogon listeners bind to loopback. Never expose Axum directly to the public internet.
-
-## Firebase account setup
-
-Web, mobile and desktop use shared Firebase Authentication, private Firestore profiles and Firebase Storage avatars. See [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) for Console configuration, environment variables and security-rule deployment. Firestore rules restrict each user to their own supported profile and Archive fields.
-
-## Frontend commands
+Requirements: Docker Engine/Compose, Node.js, pnpm 9, Rust stable, C++17/CMake/Drogon development libraries and Python 3.
 
 ```bash
+cp .env.example .env
+# Replace both MongoDB password placeholders with different random 64-character hex values.
+openssl rand -hex 32
 pnpm install
-pnpm dev:web
-pnpm dev:mobile
-pnpm dev:desktop
-pnpm --filter @qoin/react-web build
-pnpm build:desktop
-```
-
-## Validation
-
-```bash
 cargo test --workspace
 python3 -m unittest discover -s backend/tests -v
-bash scripts/smoke.sh
+cmake -S backend/cpp-drogon -B build/drogon
+cmake --build build/drogon --parallel 2
 ```
 
-The Compose build, Firebase rules emulator, Rust, Drogon, web, mobile, desktop and Axum–Drogon–MongoDB integration checks must all pass on the exact release commit.
+For the container topology, configure the required secrets in `.env`, then run `docker compose config --quiet`, `docker compose build` and `docker compose up -d --wait`. Only the Drogon gateway is published; MongoDB and Axum remain on the private Compose network.
 
-Qoin remains research/paper-only. Live order submission is not wired into the API and must remain disabled until the controls in [docs/RISK_POLICY.md](docs/RISK_POLICY.md) are implemented and independently verified.
+Web/mobile/desktop use Firebase client configuration supplied through their respective environment files. Do not commit credentials. See `docs/FIREBASE_SETUP.md` and `docs/DEPLOYMENT_DOCKER.md`.
+
+## Verification
+
+The exact release commit must pass the Rust workspace, Clippy, formatting, Drogon build/tests, web typecheck/build/tests, React Native typecheck/tests, Python tests, Tauri checks, Firebase rules emulator, Compose smoke tests and the Axum–Drogon–MongoDB end-to-end suite. CI results from older commits are not evidence for a newer commit.
+
+Qoin remains research/paper-only. No profitability or production-readiness claim is made.

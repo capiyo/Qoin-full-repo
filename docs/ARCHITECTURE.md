@@ -1,39 +1,39 @@
 # Qoin architecture
 
-## Ownership
-- **Axum (Rust)** is the sole authority for event validation, bounded state estimation, feature construction, vector/attention decisions, strategy-map validation, and MongoDB writes.
-- **Drogon (C++)** is the HTTP gateway. It forwards event, state, vector, and edge-strategy requests to Axum; it contains no independent model, risk, or order logic.
-- **MongoDB** is the durable source of truth for raw market events, state snapshots, vector decisions, and the versioned active edge-strategy map.
+## Service ownership
 
-## Edge strategy map in MongoDB
-The `edge_strategy` collection stores one active document keyed by `strategy_key: "active"`. It includes a strategy version, named bullish/bearish feature-weight maps, feature scales, attention scale, angular threshold, magnitude threshold, spread gate, status, and update timestamp. On startup Axum loads and validates this map; if no map exists it seeds the explicit research baseline. Every accepted market event is evaluated using the in-memory copy of that persisted map. A validated update through `PUT /api/v1/strategy` is written to MongoDB before it replaces the active in-memory map. `GET /api/v1/strategy` returns the active map. The strategy version is embedded in each decision so historical outcomes can be attributed to the exact map version.
+- **Rust/Axum** is the only authority for market-event validation, venue-scoped state, feature construction, vector decisions, strategy state, risk validation and private execution orchestration.
+- **C++/Drogon** is the public HTTP/WebSocket gateway. It proxies requests and streams to Axum; it does not calculate features, decisions, risk or order sizing.
+- **MongoDB** persists raw events, state snapshots, decisions, strategies, paper-session records, order intents and application data.
+- **React web and React Native** share `@qoin/core`; neither client is authoritative for user identity, entitlements, portfolio state or decisions.
+- **Python** provides research, reference models, analysis and reproducible evaluation. It does not submit exchange orders.
+- **Tauri 2** packages the desktop client. The bounded vector-motion solver lives in the Rust workspace.
 
-## Flow
-1. A market-data adapter submits an event to `POST /api/v1/events` on the local Drogon gateway.
-2. Axum validates and deduplicates the event by venue + symbol + event_id.
-3. The event updates current symbol state and is persisted to `market_events`.
-4. A state snapshot is written to `market_states`; the active MongoDB-backed edge map computes a vector decision, which is written to `trade_decisions`.
-5. Consumers query `/api/v1/state?symbol=BTCUSDT`, `/api/v1/vector?symbol=BTCUSDT`, and `/api/v1/strategy`.
+## Market-data and decision flow
 
-## Explicit limitations
-This is an early research baseline, not an exchange-ready trading system. State is currently held in memory after process start and is not fully replayed from MongoDB after restart. Feature normalization is simple clipping/scaling, not yet robust past-only rolling normalization. The strategy map is configurable and versioned, but its weights are hand-specified and are not evidence of an exploitable or profitable edge. A signal is not an order; live order submission remains disconnected and disabled.
+1. Provider adapters normalize observations with provider, venue, canonical symbol, source timestamp and event identity.
+2. Axum validates and deduplicates observations, updates the state keyed by venue and symbol, and persists the raw event.
+3. Axum constructs the configured deterministic feature/vector state and records the decision with its strategy version and diagnostic trace.
+4. WebSocket subscribers receive public market observations and decision updates through Drogon.
+5. Research replay reads persisted raw events in event-time order and applies explicit execution assumptions. Replay is not historical data acquisition and cannot claim full coverage.
 
+## Persistence and recovery
 
-## Optional Version 2 JEPA research sidecar
+The immutable market-event log is the recovery source for the current in-memory market state. Startup replay rebuilds state in deterministic event-time order. Snapshot/decision persistence is separate from a cross-collection atomic transaction; any paper ledger or order lifecycle must therefore use durable idempotency and reconciliation rather than assuming multi-document writes are atomic.
 
-The JEPA-inspired Python service is optional and remains non-authoritative. When `QOIN_JEPA_URL=http://127.0.0.1:8765` is configured, Axum maintains a bounded per-symbol history of the fixed 11-feature contract, rate-limits requests with `QOIN_JEPA_MIN_INTERVAL_MS`, and asynchronously stores latent-only predictions in `jepa_predictions`. `GET /internal/jepa?symbol=BTCUSDT` exposes the latest stored observation. `QOIN_JEPA_CONTEXT_STEPS` must match the checkpoint's configured context length.
+## Provider capabilities
 
-The sidecar URL is restricted to loopback HTTP. Missing service, schema mismatch, timeout, invalid output, or persistence failure must never block event ingestion or change the Version 1 vector decision. The latent vector is not a BUY/SELL signal, not an uncertainty estimate, and does not demonstrate informed/insider activity. Live order submission remains disconnected and disabled.
+- Binance USD-M: trades, best bid/ask, mark/funding, liquidation events and open-interest polling.
+- Coinbase Advanced Trade: public spot trades only.
+- Kraken Spot WebSocket v2: public spot trades only.
+- Finnhub: optional authenticated trade feed, news and calendar; actual availability depends on key, plan and symbol entitlement.
 
+A provider's lack of book/funding/liquidation/OI support must be represented as unavailable, not synthesized. Venue histories remain isolated for replay unless a separately validated normalization/aggregation policy explicitly allows combination.
 
-## Client platforms
+## Security boundaries
 
-Qoin ships three clients over one domain model and one backend decision authority:
+The Drogon gateway is the only public service in Compose. Axum and MongoDB remain private. Client Firebase authentication does not by itself authenticate a request to Axum; every personalized server route must verify Firebase ID tokens and derive UID from verified claims. Paid entitlements must be loaded and enforced server-side.
 
-- **Web:** React + TypeScript + Vite.
-- **Mobile:** Expo / React Native.
-- **Desktop:** Tauri 2 native shell that packages the shared React/Vite client and switches to a wide workstation layout when running in the native webview.
+## Trading boundary
 
-All clients use the shared `@qoin/core` API, authentication, profile and archive contracts. No client computes trading decisions. Desktop does not contain provider credentials, MongoDB access, exchange keys, or native order execution. Its default Tauri capability grants only the core window/runtime permissions; filesystem, shell, updater and order-placement capabilities are not enabled.
-
-Desktop installers are built on their native operating systems through `.github/workflows/desktop.yml` (Windows, macOS and Linux). Build locally with `pnpm dev:desktop` or `pnpm build:desktop`. The Tauri shell starts the same web app and talks to the existing local Drogon gateway; start the Rust engine and gateway separately. Packaging a desktop binary does not change the paper-only execution policy.
+The private Binance adapter is operator-invoked and is not connected to autonomous strategy signals. Real-money mode is blocked by code policy pending the mandatory gates in `RISK_POLICY.md`. The current order route's durable intent and operator reconciliation are not a complete exchange lifecycle or portfolio risk system.

@@ -8,6 +8,14 @@ use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use url::{form_urlencoded, Url};
 type HmacSha256 = Hmac<Sha256>;
 
+fn resolve_mode(configured_mode: &str) -> Result<&'static str, String> {
+    match configured_mode {
+        "live" => Err("real-money execution is disabled by code policy until all release gates are independently verified".into()),
+        "testnet" => Ok("testnet"),
+        _ => Err("execution disabled: set QOIN_TRADING_MODE to testnet".into()),
+    }
+}
+
 pub fn protective_stop_client_order_id(client_order_id: &str) -> String {
     let digest = Sha256::digest(client_order_id.as_bytes());
     format!("qsl-{}", hex::encode(&digest[..8]))
@@ -46,21 +54,11 @@ pub struct BinanceExecutor {
 impl BinanceExecutor {
     pub fn from_env() -> Result<Self, String> {
         let configured_mode = env::var("QOIN_TRADING_MODE").unwrap_or_else(|_| "disabled".into());
-        let mode = match configured_mode.as_str() {
-            "live" => {
-                if env::var("QOIN_LIVE_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_REAL_MONEY_RISK" {
-                    return Err("live execution requires explicit confirmation".into());
-                }
-                "live"
-            }
-            "testnet" => {
-                if env::var("QOIN_TESTNET_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_TESTNET_ORDERS" {
-                    return Err("testnet execution requires explicit confirmation".into());
-                }
-                "testnet"
-            }
-            _ => return Err("execution disabled: set QOIN_TRADING_MODE to testnet or live".into()),
-        };
+        let mode = resolve_mode(&configured_mode)?;
+        if mode == "testnet"
+            && env::var("QOIN_TESTNET_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_TESTNET_ORDERS" {
+            return Err("testnet execution requires explicit confirmation".into());
+        }
         let api_key = env::var("BINANCE_API_KEY").map_err(|_| "BINANCE_API_KEY is missing".to_string())?;
         let api_secret = env::var("BINANCE_API_SECRET").map_err(|_| "BINANCE_API_SECRET is missing".to_string())?;
         if api_key.trim().is_empty() || api_secret.trim().is_empty() { return Err("API credentials must not be empty".into()); }
@@ -183,7 +181,19 @@ impl BinanceExecutor {
 
 #[cfg(test)]
 mod tests {
-    use super::{emergency_close_client_order_id, protective_stop_client_order_id};
+    use super::{emergency_close_client_order_id, protective_stop_client_order_id, resolve_mode};
+
+    #[test]
+    fn real_money_mode_is_rejected_even_with_operator_configuration() {
+        assert!(resolve_mode("live").unwrap_err().contains("disabled by code policy"));
+    }
+
+    #[test]
+    fn testnet_is_the_only_enabled_exchange_mode() {
+        assert_eq!(resolve_mode("testnet").unwrap(), "testnet");
+        assert!(resolve_mode("disabled").is_err());
+        assert!(resolve_mode("production").is_err());
+    }
 
     #[test]
     fn child_order_ids_are_stable_bounded_and_distinct() {
