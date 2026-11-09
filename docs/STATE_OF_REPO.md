@@ -4,7 +4,8 @@ This branch contains the Qoin research and paper-trading platform foundation. Th
 
 ## Implemented capabilities
 
-- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming and read-only APIs.
+- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs and the shared research-signal endpoint (`POST /v1/signal`).
+- Drogon proxies the research-signal endpoint to Axum and exposes the optional JEPA research prediction endpoint; market ingestion and strategy mutation remain private to Axum.
 - A domain-neutral Rust core contract crate for entity identity, source-attributed observations, feature vectors and algorithm decisions. Finance remains the first implemented vertical; other verticals still require their own adapters and algorithms.
 - MongoDB persistence for raw events, state snapshots, decisions, strategy configuration and JEPA research predictions. Latest per-symbol state snapshots are restored during Axum startup.
 - Historical event replay with venue filtering, deterministic event ordering, execution-cost assumptions, partial-fill simulation and explicit limitations. It is a research simulator, not a production portfolio accounting engine.
