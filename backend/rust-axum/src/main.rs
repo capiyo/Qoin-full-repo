@@ -261,7 +261,7 @@ async fn reconcile_live_order(
     if !constant_time_token_match(expected_token.as_bytes(), supplied_token.as_bytes()) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
     }
-    let mut ledger = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
+    let ledger = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
         Ok(Some(record)) => record,
         Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"order not found"}))),
         Err(error) => {
@@ -293,7 +293,7 @@ async fn reconcile_live_order(
     let stop = if order.reduce_only {
         serde_json::Value::Null
     } else {
-        let stop_id = format!("{}-SL", &order.client_order_id[..order.client_order_id.len().min(33)]);
+        let stop_id = format!("{}-SL", order.client_order_id.chars().take(33).collect::<String>());
         match executor.get_order_by_client_id(&order.symbol, &stop_id).await {
             Ok(value) => value,
             Err(error) => serde_json::json!({"lookup_error":error}),
@@ -314,7 +314,6 @@ async fn reconcile_live_order(
         tracing::error!(error=%error, client_order_id=%client_order_id, "could not persist exchange reconciliation result");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"exchange queried but reconciliation result could not be persisted","client_order_id":client_order_id})));
     }
-    ledger.insert("status", status);
     (if reconciled {StatusCode::OK}else{StatusCode::CONFLICT}, Json(serde_json::json!({
         "client_order_id":client_order_id,
         "status":status,
