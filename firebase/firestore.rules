@@ -1,8 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validOptionalString(field, maxLength) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == null
+        || (request.resource.data[field] is string
+          && request.resource.data[field].size() <= maxLength);
+    }
+
+    function validUserDocument(userId) {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoURL', 'updatedAt', 'archivedSymbols'
+        ])
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+        && validOptionalString('email', 320)
+        && validOptionalString('displayName', 120)
+        && validOptionalString('photoURL', 2048)
+        && (!('updatedAt' in request.resource.data)
+          || request.resource.data.updatedAt is timestamp)
+        && (!('archivedSymbols' in request.resource.data)
+          || (request.resource.data.archivedSymbols is list
+            && request.resource.data.archivedSymbols.size() <= 500));
+    }
+
     match /users/{userId} {
-      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validUserDocument(userId);
+      allow update: if isOwner(userId)
+        && validUserDocument(userId)
+        && (!('uid' in resource.data)
+          || request.resource.data.uid == resource.data.uid);
       allow delete: if false;
     }
   }
