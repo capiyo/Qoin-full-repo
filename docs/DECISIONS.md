@@ -10,3 +10,15 @@ These decisions apply to the Qoin integration candidate unless superseded by an 
 6. **PR integration order is #11, #12, #13, #15.** The PRs were found to share a common base rather than form a linear ancestry. PR #11 was merged into the isolated `qoin/integration-chain` branch. Retargeting PR #12 to that branch exposed merge conflicts, so the remaining PRs must be reconciled in a real checked-out workspace rather than force-merging divergent snapshots.
 7. **Evidence is commit-specific.** A green workflow on an older SHA is historical evidence only. A release claim requires all relevant jobs to pass on the exact final PR head.
 8. **Unknown failures remain open.** A retry that passes does not resolve the intermittent Drogon `std::length_error`; root cause and repeatability evidence are required before closure.
+
+
+## PR reconciliation record — 2026-11-09
+
+The integration target is PR #15's head snapshot (`280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`) with the foundation/safety changes already committed on `qoin/integration-completion`. This is not yet a completed consolidation.
+
+- **PR #15 — base retained.** The branch was created from this PR's head. Its Archive/Explore UI, auth-gated research flows, algorithm catalogue, Tauri shell/vector-motion work, replay hardening, and existing PR-specific changes remain in the candidate. No PR #15 commit was intentionally dropped.
+- **PR #12 — partial duplicate removal only; unique work not yet transplanted.** Its retired-model/JEPA removal and overlapping architecture-document commits are superseded by the candidate's own removal and architecture rewrite; those duplicate commits are not needed as cherry-picks. Its distinct multi-horizon research API, causal horizon aggregation, asset-class isolation/catalogue, web/mobile research panels, and related tests are **not yet present by virtue of PR #12** and must be transplanted. GitHub reported `mergeable=false` when PR #12 was temporarily targeted at this branch; its base was restored to `main`. No PR #12 commit was merged or cherry-picked.
+- **PR #13 — unique work not yet transplanted.** Its dynamic broker capability registry, configurable/durable operating-cycle state machine, Mongo-backed paper-session accounting, replay/backtest diagnostics and web/mobile controls are **not yet integrated from PR #13**. GitHub reported `mergeable=false` when PR #13 was temporarily targeted at this branch; its base was restored to `main`. No PR #13 commit was merged or cherry-picked.
+- **PR #11 — isolated historical integration only.** It was merged into `qoin/integration-chain` as `2d954aafb5f52ef8e2495316bdcc62466f6489d1`; it is not asserted to be present in this PR #16 branch unless confirmed by ancestry/diff review.
+
+No unique feature is classified as intentionally dropped. The only dropped material is superseded duplicate JEPA-removal and duplicate documentation work from PR #12. The unintegrated unique PR #12/#13 features remain IN PROGRESS and must be cherry-picked/reconciled, with conflict decisions recorded before closure.
