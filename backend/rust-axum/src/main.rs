@@ -397,7 +397,7 @@ fn parse_kraken_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent> {
         let observation=MarketEvent{
             event_id:format!("kraken_trade:{trade_id}"),
             venue:"kraken_spot".into(),
-            symbol:product.replace('/',"").replace('-',"").to_ascii_uppercase(),
+            symbol:format!("{}_KRAKEN",product.replace('/',"").replace('-',"").to_ascii_uppercase()),
             event_type:"trade".into(),ts_ms:timestamp,price:Some(price),size:Some(size),
             side:Some(side.into()),bid:None,ask:None,bid_size:None,ask_size:None,
             funding_rate:None,open_interest:None,liquidation_side:None,
@@ -649,12 +649,12 @@ async fn get_instruments()->impl IntoResponse {
     let mut items=serde_json::json!([
       {"symbol":"BTC/USD","engine_symbol":"BTCUSDT","name":"Bitcoin","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Bitcoin perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"ETH/USD","engine_symbol":"ETHUSDT","name":"Ethereum","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Ether perpetual · USDT quote","quote_currency":"USDT"},
-      {"symbol":"BTC/USD","engine_symbol":"BTCUSD","name":"Bitcoin","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Bitcoin spot · USD quote","quote_currency":"USD"},
-      {"symbol":"ETH/USD","engine_symbol":"ETHUSD","name":"Ethereum","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Ether spot · USD quote","quote_currency":"USD"},
-      {"symbol":"SOL/USD","engine_symbol":"SOLUSD","name":"Solana","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Solana spot · USD quote","quote_currency":"USD"},
-      {"symbol":"BTC/USD","engine_symbol":"BTCUSD","name":"Bitcoin","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Bitcoin spot · USD quote","quote_currency":"USD"},
-      {"symbol":"ETH/USD","engine_symbol":"ETHUSD","name":"Ethereum","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Ether spot · USD quote","quote_currency":"USD"},
-      {"symbol":"SOL/USD","engine_symbol":"SOLUSD","name":"Solana","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Solana spot · USD quote","quote_currency":"USD"},
+      {"symbol":"BTC/USD","engine_symbol":"BTCUSD_COINBASE","name":"Bitcoin","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Bitcoin spot · USD quote","quote_currency":"USD"},
+      {"symbol":"ETH/USD","engine_symbol":"ETHUSD_COINBASE","name":"Ethereum","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Ether spot · USD quote","quote_currency":"USD"},
+      {"symbol":"SOL/USD","engine_symbol":"SOLUSD_COINBASE","name":"Solana","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Solana spot · USD quote","quote_currency":"USD"},
+      {"symbol":"BTC/USD","engine_symbol":"BTCUSD_KRAKEN","name":"Bitcoin","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Bitcoin spot · USD quote","quote_currency":"USD"},
+      {"symbol":"ETH/USD","engine_symbol":"ETHUSD_KRAKEN","name":"Ethereum","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Ether spot · USD quote","quote_currency":"USD"},
+      {"symbol":"SOL/USD","engine_symbol":"SOLUSD_KRAKEN","name":"Solana","asset_class":"Crypto","venue":"Kraken Spot","venue_id":"kraken_spot","provider":"Kraken public market stream","description":"Solana spot · USD quote","quote_currency":"USD"},
       {"symbol":"SOL/USD","engine_symbol":"SOLUSDT","name":"Solana","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Solana perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"BNB/USD","engine_symbol":"BNBUSDT","name":"BNB","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"BNB perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"XRP/USD","engine_symbol":"XRPUSDT","name":"XRP","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"XRP perpetual · USDT quote","quote_currency":"USDT"},
@@ -1114,7 +1114,7 @@ mod market_stream_tests {
         let events=parse_kraken_trade_message(&payload);
         assert_eq!(events.len(),1);
         assert_eq!(events[0].venue,"kraken_spot");
-        assert_eq!(events[0].symbol,"BTCUSD");
+        assert_eq!(events[0].symbol,"BTCUSD_KRAKEN");
         assert_eq!(events[0].event_id,"kraken_trade:123456");
         assert_eq!(events[0].side.as_deref(),Some("buy"));
         assert_eq!(events[0].ts_ms,1_794_225_600_123);
@@ -1142,7 +1142,7 @@ mod market_stream_tests {
         let events=parse_coinbase_trade_message(&payload);
         assert_eq!(events.len(),1);
         assert_eq!(events[0].venue,"coinbase_advanced_trade");
-        assert_eq!(events[0].symbol,"BTCUSD");
+        assert_eq!(events[0].symbol,"BTCUSD_COINBASE");
         assert_eq!(events[0].event_id,"coinbase_trade:12345");
         assert_eq!(events[0].side.as_deref(),Some("buy"));
         assert_eq!(events[0].ts_ms,1_794_225_600_123);
