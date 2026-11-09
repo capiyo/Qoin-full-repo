@@ -45,7 +45,7 @@ The branch has prior green CI snapshots documented in the PR history. The new pr
 ### Trading and risk
 - The private `POST /internal/orders` route is token-protected and not proxied through Drogon. It requires `QOIN_TRADING_MODE=live`, the explicit confirmation string, Binance API credentials and a unique durable client order ID in MongoDB.
 - The Binance USD-M adapter enforces configured per-order quantity/notional caps, checks stop direction against mark price, submits a reduce-only stop-market order for the filled quantity, and attempts a reduce-only emergency close if stop placement fails.
-- Durable client-order-ID deduplication prevents a retry from blindly submitting the same order twice. Uncertain exchange outcomes are marked `reconciliation_required`; a broker reconciliation worker is not yet implemented.
+- Durable client-order-ID deduplication prevents a retry from blindly submitting the same order twice. Uncertain exchange outcomes are marked `reconciliation_required`; authenticated `GET /internal/orders/{client_order_id}/reconcile` looks up the entry and stop orders and persists their exchange status. Reconciliation is operator-triggered, not an automatic worker.
 - Portfolio-level pre-trade risk checks are not yet wired into the order route. The deterministic risk validator and provider-neutral lifecycle remain domain primitives; account ownership verification, account/position reconciliation, operational kill switch, cancellation/amendment lifecycle, testnet end-to-end validation and independent operational review remain incomplete.
 - The private execution route is operator-invoked and configuration-gated; it is not connected to autonomous strategy signals and is not an unattended production trading system.
 
