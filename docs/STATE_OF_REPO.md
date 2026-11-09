@@ -7,7 +7,7 @@ This branch contains the Qoin research and paper-trading platform foundation. Th
 - Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs and the shared research-signal endpoint (`POST /v1/signal`).
 - Drogon proxies the research-signal endpoint to Axum and exposes the optional JEPA research prediction endpoint; market ingestion and strategy mutation remain private to Axum.
 - A domain-neutral Rust core contract crate for entity identity, source-attributed observations, feature vectors and algorithm decisions. Finance remains the first implemented vertical; other verticals still require their own adapters and algorithms.
-- MongoDB persistence for raw events, state snapshots, decisions, strategy configuration and JEPA research predictions. Latest per-symbol state snapshots are restored during Axum startup.
+- MongoDB persistence for raw events, state snapshots, decisions, strategy configuration and JEPA research predictions. Axum rebuilds rolling per-symbol state from the immutable raw event log on startup in deterministic `(symbol, event time, event ID, venue)` order, so events persisted before a crash but not followed by a snapshot are recovered. Malformed legacy rows are logged and skipped.
 - Historical event replay with venue filtering, deterministic event ordering, execution-cost assumptions, partial-fill simulation and explicit limitations. It is a research simulator, not a production portfolio accounting engine.
 - Market-data adapters:
   - Binance USD-M: trades, best bid/ask, mark/funding, liquidation events and open-interest polling.
@@ -44,7 +44,8 @@ The branch has prior green CI snapshots documented in the PR history. The new pr
 
 ### Trading and risk
 - No live order-submission route is registered. The isolated Binance executor is not connected to the decision path.
-- Risk engine enforcement, exchange-side protective orders, order/position reconciliation, kill switch, crash recovery, testnet lifecycle verification and independent operational review are incomplete.
+- Deterministic pre-trade risk validation and a provider-neutral order lifecycle state machine exist as tested primitives, but neither is connected to a durable order store or broker adapter. Execution-report deduplication is only in-memory.
+- Exchange-side protective orders, durable idempotency, authenticated account ownership, order/position reconciliation, operational kill switch, testnet lifecycle verification and independent operational review are incomplete.
 - Keep real-money trading disabled. A configuration flag or user confirmation is not a substitute for those controls.
 
 ### Operations and releases
