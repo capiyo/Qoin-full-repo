@@ -3,10 +3,20 @@
 use hmac::{Hmac, Mac};
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use url::{form_urlencoded, Url};
 type HmacSha256 = Hmac<Sha256>;
+
+pub fn protective_stop_client_order_id(client_order_id: &str) -> String {
+    let digest = Sha256::digest(client_order_id.as_bytes());
+    format!("qsl-{}", hex::encode(&digest[..8]))
+}
+
+fn emergency_close_client_order_id(client_order_id: &str) -> String {
+    let digest = Sha256::digest(client_order_id.as_bytes());
+    format!("qfc-{}", hex::encode(&digest[..8]))
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OrderRequest {
@@ -145,7 +155,7 @@ impl BinanceExecutor {
             ("stopPrice".into(), format!("{:.12}", order.stop_price).trim_end_matches('0').trim_end_matches('.').to_string()),
             ("quantity".into(), executed_quantity_text.clone()), ("reduceOnly".into(), "true".into()),
             ("workingType".into(), "MARK_PRICE".into()),
-            ("newClientOrderId".into(), format!("{}-SL", &order.client_order_id[..order.client_order_id.len().min(33)])),
+            ("newClientOrderId".into(), protective_stop_client_order_id(&order.client_order_id)),
             ("newOrderRespType".into(), "RESULT".into()),
         ];
         let protective_stop = match self.signed_request(Method::POST, "/fapi/v1/order", stop_params).await {
@@ -157,7 +167,7 @@ impl BinanceExecutor {
                     ("symbol".into(), symbol.clone()), ("side".into(), stop_side.into()),
                     ("type".into(), "MARKET".into()), ("quantity".into(), executed_quantity_text),
                     ("reduceOnly".into(), "true".into()),
-                    ("newClientOrderId".into(), format!("{}-FC", &order.client_order_id[..order.client_order_id.len().min(33)])),
+                    ("newClientOrderId".into(), emergency_close_client_order_id(&order.client_order_id)),
                     ("newOrderRespType".into(), "RESULT".into()),
                 ];
                 return match self.signed_request(Method::POST, "/fapi/v1/order", close_params).await {
