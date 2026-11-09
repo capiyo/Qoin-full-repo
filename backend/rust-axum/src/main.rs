@@ -365,7 +365,10 @@ async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
                 tracing::warn!(symbol=%symbol,payload=?payload,"Binance open-interest response missing numeric value");
                 continue;
             };
-            let ts_ms=payload.get("time").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+            let Some(ts_ms)=payload.get("time").and_then(|v|v.as_i64()) else {
+                tracing::warn!(symbol=%symbol,"Binance open-interest response missing exchange timestamp");
+                continue;
+            };
             let event=MarketEvent {
                 event_id:format!("open_interest:{ts_ms}"),venue:"binance_usdm".into(),symbol:symbol.clone(),
                 event_type:"open_interest".into(),ts_ms,price:None,size:None,side:None,
@@ -576,7 +579,10 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
                     let Some(rows) = payload.get("data").and_then(|v|v.as_array()) else { continue; };
                     for (row_index, row) in rows.iter().enumerate() {
                         let Some(symbol) = row.get("s").and_then(|v|v.as_str()) else { continue; };
-                        let ts_ms = row.get("t").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+                        let Some(ts_ms) = row.get("t").and_then(|v|v.as_i64()) else {
+                            tracing::warn!(symbol=%symbol,"Finnhub trade missing provider timestamp; observation skipped");
+                            continue;
+                        };
                         let price = stream_number(row.get("p"));
                         let size = stream_number(row.get("v"));
                         let event_id = format!("trade:{}:{}:{}:{}",ts_ms,price.unwrap_or_default(),size.unwrap_or_default(),row_index);
@@ -901,7 +907,7 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                     let event_name=data.get("e").and_then(|v|v.as_str()).unwrap_or_default();
                     let symbol=data.get("s").and_then(|v|v.as_str()).unwrap_or_default();
                     if symbol.is_empty(){continue;}
-                    let timestamp=data.get("E").and_then(|v|v.as_i64()).unwrap_or_else(||chrono::Utc::now().timestamp_millis());
+                    let Some(timestamp)=data.get("E").and_then(|v|v.as_i64()) else { continue; };
                     let event=if event_name=="trade" {
                         let id=data.get("t").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
                         Some(MarketEvent{event_id:format!("trade:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
