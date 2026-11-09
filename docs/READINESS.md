@@ -1,6 +1,7 @@
 # Qoin readiness and completion evidence
 
 **Candidate branch:** `qoin/integration-completion`  
+**Current candidate commit:** `9ec10014c452b040c5f6c697afb4d14f9fb1b76f`  
 **Base snapshot:** PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`  
 **Safety posture:** real-money execution disabled by code policy; no merge to `main` and no production deployment.
 
@@ -18,7 +19,7 @@ Status meanings: **DONE** means implemented and verified on the exact candidate 
 
 | Work item | Status | Evidence | Residual risk / requirement |
 |---|---|---|---|
-| Remove retired model runtime, sidecar, route, health field, Compose/env configuration and docs | BLOCKED | Candidate changes prepared for Axum runtime, Drogon proxy, Compose, `.env.example`, README, architecture, state and version docs; retired module/workflow/model files are scheduled for deletion in this change | Must verify a repository-wide case-insensitive search and pass Rust/C++/Python CI on the committed candidate |
+| Remove retired model runtime, sidecar, route, health field, Compose/env configuration and docs | BLOCKED | Commit `9ec10014c452b040c5f6c697afb4d14f9fb1b76f` removes the Axum sidecar/client/collection/handler, Drogon proxy, Compose and env references, model service, Python tests, Rust module, dedicated workflow and version document. A recursive Git tree scan of that commit found zero paths containing the retired model name; targeted runtime and documentation files also contained zero remaining text references | Must verify a repository-wide case-insensitive search and pass Rust/C++/Python CI on the committed candidate |
 | Correct execution/risk-policy contradictions | DONE | Rewrote `docs/RISK_POLICY.md` and `docs/STATE_OF_REPO.md` to distinguish existing adapter primitives from missing portfolio risk, reconciliation and lifecycle controls | Verify the final code/docs diff after PR consolidation |
 | Reproduce and root-cause Drogon `std::length_error` | BLOCKED | Existing backlog records intermittent gateway process failure; later retry passed, but no reproducible failing trace or proven root cause was available | Need failing stack trace/core dump or deterministic reproducer; a retry is not a fix |
 | Add regression test and run integration at least 20 consecutive times | BLOCKED | Existing `qoin-integration.yml` performs one integration sequence; no 20-run result exists | Add isolated repeat loop after root cause is known; preserve each run's exit code/log |
