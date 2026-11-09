@@ -6,6 +6,7 @@
 - Live-mode validation requires all five explicit approvals: human approval, verified exchange account, withdrawals disabled, healthy kill switch, and healthy reconciliation.
 - `backend/rust-axum/src/execution_lifecycle.rs` models broker acknowledgements, partial fills, final fills, cancellation, rejection, failure, duplicate execution IDs, and overfill rejection.
 - These are tested domain primitives only. They are not yet connected to a durable order store or an exchange adapter. The lifecycle's in-memory duplicate-ID set is not a substitute for persistent idempotency.
+- `backend/rust-axum/src/trading.rs` now requires a valid side-aware stop trigger for Binance USD-M market entries, submits a reduce-only `STOP_MARKET` protective order for the actually filled quantity, and attempts an immediate reduce-only market close if stop placement fails. This adapter remains isolated from the public signal path and has no Axum order route. The adapter's configured per-order quantity/notional caps are not a portfolio risk engine.
 - Live order submission remains disabled and is not wired into the Axum API.
 
 ## Mandatory operational gates
