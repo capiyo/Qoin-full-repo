@@ -6,6 +6,12 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set a unique MongoDB root username in .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set a strong MongoDB root password in .env}
+      QOIN_MONGODB_DATABASE: ${QOIN_MONGODB_DATABASE:-qoin}
+      QOIN_MONGODB_APP_USERNAME: ${QOIN_MONGODB_APP_USERNAME:?Set a Qoin application username in .env}
+      QOIN_MONGODB_APP_PASSWORD: ${QOIN_MONGODB_APP_PASSWORD:?Set a strong Qoin application password in .env}
+    volumes:
+      - qoin-mongodb-data:/data/db
+      - ./docker/mongo-init/01-create-qoin-user.js:/docker-entrypoint-initdb.d/01-create-qoin-user.js:ro
     volumes:
       - qoin-mongodb-data:/data/db
     healthcheck:
@@ -22,7 +28,7 @@ services:
       dockerfile: backend/rust-axum/Dockerfile
     restart: unless-stopped
     environment:
-      QOIN_MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      QOIN_MONGODB_URI: mongodb://${QOIN_MONGODB_APP_USERNAME}:${QOIN_MONGODB_APP_PASSWORD}@mongodb:27017/${QOIN_MONGODB_DATABASE:-qoin}?authSource=${QOIN_MONGODB_DATABASE:-qoin}
       QOIN_MONGODB_DATABASE: ${QOIN_MONGODB_DATABASE:-qoin}
       QOIN_AXUM_ADDR: 0.0.0.0:8081
       RUST_LOG: ${RUST_LOG:-info}
