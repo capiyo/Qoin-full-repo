@@ -13,7 +13,7 @@ services:
       - qoin-mongodb-data:/data/db
       - ./docker/mongo-init/01-create-qoin-user.js:/docker-entrypoint-initdb.d/01-create-qoin-user.js:ro
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --username \"${MONGO_INITDB_ROOT_USERNAME}\" --password \"${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\""]
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
       timeout: 5s
       retries: 10
