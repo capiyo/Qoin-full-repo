@@ -2,6 +2,11 @@
 #include <drogon/WebSocketClient.h>
 #include <drogon/WebSocketController.h>
 #include <cstdlib>
+#include <cstdio>
+#include <exception>
+#if defined(__linux__)
+#include <execinfo.h>
+#endif
 #include <string>
 #include <memory>
 #include <mutex>
@@ -33,6 +38,27 @@ std::unordered_map<const drogon::WebSocketConnection*, std::shared_ptr<StreamPro
 std::string upstreamWs() {
     const char* value = std::getenv("QOIN_AXUM_WS_URL");
     return value ? std::string(value) : "ws://127.0.0.1:8081";
+}
+
+void installTerminateDiagnostics() {
+    std::set_terminate([]() noexcept {
+        if (const auto exception = std::current_exception()) {
+            try {
+                std::rethrow_exception(exception);
+            } catch (const std::exception& error) {
+                std::fprintf(stderr, "Qoin Drogon uncaught exception: %s\\n", error.what());
+            } catch (...) {
+                std::fprintf(stderr, "Qoin Drogon uncaught non-standard exception\\n");
+            }
+        }
+#if defined(__linux__)
+        void* frames[64];
+        const int frame_count = backtrace(frames, 64);
+        if (frame_count > 0) backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+#endif
+        std::fflush(stderr);
+        std::abort();
+    });
 }
 }
 class MarketStreamProxy : public drogon::WebSocketController<MarketStreamProxy> {
@@ -136,6 +162,7 @@ std::string upstream() {
 void proxyGet(const drogon::HttpRequestPtr&,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
+    LOG_INFO << "gateway proxy GET path_bytes=" << path.size();
     if (path.size() > kMaxStreamQueryBytes * 2U) {
         callback(gatewayError(drogon::k400BadRequest, "upstream query exceeds gateway limit"));
         return;
@@ -153,14 +180,17 @@ void proxyGet(const drogon::HttpRequestPtr&,
             callback(error);
             return;
         }
-        if (response->getBody().size() > kMaxHttpResponseBytes) {
+        const auto response_body = response->getBody();
+        LOG_INFO << "gateway upstream response status=" << response->getStatusCode()
+                 << " body_bytes=" << response_body.size();
+        if (response_body.size() > kMaxHttpResponseBytes) {
             callback(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
             return;
         }
         auto forwarded = drogon::HttpResponse::newHttpResponse();
         forwarded->setStatusCode(response->getStatusCode());
         forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(std::string(response->getBody()));
+        forwarded->setBody(std::string(response_body));
         callback(forwarded);
     });
 }
@@ -201,6 +231,7 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
 }
 }
 int main() {
+    installTerminateDiagnostics();
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/v1/signal");
