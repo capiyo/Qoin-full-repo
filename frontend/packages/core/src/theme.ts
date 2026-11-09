@@ -1,22 +1,20 @@
-// Single source of truth for Qoin brand tokens.
-// Consumed by apps/web/tailwind.config.ts and apps/mobile/src/theme/.
-
+// Shared Qoin brand tokens for web and native clients.
 export const qoinColors = {
-  bgPrimary: "#0B0E14",   // app background — near-black, low glare
-  bgSecondary: "#131722", // card/panel background
-  border: "#1E222D",      // dividers, panel borders
-  accentCyan: "#2FD8E8",  // brand accent — links, focus, active nav, primary buttons
-  bullish: "#22C55E",     // up candles, positive PnL, buy
-  bearish: "#EF4444",     // down candles, negative PnL, sell/destructive
-  warning: "#F59E0B",     // stale data / risk limit warnings only
-  textPrimary: "#D1D4DC", // soft off-white body text
-  textMuted: "#787B86",   // secondary text, labels, disabled
-  white: "#FFFFFF",       // logo mark only
+  bgPrimary: "#F7F9FC",
+  bgSecondary: "#FFFFFF",
+  border: "#E6EBF2",
+  accentCyan: "#2867DC",
+  bullish: "#2867DC",
+  bearish: "#E05A67",
+  warning: "#D99528",
+  textPrimary: "#24344D",
+  textMuted: "#8794A7",
+  white: "#FFFFFF",
 } as const;
 
 export type QoinColorToken = keyof typeof qoinColors;
 
 export const fonts = {
-  heading: "'Space Grotesk', sans-serif",
-  body: "'Inter', sans-serif",
+  heading: "'Manrope', sans-serif",
+  body: "'DM Sans', sans-serif",
 } as const;

@@ -13,18 +13,20 @@ paths:
         '200': { description: Healthy }
         '503': { description: Dependency unavailable }
   /api/v1/events:
-    post:
-      summary: Ingest one market event
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MarketEvent'
+    get:
+      summary: Get chronological raw market observations for a symbol
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
       responses:
-        '200': { description: Event accepted or duplicate ignored }
-        '400': { description: Invalid event }
-        '503': { description: Persistence failure }
+        '200': { description: Raw persisted events }
+        '503': { description: Storage unavailable }
+    # Writes are restricted to the loopback Axum ingestion endpoint; not part of the public gateway contract.
   /api/v1/state:
     get:
       summary: Get latest state estimate for a symbol
@@ -35,6 +37,115 @@ paths:
       responses:
         '200': { description: Latest state }
         '503': { description: Storage unavailable }
+  /api/v1/backtest:
+    get:
+      summary: Replay persisted raw market events through the pinned active research strategy
+      description: |
+        Deterministic read-only paper simulation. Uses only events already stored in MongoDB,
+        sorts by event timestamp then event ID, and never submits orders. A signal can only fill
+        on a strictly later timestamped executable trade or book observation; same-timestamp
+        events cannot fill it. Book buys execute at ask and sells at bid. Each replay order has a
+        stable replay-scoped ID and pending/filled status, with decision, submission, and fill
+        timestamps plus source event IDs. Submission is assumed immediate at decision time;
+        routing latency is not modeled. A final signal without a later eligible observation is
+        returned as unfilled_pending_order. Returns fees, slippage, recorded funding cashflows,
+        raw-event gap diagnostics, fills, drawdown, exact strategy version and assumptions. This
+        is not a historical data download or a guarantee of complete market coverage. Results
+        also include 1.0x baseline, 1.5x moderate, and 2.0x severe cost-only stress estimates;
+        these reprice realized fees, slippage and impact without recomputing fills or liquidity.
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: venue
+          description: Optional provider venue; required when the symbol has mixed-venue history.
+          schema: { type: string }
+        - in: query
+          name: from_ts_ms
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: to_ts_ms
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50000, default: 10000 }
+        - in: query
+          name: initial_capital
+          schema: { type: number, exclusiveMinimum: 0, default: 10000 }
+        - in: query
+          name: fee_bps
+          schema: { type: number, minimum: 0, default: 10 }
+        - in: query
+          name: slippage_bps
+          description: Must be below 10000 basis points.
+          schema: { type: number, minimum: 0, exclusiveMaximum: 10000, default: 5 }
+        - in: query
+          name: latency_ms
+          description: Minimum delay from order submission to an eligible fill; 0 still requires a strictly later event.
+          schema: { type: integer, minimum: 0, maximum: 60000, default: 0 }
+        - in: query
+          name: max_participation_rate
+          description: Maximum fraction of observed trade size or side-specific top-of-book size that one fill may consume.
+          schema: { type: number, exclusiveMinimum: 0, maximum: 1, default: 0.1 }
+        - in: query
+          name: market_impact_bps
+          description: Maximum impact coefficient; each fill applies coefficient times squared participation ratio. Combined with slippage it must remain below 10000 bps.
+          schema: { type: number, minimum: 0, maximum: 1000, default: 5 }
+      responses:
+        '200': { description: Replay metrics, fills, and assumptions }
+        '413': { description: Replay event limit reached }
+        '400': { description: Invalid replay parameters }
+        '422': { description: Empty, invalid, or mixed-venue replay window }
+        '503': { description: Historical event storage unavailable }
+  /api/v1/vector/history:
+    get:
+      summary: Get chronological persisted vector decisions for a symbol
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 120 }
+      responses:
+        '200': { description: Chronological decision-vector trajectory }
+        '503': { description: Storage unavailable }
+  /api/v1/instruments:
+    get:
+      summary: Get the supported multi-asset instrument registry
+      description: Each instrument exposes a display venue and canonical venue_id; use venue_id when filtering persisted market events or running historical replay.
+      responses:
+        '200': { description: Crypto, equities, FX, indices and commodities catalog with provider status }
+  /api/v1/news:
+    get:
+      summary: Get sourced news from the configured Finnhub provider
+      parameters:
+        - in: query
+          name: category
+          schema: { type: string, enum: [general, forex, crypto, merger], default: general }
+      responses:
+        '200': { description: Sourced news items with publication time and attribution }
+        '503': { description: Finnhub provider is not configured }
+        '502': { description: Provider unavailable }
+  /api/v1/calendar:
+    get:
+      summary: Get sourced upcoming economic-calendar events
+      responses:
+        '200': { description: Provider-attributed macro releases }
+        '503': { description: Finnhub is not configured }
+        '502': { description: Provider unavailable }
+  /api/v1/stream:
+    get:
+      summary: WebSocket market updates and research vectors
+      description: |
+        WebSocket endpoint. Connect with ?symbols=BTCUSDT,ETHUSDT. Server sends
+        stream.ready, market.update, stream.gap and stream.subscribed messages.
+        Clients must refresh REST snapshots after stream.gap. Read-only; no order route.
+      responses:
+        '101': { description: WebSocket upgrade }
   /api/v1/vector:
     get:
       summary: Get latest geometric vector decision

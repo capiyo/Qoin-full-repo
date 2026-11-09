@@ -1,0 +1,68 @@
+name: Reconcile Qoin integration PRs
+
+on:
+  push:
+    branches: [qoin/integration-completion]
+    paths:
+      - "docs/PR_INTEGRATION.md"
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick-unique-pr-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qoin/integration-completion
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Fetch PR source heads
+        run: |
+          git fetch origin refs/pull/12/head:refs/remotes/origin/pr12
+          git fetch origin refs/pull/13/head:refs/remotes/origin/pr13
+      - name: Cherry-pick unique PR #12 and #13 commits in dependency order
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          cherry_pick_unique() {
+            local label="$1"
+            local source_ref="$2"
+            local list
+            list="$(mktemp)"
+            git rev-list --reverse --topo-order --cherry-pick --right-only --no-merges "HEAD...${source_ref}" > "${list}"
+            local count
+            count="$(wc -l < "${list}" | tr -d ' ')"
+            echo "${label}: ${count} patch-unique commits queued"
+            while IFS= read -r commit; do
+              [ -n "${commit}" ] || continue
+              echo "Cherry-picking ${label} ${commit}: $(git show -s --format=%s "${commit}")"
+              if ! git cherry-pick -x "${commit}"; then
+                local conflicts
+                conflicts="$(git diff --name-only --diff-filter=U)"
+                if [ -z "${conflicts}" ]; then
+                  echo "Commit became empty after prior integration; skipping redundant patch."
+                  git cherry-pick --skip
+                else
+                  echo "::error::Conflict while cherry-picking ${label} commit ${commit}"
+                  printf '%s\n' "${conflicts}"
+                  git status --short
+                  git cherry-pick --abort
+                  return 1
+                fi
+              fi
+            done < "${list}"
+            rm -f "${list}"
+          }
+
+          cherry_pick_unique "PR #12" refs/remotes/origin/pr12
+          cherry_pick_unique "PR #13" refs/remotes/origin/pr13
+
+          echo "Final integration candidate:"
+          git log -8 --oneline
+          git status --short
+          git push origin HEAD:refs/heads/qoin/integration-completion

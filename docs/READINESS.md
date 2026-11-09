@@ -1,0 +1,102 @@
+# Qoin readiness and completion evidence
+
+**Candidate branch:** `qoin/integration-completion`  
+**Last source-code commit:** `4f9007ab6b` (Drogon paper-session/cycle routes); the subsequent workflow/docs commits are separately tracked  
+**Current PR head:** PR #16 live head (the latest evidence snapshot below was taken on `99357fbb67f1dbd4285d352dcce40a3b13cf470a`; subsequent commits may be documentation-only)  
+**Base snapshot:** PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`  
+**Safety posture:** real-money execution disabled by code policy; no merge to `main` and no production deployment.
+
+Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
+
+## Step 0 — Orientation
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Inspect repository workspaces, crates, packages, CI, Dockerfiles and docs | DONE | Inspected root `Cargo.toml`, pnpm workspace layout, Axum/C++ manifests, Dockerfiles, Compose topology, workflow definitions, README, architecture, provider, risk and state docs | Full local build graph still needs a checked-out execution workspace |
+| Inspect PRs #11, #12, #13 and #15 and choose integration line | IN PROGRESS | PR #15 is the base snapshot. PR #11 merged only into isolated `qoin/integration-chain` as `2d954aafb5f52ef8e2495316bdcc62466f6489d1`. PR #12 (`f6351787...`) and PR #13 (`33003c80...`) were each temporarily retargeted to `qoin/integration-completion`; GitHub reported `mergeable=false` for both. Their bases were restored to `main`. PR #12 has six clean source commits cherry-picked (multi-horizon engine, causal aggregation, exports, event schema and research docs); its market-backed Axum endpoint and Drogon `GET /api/v1/market-horizons` proxy are also ported, with a bounded Mongo query and an integration assertion. PR #13 has four clean source commits cherry-picked (broker registry, paper-session model, operating-cycle model and replay docs), plus two documentation follow-up commits; the current PR #13 module snapshots were ported and declared in Axum, and the paper-session test fixture was adapted to the current EdgeDecision contract. PR #13 now also has Mongo-backed cycle and paper-session snapshots, Axum configure/start/stop/snapshot routes, Drogon proxies, ingestion-driven cycle diagnostics, and paper Mirror/trade writes during the paper-session phase. Recovery after partial writes, session replay, Archive lifecycle and client controls remain incomplete. The CI-based cherry-pick workflow run 42673468437 failed before job creation and contributed no changes. Remaining overlapping files are still being reconciled. | The conflicts must be reconciled by porting the remaining Axum endpoints, Drogon routes, market asset-class isolation, Mongo persistence, web/mobile flows and integration tests. PR #15 is present as the base snapshot; #12/#13 are only partially integrated. Continue this as engineering work, not BLOCKED. |
+| Run full pre-change verification baseline | IN PROGRESS | PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7` had eight workflow runs queued (run IDs 42665961496, 42665961382, 42665961367, 42665961365, 42665961370, 42665961409, 42665962154, 42665961489) when inspected. Older SHA `14e6d9563f68ffca59cc43dd73ae18bdb1835b10` failed web typecheck with TS18047 at `App.tsx:461`: the guarded `decisionStrategy` branch rendered `strategy.updated_at_ms` instead of the narrowed `decisionStrategy.updated_at_ms`. The current candidate uses `decisionStrategy.updated_at_ms` within the non-null guard (current `frontend/apps/web/src/App.tsx`, strategy-map panel), so the nullability defect is corrected in source; web/mobile/core typecheck verification remains pending exact-head CI. Older SHA `d5360aa3bbb1516b13cc9cde993da890b83159a3` had Rust, engine, integration, Drogon, web and mobile PR checks green | No full baseline command suite was run before edits. The source correction for TS18047 is present: the strategy panel now reads `decisionStrategy.updated_at_ms` within the non-null branch. A strict standalone `frontend/packages/core/tsconfig.json` was added, and both web and React Native workflows invoke it before their app typechecks. The latest full matrix on source-bearing SHA `0f033cc5aede9065bf0638f508110df19e0e9e5d` queued run 42675753300 (Axum–Drogon–MongoDB integration), 42675753818 (React Native), 42675753817 (Rust), 42675754105 (container), 42675753281 (Desktop), 42675753259 (engine/Python), 42675753781 (Drogon), 42675753277 (live workspace), and 42675753429 (React web). At last poll, these jobs were queued; the integration run exposed one queued job, but no completed output. The current branch head has since advanced to `5fa8526d776a7e1bbac78fc35582224bfa02a6ad` with a backlog-only documentation update. Prior workflow runs on the same branch have repeatedly concluded failure with zero jobs exposed by the Actions API (including integration and cherry-pick automation); no compile/test step output is available. These are not passes and do not identify source-level test failures. Exact-head green verification is absent. |
+
+## Phase 1 — Reliable foundation
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Remove retired model runtime, sidecar, route, health field, Compose/env configuration and docs | IN PROGRESS | Commit `9ec10014c452b040c5f6c697afb4d14f9fb1b76f` removes the Axum sidecar/client/collection/handler, Drogon proxy, Compose and env references, model service, Python tests, Rust module, dedicated workflow and version document. A recursive Git tree scan found zero paths containing the retired model name; targeted runtime/documentation files had zero remaining text references. Repository-wide text scan and current-head Rust/C++/Python verification remain in progress. | Must verify a repository-wide case-insensitive search and pass Rust/C++/Python CI on the committed candidate |
+| Correct execution/risk-policy contradictions | DONE | Rewrote `docs/RISK_POLICY.md` and `docs/STATE_OF_REPO.md` to distinguish existing adapter primitives from missing portfolio risk, reconciliation and lifecycle controls | Verify the final code/docs diff after PR consolidation |
+| Reproduce and root-cause Drogon `std::length_error` | IN PROGRESS | Historical failure is now directly evidenced by workflow run [42514628818](https://github.com/capiyo/Qoin-full-repo/actions/runs/42514628818), attempt 1, job [128834833613](https://github.com/capiyo/Qoin-full-repo/actions/runs/42514628818/job/128834833613), on `eb650cf58fbf397f22887be8ce938c21af807273`: `curl: (52) Empty reply from server`, Drogon exited before health readiness, then `std::length_error` / `basic_string::_M_create`. Attempt 2 on the same SHA passed. The first attempt had no native stack trace. The candidate now bounds HTTP request bodies (1 MiB), upstream responses (4 MiB), WebSocket frames (64 KiB) and stream query parameters (4 KiB), logs upstream response sizes, catches bounded response-copy `std::length_error`, and prints a Linux terminate backtrace. CI now builds Drogon with ASan/UBSan and debug symbols, checks oversized request rejection, and runs 20 repeated ingestion/vector/backtest gateway cycles. None of these new checks has executed successfully on the current candidate. | Root cause remains unproven. The historical failure occurred before the gateway health endpoint became ready; the current backtrace handler and response-size diagnostics must run on a recurrence. Confirm the sanitizer build and 20-cycle loop execute and pass. A retry or a stress loop that does not reproduce the fault is not a root-cause fix. |
+| Add regression test and run integration at least 20 consecutive times | IN PROGRESS | `qoin-integration.yml` now adds a 20-iteration loop covering health, signal, strategy, instruments, event ingestion, vector lookup and backtest. The loop is not yet executed; it does not count as 20 successful runs until CI reports every iteration. | Add isolated repeat loop after root cause is known; preserve each run's exit code/log |
+| Refresh stale README/architecture docs | DONE | Candidate README, architecture, state and version-map content rewritten for the fixed architecture and actual limitations | Validate links and statements against the final merged tree |
+| Clean full-workspace CI baseline | IN PROGRESS | Historical CI is not exact-head evidence; latest PR #15 run set was queued | Must pass cargo build/test/clippy/fmt, gateway build/tests, web/mobile typecheck/lint/tests, Python tests, Tauri build checks, Compose and integration on exact candidate SHA |
+
+## Phase 2 — Research platform
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Resumable, idempotent historical backfill with gap detection | IN PROGRESS | Provider docs and state report explicitly say no resumable backfill exists | Requires provider-specific historical APIs/entitlements, durable cursors, gap model, dedupe keys and restart tests |
+| Provenance/completeness per instrument/provider | IN PROGRESS | Current registry/provider status is configuration-oriented, not a complete history/live coverage ledger | Requires persisted source metadata, freshness, gap and entitlement measurements |
+| Provider failover and capability enforcement | IN PROGRESS | Current adapters: Binance USD-M has trades/book/funding/liquidations/OI; Coinbase and Kraken are trades-only; Finnhub is optional and plan/symbol-dependent | Automatic failover and complete live/historical coverage claims are not implemented; venue-isolated histories must be preserved |
+| Multi-horizon causal research engine and market-backed API | IN PROGRESS | PR #12's independent horizon and causal aggregation modules are now in `qoin-vector-engine`; Axum exposes `/internal/market-horizons` and Drogon proxies `/api/v1/market-horizons`, filtering by symbol and exact venue with a 50,000-event query cap | Current CI has not executed the new endpoint assertion; asset-class isolation, freshness/data-quality contract, full client controls and historical backfill remain unfinished |
+| Portfolio accounting across currencies, correlated exposure, fees and funding | IN PROGRESS | Current paper account work is not complete portfolio-grade multi-currency accounting | Requires FX conversion source/time, cash ledger, financing/funding, fees, contract multipliers, covariance/correlation and exposure limits |
+| Reproducible walk-forward/OOS and benchmarks | IN PROGRESS | Current replay is based on persisted events and has explicit cost assumptions; no complete walk-forward manifest/benchmark suite is verified | Requires immutable dataset/config versions, fixed seeds, chronological splits and benchmark reports |
+| Independent algorithm runtime and durable selections | IN PROGRESS | Catalogue and entitlement domain primitives exist; independent runtime and durable user selections are not complete | Requires isolated state/config per algorithm, comparable metrics and verified UID-backed persistence |
+
+## Phase 3 — User platform
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Firebase ID-token verification with JWKS cache, expiry, audience and issuer | IN PROGRESS | Repository state explicitly says Axum does not yet verify Firebase ID tokens for personalized routes | Requires backend verifier, key rotation/cache tests, issuer/audience config and tamper/expiry/replay tests |
+| Server-side entitlements from verified UID | IN PROGRESS | Entitlement logic exists as a pure domain primitive; it is not connected to verified identity, persisted grants or payment reconciliation | Client claims must remain display-only; requires UID-derived lookup and refund/chargeback handling |
+| Persist algorithm selection per user | IN PROGRESS | Shared TypeScript selection contracts exist; protected API and durable selection are not implemented | Requires verified UID, entitlement enforcement, version pinning and conflict semantics |
+| Durable Archive and notification sync across web/mobile/desktop | IN PROGRESS | Client Firebase/profile foundations exist; PR #15 documents Archive as client-local and notification history as in-memory | Requires authenticated backend storage, sync cursors, device registration, idempotency and offline conflict handling |
+| Complete web/mobile/desktop workflows | IN PROGRESS | UI foundations exist; current CI snapshots are not final-head verification and authenticated server flows are incomplete | Requires end-to-end auth, Explore, detail, Archive, notifications and paper session tests across all clients |
+
+## Phase 4 — Execution infrastructure
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Real-money execution disabled by default and by code policy | IN PROGRESS | Candidate adds a live-mode rejection in `trading.rs`, a health status that reports live disabled, and unit tests for live rejection/testnet-only mode | Must run Rust tests and inspect every route/configuration path on final merged head |
+| Wire portfolio-level risk validator into every order path | IN PROGRESS | `order_safety.rs` exists but is not integrated into `/internal/orders` | No order may bypass identity, portfolio exposure, loss, freshness and protective-order checks |
+| Verify exchange-account ownership | IN PROGRESS | No verified account ownership flow is integrated | Requires authenticated account binding and exchange permissions proof |
+| Durable order lifecycle submit/ack/partial fill/cancel/amend/reject | IN PROGRESS | Durable intent and duplicate client-order-ID protection exist; lifecycle module is not fully connected to adapter/store | Requires persisted state machine, transition constraints and crash-safe idempotency |
+| Automatic reconciliation of orders, balances and positions | IN PROGRESS | Current reconciliation is operator-triggered and only queries order/protective-stop state | Requires background worker, leases, bounded retries, drift detection and safe repair policies |
+| Kill switch manages existing exposure | IN PROGRESS | Existing Mongo-backed gate blocks new entries only | Must add tested cancel/flatten/position-management policy and independent emergency path |
+| Account/position synchronization | IN PROGRESS | No full exchange account/position sync verified | Requires balances, positions, margin, funding and contract metadata reconciliation |
+| Paper operating-cycle and session ledger | IN PROGRESS | Mongo-backed cycle/session snapshots, configure/start/stop routes, ingestion-driven diagnostics, paper Mirror decisions and paper trades are now wired; Drogon proxies the control routes and integration assertions cover configure/start/snapshot/stop | No real-money orders are created; partial-write recovery, event replay after restart, Archive sync and current-head CI evidence remain incomplete |
+| Binance testnet end-to-end tests | BLOCKED | No exact-head testnet lifecycle evidence found | Requires owner-supplied testnet credentials stored in CI secrets; mock and paper lifecycle tests remain IN PROGRESS; never use production keys |
+
+## Phase 5 — Release acceptance
+
+| Work item | Status | Evidence | Residual risk / requirement |
+|---|---|---|---|
+| Full Rust/C++/JS/RN/Python/Tauri CI matrix | IN PROGRESS | Older PR run sets exist; current candidate SHA does not have completed verification evidence | Require all matrix jobs green on exact final PR head |
+| Auth bypass, tampering, replay and injection tests | IN PROGRESS | No completed full backend identity boundary exists | Add adversarial auth, authorization and request validation tests |
+| Provider/Mongo/gateway outage and restart recovery tests | IN PROGRESS | Event-log replay and some service restart integration checks exist; broad fault injection is incomplete | Add provider outage/failover, Mongo unavailability, gateway crash and idempotent recovery tests |
+| Compose deployment and recovery verification | IN PROGRESS | Compose topology and container workflow exist; backup/restore drill and exact-head evidence are not established | Requires isolated Compose test, volume backup/restore and recovery assertions |
+| Final operational readiness checklist | IN PROGRESS | This file records known gaps; operations/monitoring/backup/recovery are not complete | Requires measured SLOs, alerts, incident runbooks, backup/restore evidence and independent review |
+
+## Required end-to-end trace
+
+**Status: IN PROGRESS.** No automated test currently proves the complete chain:
+
+`market-data ingestion → vector calculation → decision → paper execution → ledger → Archive`
+
+The integration workflow now asserts market-horizon API behavior and paper operating-cycle configure/start/snapshot/stop, while ingestion records paper Mirror/trade rows during the paper-session phase. These are separate assertions; the complete cross-service, authenticated Archive path, crash recovery and ledger reconciliation have not been verified as one test.
+
+## External prerequisites genuinely BLOCKED
+
+- **Binance Futures testnet lifecycle:** requires testnet API credentials stored in CI secrets; never use production keys.
+- **Firebase identity integration tests:** require a Firebase project/test identities and authorized configuration supplied by the project owner.
+- **Optional provider validation and commercial coverage:** Finnhub credentials/plan entitlements and a human decision confirming data licensing/redistribution rights for each provider/instrument.
+
+These prerequisites do not block implementation of the corresponding interfaces, mocks, deterministic tests, or paper-mode workflows.
+
+## Exact external prerequisites
+
+- **Execution-environment note, not a project blocker:** the available shell cannot reach github.com and there is no mounted checkout. The CI-based PR cherry-pick workflow (run 42673468437) failed before any job was created, so it did not provide a remote Git workspace. Continue treating PR consolidation and all unverified engineering as IN PROGRESS; do not reclassify them as BLOCKED. Use CI or a repository-attached checkout to continue.
+- Binance Futures testnet API credentials, stored as CI secrets, are required for real exchange lifecycle tests. Do not send credentials in chat.
+- Firebase project configuration and test identities are required for ID-token/JWKS and cross-device authenticated workflow tests.
+- Finnhub credentials and provider plan/symbol entitlements are required to validate optional live feeds/news/calendar; no key is committed.
+- Data licensing and redistribution entitlements must be confirmed for every provider/instrument before claiming commercial coverage.
+
+## Backlog policy
+
+No unclassified work is considered complete. The backlog lists unfinished engineering as IN PROGRESS. BLOCKED is reserved for the external prerequisites below. Real-money mode must stay disabled; no merge to `main` or production deployment is authorized by this readiness report.
