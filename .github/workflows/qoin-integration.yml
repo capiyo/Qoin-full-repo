@@ -145,6 +145,11 @@ jobs:
             curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-repeat-${iteration}\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"event_type\":\"trade\",\"ts_ms\":${event_ts},\"price\":100.01,\"size\":1,\"side\":\"buy\"}" | jq -e '.status == "accepted"' >/dev/null
             curl -fsS http://127.0.0.1:8080/api/v1/vector?symbol=BTCUSDT | jq -e '.symbol == "BTCUSDT"' >/dev/null
             curl -fsS 'http://127.0.0.1:8080/api/v1/market-horizons?symbol=BTCUSDT&venue=ci&min_events=5' | jq -e '.mode == "research_only" and (.observations | length) == 8' >/dev/null
+          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/operating-cycle -H 'content-type: application/json' --data '{"observation_minutes":1,"weight_evaluation_minutes":1,"session_minutes":5,"mode":"paper","paper_accounts":[{"symbol":"BTCUSDT","venue":"ci","quote_currency":"USDT","initial_cash":10000,"notional_per_trade":1000,"contract_multiplier":1,"quantity_step":0.000001,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5}]}' | jq -e '.config.mode == "paper" and (.config.paper_accounts | length) == 1' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/operating-cycle/start -H 'content-type: application/json' --data '{}' | jq -e '.phase == "observation" and .active == true' >/dev/null
+          curl -fsS http://127.0.0.1:8080/api/v1/paper-session | jq -e '.active == true and (.accounts | length) == 1 and .live_execution_enabled == false' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/operating-cycle/stop -H 'content-type: application/json' --data '{}' | jq -e '.phase == "stopped" and .active == false' >/dev/null
+          curl -fsS http://127.0.0.1:8080/api/v1/paper-session | jq -e '.active == false and .live_execution_enabled == false' >/dev/null
             curl -fsS "http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=${event_ts}&initial_capital=10000" | jq -e '.events_replayed >= 2' >/dev/null
             echo "gateway integration repetition ${iteration}/20 passed"
           done
