@@ -20,3 +20,5 @@ sha2 = "0.10"
 hex = "0.4"
 url = "2"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+qoin-vector-engine = { path = "crates/qoin-vector-engine" }
