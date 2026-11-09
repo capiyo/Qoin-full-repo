@@ -13,7 +13,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
@@ -28,6 +28,8 @@ mod order_safety;
 mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use operating_cycle::{CycleConfig, OperatingCycle};
+use paper_session::PaperSession;
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 use qoin_vector_engine::market_data::{aggregate_horizon, MarketEvent as MarketEventRecord};
 use qoin_vector_engine::multi_horizon::{evaluate_multi_horizon, Horizon, HorizonInput};
@@ -79,6 +81,12 @@ struct AppState {
     strategies: Collection<Document>,
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
+    operating_cycles: Collection<Document>,
+    paper_sessions: Collection<Document>,
+    paper_session_decisions: Collection<Document>,
+    paper_session_trades: Collection<Document>,
+    active_cycle: Arc<Mutex<OperatingCycle>>,
+    active_paper_session: Arc<Mutex<PaperSession>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
@@ -89,6 +97,111 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
+
+async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
+    document.insert("cycle_id", "active");
+    s.operating_cycles.update_one(
+        doc!{"cycle_id":"active"},
+        doc!{"$set":document},
+        UpdateOptions::builder().upsert(true).build(),
+    ).await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(session).map_err(|error| error.to_string())?;
+    document.insert("session_key", "active");
+    s.paper_sessions.update_one(
+        doc!{"session_key":"active"},
+        doc!{"$set":document},
+        UpdateOptions::builder().upsert(true).build(),
+    ).await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let cycle = s.active_cycle.lock().await;
+    (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default()))
+}
+
+async fn configure_operating_cycle(
+    State(s): State<AppState>,
+    Json(config): Json<CycleConfig>,
+) -> impl IntoResponse {
+    let snapshot = {
+        let mut cycle = s.active_cycle.lock().await;
+        match cycle.configure(config) {
+            Ok(snapshot) => snapshot,
+            Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+        }
+    };
+    let cycle = s.active_cycle.lock().await.clone();
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle configuration persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let (snapshot, paper_session, cycle) = {
+        let mut cycle = s.active_cycle.lock().await;
+        let config = cycle.snapshot().config;
+        let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
+        let paper = if config.mode == "paper" {
+            match PaperSession::start(cycle_id, &config.paper_accounts) {
+                Ok(session) => session,
+                Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+            }
+        } else {
+            PaperSession::default()
+        };
+        let snapshot = cycle.start();
+        (snapshot, paper, cycle.clone())
+    };
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    {
+        let mut active = s.active_paper_session.lock().await;
+        *active = paper_session;
+    }
+    let paper = s.active_paper_session.lock().await.clone();
+    if let Err(error) = persist_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let snapshot = {
+        let mut cycle = s.active_cycle.lock().await;
+        cycle.stop()
+    };
+    let cycle = s.active_cycle.lock().await.clone();
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    {
+        let mut paper = s.active_paper_session.lock().await;
+        paper.stop();
+    }
+    let paper = s.active_paper_session.lock().await.clone();
+    if let Err(error) = persist_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
+    let snapshot = s.active_paper_session.lock().await.snapshot();
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
 
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
