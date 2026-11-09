@@ -182,19 +182,31 @@ pub fn validate_order(
 
     let notional = intent.quantity * intent.reference_price;
     let maximum_loss_at_stop = intent.quantity * stop_distance;
-    if !notional.is_finite() || !maximum_loss_at_stop.is_finite() {
+    let risk_budget = intent.equity * policy.max_risk_fraction;
+    let notional_budget = intent.equity * policy.max_order_notional_fraction;
+    let leverage_budget = intent.equity * policy.max_leverage;
+    let projected_gross_exposure = intent.current_gross_exposure + notional;
+    let daily_loss_limit = intent.equity * policy.max_daily_loss_fraction;
+    if !notional.is_finite()
+        || !maximum_loss_at_stop.is_finite()
+        || !risk_budget.is_finite()
+        || !notional_budget.is_finite()
+        || !leverage_budget.is_finite()
+        || !projected_gross_exposure.is_finite()
+        || !daily_loss_limit.is_finite()
+    {
         return Err(Rejection::InvalidNumericInput);
     }
-    if maximum_loss_at_stop > intent.equity * policy.max_risk_fraction {
+    if maximum_loss_at_stop > risk_budget {
         return Err(Rejection::RiskBudgetExceeded);
     }
-    if notional > intent.equity * policy.max_order_notional_fraction {
+    if notional > notional_budget {
         return Err(Rejection::OrderNotionalExceeded);
     }
-    if intent.current_gross_exposure + notional > intent.equity * policy.max_leverage {
+    if projected_gross_exposure > leverage_budget {
         return Err(Rejection::LeverageExceeded);
     }
-    if intent.current_daily_loss >= intent.equity * policy.max_daily_loss_fraction {
+    if intent.current_daily_loss >= daily_loss_limit {
         return Err(Rejection::DailyLossLimitReached);
     }
     if intent.open_positions >= policy.max_positions {
@@ -272,6 +284,22 @@ mod tests {
         approval.kill_switch_healthy = true;
         approval.reconciliation_healthy = true;
         assert!(validate_order(TradingMode::Live, &RiskPolicy::default(), &approval, &intent()).is_ok());
+    }
+
+    #[test]
+    fn rejects_overflowing_derived_risk_budgets() {
+        let mut order = intent();
+        order.equity = f64::MAX;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &RiskPolicy::default(), &LiveApproval::default(), &order),
+            Err(Rejection::InvalidNumericInput)
+        );
+        order = intent();
+        order.current_gross_exposure = f64::MAX;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &RiskPolicy::default(), &LiveApproval::default(), &order),
+            Err(Rejection::InvalidNumericInput)
+        );
     }
 
     #[test]
