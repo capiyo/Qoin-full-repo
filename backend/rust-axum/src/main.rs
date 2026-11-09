@@ -293,7 +293,7 @@ async fn reconcile_live_order(
     let stop = if order.reduce_only {
         serde_json::Value::Null
     } else {
-        let stop_id = format!("{}-SL", order.client_order_id.chars().take(33).collect::<String>());
+        let stop_id = trading::protective_stop_client_order_id(&order.client_order_id);
         match executor.get_order_by_client_id(&order.symbol, &stop_id).await {
             Ok(value) => value,
             Err(error) => serde_json::json!({"lookup_error":error}),
