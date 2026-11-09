@@ -6,9 +6,23 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <cstddef>
 
 
 namespace {
+constexpr std::size_t kMaxHttpBodyBytes = 1024U * 1024U;
+constexpr std::size_t kMaxHttpResponseBytes = 4U * 1024U * 1024U;
+constexpr std::size_t kMaxWebSocketMessageBytes = 64U * 1024U;
+constexpr std::size_t kMaxStreamQueryBytes = 4096U;
+
+drogon::HttpResponsePtr gatewayError(drogon::HttpStatusCode status, const std::string& message) {
+    Json::Value body;
+    body["error"] = message;
+    auto response = drogon::HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(status);
+    return response;
+}
+
 struct StreamProxySession {
     drogon::WebSocketClientPtr upstream_client;
     drogon::WebSocketConnectionPtr upstream_connection;
@@ -142,7 +156,7 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     request->setPath(path);
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->addHeader("accept", "application/json");
-    request->setBody(std::string(incoming->getBody()));
+    request->setBody(body);
     client->sendRequest(request, [callback = std::move(callback)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
