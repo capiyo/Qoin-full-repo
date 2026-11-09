@@ -376,6 +376,70 @@ async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
 }
+fn parse_kraken_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent> {
+    if payload.get("channel").and_then(|v|v.as_str()) != Some("trade") ||
+       payload.get("type").and_then(|v|v.as_str()) != Some("update") {
+        return Vec::new();
+    }
+    let Some(rows)=payload.get("data").and_then(|v|v.as_array()) else { return Vec::new(); };
+    let mut parsed=Vec::new();
+    for row in rows {
+        let (Some(product),Some(side),Some(time))=(
+            row.get("symbol").and_then(|v|v.as_str()),
+            row.get("side").and_then(|v|v.as_str()),
+            row.get("timestamp").and_then(|v|v.as_str()),
+        ) else { continue; };
+        let Some(timestamp)=chrono::DateTime::parse_from_rfc3339(time).ok().map(|v|v.timestamp_millis()) else { continue; };
+        let side=match side.to_ascii_lowercase().as_str() {"buy"=>"buy","sell"=>"sell",_=>continue};
+        let (Some(price),Some(size))=(stream_number(row.get("price")),stream_number(row.get("qty"))) else {continue;};
+        let Some(trade_id)=row.get("trade_id").map(|v|v.to_string()) else {continue;};
+        let observation=MarketEvent{
+            event_id:format!("kraken_trade:{trade_id}"),
+            venue:"kraken_spot".into(),
+            symbol:product.replace('/',"").replace('-',"").to_ascii_uppercase(),
+            event_type:"trade".into(),ts_ms:timestamp,price:Some(price),size:Some(size),
+            side:Some(side.into()),bid:None,ask:None,bid_size:None,ask_size:None,
+            funding_rate:None,open_interest:None,liquidation_side:None,
+        };
+        if validate_event(&observation).is_ok(){parsed.push(observation);}
+    }
+    parsed
+}
+
+async fn spawn_kraken_stream(axum_addr:String,symbols:Vec<String>){
+    if symbols.is_empty(){return;}
+    let url="wss://ws.kraken.com/v2";
+    let client=reqwest::Client::new();
+    let endpoint=format!("http://{axum_addr}/internal/events");
+    let mut backoff=1_u64;
+    loop{
+        match connect_async(url).await{
+            Ok((mut socket,_))=>{
+                tracing::info!(symbols=?symbols,"connected to Kraken Spot public market stream");
+                backoff=1;
+                let subscription=serde_json::json!({"method":"subscribe","params":{"channel":"trade","symbol":symbols}});
+                if let Err(error)=socket.send(tokio_tungstenite::tungstenite::Message::Text(subscription.to_string())).await{
+                    tracing::warn!(error=%error,"Kraken subscription send failed");
+                }else{
+                    while let Some(message)=socket.next().await{
+                        let message=match message{Ok(v)=>v,Err(error)=>{tracing::warn!(error=%error,"Kraken stream disconnected");break;}};
+                        let text=match message.to_text(){Ok(v)=>v,Err(_)=>continue};
+                        let payload:serde_json::Value=match serde_json::from_str(text){
+                            Ok(v)=>v,Err(error)=>{tracing::warn!(error=%error,"invalid Kraken stream JSON");continue;}
+                        };
+                        for event in parse_kraken_trade_message(&payload){
+                            submit_market_event(&client,&endpoint,&event,"kraken_spot").await;
+                        }
+                    }
+                }
+            }
+            Err(error)=>tracing::warn!(error=%error,retry_seconds=backoff,"Kraken stream connection failed"),
+        }
+        tokio::time::sleep(Duration::from_secs(backoff)).await;
+        backoff=(backoff*2).min(30);
+    }
+}
+
 fn parse_coinbase_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent> {
     if payload.get("channel").and_then(|v|v.as_str()) != Some("market_trades") {
         return Vec::new();
@@ -995,6 +1059,15 @@ async fn main(){
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
+    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    if kraken_enabled {
+        let symbols=env::var("QOIN_KRAKEN_STREAM_SYMBOLS").unwrap_or_else(|_|"BTC/USD,ETH/USD,SOL/USD".into())
+            .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+        let adapter_addr=internal_addr.clone();
+        tokio::spawn(async move { spawn_kraken_stream(adapter_addr,symbols).await; });
+    } else {
+        tracing::info!("Kraken Spot public market stream disabled by configuration");
+    }
     let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
     if coinbase_enabled {
         let products=env::var("QOIN_COINBASE_STREAM_PRODUCTS").unwrap_or_else(|_|"BTC-USD,ETH-USD,SOL-USD".into())
@@ -1022,6 +1095,33 @@ async fn main(){
 #[cfg(test)]
 mod market_stream_tests {
     use super::*;
+
+    #[test]
+    fn kraken_trade_messages_normalize_into_canonical_events() {
+        let payload=serde_json::json!({
+            "channel":"trade","type":"update","data":[{
+                "symbol":"BTC/USD","side":"buy","price":65000.25,"qty":0.01,
+                "trade_id":123456,"timestamp":"2026-11-09T12:00:00.123Z"
+            }]
+        });
+        let events=parse_kraken_trade_message(&payload);
+        assert_eq!(events.len(),1);
+        assert_eq!(events[0].venue,"kraken_spot");
+        assert_eq!(events[0].symbol,"BTCUSD");
+        assert_eq!(events[0].event_id,"kraken_trade:123456");
+        assert_eq!(events[0].side.as_deref(),Some("buy"));
+        assert_eq!(events[0].ts_ms,1_794_225_600_123);
+    }
+
+    #[test]
+    fn kraken_parser_rejects_snapshots_and_malformed_trades() {
+        assert!(parse_kraken_trade_message(&serde_json::json!({"channel":"trade","type":"snapshot","data":[]})).is_empty());
+        let payload=serde_json::json!({"channel":"trade","type":"update","data":[{
+            "symbol":"BTC/USD","side":"unknown","price":"1","qty":"1",
+            "trade_id":1,"timestamp":"not-a-time"
+        }]});
+        assert!(parse_kraken_trade_message(&payload).is_empty());
+    }
 
     #[test]
     fn coinbase_market_trade_messages_normalize_into_canonical_events() {
