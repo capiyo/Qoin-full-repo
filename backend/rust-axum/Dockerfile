@@ -1,11 +1,8 @@
-FROM rust:1.84-bookworm AS build
+FROM rust:1.88-bookworm AS build
 WORKDIR /workspace
 COPY Cargo.toml ./
 COPY backend/rust-axum ./backend/rust-axum
-COPY backend/rust-axum/crates ./backend/rust-axum/crates
 COPY backend/rust-axum-api ./backend/rust-axum-api
-COPY backend/rust-axum/crates/qoin-vector-engine ./backend/rust-axum/crates/qoin-vector-engine
-COPY backend/rust-axum/crates/qoin-vector-motion ./backend/rust-axum/crates/qoin-vector-motion
 RUN cargo build --release --manifest-path backend/rust-axum/Cargo.toml
 
 FROM debian:bookworm-slim
