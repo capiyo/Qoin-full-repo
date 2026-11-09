@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -246,6 +246,81 @@ async fn submit_live_order(
             })))
         }
     }
+}
+
+async fn reconcile_live_order(
+    State(s): State<AppState>,
+    Path(client_order_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let expected_token = match env::var("QOIN_EXECUTION_TOKEN") {
+        Ok(token) if !token.trim().is_empty() => token,
+        _ => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"execution endpoint is not configured"}))),
+    };
+    let supplied_token = headers.get("x-qoin-execution-token").and_then(|value| value.to_str().ok()).unwrap_or("");
+    if !constant_time_token_match(expected_token.as_bytes(), supplied_token.as_bytes()) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let mut ledger = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
+        Ok(Some(record)) => record,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"order not found"}))),
+        Err(error) => {
+            tracing::error!(error=%error, "order ledger lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"order ledger unavailable"})));
+        }
+    };
+    let request_doc = match ledger.get_document("request") {
+        Ok(document) => document.clone(),
+        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored order request is malformed"}))),
+    };
+    let order = match mongodb::bson::from_document::<trading::OrderRequest>(request_doc) {
+        Ok(order) => order,
+        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored order request cannot be decoded"}))),
+    };
+    let executor = match trading::BinanceExecutor::from_env() {
+        Ok(executor) => executor,
+        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":error}))),
+    };
+    let entry = match executor.get_order_by_client_id(&order.symbol, &order.client_order_id).await {
+        Ok(value) => value,
+        Err(error) => return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error":"exchange entry-order lookup failed",
+            "detail":error,
+            "client_order_id":client_order_id,
+            "reconciliation_required":true
+        }))),
+    };
+    let stop = if order.reduce_only {
+        serde_json::Value::Null
+    } else {
+        let stop_id = format!("{}-SL", &order.client_order_id[..order.client_order_id.len().min(33)]);
+        match executor.get_order_by_client_id(&order.symbol, &stop_id).await {
+            Ok(value) => value,
+            Err(error) => serde_json::json!({"lookup_error":error}),
+        }
+    };
+    let entry_status = entry.get("status").and_then(|value| value.as_str()).unwrap_or("UNKNOWN");
+    let stop_status = stop.get("status").and_then(|value| value.as_str()).unwrap_or("UNKNOWN");
+    let reconciled = if order.reduce_only {
+        matches!(entry_status, "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED")
+    } else {
+        entry_status == "FILLED" && stop_status == "NEW"
+    };
+    let status = if reconciled { "reconciled" } else { "reconciliation_required" };
+    if let Err(error) = s.orders.update_one(doc!{"client_order_id":&client_order_id},
+        doc!{"$set":{"status":status,"exchange_entry":mongodb::bson::to_bson(&entry).unwrap_or(mongodb::bson::Bson::Null),
+            "exchange_protective_stop":mongodb::bson::to_bson(&stop).unwrap_or(mongodb::bson::Bson::Null),
+            "reconciled_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}}, None).await {
+        tracing::error!(error=%error, client_order_id=%client_order_id, "could not persist exchange reconciliation result");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"exchange queried but reconciliation result could not be persisted","client_order_id":client_order_id})));
+    }
+    ledger.insert("status", status);
+    (if reconciled {StatusCode::OK}else{StatusCode::CONFLICT}, Json(serde_json::json!({
+        "client_order_id":client_order_id,
+        "status":status,
+        "entry":entry,
+        "protective_stop":stop
+    })))
 }
 
 async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
@@ -1230,7 +1305,9 @@ async fn main(){
         recovery_skipped_events: skipped_events,
     };
     let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal))
-        .route("/internal/orders",post(submit_live_order)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
+        .route("/internal/orders",post(submit_live_order))
+        .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
+        .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
