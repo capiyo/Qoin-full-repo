@@ -73,14 +73,16 @@ impl BinanceExecutor {
         if side != "BUY" && side != "SELL" { return Err("side must be BUY or SELL".into()); }
         if order.client_order_id.trim().len() < 8 || order.client_order_id.len() > 36 || !order.client_order_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') { return Err("client_order_id must be 8-36 safe characters".into()); }
         if !order.quantity.is_finite() || order.quantity <= 0.0 || order.quantity > self.max_quantity { return Err(format!("quantity exceeds configured maximum {}", self.max_quantity)); }
-        if !order.stop_price.is_finite() || order.stop_price <= 0.0 { return Err("stop_price must be finite and positive".into()); }
+        if !order.reduce_only && (!order.stop_price.is_finite() || order.stop_price <= 0.0) { return Err("stop_price must be finite and positive".into()); }
         let mark_url = format!("{}/fapi/v1/premiumIndex?symbol={}", self.base_url.trim_end_matches('/'), symbol);
         let mark_response = self.client.get(mark_url).timeout(std::time::Duration::from_secs(5)).send().await.map_err(|e| format!("mark-price request failed: {e}"))?;
         if !mark_response.status().is_success() { return Err(format!("mark-price lookup failed with HTTP {}", mark_response.status().as_u16())); }
         let mark: serde_json::Value = mark_response.json().await.map_err(|e| e.to_string())?;
         let price = mark.get("markPrice").and_then(|v| v.as_str()).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).ok_or_else(|| "invalid mark price".to_string())?;
-        let stop_is_valid = if side == "BUY" { order.stop_price < price } else { order.stop_price > price };
-        if !stop_is_valid { return Err("protective stop must be below mark for BUY and above mark for SELL".into()); }
+        if !order.reduce_only {
+            let stop_is_valid = if side == "BUY" { order.stop_price < price } else { order.stop_price > price };
+            if !stop_is_valid { return Err("protective stop must be below mark for BUY and above mark for SELL".into()); }
+        }
         let notional = order.quantity * price;
         if !notional.is_finite() || notional > self.max_notional_usdt { return Err(format!("notional {:.4} USDT exceeds cap {:.4} USDT", notional, self.max_notional_usdt)); }
         let quantity = format!("{:.12}", order.quantity).trim_end_matches('0').trim_end_matches('.').to_string();
