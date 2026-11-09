@@ -93,6 +93,18 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
         return Err("event_id, venue, and symbol are required".into());
     }
+    if e.event_id.len() > 256 || e.venue.len() > 64 || e.symbol.len() > 96 {
+        return Err("event_id, venue, or symbol exceeds its maximum length".into());
+    }
+    if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "open_interest" | "liquidation") {
+        return Err("event_type must be trade, book, funding, open_interest, or liquidation".into());
+    }
+    if e.side.as_deref().is_some_and(|side| !matches!(side, "buy" | "sell")) {
+        return Err("side must be buy or sell when supplied".into());
+    }
+    if e.liquidation_side.as_deref().is_some_and(|side| !matches!(side, "long" | "short")) {
+        return Err("liquidation_side must be long or short when supplied".into());
+    }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
         ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
@@ -1209,6 +1221,27 @@ mod market_stream_tests {
         assert_eq!(stream_number(Some(&serde_json::json!(0.25))), Some(0.25));
         assert_eq!(stream_number(Some(&serde_json::json!("not-a-number"))), None);
         assert_eq!(stream_number(None), None);
+    }
+
+    #[test]
+    fn market_event_validation_rejects_unknown_types_and_invalid_sides() {
+        let base = MarketEvent {
+            event_id: "test-1".into(), venue: "test".into(), symbol: "BTCUSDT".into(),
+            event_type: "trade".into(), ts_ms: 1_700_000_000_000, price: Some(100.0),
+            size: Some(1.0), side: Some("buy".into()), bid: None, ask: None,
+            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,
+            liquidation_side: None,
+        };
+        assert!(validate_event(&base).is_ok());
+        let mut unknown = base.clone();
+        unknown.event_type = "order".into();
+        assert!(validate_event(&unknown).is_err());
+        let mut invalid_side = base.clone();
+        invalid_side.side = Some("BUY".into());
+        assert!(validate_event(&invalid_side).is_err());
+        let mut invalid_liquidation = base;
+        invalid_liquidation.liquidation_side = Some("up".into());
+        assert!(validate_event(&invalid_liquidation).is_err());
     }
 
     #[test]
