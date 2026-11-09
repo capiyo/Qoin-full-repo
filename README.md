@@ -40,14 +40,14 @@ Qoin-full-repo/
 ## Service boundaries
 
 1. Web, mobile and desktop use shared TypeScript contracts and never implement authoritative trading decisions.
-2. Rust/Axum owns event ingestion, state estimation, vector decisions, strategy state and the domain-neutral core contracts.
+2. Rust/Axum owns event ingestion, state estimation, vector decisions, strategy state, the shared `POST /v1/signal` research endpoint and the domain-neutral core contracts.
 3. C++/Drogon is the public HTTP/WebSocket gateway. Provider ingestion and strategy mutation remain internal and are not exposed as public gateway writes.
 4. MongoDB stores raw observations, state snapshots, decisions and strategy configuration.
 5. Provider adapters normalize source observations into venue-scoped events. Current feeds include Binance USD-M, Coinbase Advanced Trade, Kraken Spot and optional Finnhub. See [docs/MARKET_DATA_PROVIDERS.md](docs/MARKET_DATA_PROVIDERS.md) for coverage and limitations.
 6. Domain-specific algorithms and safety policies sit above the domain-neutral contracts. The core does not assume financial instruments, trades, portfolios or orders.
 7. JEPA is research-only and cannot override Axum decision authority or bypass risk controls.
 
-The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
+The separate `backend/rust-axum-api` remains a compatibility/research reference; the deployed Compose stack uses the primary Axum service for both event-flow APIs and the shared vector-engine signal endpoint.
 
 ## Domain expansion
 
