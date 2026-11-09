@@ -13,7 +13,8 @@ pub struct OrderRequest {
     pub symbol: String,
     pub side: String,
     pub quantity: f64,
-    /// Required exchange-side protective stop trigger, in quote currency.
+    /// Required for opening orders; omitted for reduce-only closes.
+    #[serde(default)]
     pub stop_price: f64,
     #[serde(default)]
     pub reduce_only: bool,
