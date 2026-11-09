@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::cors::CorsLayer;
 
-#[derive(Clone)]
+
 struct AppState {
     config: EngineConfig,
     config_version: String,
@@ -68,7 +68,7 @@ async fn main() {
             HeaderValue::from_static("http://localhost:3000"),
             HeaderValue::from_static("http://127.0.0.1:3000"),
         ])
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
         .allow_headers([CONTENT_TYPE]);
     let app = Router::new()
         .route("/health", get(health))
@@ -99,6 +99,8 @@ async fn signal(
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
+
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
 }
+
