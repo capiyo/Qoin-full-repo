@@ -3,13 +3,14 @@ name: Reconcile Qoin integration PRs
 on:
   push:
     branches: [qoin/integration-completion]
+    paths:
+      - "docs/PR_INTEGRATION.md"
 
 permissions:
   contents: write
 
 jobs:
   cherry-pick-unique-pr-commits:
-    if: contains(github.event.head_commit.message, '[integrate-prs]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
