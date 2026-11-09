@@ -10,7 +10,7 @@ on:
       - "Cargo.toml"
       - ".github/workflows/container-build.yml"
   push:
-    branches: [main]
+    branches: [main, qoin-archive-explore-vector-ui]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
