@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+**/node_modules
+**/.env
+**/.env.*
+!.env.example
+**/dist
+**/build
+**/target
+.expo
+.turbo
+*.log
