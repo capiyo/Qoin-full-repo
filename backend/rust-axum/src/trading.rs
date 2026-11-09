@@ -13,6 +13,8 @@ pub struct OrderRequest {
     pub symbol: String,
     pub side: String,
     pub quantity: f64,
+    /// Required exchange-side protective stop trigger, in quote currency.
+    pub stop_price: f64,
     #[serde(default)]
     pub reduce_only: bool,
     pub client_order_id: String,
@@ -23,6 +25,7 @@ pub struct ExecutionResponse {
     pub accepted: bool,
     pub exchange: &'static str,
     pub response: serde_json::Value,
+    pub protective_stop: serde_json::Value,
 }
 #[derive(Clone)]
 pub struct BinanceExecutor {
@@ -70,18 +73,54 @@ impl BinanceExecutor {
         if side != "BUY" && side != "SELL" { return Err("side must be BUY or SELL".into()); }
         if order.client_order_id.trim().len() < 8 || order.client_order_id.len() > 36 || !order.client_order_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') { return Err("client_order_id must be 8-36 safe characters".into()); }
         if !order.quantity.is_finite() || order.quantity <= 0.0 || order.quantity > self.max_quantity { return Err(format!("quantity exceeds configured maximum {}", self.max_quantity)); }
+        if !order.stop_price.is_finite() || order.stop_price <= 0.0 { return Err("stop_price must be finite and positive".into()); }
         let mark_url = format!("{}/fapi/v1/premiumIndex?symbol={}", self.base_url.trim_end_matches('/'), symbol);
         let mark_response = self.client.get(mark_url).timeout(std::time::Duration::from_secs(5)).send().await.map_err(|e| format!("mark-price request failed: {e}"))?;
         if !mark_response.status().is_success() { return Err(format!("mark-price lookup failed with HTTP {}", mark_response.status().as_u16())); }
         let mark: serde_json::Value = mark_response.json().await.map_err(|e| e.to_string())?;
         let price = mark.get("markPrice").and_then(|v| v.as_str()).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).ok_or_else(|| "invalid mark price".to_string())?;
+        let stop_is_valid = if side == "BUY" { order.stop_price < price } else { order.stop_price > price };
+        if !stop_is_valid { return Err("protective stop must be below mark for BUY and above mark for SELL".into()); }
         let notional = order.quantity * price;
-        if notional > self.max_notional_usdt { return Err(format!("notional {:.4} USDT exceeds cap {:.4} USDT", notional, self.max_notional_usdt)); }
-        let mut params = vec![("symbol".into(), symbol), ("side".into(), side), ("type".into(), "MARKET".into()),
-            ("quantity".into(), format!("{:.12}", order.quantity).trim_end_matches('0').trim_end_matches('.').to_string()),
-            ("newClientOrderId".into(), order.client_order_id), ("newOrderRespType".into(), "RESULT".into())];
+        if !notional.is_finite() || notional > self.max_notional_usdt { return Err(format!("notional {:.4} USDT exceeds cap {:.4} USDT", notional, self.max_notional_usdt)); }
+        let quantity = format!("{:.12}", order.quantity).trim_end_matches('0').trim_end_matches('.').to_string();
+        let mut params = vec![("symbol".into(), symbol.clone()), ("side".into(), side.clone()), ("type".into(), "MARKET".into()),
+            ("quantity".into(), quantity.clone()),
+            ("newClientOrderId".into(), order.client_order_id.clone()), ("newOrderRespType".into(), "RESULT".into())];
         if order.reduce_only { params.push(("reduceOnly".into(), "true".into())); }
         let response = self.signed_request(Method::POST, "/fapi/v1/order", params).await?;
-        Ok(ExecutionResponse { mode: "live", accepted: true, exchange: "binance_usdm_futures", response })
+        let executed_quantity = response.get("executedQty").and_then(|v| v.as_str())
+            .and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0)
+            .ok_or_else(|| "exchange accepted entry but returned no valid executed quantity; reconcile by client order ID".to_string())?;
+        let executed_quantity_text = format!("{:.12}", executed_quantity).trim_end_matches('0').trim_end_matches('.').to_string();
+        let stop_side = if side == "BUY" { "SELL" } else { "BUY" };
+        let stop_params = vec![
+            ("symbol".into(), symbol.clone()), ("side".into(), stop_side.into()),
+            ("type".into(), "STOP_MARKET".into()),
+            ("stopPrice".into(), format!("{:.12}", order.stop_price).trim_end_matches('0').trim_end_matches('.').to_string()),
+            ("quantity".into(), executed_quantity_text.clone()), ("reduceOnly".into(), "true".into()),
+            ("workingType".into(), "MARK_PRICE".into()),
+            ("newClientOrderId".into(), format!("{}-SL", order.client_order_id)),
+            ("newOrderRespType".into(), "RESULT".into()),
+        ];
+        let protective_stop = match self.signed_request(Method::POST, "/fapi/v1/order", stop_params).await {
+            Ok(stop) => stop,
+            Err(stop_error) => {
+                // Never leave a newly opened position intentionally unprotected.
+                // Attempt an immediate reduce-only close for the filled quantity.
+                let close_params = vec![
+                    ("symbol".into(), symbol.clone()), ("side".into(), stop_side.into()),
+                    ("type".into(), "MARKET".into()), ("quantity".into(), executed_quantity_text),
+                    ("reduceOnly".into(), "true".into()),
+                    ("newClientOrderId".into(), format!("{}-FC", order.client_order_id)),
+                    ("newOrderRespType".into(), "RESULT".into()),
+                ];
+                return match self.signed_request(Method::POST, "/fapi/v1/order", close_params).await {
+                    Ok(close) => Err(format!("protective stop rejected; reduce-only emergency close submitted: {close} (stop error: {stop_error})")),
+                    Err(close_error) => Err(format!("CRITICAL: protective stop rejected and emergency close failed; immediate manual reconciliation required (stop error: {stop_error}; close error: {close_error})")),
+                };
+            }
+        };
+        Ok(ExecutionResponse { mode: "live", accepted: true, exchange: "binance_usdm_futures", response, protective_stop })
     }
 }
