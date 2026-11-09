@@ -1,0 +1,30 @@
+name: Qoin Firebase security rules
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "firebase/**"
+      - "firebase.json"
+      - "firebase/firestore.rules.test.mjs"
+      - ".github/workflows/firebase-rules.yml"
+  push:
+    branches: [main, qoin-archive-explore-vector-ui]
+    paths:
+      - "firebase/**"
+      - "firebase.json"
+      - "firebase/firestore.rules.test.mjs"
+      - ".github/workflows/firebase-rules.yml"
+
+jobs:
+  firestore-rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Firebase emulator test dependencies
+        run: npm install --no-save firebase@11.0.2 @firebase/rules-unit-testing@4.0.1 firebase-tools@13.31.2
+      - name: Execute Firestore rules tests
+        run: npx firebase emulators:exec --only firestore --project demo-qoin-firestore-rules "node firebase/firestore.rules.test.mjs"
