@@ -174,7 +174,7 @@ void proxyGet(const drogon::HttpRequestPtr&,
     request->setMethod(drogon::Get);
     request->setPath(path);
     request->addHeader("accept", "application/json");
-    client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
+    client->sendRequest(request, [callback = std::move(callback), path](drogon::ReqResult result,
         const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
             auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
