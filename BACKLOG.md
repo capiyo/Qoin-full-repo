@@ -4,7 +4,7 @@ This file contains unfinished work only. **IN PROGRESS** is the default for engi
 
 ## Integration and baseline
 - [ ] **IN PROGRESS — PR #12 transplant:** six clean engine/contract/documentation commits have been cherry-picked (multi-horizon module, causal market aggregation, exports, schema and semantics docs). The market-backed Axum endpoint and Drogon `GET /api/v1/market-horizons` proxy are now ported with a bounded Mongo query and a CI assertion. Asset-class isolation/catalogue, data-quality/freshness, web/mobile panels and full integration tests remain to be ported from the remaining overlapping paths. Duplicate JEPA-removal and duplicate docs are superseded; see `docs/DECISIONS.md`.
-- [ ] **IN PROGRESS — PR #13 transplant:** broker registry, paper replay/Mirror docs, paper-session and operating-cycle modules have been transplanted; both modules are declared in Axum and the paper-session test fixture was adapted to the current decision type. The modules are not yet connected to durable Mongo state, event ingestion, session transitions, ledger persistence, Archive lifecycle, replay diagnostics or client controls; these remain to be ported from 12 overlapping paths. See `docs/DECISIONS.md`.
+- [ ] **IN PROGRESS — PR #13 transplant:** broker registry, paper replay/Mirror docs, paper-session and operating-cycle modules have been transplanted; both modules are declared in Axum and the paper-session test fixture was adapted to the current decision type. Axum now persists cycle/session snapshots in MongoDB, exposes configure/start/stop/snapshot routes through Drogon, and records paper Mirror decisions/trades during the paper-session phase; integration assertions are added but unverified. Remaining work: crash-safe replay after partial persistence failure, session recovery/reconciliation, Archive lifecycle, replay diagnostics and web/mobile/desktop client controls. See `docs/DECISIONS.md`.
 - [ ] **IN PROGRESS — PR ancestry audit:** confirm whether isolated PR #11 changes are represented in the candidate; do not assume the separate `qoin/integration-chain` merge is included. CI cherry-pick automation failed before job creation; do not treat it as completed.
 - [ ] **IN PROGRESS — TypeScript baseline:** source correction for TS18047 is present (`decisionStrategy.updated_at_ms` is read inside its non-null guard); obtain exact-head green web, mobile and `@qoin/core` checks.
 - [ ] **IN PROGRESS — full baseline:** Rust fmt/clippy/build/test, Axum integration, Drogon build/tests, JS web build/typecheck/lint/tests, React Native typecheck/tests, Python tests, Tauri desktop matrix, Compose and security checks on the exact PR head.
@@ -19,6 +19,9 @@ This file contains unfinished work only. **IN PROGRESS** is the default for engi
 - [ ] **IN PROGRESS — portfolio accounting:** quote-currency cash ledger, FX valuation, fees, funding/financing, contract multipliers and correlated exposure limits.
 - [ ] **IN PROGRESS — research validation:** immutable datasets/configs, chronological walk-forward/OOS splits, benchmarks and reproducible manifests.
 - [ ] **IN PROGRESS — algorithm isolation:** independent runtime/config/state, durable per-user selection, version pinning and comparable metrics.
+
+
+- [ ] **IN PROGRESS — paper-session recovery:** make event-to-Mirror/trade persistence idempotent across partial failures and process restarts; reconcile stored market events, decisions, session snapshots and Archive before declaring paper accounting durable.
 
 ## Phase 3 — User platform
 - [ ] **IN PROGRESS — Firebase verification:** ID-token signature/JWKS cache, issuer/audience/expiry checks, key rotation and adversarial tests.
