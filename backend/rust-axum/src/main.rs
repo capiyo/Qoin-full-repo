@@ -140,6 +140,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "mongodb":ok,"strategy_version":strategy_version,
        "jepa_research_inference":if s.jepa_client.is_some(){"enabled"}else{"disabled"},
        "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
+          "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
        "live_order_submission":"not wired"})))
 }
@@ -583,6 +584,9 @@ async fn get_instruments()->impl IntoResponse {
     let mut items=serde_json::json!([
       {"symbol":"BTC/USD","engine_symbol":"BTCUSDT","name":"Bitcoin","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Bitcoin perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"ETH/USD","engine_symbol":"ETHUSDT","name":"Ethereum","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Ether perpetual · USDT quote","quote_currency":"USDT"},
+      {"symbol":"BTC/USD","engine_symbol":"BTCUSD","name":"Bitcoin","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Bitcoin spot · USD quote","quote_currency":"USD"},
+      {"symbol":"ETH/USD","engine_symbol":"ETHUSD","name":"Ethereum","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Ether spot · USD quote","quote_currency":"USD"},
+      {"symbol":"SOL/USD","engine_symbol":"SOLUSD","name":"Solana","asset_class":"Crypto","venue":"Coinbase Advanced Trade","venue_id":"coinbase_advanced_trade","provider":"Coinbase public market stream","description":"Solana spot · USD quote","quote_currency":"USD"},
       {"symbol":"SOL/USD","engine_symbol":"SOLUSDT","name":"Solana","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"Solana perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"BNB/USD","engine_symbol":"BNBUSDT","name":"BNB","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"BNB perpetual · USDT quote","quote_currency":"USDT"},
       {"symbol":"XRP/USD","engine_symbol":"XRPUSDT","name":"XRP","asset_class":"Crypto","venue":"Binance USD-M","venue_id":"binance_usdm","provider":"Binance public market stream","description":"XRP perpetual · USDT quote","quote_currency":"USDT"},
@@ -610,9 +614,15 @@ async fn get_instruments()->impl IntoResponse {
     ]);
     if let Some(rows)=items.as_array_mut() {
         for row in rows {
-            if row.get("asset_class").and_then(|v|v.as_str())!=Some("Crypto") {
+            let venue_id=row.get("venue_id").and_then(|v|v.as_str()).unwrap_or_default();
+            if venue_id=="coinbase_advanced_trade" {
+                let enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+                row["provider_status"]=serde_json::json!(if enabled {"public_stream_enabled"} else {"stream_disabled"});
+            } else if venue_id=="binance_usdm" {
+                row["provider_status"]=serde_json::json!(if binance_enabled {"public_stream_enabled"} else {"stream_disabled"});
+            } else {
                 row["provider_status"]=serde_json::json!(if finnhub_configured {"provider_key_configured"} else {"requires_FINNHUB_API_KEY"});
-            } else { row["provider_status"]=serde_json::json!(if binance_enabled {"public_stream_enabled"} else {"stream_disabled"}); }
+            }
         }
     }
     (StatusCode::OK,Json(serde_json::json!({"source":"Qoin instrument registry","items":items,"count":items.as_array().map(|v|v.len()).unwrap_or(0)})))
