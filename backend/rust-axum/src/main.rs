@@ -460,7 +460,7 @@ fn parse_coinbase_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent>
             ) else { continue; };
             let Some(timestamp) = chrono::DateTime::parse_from_rfc3339(time).ok()
                 .map(|value| value.timestamp_millis()) else { continue; };
-            let symbol = product.replace('-', "").replace('/', "").to_ascii_uppercase();
+            let symbol = format!("{}_COINBASE", product.replace('-', "").replace('/', "").to_ascii_uppercase());
             let side = match side.to_ascii_uppercase().as_str() {
                 "BUY" => "buy",
                 "SELL" => "sell",
