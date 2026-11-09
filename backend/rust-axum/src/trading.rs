@@ -5,7 +5,7 @@ use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
-use url::form_urlencoded;
+use url::{form_urlencoded, Url};
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,8 +46,13 @@ impl BinanceExecutor {
         let max_notional_usdt = env::var("QOIN_MAX_ORDER_NOTIONAL_USDT").unwrap_or_else(|_| "25".into()).parse::<f64>().map_err(|_| "notional cap must be numeric".to_string())?;
         let max_quantity = env::var("QOIN_MAX_ORDER_QUANTITY").unwrap_or_else(|_| "0.001".into()).parse::<f64>().map_err(|_| "quantity cap must be numeric".to_string())?;
         if !max_notional_usdt.is_finite() || max_notional_usdt <= 0.0 || !max_quantity.is_finite() || max_quantity <= 0.0 { return Err("order limits must be finite and positive".into()); }
+        let base_url = env::var("BINANCE_FUTURES_BASE_URL").unwrap_or_else(|_| "https://fapi.binance.com".into());
+        let parsed_base_url = Url::parse(&base_url).map_err(|_| "BINANCE_FUTURES_BASE_URL must be a valid HTTPS URL".to_string())?;
+        if parsed_base_url.scheme() != "https" || parsed_base_url.host_str().is_none() {
+            return Err("BINANCE_FUTURES_BASE_URL must use HTTPS and include a host".into());
+        }
         Ok(Self { client: Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| e.to_string())?,
-            api_key, api_secret, base_url: env::var("BINANCE_FUTURES_BASE_URL").unwrap_or_else(|_| "https://fapi.binance.com".into()),
+            api_key, api_secret, base_url: base_url.trim_end_matches('/').to_string(),
             max_notional_usdt, max_quantity })
     }
     fn sign(&self, query: &str) -> Result<String, String> {
