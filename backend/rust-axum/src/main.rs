@@ -78,6 +78,7 @@ struct AppState {
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
+    symbol_ingest_locks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     signal_config: EngineConfig,
     signal_config_version: String,
@@ -177,6 +178,16 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
+    // Serialize the full persistence/decision pipeline per canonical symbol.
+    // The memory lock alone only protects state mutation; without this guard,
+    // concurrent events could persist snapshots and decisions out of order.
+    let symbol_lock = {
+        let mut locks = s.symbol_ingest_locks.lock().await;
+        locks.entry(event.symbol.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let _symbol_guard = symbol_lock.lock_owned().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     match s.events.insert_one(raw,None).await{
@@ -1103,6 +1114,7 @@ async fn main(){
         stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
+        symbol_ingest_locks:Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         active_strategy:Arc::new(RwLock::new(active)),
         signal_config,
         signal_config_version
