@@ -11,7 +11,7 @@ Qoin's decision engine consumes normalized observations. It must not depend on a
 | Kraken Spot | Public WebSocket v2 `trade` | Spot trades | `QOIN_KRAKEN_STREAM_ENABLED`, `QOIN_KRAKEN_STREAM_SYMBOLS` | Implemented |
 | Finnhub | Authenticated WebSocket + HTTP | Equity/FX/index/commodity trades, news and economic calendar | `FINNHUB_API_KEY`, `QOIN_FINNHUB_STREAM_SYMBOLS` | Implemented; requires valid subscription and symbol entitlements |
 
-Each source has a distinct canonical `venue_id`. Observations from different venues are not merged into one replay: callers must select a venue when histories contain more than one source. Provider source and event identifiers remain attached to stored observations.
+Each source has a distinct canonical `venue_id`. Spot instruments use venue-qualified engine symbols (for example, `BTCUSD_COINBASE` and `BTCUSD_KRAKEN`) so their rolling state and vector decisions cannot be accidentally blended. Observations from different venues are not merged into one replay: callers must select a venue when histories contain more than one source. Provider source and event identifiers remain attached to stored observations.
 
 ## Normalization requirements
 
