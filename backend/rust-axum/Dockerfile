@@ -10,7 +10,7 @@ COPY backend/rust-axum/crates/qoin-vector-engine ./backend/rust-axum/crates/qoin
 COPY backend/rust-axum/crates/qoin-vector-motion ./backend/rust-axum/crates/qoin-vector-motion
 COPY backend/rust-axum/crates/qoin-domain-core ./backend/rust-axum/crates/qoin-domain-core
 
-RUN cargo build --locked --release --manifest-path backend/rust-axum/Cargo.toml
+RUN cargo build --release --manifest-path backend/rust-axum/Cargo.toml
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/* \
