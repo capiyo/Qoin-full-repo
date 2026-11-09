@@ -237,6 +237,40 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
         callback(forwarded);
     });
 }
+void proxyPutJson(const drogon::HttpRequestPtr& incoming,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                   const std::string& path) {
+    const auto body = incoming->getBody();
+    if (body.size() > kMaxHttpBodyBytes) {
+        callback(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
+        return;
+    }
+    auto client = drogon::HttpClient::newHttpClient(upstream());
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Put);
+    request->setPath(path);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->addHeader("accept", "application/json");
+    request->setBody(std::string(body));
+    client->sendRequest(request, [callback = std::move(callback)](
+        drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        if (response->getBody().size() > kMaxHttpResponseBytes) {
+            callback(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
 }
 int main() {
     installTerminateDiagnostics();
@@ -321,6 +355,23 @@ int main() {
             path += "min_events=" + drogon::utils::urlEncode(min_events);
         }
         proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/operating-cycle", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Put) proxyPutJson(req, std::move(cb), "/internal/operating-cycle");
+        else proxyGet(req, std::move(cb), "/internal/operating-cycle");
+    }, {drogon::Get, drogon::Put});
+    drogon::app().registerHandler("/api/v1/operating-cycle/start", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/operating-cycle/start");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/operating-cycle/stop", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/operating-cycle/stop");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/paper-session", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/paper-session");
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
