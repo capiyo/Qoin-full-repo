@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <exception>
+#include <stdexcept>
 #if defined(__linux__)
 #include <execinfo.h>
 #include <unistd.h>
@@ -188,11 +189,17 @@ void proxyGet(const drogon::HttpRequestPtr&,
             callback(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
             return;
         }
-        auto forwarded = drogon::HttpResponse::newHttpResponse();
-        forwarded->setStatusCode(response->getStatusCode());
-        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        forwarded->setBody(std::string(response_body));
-        callback(forwarded);
+        try {
+            auto forwarded = drogon::HttpResponse::newHttpResponse();
+            forwarded->setStatusCode(response->getStatusCode());
+            forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            forwarded->setBody(std::string(response_body));
+            callback(forwarded);
+        } catch (const std::length_error& error) {
+            LOG_ERROR << "gateway could not copy bounded upstream response for path_bytes="
+                      << path.size() << ": " << error.what();
+            callback(gatewayError(drogon::k502BadGateway, "upstream response could not be copied safely"));
+        }
     });
 }
 
