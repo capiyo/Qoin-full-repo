@@ -44,6 +44,10 @@ jobs:
         run: |
           cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
           cmake --build build/drogon --parallel 2
+      - name: Build Drogon with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: |
+          cmake -S backend/cpp-drogon -B build/drogon-sanitized -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build/drogon-sanitized --parallel 2
       - name: Verify gateway, MongoDB strategy persistence, and event flow
         shell: bash
         run: |
@@ -74,7 +78,7 @@ jobs:
             cat /tmp/qoin-axum.log
             exit 1
           fi
-          ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ./build/drogon-sanitized/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
           DROGON_PID=$!
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
@@ -127,3 +131,13 @@ jobs:
           jq -e '[.items[] | select(.symbol == "BTC/USD")][0].venue_id == "binance_usdm" and [.items[] | select(.symbol == "NVDA")][0].venue_id == "finnhub"' /tmp/instruments.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
           jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
+          # Exercise the same gateway surface repeatedly. This is a stability
+          # stress loop, not proof of the historical std::length_error root cause.
+          for iteration in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8080/health | jq -e '.status == "ok" and .mongodb == true' >/dev/null
+            curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' | jq -e '.decision == "BUY"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/strategy | jq -e '.strategy_key == "active"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/instruments | jq -e '.items | length > 0' >/dev/null
+            curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000' | jq -e '.events_replayed == 2' >/dev/null
+            echo "gateway integration repetition ${iteration}/20 passed"
+          done
