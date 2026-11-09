@@ -58,10 +58,15 @@ impl BinanceExecutor {
         let max_quantity = env::var("QOIN_MAX_ORDER_QUANTITY").unwrap_or_else(|_| "0.001".into()).parse::<f64>().map_err(|_| "quantity cap must be numeric".to_string())?;
         if !max_notional_usdt.is_finite() || max_notional_usdt <= 0.0 || !max_quantity.is_finite() || max_quantity <= 0.0 { return Err("order limits must be finite and positive".into()); }
         let default_base_url = if mode == "testnet" { "https://testnet.binancefuture.com" } else { "https://fapi.binance.com" };
-        let base_url = env::var("BINANCE_FUTURES_BASE_URL").unwrap_or_else(|_| default_base_url.into());
+        let base_url = env::var("BINANCE_FUTURES_BASE_URL").ok()
+            .filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_base_url.into());
         let parsed_base_url = Url::parse(&base_url).map_err(|_| "BINANCE_FUTURES_BASE_URL must be a valid HTTPS URL".to_string())?;
         if parsed_base_url.scheme() != "https" || parsed_base_url.host_str().is_none() {
             return Err("BINANCE_FUTURES_BASE_URL must use HTTPS and include a host".into());
+        }
+        let expected_host = if mode == "testnet" { "testnet.binancefuture.com" } else { "fapi.binance.com" };
+        if parsed_base_url.host_str() != Some(expected_host) {
+            return Err(format!("{} mode must use https://{}", mode, expected_host));
         }
         Ok(Self { client: Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| e.to_string())?,
             api_key, api_secret, base_url: base_url.trim_end_matches('/').to_string(),
