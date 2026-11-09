@@ -249,12 +249,17 @@ int main() {
             proxyGet(req, std::move(cb), path);
             return;
         }
+        const auto& body = req->getBody();
+        if (body.size() > kMaxHttpBodyBytes) {
+            cb(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
+            return;
+        }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Post);
         request->setPath("/internal/events");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        request->setBody(std::string(req->getBody()));
+        request->setBody(body);
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
                 auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
@@ -262,10 +267,14 @@ int main() {
                 cb(error);
                 return;
             }
+            if (response->getBody().size() > kMaxHttpResponseBytes) {
+                cb(gatewayError(drogon::k502BadGateway, "upstream response exceeds gateway limit"));
+                return;
+            }
             auto forwarded = drogon::HttpResponse::newHttpResponse();
             forwarded->setStatusCode(response->getStatusCode());
             forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            forwarded->setBody(std::string(response->getBody()));
+            forwarded->setBody(response->getBody());
             cb(forwarded);
         });
     }, {drogon::Get}); // Market ingestion is provider/internal-only; never expose public writes.
@@ -275,12 +284,17 @@ int main() {
             proxyGet(req, std::move(cb), "/internal/strategy");
             return;
         }
+        const auto& body = req->getBody();
+        if (body.size() > kMaxHttpBodyBytes) {
+            cb(gatewayError(drogon::k413RequestEntityTooLarge, "request body exceeds gateway limit"));
+            return;
+        }
         auto client = drogon::HttpClient::newHttpClient(upstream());
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Put);
         request->setPath("/internal/strategy");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        request->setBody(std::string(req->getBody()));
+        request->setBody(body);
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
                 auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
