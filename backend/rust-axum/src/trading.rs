@@ -66,6 +66,21 @@ impl BinanceExecutor {
         if !status.is_success() { return Err(format!("Binance rejected request (HTTP {}): {}", status.as_u16(), body)); }
         Ok(body)
     }
+    pub async fn get_order_by_client_id(&self, symbol: &str, client_order_id: &str) -> Result<serde_json::Value, String> {
+        let symbol = symbol.trim().to_ascii_uppercase();
+        if symbol.is_empty() || !symbol.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err("symbol must contain only ASCII letters and digits".into());
+        }
+        if client_order_id.trim().is_empty() || client_order_id.len() > 36
+            || !client_order_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+            return Err("client_order_id is invalid".into());
+        }
+        self.signed_request(Method::GET, "/fapi/v1/order", vec![
+            ("symbol".into(), symbol),
+            ("origClientOrderId".into(), client_order_id.to_string()),
+        ]).await
+    }
+
     pub async fn place_market_order(&self, order: OrderRequest) -> Result<ExecutionResponse, String> {
         let symbol = order.symbol.trim().to_ascii_uppercase(); let side = order.side.trim().to_ascii_uppercase();
         if symbol.is_empty() || !symbol.bytes().all(|b| b.is_ascii_alphanumeric()) { return Err("symbol must contain only ASCII letters and digits".into()); }
