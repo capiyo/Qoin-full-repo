@@ -1,0 +1,39 @@
+name: Qoin container build
+
+on:
+  pull_request:
+    paths:
+      - "backend/rust-axum/**"
+      - "backend/cpp-drogon/**"
+      - "docker/**"
+      - "docker-compose.yml"
+      - "Cargo.toml"
+      - ".github/workflows/container-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/rust-axum/**"
+      - "backend/cpp-drogon/**"
+      - "docker/**"
+      - "docker-compose.yml"
+      - "Cargo.toml"
+      - ".github/workflows/container-build.yml"
+  workflow_dispatch:
+
+jobs:
+  compose-and-images:
+    runs-on: ubuntu-24.04
+    env:
+      MONGO_INITDB_ROOT_USERNAME: qoin_root
+      MONGO_INITDB_ROOT_PASSWORD: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      QOIN_MONGODB_APP_USERNAME: qoin_app
+      QOIN_MONGODB_APP_PASSWORD: abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
+      QOIN_MONGODB_DATABASE: qoin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build Axum image
+        run: docker compose build axum
+      - name: Build Drogon gateway image
+        run: docker compose build gateway
