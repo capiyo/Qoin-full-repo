@@ -2,7 +2,7 @@
 
 ## Current implementation status
 - The Axum vector endpoint emits research signals only. It does not submit orders.
-- `backend/rust-axum/src/order_safety.rs` implements deterministic pre-trade checks for identity, finite values, stop direction, risk-at-stop, order notional, gross leverage, daily loss, open-position count, market-data age, and exchange-side protective-stop capability.
+- `backend/rust-axum/src/order_safety.rs` implements deterministic pre-trade checks for identity, finite values, stop direction, risk-at-stop, order notional, gross leverage, daily loss, open-position count, market-data age, and exchange-side protective-stop capability. It rejects malformed policy configuration before order evaluation, including risk/daily-loss/notional fractions outside 0–100%, zero position caps, and negative market-data freshness windows.
 - Live-mode validation requires all five explicit approvals: human approval, verified exchange account, withdrawals disabled, healthy kill switch, and healthy reconciliation.
 - `backend/rust-axum/src/execution_lifecycle.rs` models broker acknowledgements, partial fills, final fills, cancellation, rejection, failure, duplicate execution IDs, and overfill rejection.
 - These are tested domain primitives only. They are not yet connected to a durable order store or an exchange adapter. The lifecycle's in-memory duplicate-ID set is not a substitute for persistent idempotency.
