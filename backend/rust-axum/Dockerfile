@@ -1,4 +1,4 @@
-FROM rust:1.88-bookworm AS build
+FROM rust:1-bookworm AS build
 WORKDIR /workspace
 
 # Cargo resolves every workspace member even when building one package.
