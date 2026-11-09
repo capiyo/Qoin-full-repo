@@ -294,11 +294,41 @@ mod tests {
             event_type: "book".into(), ts_ms, price: None, size: None, side: None, bid, ask,
             bid_size: None, ask_size: None, funding_rate: None, open_interest: None, liquidation_side: None }
     }
-    fn decision(action: &'static str, ts: i64) -> EdgeDecision {
-        EdgeDecision { symbol: "BTCUSDT".into(), strategy_key: "active".into(), strategy_version: "v1".into(),
-            features: BTreeMap::new(), attention: vec![], attended_features: vec![], decision_vector: [0.8, 0.1],
-            magnitude: 0.8, angle_radians: 0.1, angular_threshold_radians: 0.4, action,
-            reason: "test".into(), research_only: true }
+    fn decision(action: &'static str, _ts: i64) -> EdgeDecision {
+        EdgeDecision {
+            symbol: "BTCUSDT".into(),
+            strategy_key: "active".into(),
+            strategy_version: "v1".into(),
+            input_event: None,
+            liquidation_side: None,
+            raw_inputs: BTreeMap::new(),
+            feature_trace: vec![],
+            strategy_parameters: crate::edge_strategy::EdgeStrategy::baseline(),
+            features: BTreeMap::new(),
+            attention: vec![],
+            attended_features: vec![],
+            decision_vector: [0.8, 0.1],
+            magnitude: 0.8,
+            angle_radians: 0.1,
+            angular_threshold_radians: 0.4,
+            action,
+            reason: "test".into(),
+            diagnostics: crate::edge_strategy::DecisionDiagnostics {
+                spread_present: true,
+                spread_within_limit: true,
+                event_intensity_positive: true,
+                magnitude_passed: true,
+                buy_angle_passed: true,
+                sell_angle_passed: true,
+                bullish_exceeds_bearish: true,
+                bearish_exceeds_bullish: false,
+                spread_limit_bps: 20.0,
+                magnitude_limit: 0.1,
+                angle_limit_degrees: 30.0,
+            },
+            angle_degrees: 5.7295779513,
+            research_only: true,
+        }
     }
     #[test]
     fn paper_account_fills_only_on_observed_two_sided_quote_and_closes_on_sell() {
