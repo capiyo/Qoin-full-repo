@@ -78,7 +78,7 @@ struct AppState {
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
-    symbol_ingest_locks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     signal_config: EngineConfig,
     signal_config_version: String,
@@ -181,13 +181,11 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     // Serialize the full persistence/decision pipeline per canonical symbol.
     // The memory lock alone only protects state mutation; without this guard,
     // concurrent events could persist snapshots and decisions out of order.
-    let symbol_lock = {
-        let mut locks = s.symbol_ingest_locks.lock().await;
-        locks.entry(event.symbol.clone())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
-    };
-    let _symbol_guard = symbol_lock.lock_owned().await;
+    // A fixed set of lock stripes bounds memory even if malformed/internal
+    // callers submit an unbounded number of distinct symbol strings.
+    let lock_stripe = event.symbol.bytes().fold(0usize, |hash, byte|
+        hash.wrapping_mul(31).wrapping_add(byte as usize)) % s.symbol_ingest_locks.len();
+    let _symbol_guard = s.symbol_ingest_locks[lock_stripe].lock().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     match s.events.insert_one(raw,None).await{
@@ -1114,7 +1112,7 @@ async fn main(){
         stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
-        symbol_ingest_locks:Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
         signal_config,
         signal_config_version
