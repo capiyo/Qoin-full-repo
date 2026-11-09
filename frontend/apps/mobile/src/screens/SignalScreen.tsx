@@ -4,8 +4,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   evaluateQoinSignal,
   getQoinHealth,
+  getQoinInstruments,
+  getQoinMarketHorizons,
   type MarketForceObservation,
   type QoinSignal,
+  type QoinAssetClass,
+  type QoinMarketHorizonsResponse,
 } from "@qoin/core";
 import { colors } from "../theme";
 
@@ -35,16 +39,41 @@ export function SignalScreen() {
   const [apiOnline, setApiOnline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [assetClass, setAssetClass] = useState<QoinAssetClass>("crypto");
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
+  const [marketHorizons, setMarketHorizons] = useState<QoinMarketHorizonsResponse | null>(null);
+  const [marketBusy, setMarketBusy] = useState(false);
+  const [marketError, setMarketError] = useState("");
 
   useEffect(() => {
-    getQoinHealth().then((health) => setApiOnline(health.status === "ok" && !health.live_trading))
+    getQoinHealth().then((health) => setApiOnline(health.status === "ok" && health.live_order_submission === "not wired"))
       .catch(() => setApiOnline(false));
   }, []);
+
+  useEffect(() => {
+    getQoinInstruments(assetClass)
+      .then((catalogue) => setAvailableSymbols(catalogue.symbols))
+      .catch(() => setAvailableSymbols([]));
+  }, [assetClass]);
 
   const activeCount = useMemo(
     () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
     [forces],
   );
+
+  async function loadMarketHorizons() {
+    setMarketBusy(true);
+    setMarketError("");
+    try {
+      setMarketHorizons(await getQoinMarketHorizons(symbol.trim().toUpperCase(), assetClass));
+    } catch (err) {
+      setMarketError(err instanceof Error ? err.message : "Could not load market observations.");
+      setMarketHorizons(null);
+    } finally {
+      setMarketBusy(false);
+    }
+  }
 
   async function evaluate() {
     setBusy(true);
@@ -76,6 +105,68 @@ export function SignalScreen() {
           </View>
         </View>
         <Text style={styles.subtitle}>Explore current normalized forces and evaluate a versioned signal. This screen never submits orders.</Text>
+
+        <View style={styles.panel}>
+          <Text style={styles.kicker}>STORED MARKET DATA</Text>
+          <Text style={styles.panelTitle}>Multi-horizon research</Text>
+          <Text style={styles.fieldHelp}>Separate trailing windows from ingested trade, order-book, funding, OI and liquidation events. No demo inputs are used here.</Text>
+          <View style={styles.assetClassRow}>
+            {(["forex", "crypto", "stock"] as const).map((item) => (
+              <Pressable key={item} onPress={() => setAssetClass(item)} style={[styles.assetClassChip, assetClass === item && styles.assetClassChipActive]}>
+                <Text style={[styles.assetClassText, assetClass === item && styles.assetClassTextActive]}>{item === "stock" ? "Stocks" : item === "forex" ? "Forex" : "Crypto"}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {availableSymbols.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.symbolList}>
+              {availableSymbols.map((item) => (
+                <Pressable key={item} onPress={() => setSymbol(item)} style={[styles.symbolChip, symbol === item && styles.symbolChipActive]}>
+                  <Text style={[styles.symbolChipText, symbol === item && styles.symbolChipTextActive]}>{item}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : <Text style={styles.fieldHelp}>No {assetClass} instruments have been ingested yet. Add venue events with an asset_class field to populate this list.</Text>}
+          <View style={styles.marketControls}>
+            <TextInput
+              accessibilityLabel="Instrument symbol"
+              value={symbol}
+              onChangeText={setSymbol}
+              autoCapitalize="characters"
+              maxLength={64}
+              style={styles.symbolInput}
+              placeholder="BTCUSDT"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Pressable onPress={loadMarketHorizons} disabled={marketBusy || !symbol.trim()} style={[styles.smallButton, (marketBusy || !symbol.trim()) && styles.disabled]}>
+              <Text style={styles.smallButtonText}>{marketBusy ? "Loading…" : "Load horizons"}</Text>
+            </Pressable>
+          </View>
+          {marketError ? <Text accessibilityRole="alert" style={styles.error}>{marketError}</Text> : null}
+          {marketHorizons ? (
+            <>
+              <View style={styles.horizonGrid}>
+                {marketHorizons.observations.map((item) => {
+                  const horizonSignal = marketHorizons.signals?.horizons.find((entry) => entry.horizon === item.horizon)?.signal;
+                  return (
+                    <View key={item.horizon} style={styles.horizonCard}>
+                      <View style={styles.horizonHeader}>
+                        <Text style={styles.horizonTitle}>{item.horizon.replaceAll("_", " ")}</Text>
+                        <Text style={[styles.horizonStatus, { color: item.ready ? colors.bullish : colors.warning }]}>{item.ready ? "READY" : "WAIT"}</Text>
+                      </View>
+                      <Text style={styles.horizonDecision}>{horizonSignal?.decision ?? "—"}</Text>
+                      <Text style={styles.horizonMeta}>{item.event_count} events · {item.trade_count} trades · {item.book_count} books</Text>
+                      <Text style={styles.horizonMeta}>Coverage {(item.coverage_ratio * 100).toFixed(1)}% · Quality {(item.data_quality * 100).toFixed(0)}%</Text>
+                      <Text style={styles.horizonMeta}>OFI {item.observation.ofi.toFixed(2)} · OI Δ {item.observation.open_interest_change.toFixed(3)}</Text>
+                      {!item.ready ? <Text style={styles.horizonReason}>{item.reasons[0] ?? "More market data required"}</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={styles.fieldHelp}>{marketHorizons.events_loaded} {marketHorizons.asset_class ?? assetClass} events loaded for {marketHorizons.symbol}. {marketHorizons.event_limit_reached ? "Retrieval cap reached." : "Future events excluded."}</Text>
+              {marketHorizons.signals ? <Text style={styles.consensus}>Relationship: {marketHorizons.signals.consensus.relationship.replaceAll("_", " ")} · BUY {marketHorizons.signals.consensus.buy_count} · SELL {marketHorizons.signals.consensus.sell_count}</Text> : null}
+            </>
+          ) : <Text style={styles.empty}>No market-backed result loaded. Ingest real venue events first; horizons without enough trade and book evidence abstain.</Text>}
+        </View>
 
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
@@ -139,6 +230,30 @@ export function SignalScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary },
+  assetClassRow: { flexDirection: "row", gap: 7, marginTop: 14 },
+  assetClassChip: { borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7 },
+  assetClassChipActive: { borderColor: colors.accentCyan, backgroundColor: colors.bgPrimary },
+  assetClassText: { color: colors.textMuted, fontSize: 10, fontWeight: "700" },
+  assetClassTextActive: { color: colors.accentCyan },
+  symbolList: { flexGrow: 0, marginTop: 10 },
+  symbolChip: { borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7, marginRight: 6 },
+  symbolChipActive: { borderColor: colors.accentCyan },
+  symbolChipText: { color: colors.textMuted, fontSize: 10, fontWeight: "700" },
+  symbolChipTextActive: { color: colors.accentCyan },
+  marketControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 12 },
+  symbolInput: { flex: 1, minWidth: 0, color: colors.white, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 10, fontSize: 12 },
+  smallButton: { backgroundColor: colors.accentCyan, borderRadius: 7, paddingHorizontal: 12, paddingVertical: 11 },
+  smallButtonText: { color: colors.bgPrimary, fontSize: 11, fontWeight: "800" },
+  horizonGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
+  horizonCard: { width: "48%", flexGrow: 1, backgroundColor: colors.bgPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 },
+  horizonHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
+  horizonTitle: { color: colors.textPrimary, fontSize: 10, fontWeight: "800", textTransform: "capitalize" },
+  horizonStatus: { fontSize: 8, fontWeight: "900" },
+  horizonDecision: { color: colors.white, fontSize: 19, fontWeight: "900", marginVertical: 7 },
+  horizonMeta: { color: colors.textMuted, fontSize: 9, lineHeight: 14 },
+  horizonReason: { color: colors.warning, fontSize: 9, lineHeight: 13, marginTop: 5 },
+  consensus: { color: colors.accentCyan, fontSize: 10, fontWeight: "700", marginTop: 10 },
+
   content: { padding: 16, paddingBottom: 28 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 },
   kicker: { color: colors.accentCyan, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginBottom: 6 },

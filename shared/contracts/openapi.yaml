@@ -12,6 +12,68 @@ paths:
       responses:
         '200': { description: Healthy }
         '503': { description: Dependency unavailable }
+  /api/v1/signal:
+    post:
+      summary: Evaluate one manually supplied normalized observation
+      description: Uses the deterministic research baseline and returns BUY, SELL, CLOSE, or WAIT. It does not fetch data, size positions, or submit orders.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignalRequest'
+      responses:
+        '200': { description: Research signal }
+        '400': { description: Invalid or non-finite observation }
+        '503': { description: Research engine unavailable }
+  /api/v1/multi-horizon:
+    post:
+      summary: Evaluate independent causal observations across trading horizons
+      description: Returns per-horizon research signals and descriptive agreement/divergence metadata. It does not create orders or combine signals into a trade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/HorizonInput'
+      responses:
+        '200': { description: Per-horizon signals and descriptive consensus }
+        '400': { description: Empty input, duplicate horizon, invalid configuration, or invalid observation }
+  /api/v1/instruments:
+    get:
+      summary: List instruments with ingested events for an asset class
+      description: Returns symbols observed in the market_events collection. This is an availability catalogue, not a complete exchange universe or a market-data provider.
+      parameters:
+        - in: query
+          name: asset_class
+          required: true
+          schema: { type: string, enum: [forex, crypto, stock] }
+      responses:
+        '200': { description: Sorted symbols with ingested market events }
+        '400': { description: Missing or unsupported asset class }
+        '503': { description: Market event storage unavailable }
+  /api/v1/market-horizons:
+    get:
+      summary: Derive research signals from the latest stored market events for one symbol
+      description: Requires asset_class to isolate instruments with overlapping symbols. Aggregates trailing, causal event windows for each supported horizon. A horizon without sufficient signed-trade and book evidence is reported as not ready and emits no signal. If the 50,000-event safety cap is reached, all signals are suppressed because older window data may be truncated. No orders are created.
+      parameters:
+        - in: query
+          name: symbol
+          schema: { type: string, default: BTCUSDT, maxLength: 64 }
+        - in: query
+          name: min_events
+          schema: { type: integer, minimum: 5, maximum: 10000, default: 20 }
+        - in: query
+          name: asset_class
+          required: true
+          schema: { type: string, enum: [forex, crypto, stock] }
+      responses:
+        '200': { description: Per-horizon observations, readiness diagnostics, and available research signals }
+        '400': { description: Missing or unsupported asset class, invalid symbol, or event threshold }
+        '503': { description: Market event storage unavailable }
   /api/v1/events:
     post:
       summary: Ingest one market event
@@ -30,6 +92,9 @@ paths:
       summary: Get latest state estimate for a symbol
       parameters:
         - in: query
+          name: asset_class
+          schema: { type: string, enum: [forex, crypto, stock] }
+        - in: query
           name: symbol
           schema: { type: string, default: BTCUSDT }
       responses:
@@ -40,6 +105,9 @@ paths:
       summary: Get latest geometric vector decision
       parameters:
         - in: query
+          name: asset_class
+          schema: { type: string, enum: [forex, crypto, stock] }
+        - in: query
           name: symbol
           schema: { type: string, default: BTCUSDT }
       responses:
@@ -47,6 +115,81 @@ paths:
         '503': { description: Storage unavailable }
 components:
   schemas:
+    HorizonObservation:
+      type: object
+      required: [horizon, observation, event_count, trade_count, book_count, data_quality, ready, reasons]
+      properties:
+        horizon: { type: string, enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week] }
+        observation:
+          type: object
+          required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+          properties:
+            ofi: { type: number }
+            liquidity: { type: number, description: Average signed bid/ask depth imbalance }
+            volatility: { type: number, description: Realized absolute log-return measure normalized by 1 percent and clipped to [0, 3] }
+            funding: { type: number, description: Fractional funding rate normalized by 0.1 percent and clipped to [-3, 3] }
+            open_interest_change: { type: number, description: Fractional OI change normalized by 1 percent and clipped to [-3, 3] }
+            liquidation_pressure: { type: number }
+            basis: { type: number, description: Fractional spot-perpetual basis normalized by 0.1 percent and clipped to [-3, 3]; zero when unavailable }
+        event_count: { type: integer }
+        trade_count: { type: integer }
+        book_count: { type: integer }
+        first_event_ts_ms: { type: integer, nullable: true }
+        last_event_ts_ms: { type: integer, nullable: true }
+        data_quality: { type: number, minimum: 0, maximum: 1, description: "Event-count completeness multiplied by trade/book evidence completeness and temporal coverage ratio" }
+        coverage_ratio: { type: number, minimum: 0, maximum: 1, description: "Observed event time span divided by horizon duration; minimum readiness threshold is 0.15" }
+        ready: { type: boolean }
+        reasons:
+          type: array
+          items: { type: string }
+    SignalRequest:
+      type: object
+      required: [observation, has_open_position]
+      properties:
+        observation:
+          type: object
+          required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+          properties:
+            ofi: { type: number }
+            liquidity: { type: number }
+            volatility: { type: number }
+            funding: { type: number }
+            open_interest_change: { type: number }
+            liquidation_pressure: { type: number }
+            basis: { type: number }
+        has_open_position: { type: boolean }
+    HorizonInput:
+      type: object
+      required: [horizon, observation, config, config_version, has_open_position]
+      properties:
+        horizon:
+          type: string
+          enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week]
+        observation:
+          type: object
+          required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+          properties:
+            ofi: { type: number }
+            liquidity: { type: number }
+            volatility: { type: number }
+            funding: { type: number }
+            open_interest_change: { type: number }
+            liquidation_pressure: { type: number }
+            basis: { type: number }
+        config:
+          type: object
+          required: [signal_threshold, input_clip, score_clip, top_k, min_alignment, max_angle_radians, volatility_dampener, interaction_coefficient]
+          properties:
+            signal_threshold: { type: number }
+            input_clip: { type: number }
+            score_clip: { type: number }
+            top_k: { type: integer, minimum: 1, maximum: 7 }
+            min_alignment: { type: number, minimum: -1, maximum: 1 }
+            max_angle_radians: { type: number, minimum: 0, maximum: 3.141592653589793 }
+            volatility_dampener: { type: number, minimum: 0 }
+            interaction_coefficient: { type: number, minimum: -0.25, maximum: 0.25 }
+        config_version: { type: string, minLength: 1 }
+        has_open_position: { type: boolean }
     MarketEvent:
       type: object
       required: [event_id, venue, symbol, event_type, ts_ms]
@@ -54,7 +197,8 @@ components:
         event_id: { type: string, minLength: 1 }
         venue: { type: string, minLength: 1 }
         symbol: { type: string, minLength: 1 }
-        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
+        asset_class: { type: string, enum: [forex, crypto, stock], nullable: true }
+        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation, basis] }
         ts_ms: { type: integer, minimum: 1 }
         price: { type: number, nullable: true, minimum: 0 }
         size: { type: number, nullable: true, minimum: 0 }
@@ -66,3 +210,4 @@ components:
         funding_rate: { type: number, nullable: true }
         open_interest: { type: number, nullable: true, minimum: 0 }
         liquidation_side: { type: string, nullable: true, enum: [long, short] }
+        basis: { type: number, nullable: true, description: "Normalized spot-perpetual basis observation" }

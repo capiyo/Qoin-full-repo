@@ -17,7 +17,6 @@ Qoin-full-repo/
 │   │   └── crates/qoin-vector-engine/
 │   ├── rust-axum-api/           # Separate compatibility/research API
 │   ├── cpp-drogon/              # HTTP gateway; forwards to Axum
-│   ├── jepa-world-model/        # JEPA-inspired research service
 │   ├── config/                  # Backend strategy configuration examples
 │   ├── research/                # Python research/reference models
 │   └── tests/                   # Backend/reference-model tests
@@ -36,14 +35,13 @@ Qoin-full-repo/
 2. C++ Drogon is the HTTP gateway and forwards market events and queries to Axum. It must not duplicate strategy, vector, or risk logic.
 3. Rust Axum owns event ingestion, state estimation, vector/attention decisions and strategy state.
 4. MongoDB is the durable persistence layer.
-5. The JEPA world model is research-only; it cannot override Axum decision authority or bypass risk controls.
+5. The vector engine evaluates independent, causal market observations across one-minute to one-week horizons; horizon agreement is descriptive metadata, not an order or portfolio instruction.
 
 The separate `backend/rust-axum-api` remains isolated for compatibility/research and is not a second owner of the integrated event-flow endpoints.
 
 ## Version tracks
 
 - [Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)
-- [Version 2 — JEPA world model](https://github.com/capiyo/Qoin-full-repo/tree/version-2-jepa-world-model)
 - [Version map](docs/versions/README.md)
 
 Both versions remain paper-only until every gate in [docs/RISK_POLICY.md](docs/RISK_POLICY.md) is independently verified and live trading is explicitly approved in writing.
