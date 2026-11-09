@@ -1063,27 +1063,41 @@ async fn main(){
         }
         Err(_) => None,
     };
-    // Resume the latest per-symbol state after a process restart. Raw events and
-    // decision history remain immutable; this restores only the rolling live snapshot.
-    let mut state_cursor = states.aggregate(vec![
-        doc!{"$sort":{"stored_at":-1}},
-        doc!{"$group":{"_id":"$symbol","snapshot":{"$first":"$ROOT"}}},
-    ], None).await.expect("query latest persisted market states");
+    // Rebuild rolling state from the immutable event log on every process start.
+    // Snapshot-only recovery can preserve a stale snapshot when a crash occurs
+    // after event insertion but before snapshot persistence. Replaying the raw
+    // log closes that specific recovery gap and uses deterministic event-time
+    // ordering across providers. Malformed legacy rows are skipped and surfaced.
+    let replay_options = FindOptions::builder()
+        .sort(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1})
+        .build();
+    let mut event_cursor = events.find(None, Some(replay_options)).await
+        .expect("open immutable market event log for recovery");
     let mut restored_memory: HashMap<String, SymbolState> = HashMap::new();
-    while let Some(row) = state_cursor.try_next().await.expect("read latest persisted market states") {
-        if let Ok(document) = row.get_document("snapshot") {
-            match mongodb::bson::from_document::<SymbolState>(document.clone()) {
-                Ok(snapshot) if !snapshot.symbol.trim().is_empty() => {
-                    restored_memory.insert(snapshot.symbol.clone(), snapshot);
-                }
-                Ok(_) => tracing::warn!("skipping persisted market state with empty symbol"),
-                Err(error) => tracing::warn!(error=%error, "skipping malformed persisted market state during recovery"),
+    let mut replayed_events: u64 = 0;
+    let mut skipped_events: u64 = 0;
+    while let Some(document) = event_cursor.try_next().await
+        .expect("read immutable market event log during recovery") {
+        match mongodb::bson::from_document::<MarketEvent>(document) {
+            Ok(event) if validate_event(&event).is_ok() => {
+                let state = restored_memory.entry(event.symbol.clone()).or_default();
+                apply(state, &event);
+                replayed_events += 1;
             }
-        } else {
-            tracing::warn!("skipping malformed latest market-state aggregation row");
+            Ok(event) => {
+                skipped_events += 1;
+                tracing::warn!(symbol=%event.symbol,event_id=%event.event_id,
+                    "skipping invalid persisted market event during recovery");
+            }
+            Err(error) => {
+                skipped_events += 1;
+                tracing::warn!(error=%error,
+                    "skipping malformed persisted market event during recovery");
+            }
         }
     }
-    tracing::info!(restored_symbols=restored_memory.len(), "restored latest market snapshots from MongoDB");
+    tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
+        "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
