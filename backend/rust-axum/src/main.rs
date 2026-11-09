@@ -1,6 +1,6 @@
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -76,6 +76,7 @@ struct AppState {
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     jepa_predictions: Collection<Document>,
+    orders: Collection<Document>,
     jepa_client: Option<JepaClient>,
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
@@ -156,6 +157,97 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
+fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
+    if expected.len() != supplied.len() { return false; }
+    expected.iter().zip(supplied).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
+}
+
+async fn submit_live_order(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(order): Json<trading::OrderRequest>,
+) -> impl IntoResponse {
+    let expected_token = match env::var("QOIN_EXECUTION_TOKEN") {
+        Ok(token) if !token.trim().is_empty() => token,
+        _ => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"execution endpoint is not configured"}))),
+    };
+    let supplied_token = headers.get("x-qoin-execution-token").and_then(|value| value.to_str().ok()).unwrap_or("");
+    if !constant_time_token_match(expected_token.as_bytes(), supplied_token.as_bytes()) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let executor = match trading::BinanceExecutor::from_env() {
+        Ok(executor) => executor,
+        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":error}))),
+    };
+    let request_doc = match mongodb::bson::to_document(&order) {
+        Ok(document) => document,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"order serialization failed"}))),
+    };
+    let ledger = doc! {
+        "client_order_id": &order.client_order_id,
+        "status": "submitting",
+        "request": request_doc,
+        "created_at": mongodb::bson::DateTime::now(),
+        "updated_at": mongodb::bson::DateTime::now(),
+    };
+    match s.orders.insert_one(ledger, None).await {
+        Ok(_) => {},
+        Err(error) if error.to_string().contains("E11000") => {
+            let existing = s.orders.find_one(doc!{"client_order_id":&order.client_order_id}, None).await
+                .ok().flatten().unwrap_or_default();
+            let status = existing.get_str("status").unwrap_or("unknown");
+            return (StatusCode::CONFLICT, Json(serde_json::json!({
+                "error":"client_order_id has already been used; do not resubmit",
+                "client_order_id":order.client_order_id,
+                "existing_status":status,
+                "reconciliation_required":status == "submitting" || status == "reconciliation_required"
+            })));
+        },
+        Err(error) => {
+            tracing::error!(error=%error, "could not persist durable order intent");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"durable order ledger unavailable; order not submitted"})));
+        }
+    }
+    match executor.place_market_order(order.clone()).await {
+        Ok(result) => {
+            let response = mongodb::bson::to_bson(&result).unwrap_or(mongodb::bson::Bson::Null);
+            let update = doc!{"$set":{
+                "status":"accepted",
+                "exchange_response":response,
+                "updated_at":mongodb::bson::DateTime::now()
+            }};
+            if let Err(error) = s.orders.update_one(doc!{"client_order_id":&order.client_order_id}, update, None).await {
+                tracing::error!(error=%error, client_order_id=%order.client_order_id,
+                    "exchange accepted order but durable ledger update failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"exchange accepted order but ledger update failed; reconcile at exchange before retrying",
+                    "client_order_id":order.client_order_id,
+                    "reconciliation_required":true
+                })));
+            }
+            (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default()))
+        }
+        Err(error) => {
+            let update = doc!{"$set":{
+                "status":"reconciliation_required",
+                "execution_error":&error,
+                "updated_at":mongodb::bson::DateTime::now()
+            }};
+            if let Err(ledger_error) = s.orders.update_one(doc!{"client_order_id":&order.client_order_id}, update, None).await {
+                tracing::error!(error=%ledger_error, client_order_id=%order.client_order_id,
+                    "execution failed and durable ledger update also failed");
+            }
+            tracing::error!(client_order_id=%order.client_order_id, error=%error,
+                "live order execution requires reconciliation");
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error":error,
+                "client_order_id":order.client_order_id,
+                "reconciliation_required":true
+            })))
+        }
+    }
+}
+
 async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
     let result = decide_signal(
         request.observation,
@@ -1037,6 +1129,10 @@ async fn main(){
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
+    let orders:Collection<Document>=db.collection("live_orders");
+    orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("durable live order idempotency index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
@@ -1117,7 +1213,7 @@ async fn main(){
         "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
+        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,orders,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
@@ -1127,7 +1223,8 @@ async fn main(){
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
     };
-    let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
+    let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal))
+        .route("/internal/orders",post(submit_live_order)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
