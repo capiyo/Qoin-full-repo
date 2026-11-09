@@ -174,7 +174,13 @@ impl OrderLifecycle {
         self.average_fill_price = Some((previous_notional + price * quantity) / next_filled);
         self.filled_quantity = next_filled;
         self.seen_execution_ids.insert(execution_id);
-        self.status = if final_fill { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
+        self.status = if (self.requested_quantity - next_filled).abs() <= f64::EPSILON {
+            OrderStatus::Filled
+        } else if self.status == OrderStatus::CancelPending {
+            OrderStatus::CancelPending
+        } else {
+            OrderStatus::PartiallyFilled
+        };
         Ok(true)
     }
 }
@@ -230,6 +236,16 @@ mod tests {
         assert_eq!(order.status, OrderStatus::Cancelled);
         assert_eq!(order.filled_quantity, 3.0);
         assert_eq!(order.apply(BrokerEvent::Failed { reason_code: "late".into() }), Err(LifecycleError::TerminalOrder));
+    }
+
+    #[test]
+    fn late_fill_during_cancel_keeps_cancel_pending_unless_fully_filled() {
+        let mut order = accepted();
+        order.apply(BrokerEvent::CancelRequested).unwrap();
+        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 3.0, price: 100.0 }).unwrap();
+        assert_eq!(order.status, OrderStatus::CancelPending);
+        order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: 7.0, price: 101.0 }).unwrap();
+        assert_eq!(order.status, OrderStatus::Filled);
     }
 
     #[test]
