@@ -22,3 +22,14 @@ The integration target is PR #15's head snapshot (`280d8481a939a9f12c4cfcd8f9f0f
 - **PR #11 — isolated historical integration only.** It was merged into `qoin/integration-chain` as `2d954aafb5f52ef8e2495316bdcc62466f6489d1`; it is not asserted to be present in this PR #16 branch unless confirmed by ancestry/diff review.
 
 No unique feature is classified as intentionally dropped. The only dropped material is superseded duplicate JEPA-removal and duplicate documentation work from PR #12. The unintegrated unique PR #12/#13 features remain IN PROGRESS and must be cherry-picked/reconciled, with conflict decisions recorded before closure.
+
+
+## File-level reconciliation inventory
+
+A Git-tree comparison against common base `79198891b6cabad760185f58a8f6f401c56240c1` identified the following path-level integration surface (changed-file tree comparison, not a commit-level cherry-pick):
+
+- **PR #12:** 22 changed paths; 6 do not overlap changes in the PR #15 candidate and are clean transplant candidates: `backend/rust-axum/crates/qoin-vector-engine/src/lib.rs`, `market_data.rs`, `multi_horizon.rs`, `docs/MULTI_HORIZON_RESEARCH.md`, `shared/contracts/market-event.schema.json`, and `.github/workflows/react-mobile.yml`. The other 16 overlap candidate edits, including Axum `main.rs`/`Cargo.toml`, Drogon `main.cc`, web/mobile screens, shared API contracts, and workflows; those need semantic conflict resolution.
+- **PR #13:** 18 changed paths; 6 are clean transplant candidates: `backend/config/brokers.json`, `backend/research/PAPER_REPLAY_AND_MIRROR.md`, `backend/research/QOIN_VECTOR_MONGODB_ADDENDUM.md`, `backend/rust-axum-api/src/main.rs`, `backend/rust-axum/src/operating_cycle.rs`, and `backend/rust-axum/src/paper_session.rs`. The other 12 overlap candidate edits, including Axum `main.rs`/`Cargo.toml`/`backtest.rs`, Drogon `main.cc`, web/mobile screens, shared API contracts and workflows.
+- **Automation attempt:** `.github/workflows/integrate-prs.yml` was added to cherry-pick patch-unique commits in #12 then #13 order using an Actions runner. Its first run failed before a job was created (run `42673257551`); a simplified retry is queued as `42673468437` but later concluded failure with zero jobs. No cherry-pick command ran, so no source commits were integrated by that automation.
+
+Do not describe either PR as consolidated until the unique commits are actually applied, all 28 overlapping paths are reconciled, and the final diff and tests are reviewed.
