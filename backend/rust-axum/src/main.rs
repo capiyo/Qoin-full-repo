@@ -873,12 +873,15 @@ async fn main(){
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
+    // Bind address may be 0.0.0.0 inside a container; provider callbacks must
+    // connect through a concrete local interface instead of the wildcard address.
+    let internal_addr=env::var("QOIN_AXUM_INTERNAL_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if binance_enabled {
         let symbols=env::var("QOIN_BINANCE_STREAM_SYMBOLS").unwrap_or_else(|_|"BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(|v|v.to_ascii_uppercase()).collect::<Vec<_>>();
-        let adapter_addr=addr.clone();
-        let open_interest_addr=addr.clone();
+        let adapter_addr=internal_addr.clone();
+        let open_interest_addr=internal_addr.clone();
         let open_interest_symbols=symbols.clone();
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
@@ -887,7 +890,7 @@ async fn main(){
       if !token.trim().is_empty() {
         let symbols=env::var("QOIN_FINNHUB_STREAM_SYMBOLS").unwrap_or_else(|_|"AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,OANDA:EUR_USD,OANDA:GBP_USD,OANDA:USD_JPY,OANDA:AUD_USD,OANDA:SPX500_USD,OANDA:NAS100_USD,OANDA:US30_USD,OANDA:DE30_EUR,OANDA:XAU_USD,OANDA:XAG_USD,OANDA:WTICO_USD,OANDA:BCO_USD,OANDA:NATGAS_USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
-        let adapter_addr=addr.clone();
+        let adapter_addr=internal_addr.clone();
         tokio::spawn(async move { spawn_finnhub_stream(adapter_addr,token,symbols).await; });
       } else { tracing::info!("Finnhub market stream disabled: FINNHUB_API_KEY is empty"); }
     } else {
