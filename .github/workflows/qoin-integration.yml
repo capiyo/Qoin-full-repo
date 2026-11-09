@@ -91,6 +91,8 @@ jobs:
             exit 1
           fi
           jq -e '.status == "ok" and .mongodb == true' /tmp/health.json
+          curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' >/tmp/signal.json
+          jq -e '.decision == "BUY" and .config_version == "baseline-v2" and .score > 0' /tmp/signal.json
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
