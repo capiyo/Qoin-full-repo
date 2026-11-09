@@ -82,6 +82,8 @@ struct AppState {
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     signal_config: EngineConfig,
     signal_config_version: String,
+    recovery_replayed_events: u64,
+    recovery_skipped_events: u64,
 }
 #[derive(Deserialize)]
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
@@ -164,11 +166,16 @@ async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRe
 }
 
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
-    let ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
+    let database_ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
+    let recovery_ok=s.recovery_skipped_events == 0;
+    let healthy=database_ok && recovery_ok;
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
-    (if ok {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
-     Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if ok{"ok"}else{"degraded"},
-       "mongodb":ok,"strategy_version":strategy_version,
+    (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
+     Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
+       "mongodb":database_ok,
+       "market_recovery":{"status":if recovery_ok{"ok"}else{"degraded"},
+         "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events},
+       "strategy_version":strategy_version,
        "jepa_research_inference":if s.jepa_client.is_some(){"enabled"}else{"disabled"},
        "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
           "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
@@ -1115,7 +1122,9 @@ async fn main(){
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
         signal_config,
-        signal_config_version
+        signal_config_version,
+        recovery_replayed_events: replayed_events,
+        recovery_skipped_events: skipped_events,
     };
     let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
