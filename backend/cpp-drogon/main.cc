@@ -253,8 +253,10 @@ int main() {
     }, {drogon::Get}); // Strategy mutation is an operator-only operation, not a public API.
     const char* portEnv = std::getenv("QOIN_DROGON_PORT");
     const auto port = portEnv ? std::stoi(portEnv) : 8080;
-    drogon::app().addListener("127.0.0.1", static_cast<uint16_t>(port));
+    const char* hostEnv = std::getenv("QOIN_DROGON_HOST");
+    const std::string host = hostEnv ? std::string(hostEnv) : "127.0.0.1";
+    drogon::app().addListener(host, static_cast<uint16_t>(port));
     drogon::app().setLogLevel(trantor::Logger::kInfo);
-    LOG_INFO << "Qoin gateway listening on loopback port " << port << "; upstream=" << upstream();
+    LOG_INFO << "Qoin gateway listening on " << host << ":" << port << "; upstream=" << upstream();
     drogon::app().run();
 }
