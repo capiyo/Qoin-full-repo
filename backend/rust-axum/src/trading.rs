@@ -93,6 +93,12 @@ impl BinanceExecutor {
             .and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0)
             .ok_or_else(|| "exchange accepted entry but returned no valid executed quantity; reconcile by client order ID".to_string())?;
         let executed_quantity_text = format!("{:.12}", executed_quantity).trim_end_matches('0').trim_end_matches('.').to_string();
+        if order.reduce_only {
+            return Ok(ExecutionResponse {
+                mode: "live", accepted: true, exchange: "binance_usdm_futures",
+                response, protective_stop: serde_json::Value::Null,
+            });
+        }
         let stop_side = if side == "BUY" { "SELL" } else { "BUY" };
         let stop_params = vec![
             ("symbol".into(), symbol.clone()), ("side".into(), stop_side.into()),
