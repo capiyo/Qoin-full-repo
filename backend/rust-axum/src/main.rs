@@ -1479,3 +1479,17 @@ mod market_stream_tests {
         assert!(validate_event(&crossed).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod execution_route_auth_tests {
+    use super::constant_time_token_match;
+
+    #[test]
+    fn accepts_only_exact_execution_tokens() {
+        assert!(constant_time_token_match(b"operator-token-123", b"operator-token-123"));
+        assert!(!constant_time_token_match(b"operator-token-123", b"operator-token-124"));
+        assert!(!constant_time_token_match(b"operator-token-123", b"operator-token-1234"));
+        assert!(!constant_time_token_match(b"operator-token-123", b""));
+    }
+}
