@@ -248,7 +248,7 @@ mod tests {
             order.apply(BrokerEvent::Filled { execution_id: "exec-1".into(), quantity: 2.0, price: 100.0 }),
             Err(LifecycleError::InvalidExecution)
         );
-        assert_eq!(order.filled_quantity, 2.0);
+        assert_eq!(order.filled_quantity, 0.0);
         assert_eq!(order.status, OrderStatus::Accepted);
     }
 }
