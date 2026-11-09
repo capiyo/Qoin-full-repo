@@ -546,6 +546,81 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
+    let (cycle_phase, cycle_snapshot) = {
+        let mut cycle = s.active_cycle.lock().await;
+        if cycle.is_active() {
+            cycle.record_observation();
+            cycle.record_signal_evaluation(
+                decision.magnitude,
+                decision.angle_radians.cos(),
+                decision.action,
+                &decision.features,
+                &decision.attention,
+                &decision.attended_features,
+                &decision.strategy_parameters.bullish_weights,
+                &decision.strategy_parameters.bearish_weights,
+            );
+        }
+        (cycle.snapshot().phase, cycle.clone())
+    };
+    if cycle_snapshot.snapshot().started_at_ms.is_some() {
+        if let Err(error) = persist_operating_cycle(&s, &cycle_snapshot).await {
+            tracing::error!(error=%error, symbol=%event.symbol, event_id=%event.event_id,
+                "operating-cycle Mirror persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"operating-cycle Mirror persistence failed",
+                "event_persisted":true,
+                "decision_persisted":true,
+                "event_id":event.event_id
+            })));
+        }
+    }
+    if cycle_phase == "paper_session" {
+        let (paper_result, paper_snapshot) = {
+            let mut paper = s.active_paper_session.lock().await;
+            let result = paper.process_event(&event, &decision);
+            (result, paper.clone())
+        };
+        if let Some((mirror, trade)) = paper_result {
+            let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
+                Ok(document) => document,
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
+            };
+            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror decision persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"paper Mirror decision persistence failed",
+                    "event_persisted":true,
+                    "decision_persisted":true,
+                    "event_id":event.event_id
+                })));
+            }
+            if let Some(trade) = trade {
+                let mut trade_doc = match mongodb::bson::to_document(&trade) {
+                    Ok(document) => document,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
+                };
+                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                        "error":"paper trade persistence failed",
+                        "event_persisted":true,
+                        "event_id":event.event_id
+                    })));
+                }
+            }
+            if let Err(error) = persist_paper_session(&s, &paper_snapshot).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"paper account state persistence failed",
+                    "event_persisted":true,
+                    "event_id":event.event_id
+                })));
+            }
+        }
+    }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
