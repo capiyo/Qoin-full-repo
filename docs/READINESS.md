@@ -1,8 +1,7 @@
 # Qoin readiness and completion evidence
 
 **Candidate branch:** `qoin/integration-completion`  
-**Current PR head:** `741c913d368ff10945c613760dd22779395add74`  
-**Last code-bearing commit:** `efbd78f11f37d543bfdac7faad2206507c19fe12` (the subsequent head change only updates this readiness evidence)  
+**Last code-bearing commit:** `efbd78f11f37d543bfdac7faad2206507c19fe12` (subsequent commits only update readiness evidence and CI trigger paths)  
 **Base snapshot:** PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`  
 **Safety posture:** real-money execution disabled by code policy; no merge to `main` and no production deployment.
 
