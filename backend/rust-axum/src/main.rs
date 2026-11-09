@@ -2,7 +2,7 @@ use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use mongodb::{
@@ -25,6 +25,7 @@ mod jepa;
 mod vector_engine;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
+use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,7 +77,12 @@ struct AppState {
     jepa_history: Arc<RwLock<HashMap<String, FeatureHistory>>>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
+    signal_config: EngineConfig,
+    signal_config_version: String,
 }
+#[derive(Deserialize)]
+struct SignalRequest { observation: ForceObservation, has_open_position: bool }
+
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
 #[derive(Deserialize)]
@@ -132,6 +138,16 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
+async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
+    let result = decide_signal(
+        request.observation,
+        &s.signal_config,
+        &s.signal_config_version,
+        request.has_open_position,
+    ).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(result))
+}
+
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
@@ -969,6 +985,17 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
 #[tokio::main]
 async fn main(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
+    let mut signal_config = EngineConfig::default();
+    if let Ok(value) = env::var("QOIN_SIGNAL_THRESHOLD") { signal_config.signal_threshold = value.parse().expect("QOIN_SIGNAL_THRESHOLD must be numeric"); }
+    if let Ok(value) = env::var("QOIN_INPUT_CLIP") { signal_config.input_clip = value.parse().expect("QOIN_INPUT_CLIP must be numeric"); }
+    if let Ok(value) = env::var("QOIN_TOP_K") { signal_config.top_k = value.parse().expect("QOIN_TOP_K must be an integer"); }
+    if let Ok(value) = env::var("QOIN_MIN_ALIGNMENT") { signal_config.min_alignment = value.parse().expect("QOIN_MIN_ALIGNMENT must be numeric"); }
+    if let Ok(value) = env::var("QOIN_MAX_ANGLE_RADIANS") { signal_config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric"); }
+    let signal_config_version = env::var("QOIN_CONFIG_VERSION").unwrap_or_else(|_| "baseline-v2".into());
+    decide_signal(ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+        open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
+        &signal_config, &signal_config_version, false).expect("Qoin signal engine configuration must be valid");
+
     let uri=env::var("QOIN_MONGODB_URI").unwrap_or_else(|_|"mongodb://127.0.0.1:27017".into());
     let client=Client::with_uri_str(&uri).await.expect("connect to MongoDB");
     let db=client.database(&env::var("QOIN_MONGODB_DATABASE").unwrap_or_else(|_|"qoin".into()));
@@ -1047,9 +1074,11 @@ async fn main(){
         stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
-        active_strategy:Arc::new(RwLock::new(active))
+        active_strategy:Arc::new(RwLock::new(active)),
+        signal_config,
+        signal_config_version
     };
-    let app=Router::new().route("/health",get(health)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
+    let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal)).route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
