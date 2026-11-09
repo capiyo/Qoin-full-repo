@@ -24,6 +24,7 @@ mod backtest;
 mod jepa;
 mod vector_engine;
 mod order_safety;
+mod execution_lifecycle;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
