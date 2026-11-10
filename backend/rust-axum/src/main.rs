@@ -197,7 +197,6 @@ async fn set_trading_enabled(
     }
 }
 
-#[axum::debug_handler]
 async fn submit_live_order(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -290,7 +289,6 @@ async fn submit_live_order(
     }
 }
 
-#[axum::debug_handler]
 async fn reconcile_live_order(
     State(s): State<AppState>,
     Path(client_order_id): Path<String>,
