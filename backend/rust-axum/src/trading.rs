@@ -89,9 +89,15 @@ impl BinanceExecutor {
     async fn signed_request(&self, method: Method, path: &str, mut params: Vec<(String, String)>) -> Result<serde_json::Value, String> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_millis();
         params.push(("timestamp".into(), timestamp.to_string())); params.push(("recvWindow".into(), "5000".into()));
-        let mut serializer = form_urlencoded::Serializer::new(String::new());
-        for (k, v) in params { serializer.append_pair(&k, &v); }
-        let query = serializer.finish(); let signature = self.sign(&query)?;
+        // Keep the non-Send URL serializer entirely inside this synchronous
+        // scope. Async handlers require every value live across an await to be
+        // Send; the serializer's custom encoding callback is not Sync.
+        let query = {
+            let mut serializer = form_urlencoded::Serializer::new(String::new());
+            for (k, v) in params { serializer.append_pair(&k, &v); }
+            serializer.finish()
+        };
+        let signature = self.sign(&query)?;
         let url = format!("{}{}?{}&signature={}", self.base_url.trim_end_matches('/'), path, query, signature);
         let response = self.client.request(method, url).header("X-MBX-APIKEY", &self.api_key).send().await.map_err(|e| format!("Binance request failed: {e}"))?;
         let status = response.status(); let body = response.json::<serde_json::Value>().await.map_err(|e| format!("Binance response was not JSON: {e}"))?;
