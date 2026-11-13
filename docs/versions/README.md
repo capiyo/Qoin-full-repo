@@ -22,7 +22,7 @@ Use identical timestamped source observations, chronological splits, feature ava
 
 ## Safety and product boundaries
 
-- V1 remains unchanged and is the baseline.
+- V1's vector-engine formulas and existing decision path remain unchanged and serve as the baseline; V2 integration is additive.
 - V2 research output cannot mutate V1 strategy configuration or submit orders.
 - Both tracks remain research/paper-only; the existing `docs/RISK_POLICY.md` is binding.
 - Live trading requires all risk gates to be implemented and independently verified plus explicit written user approval.
