@@ -12,7 +12,7 @@ The deterministic vector engine remains the control/baseline: frontend clients, 
 
 Branch: [`version-2-set-theoretic-attention`](https://github.com/capiyo/Qoin-full-repo/tree/version-2-set-theoretic-attention)
 
-Carries the complete Version 1 application and keeps its vector engine intact. Adds a separate Rust set-theoretic attention crate with permutation-invariant incidence embeddings, explicit set algebra, deterministic scaled-dot-product attention and an append-only MongoDB relationship ledger. See [Version 2 specification](./VERSION_2_SET_THEORETIC_ATTENTION.md).
+Carries the complete Version 1 application and keeps its vector engine intact. Adds a separate Rust set-theoretic attention crate with permutation-invariant incidence embeddings, explicit set algebra, deterministic temperature-scaled cosine attention and an append-only MongoDB relationship ledger. See [Version 2 specification](./VERSION_2_SET_THEORETIC_ATTENTION.md).
 
 The legacy JEPA sidecar remains an isolated inherited research artifact; it is not the V2 decision model and does not feed V2 or V1 decisions. The V2 set-attention implementation is currently a deterministic research baseline, not a trained transformer.
 
