@@ -15,7 +15,7 @@ The V1 vector engine remains available and authoritative for existing decisions.
 1. Construct timestamped evidence sets from causal, source-attributed market observations.
 2. Build a stable sorted vocabulary and a permutation-invariant binary incidence embedding.
 3. Compute set algebra (intersection, union, difference, symmetric difference, subset and disjointness).
-4. Apply deterministic scaled-dot-product attention over set embeddings. This is a transparent, untrained research baseline, not a trained transformer.
+4. Apply deterministic temperature-scaled cosine attention over set embeddings. This is a transparent, untrained research baseline, not a trained transformer.
 5. Emit relationship records with full source/target evidence snapshots, domains, individual observation timestamps, relation type, internally consistent Jaccard/coverage metrics, attention weight, attention temperature and model version.
 6. Append discovery, outcome and invalidation events to the relationship ledger. Historical events are immutable; corrections and later outcomes are additional events.
 
