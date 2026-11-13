@@ -366,15 +366,23 @@ impl RelationshipLedgerEvent {
     pub fn validate(&self) -> Result<(), SetAttentionError> {
         self.relationship.validate()?;
         if self.event_id.trim().is_empty() || self.event_id.len() > 256
-            || self.recorded_at_ms <= 0
+            || self.recorded_at_ms < self.relationship.observed_at_ms
         {
             return Err(SetAttentionError::InvalidLedgerEvent);
         }
         match (self.event_type, &self.outcome) {
-            (RelationshipEventType::OutcomeObserved, Some(outcome)) => outcome.validate()?,
-            (RelationshipEventType::OutcomeObserved, None) => return Err(SetAttentionError::MissingOutcome),
-            (_, Some(outcome)) => outcome.validate()?,
-            (_, None) => {}
+            (RelationshipEventType::Discovered, None)
+            | (RelationshipEventType::Invalidated, None) => {}
+            (RelationshipEventType::OutcomeObserved, Some(outcome)) => {
+                outcome.validate()?;
+                if outcome.evaluated_at_ms < self.recorded_at_ms {
+                    return Err(SetAttentionError::InvalidOutcome);
+                }
+            }
+            (RelationshipEventType::OutcomeObserved, None) => {
+                return Err(SetAttentionError::MissingOutcome);
+            }
+            _ => return Err(SetAttentionError::InvalidLedgerEvent),
         }
         Ok(())
     }
@@ -476,5 +484,34 @@ mod tests {
             max_favorable_excursion_bps: Some(6.0),
         });
         assert_eq!(event.validate(), Err(SetAttentionError::InvalidRelationship));
+    }
+
+    #[test]
+    fn ledger_enforces_append_event_chronology_and_payload_semantics() {
+        let source = evidence("source", &["trend"]);
+        let target = evidence("target", &["trend", "sweep"]);
+        let relationship = RelationshipRecord::discover(
+            &source, &target, "set-attention-v2.0.0", 0.7, 1.0,
+        ).unwrap();
+        let mut event = RelationshipLedgerEvent {
+            event_id: "evt-chronology".into(),
+            event_type: RelationshipEventType::Discovered,
+            recorded_at_ms: relationship.observed_at_ms,
+            relationship,
+            outcome: None,
+        };
+        event.validate().unwrap();
+        event.recorded_at_ms -= 1;
+        assert_eq!(event.validate(), Err(SetAttentionError::InvalidLedgerEvent));
+        event.recorded_at_ms += 1;
+        event.event_type = RelationshipEventType::OutcomeObserved;
+        event.outcome = Some(RelationshipOutcome {
+            evaluated_at_ms: event.recorded_at_ms - 1,
+            horizon_ms: 60_000,
+            realized_return_bps: Some(1.0),
+            max_adverse_excursion_bps: Some(-2.0),
+            max_favorable_excursion_bps: Some(3.0),
+        });
+        assert_eq!(event.validate(), Err(SetAttentionError::InvalidOutcome));
     }
 }
