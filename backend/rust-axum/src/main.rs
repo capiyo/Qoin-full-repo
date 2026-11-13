@@ -1249,6 +1249,7 @@ async fn discover_relationships(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     if request.candidates.is_empty() || request.candidates.len() > 500
         || request.recorded_at_ms <= 0 || request.model_version.trim().is_empty()
+        || request.model_version.len() > 128
     {
         return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "error":"provide 1-500 candidate sets, a model_version, and a positive recorded_at_ms"
@@ -1261,6 +1262,13 @@ async fn discover_relationships(
         candidate.validate().map_err(|error| (
             StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string()}))
         ))?;
+    }
+    let total_atoms = request.query.atoms.len()
+        + request.candidates.iter().map(|candidate| candidate.atoms.len()).sum::<usize>();
+    if total_atoms > 10_000 {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"total evidence atoms per discovery request cannot exceed 10000"
+        }))));
     }
     let latest_observation = request.candidates.iter()
         .map(|candidate| candidate.observed_at_ms)
@@ -1295,15 +1303,12 @@ async fn discover_relationships(
     for (candidate, attention_weight) in request.candidates.iter().zip(weights) {
         let relationship = RelationshipRecord::discover(
             &request.query, candidate, request.model_version.clone(), attention_weight,
+            request.temperature,
         ).map_err(|error| (StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error":error.to_string()}))))?;
         let identity = serde_json::to_vec(&(
-            &relationship.relationship_id,
-            relationship.observed_at_ms,
+            &relationship,
             request.recorded_at_ms,
-            &relationship.model_version,
-            &relationship.metrics,
-            relationship.attention_weight,
         )).map_err(|error| (StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error":format!("could not encode relationship identity: {error}")}))))?;
         let event_id = format!("v2rel:{}", hex::encode(Sha256::digest(identity)));
