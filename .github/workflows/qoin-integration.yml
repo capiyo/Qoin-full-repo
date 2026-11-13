@@ -35,7 +35,7 @@ jobs:
       - name: Install Drogon build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
+          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev libsqlite3-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Build Axum
         run: cargo build --manifest-path backend/rust-axum/Cargo.toml
       - name: Build Drogon
