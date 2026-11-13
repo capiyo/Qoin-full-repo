@@ -271,10 +271,26 @@ impl RelationshipRecord {
             if metrics.source_size == 0 { 1.0 } else { 0.0 }
         } else { metrics.intersection_size as f64 / metrics.target_size as f64 };
         let sorted_unique = |atoms: &[String]| atoms.windows(2).all(|pair| pair[0] < pair[1]);
+        let source_atoms = self.source_atoms.iter().cloned().collect::<BTreeSet<_>>();
+        let target_atoms = self.target_atoms.iter().cloned().collect::<BTreeSet<_>>();
+        let actual_intersection = source_atoms.intersection(&target_atoms).count();
+        let actual_union = source_atoms.union(&target_atoms).count();
+        let expected_relation_kind = if source_atoms == target_atoms {
+            SetRelationKind::Equal
+        } else if source_atoms.is_subset(&target_atoms) {
+            SetRelationKind::SourceSubsetOfTarget
+        } else if target_atoms.is_subset(&source_atoms) {
+            SetRelationKind::TargetSubsetOfSource
+        } else if source_atoms.is_disjoint(&target_atoms) {
+            SetRelationKind::Disjoint
+        } else {
+            SetRelationKind::Overlap
+        };
         if self.relationship_id != format!("{}::{}", self.source_set_id, self.target_set_id)
             || self.source_set_id.trim().is_empty() || self.source_set_id.len() > 160
             || self.target_set_id.trim().is_empty() || self.target_set_id.len() > 160
-            || self.source_domain.trim().is_empty() || self.target_domain.trim().is_empty()
+            || self.source_domain.trim().is_empty() || self.source_domain.len() > 160
+            || self.target_domain.trim().is_empty() || self.target_domain.len() > 160
             || self.source_observed_at_ms <= 0 || self.target_observed_at_ms <= 0
             || self.observed_at_ms != self.source_observed_at_ms.max(self.target_observed_at_ms)
             || self.source_atoms.len() > 512 || self.target_atoms.len() > 512
@@ -288,7 +304,9 @@ impl RelationshipRecord {
             || !(0.0..=1.0).contains(&self.attention_weight)
             || !self.attention_temperature.is_finite() || self.attention_temperature <= 0.0
             || metrics.intersection_size > metrics.source_size.min(metrics.target_size)
-            || metrics.union_size != expected_union
+            || metrics.intersection_size != actual_intersection
+            || metrics.union_size != actual_union || metrics.union_size != expected_union
+            || self.relation_kind != expected_relation_kind
             || !metrics.jaccard.is_finite() || !metrics.source_coverage.is_finite()
             || !metrics.target_coverage.is_finite()
             || (metrics.jaccard - expected_jaccard).abs() > 1e-12
