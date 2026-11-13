@@ -22,3 +22,4 @@ url = "2"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 qoin-vector-engine = { path = "crates/qoin-vector-engine" }
+qoin-set-theoretic-attention = { path = "crates/qoin-set-theoretic-attention" }
