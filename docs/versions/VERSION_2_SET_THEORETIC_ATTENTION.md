@@ -16,21 +16,21 @@ The V1 vector engine remains available and authoritative for existing decisions.
 2. Build a stable sorted vocabulary and a permutation-invariant binary incidence embedding.
 3. Compute set algebra (intersection, union, difference, symmetric difference, subset and disjointness).
 4. Apply deterministic scaled-dot-product attention over set embeddings. This is a transparent, untrained research baseline, not a trained transformer.
-5. Emit relationship records with set IDs, relation type, Jaccard/coverage metrics, attention weight, observation time and model version.
+5. Emit relationship records with full source/target evidence snapshots, domains, individual observation timestamps, relation type, internally consistent Jaccard/coverage metrics, attention weight, attention temperature and model version.
 6. Append discovery, outcome and invalidation events to the relationship ledger. Historical events are immutable; corrections and later outcomes are additional events.
 
 ## Relationship ledger
 
 The ledger is an append-only event stream. A relationship is not considered predictive merely because it has a high attention weight or set overlap. Outcome events must be evaluated on a declared forward horizon and preserve realized return, maximum adverse excursion and maximum favorable excursion. Relationship validity and usefulness must be assessed out of sample, with transaction costs, regime segmentation and multiple-testing controls.
 
-The first implementation exposes the ledger only through Axum's internal research API and persists events in MongoDB. It uses a unique event ID for idempotency and a time index for chronological inspection. No Firebase ID-token verification is claimed or added; these are internal service routes, not user-facing Archive/profile routes.
+The first implementation exposes the ledger only through Axum's internal research API and persists events in MongoDB. Each record preserves both evidence-set snapshots and the attention temperature so its set algebra and attention input can be reconstructed. It uses a unique event ID for idempotency and a time index for chronological inspection. No Firebase ID-token verification is claimed or added; these are internal service routes, not user-facing Archive/profile routes.
 
 ## Internal Axum research API
 
 - `POST /internal/v2/relationships/discover` accepts a query evidence set, 1-500 candidate sets, a model version, attention temperature and recording timestamp. Axum builds one stable vocabulary, embeds the sets, calculates normalized attention weights, derives set-relation metrics, and appends one discovery event per candidate.
 - `GET /internal/v2/relationships?limit=100` reads the newest ledger events (limit is clamped to 1-500).
 - `POST /internal/v2/relationships` appends a validated discovery, outcome or invalidation event. Event IDs are unique; duplicate IDs are rejected as conflicts.
-- Discovery event IDs are deterministic for the relationship snapshot, making identical retries idempotent. A partial database outage can leave earlier records from a multi-candidate request persisted; the API reports the persisted count and does not rewrite those events.
+- Discovery event IDs are deterministic hashes of the complete relationship snapshot and recording timestamp, making identical retries idempotent. Requests are bounded to 500 candidate sets, 512 atoms per set and 10,000 total atoms. A partial database outage can leave earlier records from a multi-candidate request persisted; the API reports the persisted count and does not rewrite those events.
 - These routes are Axum-internal and are not exposed through the public Drogon gateway. They are not Firebase-authenticated user endpoints.
 
 Example discovery payload:
