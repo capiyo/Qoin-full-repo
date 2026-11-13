@@ -1,14 +1,14 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui]
+    branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui, version-2-set-theoretic-attention]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
   pull_request:
-    branches: [main]
+    branches: [main, qoin-archive-explore-vector-ui]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
@@ -125,3 +125,37 @@ jobs:
           jq -e '[.items[] | select(.symbol == "BTC/USD")][0].venue_id == "binance_usdm" and [.items[] | select(.symbol == "NVDA")][0].venue_id == "finnhub"' /tmp/instruments.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
           jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
+
+          cat >/tmp/v2-relationships.json <<'JSON'
+          {
+            "query": {
+              "id": "ci-query",
+              "domain": "BTCUSDT/5m",
+              "observed_at_ms": 1792860000100,
+              "atoms": ["trend:up", "liquidity:sweep"]
+            },
+            "candidates": [
+              {
+                "id": "ci-candidate-1",
+                "domain": "BTCUSDT/5m",
+                "observed_at_ms": 1792860000100,
+                "atoms": ["trend:up", "liquidity:sweep", "volatility:normal"]
+              },
+              {
+                "id": "ci-candidate-2",
+                "domain": "BTCUSDT/5m",
+                "observed_at_ms": 1792860000100,
+                "atoms": ["funding:positive", "basis:wide"]
+              }
+            ],
+            "model_version": "ci-v2.0.0",
+            "temperature": 1.0,
+            "recorded_at_ms": 1792860000200
+          }
+          JSON
+          curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery.json
+          jq -e '.candidate_count == 2 and .persisted == 2 and .already_present == 0 and .decision_authority == "version-1-vector-engine"' /tmp/v2-discovery.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery-retry.json
+          jq -e '.persisted == 0 and .already_present == 2' /tmp/v2-discovery-retry.json
+          curl -fsS 'http://127.0.0.1:8081/internal/v2/relationships?limit=10' >/tmp/v2-ledger.json
+          jq -e 'length == 2 and all(.[]; .event_type == "discovered" and .relationship.model_version == "ci-v2.0.0")' /tmp/v2-ledger.json
