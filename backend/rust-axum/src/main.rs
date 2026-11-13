@@ -1231,7 +1231,6 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
     match s.active_strategy.write(){Ok(mut current)=>*current=stored.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned after persistence"})))}
     (StatusCode::OK,Json(serde_json::json!({"status":"strategy_updated","strategy":stored,"live_trading":false})))
 }
-#[tokio::main]
 #[derive(Deserialize)]
 struct RelationshipLedgerQuery { limit: Option<i64> }
 
@@ -1409,6 +1408,7 @@ async fn list_relationship_events(
     Ok(Json(events))
 }
 
+#[tokio::main]
 async fn main(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
     let mut signal_config = EngineConfig::default();
