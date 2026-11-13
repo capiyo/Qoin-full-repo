@@ -173,9 +173,11 @@ impl SetEmbedding {
     }
 }
 
-/// Deterministic scaled-dot-product attention over set embeddings. The returned
-/// weights are normalized across the candidate keys. No parameters are trained
-/// by this function; it is a reproducible research baseline for V2.
+/// Deterministic temperature-scaled cosine attention over L2-normalized set
+/// embeddings. The returned weights are normalized across candidate keys. Since
+/// the embeddings are unit-normalized, their dot product is already cosine
+/// similarity; applying the transformer's additional sqrt(d) divisor would
+/// suppress scores as vocabulary size grows. No parameters are trained here.
 pub fn set_attention_weights(
     query: &SetEmbedding,
     keys: &[SetEmbedding],
@@ -192,7 +194,7 @@ pub fn set_attention_weights(
         }
     }
 
-    let scale = (query.values.len() as f64).sqrt() * temperature;
+    let scale = temperature;
     let logits = keys.iter().map(|key| {
         query.values.iter().zip(&key.values)
             .map(|(left, right)| left * right)
@@ -444,6 +446,9 @@ mod tests {
         assert!((weights.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         assert!(weights[0] > weights[1]);
         assert!(weights.iter().all(|weight| weight.is_finite() && *weight >= 0.0));
+        let sharp = set_attention_weights(&q, &keys, 0.1).unwrap();
+        let diffuse = set_attention_weights(&q, &keys, 10.0).unwrap();
+        assert!(sharp[0] > diffuse[0]);
     }
 
     #[test]
