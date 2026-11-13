@@ -29,6 +29,7 @@ mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use jepa::{FeatureHistory, JepaClient, JepaPredictionRecord};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
+use qoin_set_theoretic_attention::RelationshipLedgerEvent;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,6 +77,7 @@ struct AppState {
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     jepa_predictions: Collection<Document>,
+    relationship_ledger: Collection<Document>,
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
     jepa_client: Option<JepaClient>,
@@ -1229,6 +1231,72 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
     (StatusCode::OK,Json(serde_json::json!({"status":"strategy_updated","strategy":stored,"live_trading":false})))
 }
 #[tokio::main]
+#[derive(Deserialize)]
+struct RelationshipLedgerQuery { limit: Option<i64> }
+
+async fn append_relationship_event(
+    State(state): State<AppState>,
+    Json(event): Json<RelationshipLedgerEvent>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    event.validate().map_err(|error| (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({"error": error.to_string()})),
+    ))?;
+    let event_id = event.event_id.clone();
+    let document = mongodb::bson::to_document(&event).map_err(|error| (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({"error": format!("could not serialize ledger event: {error}")})),
+    ))?;
+    match state.relationship_ledger.insert_one(document, None).await {
+        Ok(_) => Ok((StatusCode::CREATED, Json(serde_json::json!({
+            "event_id": event_id,
+            "persisted": true,
+            "append_only": true
+        })))),
+        Err(error) if error.to_string().contains("E11000") => Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error":"relationship ledger event_id already exists"})),
+        )),
+        Err(error) => {
+            tracing::error!(error=%error, event_id=%event_id, "relationship ledger append failed");
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error":"relationship ledger unavailable"})),
+            ))
+        }
+    }
+}
+
+async fn list_relationship_events(
+    State(state): State<AppState>,
+    Query(query): Query<RelationshipLedgerQuery>,
+) -> Result<Json<Vec<RelationshipLedgerEvent>>, (StatusCode, Json<serde_json::Value>)> {
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let options = FindOptions::builder()
+        .sort(doc!{"recorded_at_ms":-1,"event_id":1})
+        .limit(limit)
+        .build();
+    let mut cursor = state.relationship_ledger.find(None, Some(options)).await.map_err(|error| {
+        tracing::error!(error=%error, "relationship ledger query failed");
+        (StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"relationship ledger unavailable"})))
+    })?;
+    let documents = cursor.try_collect::<Vec<Document>>().await.map_err(|error| {
+        tracing::error!(error=%error, "relationship ledger read failed");
+        (StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"relationship ledger read failed"})))
+    })?;
+    let events = documents.into_iter()
+        .map(mongodb::bson::from_document::<RelationshipLedgerEvent>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            tracing::error!(error=%error, "relationship ledger contains an invalid persisted event");
+            (StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error":"relationship ledger contains invalid data"})))
+        })?;
+    Ok(Json(events))
+}
+
 async fn main(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
     let mut signal_config = EngineConfig::default();
@@ -1251,6 +1319,7 @@ async fn main(){
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let jepa_predictions:Collection<Document>=db.collection("jepa_predictions");
+    let relationship_ledger:Collection<Document>=db.collection("v2_relationship_ledger");
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     trading_controls.update_one(doc!{"_id":"execution"},
@@ -1271,6 +1340,13 @@ async fn main(){
     jepa_predictions.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"symbol":1,"event_ts_ms":-1}).build(),None).await
         .expect("JEPA prediction lookup index");
+    relationship_ledger.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("relationship ledger event idempotency index");
+    relationship_ledger.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"recorded_at_ms":-1,"event_id":1}).build(),None).await
+        .expect("relationship ledger chronological index");
     let baseline=EdgeStrategy::baseline();
     let active=match strategies.find_one(doc!{"strategy_key":STRATEGY_KEY},None).await.expect("load edge strategy map"){
         Some(doc)=>match mongodb::bson::from_document::<EdgeStrategy>(doc){Ok(v)=>{v.validate().expect("stored edge strategy must validate");v},
@@ -1340,7 +1416,7 @@ async fn main(){
         "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,orders,trading_controls,jepa_client,
+        stream, database: db.clone(), events,states,decisions,strategies,jepa_predictions,relationship_ledger,orders,trading_controls,jepa_client,
         jepa_history:Arc::new(RwLock::new(HashMap::new())),
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
@@ -1360,6 +1436,7 @@ async fn main(){
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/jepa",get(get_jepa_prediction))
+        .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());
