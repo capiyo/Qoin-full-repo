@@ -40,6 +40,7 @@ impl EvidenceSet {
         if self.id.trim().is_empty() || self.id.len() > 160
             || self.domain.trim().is_empty() || self.domain.len() > 160
             || self.observed_at_ms <= 0
+            || self.atoms.len() > 512
             || self.atoms.iter().any(|atom| atom.trim().is_empty() || atom.len() > 256)
         {
             return Err(SetAttentionError::InvalidEvidenceSet);
@@ -71,6 +72,8 @@ impl EvidenceSet {
         SetRelationMetrics {
             intersection_size: intersection,
             union_size: union,
+            source_size,
+            target_size,
             jaccard: if union == 0 { 1.0 } else { intersection as f64 / union as f64 },
             source_coverage: if source_size == 0 {
                 if target_size == 0 { 1.0 } else { 0.0 }
@@ -104,6 +107,8 @@ impl EvidenceSet {
 pub struct SetRelationMetrics {
     pub intersection_size: usize,
     pub union_size: usize,
+    pub source_size: usize,
+    pub target_size: usize,
     pub jaccard: f64,
     pub source_coverage: f64,
     pub target_coverage: f64,
@@ -207,11 +212,18 @@ pub struct RelationshipRecord {
     pub relationship_id: String,
     pub source_set_id: String,
     pub target_set_id: String,
+    pub source_domain: String,
+    pub target_domain: String,
+    pub source_observed_at_ms: i64,
+    pub target_observed_at_ms: i64,
+    pub source_atoms: Vec<String>,
+    pub target_atoms: Vec<String>,
     pub observed_at_ms: i64,
     pub model_version: String,
     pub relation_kind: SetRelationKind,
     pub metrics: SetRelationMetrics,
     pub attention_weight: f64,
+    pub attention_temperature: f64,
 }
 
 impl RelationshipRecord {
@@ -220,6 +232,7 @@ impl RelationshipRecord {
         target: &EvidenceSet,
         model_version: impl Into<String>,
         attention_weight: f64,
+        attention_temperature: f64,
     ) -> Result<Self, SetAttentionError> {
         source.validate()?;
         target.validate()?;
@@ -228,31 +241,59 @@ impl RelationshipRecord {
             relationship_id: format!("{}::{}", source.id, target.id),
             source_set_id: source.id.clone(),
             target_set_id: target.id.clone(),
+            source_domain: source.domain.clone(),
+            target_domain: target.domain.clone(),
+            source_observed_at_ms: source.observed_at_ms,
+            target_observed_at_ms: target.observed_at_ms,
+            source_atoms: source.atoms.iter().cloned().collect(),
+            target_atoms: target.atoms.iter().cloned().collect(),
             observed_at_ms: source.observed_at_ms.max(target.observed_at_ms),
             model_version,
             relation_kind: source.relation_kind(target),
             metrics: source.relation_metrics(target),
             attention_weight,
+            attention_temperature,
         };
         record.validate()?;
         Ok(record)
     }
 
     pub fn validate(&self) -> Result<(), SetAttentionError> {
-        if self.relationship_id.trim().is_empty()
-            || self.source_set_id.trim().is_empty()
-            || self.target_set_id.trim().is_empty()
-            || self.model_version.trim().is_empty()
-            || self.observed_at_ms <= 0
+        let metrics = &self.metrics;
+        let expected_union = metrics.source_size.saturating_add(metrics.target_size)
+            .saturating_sub(metrics.intersection_size);
+        let expected_jaccard = if metrics.union_size == 0 { 1.0 }
+            else { metrics.intersection_size as f64 / metrics.union_size as f64 };
+        let expected_source_coverage = if metrics.source_size == 0 {
+            if metrics.target_size == 0 { 1.0 } else { 0.0 }
+        } else { metrics.intersection_size as f64 / metrics.source_size as f64 };
+        let expected_target_coverage = if metrics.target_size == 0 {
+            if metrics.source_size == 0 { 1.0 } else { 0.0 }
+        } else { metrics.intersection_size as f64 / metrics.target_size as f64 };
+        let sorted_unique = |atoms: &[String]| atoms.windows(2).all(|pair| pair[0] < pair[1]);
+        if self.relationship_id != format!("{}::{}", self.source_set_id, self.target_set_id)
+            || self.source_set_id.trim().is_empty() || self.source_set_id.len() > 160
+            || self.target_set_id.trim().is_empty() || self.target_set_id.len() > 160
+            || self.source_domain.trim().is_empty() || self.target_domain.trim().is_empty()
+            || self.source_observed_at_ms <= 0 || self.target_observed_at_ms <= 0
+            || self.observed_at_ms != self.source_observed_at_ms.max(self.target_observed_at_ms)
+            || self.source_atoms.len() > 512 || self.target_atoms.len() > 512
+            || self.source_atoms.len() != metrics.source_size
+            || self.target_atoms.len() != metrics.target_size
+            || !sorted_unique(&self.source_atoms) || !sorted_unique(&self.target_atoms)
+            || self.source_atoms.iter().chain(&self.target_atoms)
+                .any(|atom| atom.trim().is_empty() || atom.len() > 256)
+            || self.model_version.trim().is_empty() || self.model_version.len() > 128
             || !self.attention_weight.is_finite()
             || !(0.0..=1.0).contains(&self.attention_weight)
-            || !self.metrics.jaccard.is_finite()
-            || !self.metrics.source_coverage.is_finite()
-            || !self.metrics.target_coverage.is_finite()
-            || !(0.0..=1.0).contains(&self.metrics.jaccard)
-            || !(0.0..=1.0).contains(&self.metrics.source_coverage)
-            || !(0.0..=1.0).contains(&self.metrics.target_coverage)
-            || self.metrics.intersection_size > self.metrics.union_size
+            || !self.attention_temperature.is_finite() || self.attention_temperature <= 0.0
+            || metrics.intersection_size > metrics.source_size.min(metrics.target_size)
+            || metrics.union_size != expected_union
+            || !metrics.jaccard.is_finite() || !metrics.source_coverage.is_finite()
+            || !metrics.target_coverage.is_finite()
+            || (metrics.jaccard - expected_jaccard).abs() > 1e-12
+            || (metrics.source_coverage - expected_source_coverage).abs() > 1e-12
+            || (metrics.target_coverage - expected_target_coverage).abs() > 1e-12
         {
             return Err(SetAttentionError::InvalidRelationship);
         }
@@ -391,7 +432,7 @@ mod tests {
     fn ledger_rejects_non_finite_metrics_and_missing_outcomes() {
         let source = evidence("source", &["trend"]);
         let target = evidence("target", &["trend", "sweep"]);
-        let mut relationship = RelationshipRecord::discover(&source, &target, "set-attention-v2.0.0", 0.7).unwrap();
+        let mut relationship = RelationshipRecord::discover(&source, &target, "set-attention-v2.0.0", 0.7, 1.0).unwrap();
         let mut event = RelationshipLedgerEvent {
             event_id: "evt-1".into(),
             event_type: RelationshipEventType::Discovered,
