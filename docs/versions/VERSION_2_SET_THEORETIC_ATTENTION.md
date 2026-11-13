@@ -25,6 +25,38 @@ The ledger is an append-only event stream. A relationship is not considered pred
 
 The first implementation exposes the ledger only through Axum's internal research API and persists events in MongoDB. It uses a unique event ID for idempotency and a time index for chronological inspection. No Firebase ID-token verification is claimed or added; these are internal service routes, not user-facing Archive/profile routes.
 
+## Internal Axum research API
+
+- `POST /internal/v2/relationships/discover` accepts a query evidence set, 1-500 candidate sets, a model version, attention temperature and recording timestamp. Axum builds one stable vocabulary, embeds the sets, calculates normalized attention weights, derives set-relation metrics, and appends one discovery event per candidate.
+- `GET /internal/v2/relationships?limit=100` reads the newest ledger events (limit is clamped to 1-500).
+- `POST /internal/v2/relationships` appends a validated discovery, outcome or invalidation event. Event IDs are unique; duplicate IDs are rejected as conflicts.
+- Discovery event IDs are deterministic for the relationship snapshot, making identical retries idempotent. A partial database outage can leave earlier records from a multi-candidate request persisted; the API reports the persisted count and does not rewrite those events.
+- These routes are Axum-internal and are not exposed through the public Drogon gateway. They are not Firebase-authenticated user endpoints.
+
+Example discovery payload:
+
+```json
+{
+  "query": {
+    "id": "gold-5m-trend",
+    "domain": "XAUUSD/5m",
+    "observed_at_ms": 1800000000000,
+    "atoms": ["trend:higher_high", "liquidity:sweep"]
+  },
+  "candidates": [
+    {
+      "id": "gold-5m-volatility",
+      "domain": "XAUUSD/5m",
+      "observed_at_ms": 1800000000000,
+      "atoms": ["trend:higher_high", "liquidity:sweep", "volatility:expansion"]
+    }
+  ],
+  "model_version": "set-attention-v2.0.0",
+  "temperature": 1.0,
+  "recorded_at_ms": 1800000000100
+}
+```
+
 ## Validation plan
 
 - Unit tests for set algebra, permutation invariance, embedding dimension checks, attention normalization, and ledger validation.
