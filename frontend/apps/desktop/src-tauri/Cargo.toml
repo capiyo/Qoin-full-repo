@@ -1,0 +1,17 @@
+[package]
+name = "qoin-desktop"
+version = "0.1.0"
+description = "Qoin quantitative research desktop workstation"
+authors = ["Qoin"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+qoin-vector-motion = { path = "../../../../backend/rust-axum/crates/qoin-vector-motion" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

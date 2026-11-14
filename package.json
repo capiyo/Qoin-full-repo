@@ -8,6 +8,9 @@
   "scripts": {
     "dev:web": "pnpm --filter @qoin/react-web dev",
     "dev:mobile": "pnpm --filter @qoin/mobile start",
+    "dev:desktop": "pnpm --filter @qoin/desktop tauri:dev",
+    "build:web": "pnpm --filter @qoin/react-web build",
+    "build:desktop": "pnpm --filter @qoin/desktop tauri:build",
     "dev:api": "cargo run --manifest-path backend/rust-axum/Cargo.toml",
     "dev:gateway": "cmake -S backend/cpp-drogon -B build/drogon && cmake --build build/drogon",
     "test:api": "cargo test --workspace",

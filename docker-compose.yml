@@ -2,14 +2,96 @@ services:
   mongodb:
     image: mongo:7
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:27017:27017"
+    command: ["mongod", "--auth", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set a unique MongoDB root username in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set a strong MongoDB root password in .env}
+      QOIN_MONGODB_DATABASE: ${QOIN_MONGODB_DATABASE:-qoin}
+      QOIN_MONGODB_APP_USERNAME: ${QOIN_MONGODB_APP_USERNAME:?Set a Qoin application username in .env}
+      QOIN_MONGODB_APP_PASSWORD: ${QOIN_MONGODB_APP_PASSWORD:?Set a strong Qoin application password in .env}
     volumes:
       - qoin-mongodb-data:/data/db
+      - ./docker/mongo-init/01-create-qoin-user.js:/docker-entrypoint-initdb.d/01-create-qoin-user.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
+    networks: [qoin-private]
+
+  axum:
+    build:
+      context: .
+      dockerfile: backend/rust-axum/Dockerfile
+    restart: unless-stopped
+    environment:
+      QOIN_MONGODB_URI: mongodb://${QOIN_MONGODB_APP_USERNAME}:${QOIN_MONGODB_APP_PASSWORD}@mongodb:27017/${QOIN_MONGODB_DATABASE:-qoin}?authSource=${QOIN_MONGODB_DATABASE:-qoin}
+      QOIN_MONGODB_DATABASE: ${QOIN_MONGODB_DATABASE:-qoin}
+      QOIN_AXUM_ADDR: 0.0.0.0:8081
+      QOIN_AXUM_INTERNAL_ADDR: 127.0.0.1:8081
+      RUST_LOG: ${RUST_LOG:-info}
+      QOIN_SIGNAL_THRESHOLD: ${QOIN_SIGNAL_THRESHOLD:-0.65}
+      QOIN_INPUT_CLIP: ${QOIN_INPUT_CLIP:-3.0}
+      QOIN_TOP_K: ${QOIN_TOP_K:-5}
+      QOIN_MIN_ALIGNMENT: ${QOIN_MIN_ALIGNMENT:-0.15}
+      QOIN_MAX_ANGLE_RADIANS: ${QOIN_MAX_ANGLE_RADIANS:-1.42}
+      QOIN_CONFIG_VERSION: ${QOIN_CONFIG_VERSION:-baseline-v2}
+      QOIN_TRADING_MODE: ${QOIN_TRADING_MODE:-disabled}
+      QOIN_TRADING_ENABLED: ${QOIN_TRADING_ENABLED:-false}
+      QOIN_LIVE_TRADING_CONFIRM: ${QOIN_LIVE_TRADING_CONFIRM:-}
+      QOIN_TESTNET_TRADING_CONFIRM: ${QOIN_TESTNET_TRADING_CONFIRM:-}
+      QOIN_EXECUTION_TOKEN: ${QOIN_EXECUTION_TOKEN:-}
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+      BINANCE_FUTURES_BASE_URL: ${BINANCE_FUTURES_BASE_URL:-}
+      QOIN_MAX_ORDER_NOTIONAL_USDT: ${QOIN_MAX_ORDER_NOTIONAL_USDT:-25}
+      QOIN_MAX_ORDER_QUANTITY: ${QOIN_MAX_ORDER_QUANTITY:-0.001}
+      QOIN_BINANCE_STREAM_ENABLED: ${QOIN_BINANCE_STREAM_ENABLED:-true}
+      QOIN_BINANCE_STREAM_SYMBOLS: ${QOIN_BINANCE_STREAM_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT}
+      QOIN_COINBASE_STREAM_ENABLED: ${QOIN_COINBASE_STREAM_ENABLED:-true}
+      QOIN_KRAKEN_STREAM_ENABLED: ${QOIN_KRAKEN_STREAM_ENABLED:-true}
+      QOIN_KRAKEN_STREAM_SYMBOLS: ${QOIN_KRAKEN_STREAM_SYMBOLS:-BTC/USD,ETH/USD,SOL/USD}
+      QOIN_COINBASE_STREAM_PRODUCTS: ${QOIN_COINBASE_STREAM_PRODUCTS:-BTC-USD,ETH-USD,SOL-USD}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      QOIN_JEPA_URL: ${QOIN_JEPA_URL:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [qoin-private]
+
+  gateway:
+    build:
+      context: .
+      dockerfile: backend/cpp-drogon/Dockerfile
+    restart: unless-stopped
+    environment:
+      QOIN_AXUM_URL: http://axum:8081
+      QOIN_AXUM_WS_URL: ws://axum:8081
+      QOIN_DROGON_HOST: 0.0.0.0
+      QOIN_DROGON_PORT: 8080
+    depends_on:
+      axum:
+        condition: service_healthy
+    ports:
+      - "${QOIN_PUBLIC_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [qoin-private]
+
+networks:
+  qoin-private:
+    driver: bridge
+
 volumes:
   qoin-mongodb-data:
