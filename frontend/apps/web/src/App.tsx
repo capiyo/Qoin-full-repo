@@ -186,6 +186,55 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </section>;
 }
 
+type LedgerRecord = { id: string; timestamp: number | null; kind: "decision" | "observation" | "history"; title: string; summary: string; reference: string };
+function ResearchLedger({ decision, history, events }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[]; events: QoinMarketEvent[] }) {
+  const records: LedgerRecord[] = [
+    ...events.map((event) => ({
+      id: "event:" + event.event_id,
+      timestamp: event.ts_ms,
+      kind: "observation" as const,
+      title: event.event_type.replaceAll("_", " "),
+      summary: [event.price != null ? "Price " + event.price : null, event.size != null ? "Size " + event.size : null, event.side ? "Side " + event.side : null, event.funding_rate != null ? "Funding " + event.funding_rate : null].filter(Boolean).join(" · ") || "Provider observation recorded",
+      reference: event.event_id,
+    })),
+    ...history.map((item, index) => ({
+      id: "history:" + (item.stored_at || index),
+      timestamp: item.stored_at ? Date.parse(item.stored_at) : null,
+      kind: "history" as const,
+      title: "Historical engine decision · " + item.action.toUpperCase(),
+      summary: "Magnitude " + item.magnitude.toFixed(4) + " · " + (item.strategy_version || "strategy version unavailable"),
+      reference: item.stored_at || "Historical vector record",
+    })),
+    ...(decision ? [{
+      id: "decision:" + (decision.input_event?.event_id || decision.strategy_version || decision.symbol),
+      timestamp: decision.input_event?.event_ts_ms ?? null,
+      kind: "decision" as const,
+      title: "Latest engine evaluation · " + (decision.action || "wait").toUpperCase(),
+      summary: decision.reason || "No rationale was supplied by the engine.",
+      reference: decision.input_event?.event_id || "Source event reference unavailable",
+    }] : []),
+  ].sort((left, right) => (right.timestamp ?? -1) - (left.timestamp ?? -1)).slice(0, 40);
+  const formatTime = (value: number | null) => value != null && Number.isFinite(value) ? new Date(value).toLocaleString() : "Timestamp unavailable";
+  return <section aria-label="Research decision and evidence ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #e4eaf3", borderRadius: 16, background: "#fff" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div><strong style={{ color: "#243750", fontSize: 14 }}>Decision &amp; evidence ledger</strong><p style={{ margin: "4px 0 0", color: "#8794a7", fontSize: 10 }}>A readable history of engine evaluations and their recorded market evidence.</p></div>
+      <span style={{ color: "#2867dc", fontSize: 10, fontWeight: 800 }}>{records.length} RECORDS</span>
+    </div>
+    {records.length ? <div style={{ display: "grid", gap: 8 }}>
+      {records.map((record) => <details key={record.id} style={{ padding: "11px 12px", border: "1px solid #edf1f6", borderRadius: 11, background: record.kind === "decision" ? "#f5f8ff" : "#fff" }}>
+        <summary style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", listStyle: "none", flexWrap: "wrap" }}>
+          <span style={{ minWidth: 76, color: record.kind === "decision" ? "#2867dc" : "#8190a4", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{record.kind}</span>
+          <strong style={{ flex: "1 1 180px", color: "#34465f", fontSize: 11, textTransform: "capitalize" }}>{record.title}</strong>
+          <small style={{ color: "#9aa6b5", fontSize: 9 }}>{formatTime(record.timestamp)}</small>
+        </summary>
+        <p style={{ margin: "9px 0 5px", color: "#52637a", fontSize: 10, lineHeight: 1.5 }}>{record.summary}</p>
+        <small style={{ color: "#8996a8", fontSize: 9 }}>Source reference · {record.reference}</small>
+      </details>)}
+    </div> : <div style={{ padding: 16, borderRadius: 11, background: "#f7f9fc", color: "#8794a7", fontSize: 11 }}>No persisted evidence or decision records are available for this instrument yet.</div>}
+    <p style={{ margin: 0, color: "#9aa6b5", fontSize: 9, lineHeight: 1.5 }}>Read-only research history. These entries reflect records currently returned by the API; this view does not claim that set relationships or ledger-grade immutable audit storage are implemented.</p>
+  </section>;
+}
+
 function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
@@ -710,6 +759,7 @@ export default function App() {
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
+              <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
               <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
