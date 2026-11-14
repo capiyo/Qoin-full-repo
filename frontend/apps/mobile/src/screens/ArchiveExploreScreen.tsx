@@ -160,6 +160,55 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   </View>;
 }
 
+type MobileLedgerRecord = { id: string; timestamp: number | null; kind: "decision" | "observation" | "history"; title: string; summary: string; reference: string };
+function MobileResearchLedger({ decision, history, events }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[]; events: QoinMarketEvent[] }) {
+  const records: MobileLedgerRecord[] = [
+    ...events.map((event) => ({
+      id: "event:" + event.event_id,
+      timestamp: event.ts_ms,
+      kind: "observation" as const,
+      title: event.event_type.replaceAll("_", " "),
+      summary: [event.price != null ? "Price " + event.price : null, event.size != null ? "Size " + event.size : null, event.side ? "Side " + event.side : null, event.funding_rate != null ? "Funding " + event.funding_rate : null].filter(Boolean).join(" · ") || "Provider observation recorded",
+      reference: event.event_id,
+    })),
+    ...history.map((item, index) => ({
+      id: "history:" + (item.stored_at || index),
+      timestamp: item.stored_at ? Date.parse(item.stored_at) : null,
+      kind: "history" as const,
+      title: "Historical engine decision · " + item.action.toUpperCase(),
+      summary: "Magnitude " + item.magnitude.toFixed(4) + " · " + (item.strategy_version || "strategy version unavailable"),
+      reference: item.stored_at || "Historical vector record",
+    })),
+    ...(decision ? [{
+      id: "decision:" + (decision.input_event?.event_id || decision.strategy_version || decision.symbol),
+      timestamp: decision.input_event?.event_ts_ms ?? null,
+      kind: "decision" as const,
+      title: "Latest engine evaluation · " + (decision.action || "wait").toUpperCase(),
+      summary: decision.reason || "No rationale was supplied by the engine.",
+      reference: decision.input_event?.event_id || "Source event reference unavailable",
+    }] : []),
+  ].sort((left, right) => (right.timestamp ?? -1) - (left.timestamp ?? -1)).slice(0, 40);
+  return <View style={{ gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" }}>
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: "#243750", fontSize: 14, fontWeight: "800" }}>Decision &amp; evidence ledger</Text>
+        <Text style={{ marginTop: 4, color: "#8794A7", fontSize: 10 }}>Readable history of engine evaluations and recorded market evidence.</Text>
+      </View>
+      <Text style={{ color: "#2867DC", fontSize: 10, fontWeight: "800" }}>{records.length} RECORDS</Text>
+    </View>
+    {records.length ? records.map((record) => <View key={record.id} style={{ padding: 11, borderWidth: 1, borderColor: "#EDF1F6", borderRadius: 11, backgroundColor: record.kind === "decision" ? "#F5F8FF" : "#FFFFFF", gap: 6 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+        <Text style={{ color: record.kind === "decision" ? "#2867DC" : "#8190A4", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{record.kind}</Text>
+        <Text style={{ color: "#9AA6B5", fontSize: 9 }}>{record.timestamp != null && Number.isFinite(record.timestamp) ? new Date(record.timestamp).toLocaleString() : "Timestamp unavailable"}</Text>
+      </View>
+      <Text style={{ color: "#34465F", fontSize: 11, fontWeight: "800", textTransform: "capitalize" }}>{record.title}</Text>
+      <Text style={{ color: "#52637A", fontSize: 10, lineHeight: 15 }}>{record.summary}</Text>
+      <Text selectable style={{ color: "#8996A8", fontSize: 9 }}>Source reference · {record.reference}</Text>
+    </View>) : <View style={{ padding: 14, borderRadius: 11, backgroundColor: "#F7F9FC" }}><Text style={{ color: "#8794A7", fontSize: 11 }}>No persisted evidence or decision records are available for this instrument yet.</Text></View>}
+    <Text style={{ color: "#9AA6B5", fontSize: 9, lineHeight: 14 }}>Read-only research history. This view reflects records returned by the API; it does not claim immutable audit storage or persisted set relationships.</Text>
+  </View>;
+}
+
 export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
@@ -564,6 +613,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             </View>
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
+            <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
