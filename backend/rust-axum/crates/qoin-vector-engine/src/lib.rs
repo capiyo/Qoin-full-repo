@@ -6,7 +6,7 @@
 //! not trained weights and not evidence of an edge.
 
 use serde::{Deserialize, Serialize};
-use qoin_market_space::{attribution::{aggregate_by_family, attribute_exact_shapley, AttributionError, AttributionReport, ContributionDirection, FamilyContribution}, MarketFeature, MarketSpaceError, MarketVector};
+use qoin_market_space::{attribution::{aggregate_by_family, attribute_exact_shapley, AttributionError, AttributionReport, ContributionDirection, FamilyContribution}, FeatureAvailability, MarketFeature, MarketSpaceError, MarketVector};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -257,6 +257,13 @@ pub fn decide_from_market_vector(
     for (index, feature) in features.iter().enumerate() {
         let coordinate = vector.coordinates.get(feature)
             .ok_or(MarketSpaceError::IncompleteVector)?;
+        if coordinate.status==FeatureAvailability::NotApplicable{
+            // A structurally out-of-scope force contributes no vote and no
+            // missing-data penalty. Applicable-but-missing remains fail-closed.
+            observed[index]=0.0;
+            qualities[index]=0.0;
+            continue;
+        }
         observed[index] = vector.require(*feature)? * coordinate.quality;
         qualities[index] = coordinate.quality;
     }
@@ -305,7 +312,11 @@ pub fn decide_from_market_vector(
     }
     let keys = features.iter().map(|feature| feature.as_str().to_owned()).collect::<Vec<_>>();
     let mut attribution = attribute_exact_shapley(&keys, &coalition_values)?;
-    attribution.coverage_pct = qualities.iter().sum::<f64>() / qualities.len() as f64 * 100.0;
+    let applicable_inputs=features.iter().filter(|feature|{
+        vector.coordinates.get(feature)
+            .is_some_and(|coordinate|coordinate.status!=FeatureAvailability::NotApplicable)
+    }).count().max(1);
+    attribution.coverage_pct = qualities.iter().sum::<f64>() / applicable_inputs as f64 * 100.0;
     for (contribution, (feature, quality)) in attribution.contributions.iter_mut()
         .zip(features.iter().zip(qualities.iter())) {
         contribution.feature = Some(*feature);
