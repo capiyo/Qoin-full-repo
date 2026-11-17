@@ -920,6 +920,104 @@ async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
 #[derive(Deserialize)]
+struct LedgerCorrectionRequest {
+    symbol: String,
+    venue: String,
+    event_id: String,
+    expected_source_hash: String,
+    corrected_event: MarketEvent,
+    reason: String,
+}
+
+/// Append a proposed correction without mutating raw source or historical ledger
+/// records. Promotion is deliberately separate: V1 and the active V2 projection
+/// continue to use canonical source evidence until a reviewed migration exists.
+async fn propose_set_ledger_correction(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<LedgerCorrectionRequest>,
+) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    if request.symbol.trim().is_empty() || request.symbol.len()>96
+        || request.venue.trim().is_empty() || request.venue.len()>64
+        || request.event_id.trim().is_empty() || request.event_id.len()>256
+        || request.reason.trim().is_empty() || request.reason.len()>1000
+        || request.expected_source_hash.len()!=64
+        || !request.expected_source_hash.bytes().all(|byte|byte.is_ascii_hexdigit()) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol, venue, event_id, a SHA-256 expected_source_hash, and a reason of at most 1000 characters are required"})));
+    }
+    if let Err(error)=validate_event(&request.corrected_event) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":format!("corrected_event is invalid: {error}")})));
+    }
+    if request.corrected_event.symbol!=request.symbol
+        || request.corrected_event.venue!=request.venue
+        || request.corrected_event.event_id!=request.event_id {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"a correction cannot change the source symbol, venue, or event_id identity"})));
+    }
+    let source=match s.events.find_one(doc!{"symbol":&request.symbol,"venue":&request.venue,"event_id":&request.event_id},None).await {
+        Ok(Some(mut document))=>{document.remove("_id");match mongodb::bson::from_document::<MarketEvent>(document) {
+            Ok(event)=>event,
+            Err(error)=>{tracing::error!(error=%error,"canonical source event decode failed during correction");return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"canonical source event is malformed"})));}
+        }},
+        Ok(None)=>return (StatusCode::NOT_FOUND,Json(serde_json::json!({"error":"canonical source event not found"}))),
+        Err(error)=>{tracing::error!(error=%error,"canonical source event lookup failed for correction");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"canonical source lookup unavailable"})));}
+    };
+    let current_hash=match set_ledger::source_hash(&source) {
+        Ok(hash)=>hash,
+        Err(error)=>{tracing::error!(error=%error,"source hash failed during correction");return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"source fingerprint unavailable"})));}
+    };
+    if current_hash!=request.expected_source_hash {
+        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"source changed since review; reload evidence before proposing a correction","current_source_hash":current_hash})));
+    }
+    let observation_id=format!("observation|{}:{}:{}",request.venue,request.symbol,request.event_id);
+    let observation=match s.set_ledger_records.find_one(doc!{"_id":&observation_id},None).await {
+        Ok(Some(record))=>record,
+        Ok(None)=>return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"source observation has not been backfilled into the durable ledger"}))),
+        Err(error)=>{tracing::error!(error=%error,"observation lookup failed during correction");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation lookup unavailable"})));}
+    };
+    if observation.get_str("source_event_hash_sha256").ok()!=Some(current_hash.as_str()) {
+        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"durable observation does not match canonical source; run integrity audit before proposing a correction"})));
+    }
+    let corrected_hash=match set_ledger::source_hash(&request.corrected_event) {
+        Ok(hash)=>hash,
+        Err(error)=>{tracing::error!(error=%error,"corrected source hash failed");return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"corrected source fingerprint unavailable"})));}
+    };
+    if corrected_hash==current_hash {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"corrected_event is identical to current source evidence"})));
+    }
+    let correction_id=format!("correction|{}|{}",observation_id,corrected_hash);
+    let corrected_document=match mongodb::bson::to_document(&request.corrected_event) {
+        Ok(document)=>document,
+        Err(error)=>{tracing::error!(error=%error,"corrected event serialization failed");return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"corrected event serialization failed"})));}
+    };
+    let record=doc!{
+        "_id":&correction_id,
+        "record_id":&correction_id,
+        "record_type":"source_correction",
+        "schema_version":"qoin-relation-ledger-v2-alpha3",
+        "symbol":&request.symbol,
+        "venue":&request.venue,
+        "source_event_id":&request.event_id,
+        "supersedes_observation_id":&observation_id,
+        "expected_source_hash":&current_hash,
+        "corrected_source_hash":&corrected_hash,
+        "corrected_event":corrected_document,
+        "reason":request.reason.trim(),
+        "status":"pending_review",
+        "applies_to_active_projection":false,
+        "created_at":mongodb::bson::DateTime::now(),
+        "immutability":"append_only_review_then_supersede"
+    };
+    match s.set_ledger_records.insert_one(record,None).await {
+        Ok(_)=>(StatusCode::CREATED,Json(serde_json::json!({"status":"correction_proposed","correction_id":correction_id,"source_hash":current_hash,"corrected_hash":corrected_hash,"active_projection_changed":false,"review_required":true}))),
+        Err(error) if error.to_string().contains("E11000")=>(StatusCode::OK,Json(serde_json::json!({"status":"correction_already_proposed","correction_id":correction_id,"active_projection_changed":false,"review_required":true}))),
+        Err(error)=>{tracing::error!(error=%error,"append-only correction record persistence failed");(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"correction record could not be persisted"})))}
+    }
+}
+
+#[derive(Deserialize)]
 struct LedgerBackfillQuery {
     symbol: Option<String>,
     after_ts_ms: Option<i64>,
@@ -1822,6 +1920,7 @@ async fn main(){
         .route("/internal/set-ledger",get(get_set_ledger))
         .route("/internal/set-ledger/reconstruct",get(reconstruct_set_ledger))
         .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
+         .route("/internal/set-ledger/corrections",post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
