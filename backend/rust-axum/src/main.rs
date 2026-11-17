@@ -22,6 +22,7 @@ mod algorithm_entitlements;
 mod edge_strategy;
 mod backtest;
 mod vector_engine;
+mod set_ledger;
 mod order_safety;
 mod execution_lifecycle;
 mod trading;
@@ -829,6 +830,39 @@ async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl
     items.reverse();
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
+async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    if symbol.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"symbol is required"})));
+    }
+    let limit=q.limit.unwrap_or(500).clamp(1,1000);
+    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1}).limit(limit).build();
+    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"set ledger event query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"set ledger evidence unavailable","symbol":symbol}))); }
+    };
+    let mut events=Vec::new();
+    let mut skipped_invalid_events=0usize;
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document))=>{
+                document.remove("_id");
+                match mongodb::bson::from_document::<MarketEvent>(document) {
+                    Ok(event) if validate_event(&event).is_ok()=>events.push(event),
+                    Ok(_)=>skipped_invalid_events+=1,
+                    Err(error)=>{skipped_invalid_events+=1;tracing::warn!(error=%error,symbol=%symbol,"skipping malformed event in set ledger");}
+                }
+            }
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"set ledger event cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"set ledger evidence read failed","symbol":symbol}))); }
+        }
+    }
+    events.reverse();
+    let ledger=set_ledger::build(&symbol,&events,skipped_invalid_events);
+    (StatusCode::OK,Json(serde_json::to_value(ledger).unwrap_or_default()))
+}
 async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
@@ -1252,6 +1286,7 @@ async fn main(){
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
+        .route("/internal/set-ledger",get(get_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
