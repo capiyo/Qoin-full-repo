@@ -163,6 +163,12 @@ fn relation(
 }
 
 
+/// Stable SHA-256 fingerprint of the canonical serialized source event.
+pub fn source_hash(event: &MarketEvent) -> Result<String, String> {
+    let serialized = serde_json::to_vec(event).map_err(|error| error.to_string())?;
+    Ok(hex::encode(Sha256::digest(serialized)))
+}
+
 /// Build immutable, idempotent V2 ledger records for one newly persisted event.
 /// One observation record captures set membership and its source hash. Separate
 /// relation records capture every eligible temporal edge in the bounded local
@@ -172,8 +178,7 @@ pub fn durable_records(
     neighbours: &[MarketEvent],
     ingested_at: mongodb::bson::DateTime,
 ) -> Result<Vec<Document>, String> {
-    let serialized = serde_json::to_vec(event).map_err(|error| error.to_string())?;
-    let source_hash = hex::encode(Sha256::digest(serialized));
+    let source_hash = source_hash(event)?;
     let event_id = event_key(event);
     let mut memberships = vec!["all_events"];
     match event.event_type.as_str() {
