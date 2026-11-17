@@ -683,6 +683,15 @@ fn evaluate_ingested_v1_vector(
         })
     }
 }
+fn market_event_decision_key(event:&MarketEvent)->String{
+    let identity=format!("{}|{}|{}",event.venue,event.symbol,event.event_id);
+    hex::encode(Sha256::digest(identity.as_bytes()))
+}
+
+fn pending_pipeline_event(document:&Document)->bool{
+    document.get_str("_qoin_pipeline_status").ok()==Some("pending")
+}
+
 fn should_run_v2_history_discovery(previous_ts_ms:Option<i64>,current_ts_ms:i64)->bool{
     previous_ts_ms.is_some_and(|previous|{
         previous.div_euclid(5*60_000)<current_ts_ms.div_euclid(5*60_000)
@@ -906,7 +915,8 @@ async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRe
 
 async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let database_ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
-    let recovery_ok=s.recovery_skipped_events == 0;
+    let pending_events=s.events.count_documents(doc!{"_qoin_pipeline_status":"pending"},None).await.unwrap_or(u64::MAX);
+    let recovery_ok=s.recovery_skipped_events==0&&pending_events==0;
     let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
     let healthy=database_ok && recovery_ok;
@@ -915,7 +925,8 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
        "mongodb":database_ok,
        "market_recovery":{"status":if recovery_ok{"ok"}else{"degraded"},
-         "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events},
+         "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events,
+         "pending_pipeline_events":pending_events},
        "strategy_version":strategy_version,
        "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
           "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
@@ -955,8 +966,20 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     // The immutable log records whether the live state machine applied this
     // event. Recovery must preserve the same policy for late arrivals.
     raw.insert("_qoin_applied",!late_event);
+    raw.insert("_qoin_pipeline_status",if late_event{"ignored_late"}else{"pending"});
     match s.events.insert_one(raw,None).await{
-        Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
+        Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>{
+            let existing=s.events.find_one(doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id},None).await.ok().flatten();
+            let pending=existing.as_ref().is_some_and(pending_pipeline_event);
+            return(
+                if pending{StatusCode::ACCEPTED}else{StatusCode::OK},
+                Json(serde_json::json!({
+                    "status":if pending{"pending_recovery"}else{"duplicate_ignored"},
+                    "event_id":event.event_id,
+                    "recovery_required":pending
+                }))
+            );
+        },
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
     if late_event{
@@ -1017,6 +1040,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         }));
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("v1_shared_market_vector",mongodb::bson::to_bson(&v1_vector_decision).unwrap_or(mongodb::bson::Bson::Null));
+    decision_doc.insert("decision_key",market_event_decision_key(&event));
     if let Some(vector)=market_vector.as_ref(){decision_doc.insert("market_vector_id",&vector.vector_id);}
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
@@ -1049,6 +1073,14 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             }
         }
     }else{serde_json::Value::Null};
+    if let Err(error)=s.events.update_one(
+        doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id},
+        doc!{"$set":{"_qoin_pipeline_status":"complete","_qoin_completed_at":mongodb::bson::DateTime::now()}},
+        None,
+    ).await{
+        tracing::warn!(error=%error,event_id=%event.event_id,
+            "market event processed but completion marker could not be persisted");
+    }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"v1_shared_market_vector":v1_vector_decision,
         "v2_relationship_discovery":v2_discovery,
