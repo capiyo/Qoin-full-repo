@@ -1112,8 +1112,16 @@ async fn audit_set_ledger(
         let source=record.get_str("source_event_key").ok().map(|key|format!("observation|{key}"));
         let target=record.get_str("target_event_key").ok().map(|key|format!("observation|{key}"));
         let (Some(source),Some(target))=(source,target) else {orphan_relations+=1;continue;};
-        let source_exists=s.set_ledger_records.find_one(doc!{"_id":&source},None).await.ok().flatten().is_some();
-        let target_exists=s.set_ledger_records.find_one(doc!{"_id":&target},None).await.ok().flatten().is_some();
+        let source_exists=match s.set_ledger_records.find_one(doc!{"_id":&source},None).await {
+            Ok(value)=>value.is_some(),
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger source endpoint lookup failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity source endpoint lookup failed"})));}
+        };
+        let target_exists=match s.set_ledger_records.find_one(doc!{"_id":&target},None).await {
+            Ok(value)=>value.is_some(),
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger target endpoint lookup failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity target endpoint lookup failed"})));}
+        };
         if !source_exists || !target_exists {
             orphan_relations+=1;
             if sample.len()<25 {sample.push(serde_json::json!({"record_id":record.get_str("record_id").unwrap_or("unknown"),"issue":"relation_endpoint_missing"}));}
