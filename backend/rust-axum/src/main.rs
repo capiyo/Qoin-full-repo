@@ -187,7 +187,7 @@ async fn set_trading_enabled(
     headers: HeaderMap,
     Json(request): Json<TradingControlRequest>,
 ) -> impl IntoResponse {
-    if !ledger_maintenance_token_authorized(&headers) {
+    if !execution_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
     }
     let update = doc!{"$set":{"enabled":request.enabled,"updated_at":mongodb::bson::DateTime::now()}};
@@ -933,7 +933,7 @@ async fn backfill_set_ledger(
     headers: HeaderMap,
     Query(q): Query<LedgerBackfillQuery>,
 ) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
+    if !ledger_maintenance_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
     }
     let symbol = q.symbol.unwrap_or_default();
@@ -1056,7 +1056,7 @@ async fn audit_set_ledger(
     headers: HeaderMap,
     Query(q): Query<LedgerIntegrityQuery>,
 ) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
+    if !ledger_maintenance_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
     }
     let symbol=q.symbol.unwrap_or_default();
