@@ -170,6 +170,19 @@ fn cost_for(
     })
 }
 
+fn comparable_cost_for_parent(
+    actual_cost: Decimal,
+    executed_notional: Decimal,
+    parent_notional: Decimal,
+) -> Result<Decimal, RoutingError> {
+    if executed_notional <= Decimal::ZERO {
+        return Err(RoutingError::Arithmetic("cannot normalize cost for zero executed notional".into()));
+    }
+    actual_cost.checked_div(executed_notional)
+        .and_then(|rate| rate.checked_mul(parent_notional))
+        .ok_or_else(|| RoutingError::Arithmetic("comparable execution cost overflow".into()))
+}
+
 /// Select a single suitable account unless splitting all selected accounts
 /// produces a lower estimated all-in cost after the configured hurdle.
 ///
@@ -214,6 +227,11 @@ pub fn choose_execution_plan(
         }
     }
     let (single_cost, single_allocation) = best_single.ok_or(RoutingError::NoFeasibleAccount)?;
+    let single_comparable_cost = comparable_cost_for_parent(
+        single_cost.total_estimated_execution_cost_portfolio,
+        single_cost.allocated_notional_portfolio,
+        parent_notional_portfolio,
+    )?;
 
     // One account is already the simplest valid plan. Do not manufacture a
     // multi-broker route when it cannot diversify execution.
@@ -252,9 +270,14 @@ pub fn choose_execution_plan(
             }
         }
         if all_margin_feasible {
-            let multi_total = total_cost.checked_add(policy.multi_broker_overhead_portfolio)
+            let comparable_multi_cost = comparable_cost_for_parent(
+                total_cost,
+                allocation.allocated_notional_portfolio,
+                parent_notional_portfolio,
+            )?;
+            let multi_total = comparable_multi_cost.checked_add(policy.multi_broker_overhead_portfolio)
                 .ok_or_else(|| RoutingError::Arithmetic("multi-broker overhead overflow".into()))?;
-            let required = single_cost.total_estimated_execution_cost_portfolio
+            let required = single_comparable_cost
                 .checked_sub(policy.minimum_saving_portfolio)
                 .ok_or_else(|| RoutingError::Arithmetic("saving hurdle overflow".into()))?;
             if multi_total < required {
@@ -262,8 +285,8 @@ pub fn choose_execution_plan(
                     allocation,
                     costs,
                     estimated_total_cost_portfolio: multi_total,
-                    single_broker_comparator_cost_portfolio: single_cost.total_estimated_execution_cost_portfolio,
-                    reason: "All selected accounts passed sizing and margin checks, and estimated execution cost beats the best single-account route after the configured overhead and saving hurdle".into(),
+                    single_broker_comparator_cost_portfolio: single_comparable_cost,
+                    reason: "All selected accounts passed sizing and margin checks; cost is normalized to the same parent notional and beats the best single-account route after overhead and the saving hurdle".into(),
                 });
             }
         }
@@ -368,6 +391,15 @@ mod tests {
             }
             _ => panic!("expected an equal split when its full estimated cost is lower"),
         }
+    }
+
+    #[test]
+    fn fanout_is_not_rewarded_for_leaving_more_capital_unallocated() {
+        let mut quotes = vec![quote(0, "1", "0", true), quote(1, "1", "0", true)];
+        quotes[1].target.quantity_step = d("4");
+        quotes[1].target.minimum_quantity = d("4");
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
     }
 
     #[test]
