@@ -423,7 +423,7 @@ mod tests {
             broker_id: "broker".into(), account_id: "account".into(),
             account_currency: "KES".into(), equity: 100_000.0,
             available_margin: 50_000.0, gross_exposure: 20_000.0,
-            daily_realized_pnl: -1_000.0, unrealized_pnl: -500.0,
+            daily_realized_pnl: -1_000.0, daily_unrealized_pnl: -500.0,
             open_positions: 2, observed_at_ms: 1,
         };
         assert_eq!(account.current_daily_loss().unwrap(), 1_500.0);
