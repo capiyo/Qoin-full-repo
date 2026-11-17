@@ -254,7 +254,7 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
           <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
             <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.measure.count} members</strong>
           </summary>
-          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Counting measure · {item.measure.count} events · trade-size sum {item.measure.volume_total.toFixed(6)} · size observed {item.measure.volume_observed_count} / missing {item.measure.volume_missing_count}</p>
+          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Counting measure · {item.measure.counting_measure} events · trade-size measure {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</p>
           <p style={{ margin: 0, color: "#819989", fontSize: 8, overflowWrap: "anywhere" }}>Members: {item.member_event_ids.slice(0, 8).join(", ") || "∅"}{item.member_event_ids.length > 8 ? " … +" + (item.member_event_ids.length - 8) + " more" : ""}</p>
         </details>)}
       </div>
