@@ -650,7 +650,23 @@ export default function App() {
       {tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
-          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+          {archived.length ? <div className="archive-workspace">
+            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+            <aside className="archive-market-sidebar" aria-label="Market pulse">
+              <div className="market-pulse-panel">
+                <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
+                <p className="market-pulse-copy">Latest provider observations for instruments in your Archive.</p>
+                {archived.slice(0, 5).map((item) => {
+                  const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
+                  return <div className="market-pulse-row" key={item.symbol}>
+                    <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
+                    <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
+                  </div>;
+                })}
+                <p className="market-pulse-footnote">Unavailable or stale provider values remain blank; Qoin does not synthesize prices.</p>
+              </div>
+            </aside>
+          </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
         </section>
       ) : (
         <section className="content-section">
