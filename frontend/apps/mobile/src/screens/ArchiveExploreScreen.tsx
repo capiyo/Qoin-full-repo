@@ -549,13 +549,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                     </View>
                   </View>
                 ) : (
-                  <View style={[styles.cardPager,{gap:10}]}>
-                    <View style={styles.cardPagerPrimary}>
+                  <View style={[styles.cardPager,{gap:10},page === 1 && {flexDirection:"column",alignItems:"stretch"}]}>
+                    <View style={[styles.cardPagerPrimary,{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}]}>
                       <Text style={styles.cardKicker}>VECTOR ENGINE · V1</Text>
                       <Text style={styles.cardPagerValue}>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</Text>
                       <Text style={styles.cardPagerStatus}>{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</Text>
                     </View>
-                    {decision ? <View style={[styles.cardPagerReason,{gap:8}]}>
+                    {decision ? <View style={[styles.cardPagerReason,{gap:8,paddingLeft:0,borderLeftWidth:0}]}>
                       <View style={{flexDirection:"row",justifyContent:"space-between",flexWrap:"wrap"}}>
                         <Text style={styles.cardMetaLabel}>DECISION VECTOR · [BULL, BEAR]</Text>
                         <Text style={styles.cardMetaValue}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</Text>
