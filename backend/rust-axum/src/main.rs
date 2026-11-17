@@ -424,11 +424,11 @@ async fn persist_set_ledger_records(
     // older events and could omit nearer future observations.
     let before_options=FindOptions::builder()
         .sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1})
-        .limit(2501)
+        .limit(5001)
         .build();
     let after_options=FindOptions::builder()
         .sort(doc!{"ts_ms":1,"event_id":1,"venue":1})
-        .limit(2501)
+        .limit(5001)
         .build();
     let mut neighbours=Vec::new();
     for (filter,options) in [
