@@ -60,7 +60,7 @@ function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBroke
   return <section className="content-section broker-collection">
     <div className="section-heading"><div><p className="eyebrow">EXECUTION NETWORK</p><h2>Broker collection</h2><p>One strategy can distribute an order across multiple selected broker accounts and currencies.</p></div><span className="count-label">{brokerDirectory.length} INTEGRATIONS TRACKED</span></div>
     <section className="broker-allocation-panel">
-      <div className="broker-allocation-copy"><p className="eyebrow">CAPITAL-AWARE ROUTING</p><h3>Consolidate first. Split when it pays.</h3><p>Qoin compares the best feasible single-account route with an equal split across all selected accounts. It only fans out when every account is execution-ready, meets its minimum size and margin requirements, and the estimated fees, slippage and conversion costs beat consolidation after the configured operational-cost hurdle.</p></div>
+      <div className="broker-allocation-copy"><p className="eyebrow">CAPITAL-AWARE ROUTING</p><h3>Consolidate first. Split when it pays.</h3><p>Qoin prefers one suitable account. It compares an equal split only when every selected account is execution-ready and each child meets its minimum size and margin requirements. Splitting is chosen when measured fees, minimum commissions, child-size slippage and conversion costs beat consolidation after operational overhead—or when no single account can safely carry the full order but the complete split can.</p></div>
       <div className="broker-allocation-examples">
         <div><strong>3</strong><span>accounts</span><b>33.33% each</b></div>
         <div><strong>15</strong><span>accounts</span><b>6.67% each</b></div>
