@@ -41,6 +41,11 @@ const brokerDirectory: BrokerDirectoryEntry[] = [
   { id: "ig", name: "IG", market: "CFDs · forex · shares", status: "adapter_pending", detail: "Execution adapter pending.", initials: "IG" },
   { id: "fxcm", name: "FXCM", market: "Forex · CFDs", status: "adapter_pending", detail: "Execution adapter pending.", initials: "FX" },
   { id: "tradier", name: "Tradier", market: "US equities · options", status: "adapter_pending", detail: "Execution adapter pending.", initials: "T" },
+  { id: "pepperstone", name: "Pepperstone", market: "Forex · CFDs", status: "adapter_pending", detail: "Candidate integration; execution adapter not implemented.", initials: "P" },
+  { id: "capital_com", name: "Capital.com", market: "CFDs", status: "adapter_pending", detail: "Candidate integration; execution adapter not implemented.", initials: "C+" },
+  { id: "etoro", name: "eToro", market: "Multi-asset", status: "adapter_pending", detail: "Candidate integration; execution adapter not implemented.", initials: "e" },
+  { id: "charles_schwab", name: "Charles Schwab", market: "Equities · options · funds", status: "adapter_pending", detail: "Candidate integration; execution adapter not implemented.", initials: "CS" },
+  { id: "webull", name: "Webull", market: "Equities · options", status: "adapter_pending", detail: "Candidate integration; execution adapter not implemented.", initials: "W" },
 ];
 
 function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBrokerIds: string[]; onToggleBroker: (brokerId: string) => void }) {
