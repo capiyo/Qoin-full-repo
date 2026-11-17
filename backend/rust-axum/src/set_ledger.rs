@@ -46,6 +46,7 @@ pub struct EventRelation {
     pub edge_count: usize,
     pub mean_lag_ms: Option<f64>,
     pub edges: Vec<RelationEdge>,
+    pub edges_truncated: bool,
     pub interpretation: &'static str,
 }
 
@@ -118,15 +119,21 @@ fn relation(
     targets: &[&MarketEvent],
 ) -> EventRelation {
     let mut edges = Vec::new();
+    let mut edge_count = 0usize;
+    let mut lag_total = 0i128;
     for source in sources {
         for target in targets {
             let lag_ms = target.ts_ms - source.ts_ms;
             if (0..=RELATION_WINDOW_MS).contains(&lag_ms) {
-                edges.push(RelationEdge {
-                    from_event_id: event_key(source),
-                    to_event_id: event_key(target),
-                    lag_ms,
-                });
+                edge_count += 1;
+                lag_total += lag_ms as i128;
+                if edges.len() < 100 {
+                    edges.push(RelationEdge {
+                        from_event_id: event_key(source),
+                        to_event_id: event_key(target),
+                        lag_ms,
+                    });
+                }
             }
         }
     }
@@ -135,11 +142,7 @@ fn relation(
             .then_with(|| left.from_event_id.cmp(&right.from_event_id))
             .then_with(|| left.to_event_id.cmp(&right.to_event_id))
     });
-    let mean_lag_ms = if edges.is_empty() {
-        None
-    } else {
-        Some(edges.iter().map(|edge| edge.lag_ms as f64).sum::<f64>() / edges.len() as f64)
-    };
+    let mean_lag_ms = if edge_count == 0 { None } else { Some(lag_total as f64 / edge_count as f64) };
     EventRelation {
         relation_id,
         label,
@@ -147,8 +150,9 @@ fn relation(
         source_set,
         target_set,
         window_ms: RELATION_WINDOW_MS,
-        edge_count: edges.len(),
+        edge_count,
         mean_lag_ms,
+        edges_truncated: edge_count > edges.len(),
         edges,
         interpretation: "Observed temporal ordering only; this relation does not establish causation.",
     }
