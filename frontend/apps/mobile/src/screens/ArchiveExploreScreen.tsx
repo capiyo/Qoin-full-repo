@@ -239,6 +239,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string, 0 | 1>>({});
+  const cardTouchStart = useRef<Record<string, number>>({});
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   const pendingInstrumentRef = useRef<Instrument | null>(null);
