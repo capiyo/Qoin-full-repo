@@ -442,7 +442,7 @@ fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature,cross_times
         LogReturn|PriceDisplacement|RateOfChange|SwingPosition|GapMagnitude|RealizedVolatility|
         VolatilityOfVolatility|ReturnSkew|ReturnKurtosis|JumpIntensity|Momentum|TrendStrength|
         TrendPersistence|MeanReversionStrength|TrendExhaustion|RegimeTrendStrength|
-        RegimeVolatilityLevel|RegimeTransitionIntensity|RegimePersistence|SignalDecay
+        RegimeVolatilityLevel|RegimeTransitionIntensity|RegimeUncertainty|RegimePersistence|SignalDecay
             =>state.last_price_ts_ms,
         OrderFlowImbalance=>match(state.last_trade_ts_ms,state.last_book_ts_ms){
             (Some(trade),Some(book))=>Some(trade.max(book)),
@@ -468,7 +468,7 @@ fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64,cros
         LogReturn|PriceDisplacement|RateOfChange|SwingPosition|GapMagnitude|RealizedVolatility|
         VolatilityOfVolatility|ReturnSkew|ReturnKurtosis|JumpIntensity|Momentum|TrendStrength|
         TrendPersistence|MeanReversionStrength|TrendExhaustion|RegimeTrendStrength|
-        RegimeVolatilityLevel|RegimeTransitionIntensity|RegimePersistence|SignalDecay
+        RegimeVolatilityLevel|RegimeTransitionIntensity|RegimeUncertainty|RegimePersistence|SignalDecay
             =>(state.last_price_ts_ms,60_000_i64),
         VolumeDelta=>(state.last_trade_ts_ms,60_000_i64),
         OrderFlowImbalance=>{
