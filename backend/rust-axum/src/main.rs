@@ -1568,7 +1568,17 @@ async fn publish_variable_hub(
     match state.market_vectors.insert_one(document,None).await{
         Ok(_)=>{},
         Err(error) if error.to_string().contains("E11000")=>{
-            return Err((StatusCode::CONFLICT,Json(serde_json::json!({"error":"market vector IDs are immutable and this vector_id already exists","vector_id":vector.vector_id}))));
+            let existing=state.market_vectors.find_one(doc!{"vector_id":&vector.vector_id},None).await
+                .map_err(|lookup_error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"could not verify existing immutable vector","detail":lookup_error.to_string()}))))?;
+            let Some(mut existing)=existing else{
+                return Err((StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"vector ID collision could not be resolved"}))));
+            };
+            existing.remove("_id");existing.remove("stored_at");
+            let existing=mongodb::bson::from_document::<MarketVector>(existing)
+                .map_err(|decode_error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"stored vector is invalid","detail":decode_error.to_string()}))))?;
+            if existing!=vector{
+                return Err((StatusCode::CONFLICT,Json(serde_json::json!({"error":"market vector IDs are immutable; the existing vector has different content","vector_id":vector.vector_id}))));
+            }
         }
         Err(error)=>return Err((StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","detail":error.to_string()})))),
     }
