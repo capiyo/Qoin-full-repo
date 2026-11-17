@@ -4,6 +4,20 @@ import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
+type BrokerOption = { id: string; name: string; coverage: string; status: string };
+const brokerOptions: BrokerOption[] = [
+  { id: "binance", name: "Binance", coverage: "Crypto · USD-M adapter", status: "Adapter available · credentials required" },
+  { id: "coinbase", name: "Coinbase Advanced", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "kraken", name: "Kraken", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "interactive_brokers", name: "Interactive Brokers", coverage: "Global stocks, options, futures, FX", status: "Adapter pending" },
+  { id: "alpaca", name: "Alpaca", coverage: "US equities and crypto", status: "Adapter pending" },
+  { id: "oanda", name: "OANDA", coverage: "FX and CFDs", status: "Market data only · execution adapter pending" },
+  { id: "saxo", name: "Saxo", coverage: "Multi-asset brokerage", status: "Adapter pending" },
+  { id: "ig", name: "IG", coverage: "FX, indices, shares and CFDs", status: "Adapter pending" },
+  { id: "fxcm", name: "FXCM", coverage: "FX and CFDs", status: "Adapter pending" },
+  { id: "tradier", name: "Tradier", coverage: "US equities and options", status: "Adapter pending" },
+];
+
 type Instrument = {
   symbol: string;
   name: string;
@@ -14,12 +28,13 @@ type Instrument = {
   engineVenue: string;
   provider: string;
   providerStatus?: string;
+  quoteCurrency?: string;
   archived: boolean;
   color: string;
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#f59e0b" },
+  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", quoteCurrency: "USDT", archived: true, color: "#f59e0b" },
   { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#6477df" },
   { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#8b72e8" },
   { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#76a85a" },
@@ -303,6 +318,9 @@ export default function App() {
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
+  const [venueFilter, setVenueFilter] = useState("All exchanges");
+  const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quote currencies");
+  const [selectedBroker, setSelectedBroker] = useState("binance");
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
@@ -400,7 +418,7 @@ export default function App() {
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
         market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
-        provider: item.provider, providerStatus: item.provider_status,
+        provider: item.provider, providerStatus: item.provider_status, quoteCurrency: item.quote_currency || undefined,
         archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
       })));
     }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
@@ -525,7 +543,9 @@ export default function App() {
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
   const decisionStrategy = vector?.strategy_parameters || strategy;
-  const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
+  const availableVenues = useMemo(() => [...new Set(instruments.map((item) => item.venue).filter(Boolean))].sort((a,b) => a.localeCompare(b)), [instruments]);
+  const availableQuoteCurrencies = useMemo(() => [...new Set(instruments.map((item) => item.quoteCurrency).filter((value): value is string => Boolean(value)))].sort((a,b) => a.localeCompare(b)), [instruments]);
+  const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && (venueFilter === "All exchanges" || item.venue === venueFilter) && (quoteCurrencyFilter === "All quote currencies" || item.quoteCurrency === quoteCurrencyFilter) && `${item.name} ${item.symbol} ${item.venue} ${item.quoteCurrency || ""}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, venueFilter, quoteCurrencyFilter, query]);
 
   function toggleArchive(symbol: string) {
     const target = instruments.find((item) => item.symbol === symbol);
@@ -591,12 +611,21 @@ export default function App() {
       {tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
-          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.engineSymbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
         </section>
       ) : (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
-          <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
+          <section className="exchange-selector" aria-label="Exchange and quote currency selection">
+            <div className="exchange-selector-heading"><div><p className="eyebrow">MARKET ROUTING</p><h3>Choose your exchange</h3><p>Browse instruments by venue and quote currency. Availability reflects the connected provider registry.</p></div><span className="exchange-selector-count">{availableVenues.length} venues listed</span></div>
+            <div className="exchange-selector-controls">
+              <label><span>Execution broker</span><select value={selectedBroker} onChange={(event) => setSelectedBroker(event.target.value)}>{brokerOptions.map((broker) => <option key={broker.id} value={broker.id}>{broker.name} — {broker.status}</option>)}</select></label>
+              <label><span>Exchange / venue</span><select value={venueFilter} onChange={(event) => setVenueFilter(event.target.value)}><option>All exchanges</option>{availableVenues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}</select></label>
+              <label><span>Quote currency</span><select value={quoteCurrencyFilter} onChange={(event) => setQuoteCurrencyFilter(event.target.value)}><option>All quote currencies</option>{availableQuoteCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
+            </div>
+            <div className="exchange-selector-footnote"><span>Market-data source and execution venue are shown separately on each instrument.</span><button type="button" onClick={() => { setVenueFilter("All exchanges"); setQuoteCurrencyFilter("All quote currencies"); setMarket("All"); setQuery(""); }}>Reset filters</button></div>
+          </section>
+          <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments, symbols or venues" /></label>
           <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
           <section className="coverage-preview" aria-label="Market access tier preview">
             <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
@@ -618,7 +647,7 @@ export default function App() {
             </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
             <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
           </section>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.engineSymbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
