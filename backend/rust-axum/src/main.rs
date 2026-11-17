@@ -169,6 +169,16 @@ fn execution_token_authorized(headers: &HeaderMap) -> bool {
     constant_time_token_match(expected.as_bytes(), supplied.as_bytes())
 }
 
+fn ledger_maintenance_token_authorized(headers: &HeaderMap) -> bool {
+    let expected = match env::var("QOIN_LEDGER_MAINTENANCE_TOKEN") {
+        Ok(token) if !token.trim().is_empty() => token,
+        _ => return false,
+    };
+    let supplied = headers.get("x-qoin-ledger-maintenance-token")
+        .and_then(|value| value.to_str().ok()).unwrap_or("");
+    constant_time_token_match(expected.as_bytes(), supplied.as_bytes())
+}
+
 #[derive(Deserialize)]
 struct TradingControlRequest { enabled: bool }
 
@@ -177,7 +187,7 @@ async fn set_trading_enabled(
     headers: HeaderMap,
     Json(request): Json<TradingControlRequest>,
 ) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
+    if !ledger_maintenance_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
     }
     let update = doc!{"$set":{"enabled":request.enabled,"updated_at":mongodb::bson::DateTime::now()}};
