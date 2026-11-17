@@ -42,6 +42,14 @@ export function initializeQoinFirebase(config: QoinFirebaseConfig, persistence?:
   return { app, auth: authInstance, db: getFirestore(app), storage: getStorage(app) };
 }
 
+/** Returns the current Firebase ID token for authenticated API requests.
+ * Public read-only endpoints may still be called when no user is signed in.
+ */
+export async function getQoinIdToken(): Promise<string | null> {
+  const user = authInstance?.currentUser;
+  return user ? user.getIdToken() : null;
+}
+
 export function requireQoinFirebase() {
   if (!authInstance) throw new Error("Firebase is not configured. Set the Qoin Firebase client environment variables.");
   const user = authInstance.currentUser;
