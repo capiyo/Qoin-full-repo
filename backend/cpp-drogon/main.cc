@@ -213,6 +213,19 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/set-ledger/integrity", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto limit = req->getParameter("limit");
+        std::string path = "/internal/set-ledger/integrity";
+        if (!symbol.empty() || !limit.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !limit.empty()) path += "&";
+            if (!limit.empty()) path += "limit=" + drogon::utils::urlEncode(limit);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/backtest", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto names = {"symbol", "venue", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps", "latency_ms", "max_participation_rate", "market_impact_bps"};
