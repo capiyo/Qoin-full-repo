@@ -201,6 +201,19 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/set-ledger/reconstruct", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto limit = req->getParameter("limit");
+        std::string path = "/internal/set-ledger/reconstruct";
+        if (!symbol.empty() || !limit.empty()) {
+            path += "?";
+            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
+            if (!symbol.empty() && !limit.empty()) path += "&";
+            if (!limit.empty()) path += "limit=" + drogon::utils::urlEncode(limit);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/set-ledger/backfill", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto names = {"symbol", "after_ts_ms", "after_event_id", "after_venue", "batch_size"};
