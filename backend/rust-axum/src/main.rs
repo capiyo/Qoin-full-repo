@@ -972,13 +972,20 @@ async fn backfill_set_ledger(
     let mut appended=0usize;
     for mut document in documents {
         document.remove("_id");
-        let event=match mongodb::bson::from_document::<MarketEvent>(document.clone()) {
+        let cursor_key=match (document.get_i64("ts_ms"),document.get_str("event_id"),document.get_str("venue")) {
+            (Ok(ts),Ok(event_id),Ok(venue))=>(ts,event_id.to_owned(),venue.to_owned()),
+            _=>return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({
+                "error":"legacy source row is missing a stable backfill cursor key",
+                "last_completed_cursor":last_cursor.map(|(ts,event_id,venue)|serde_json::json!({
+                    "after_ts_ms":ts,"after_event_id":event_id,"after_venue":venue
+                }))
+            })))
+        };
+        let event=match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok()=>event,
             _=>{
                 skipped_invalid+=1;
-                if let (Ok(ts),Ok(event_id),Ok(venue))=(document.get_i64("ts_ms"),document.get_str("event_id"),document.get_str("venue")) {
-                    last_cursor=Some((ts,event_id.to_owned(),venue.to_owned()));
-                }
+                last_cursor=Some(cursor_key);
                 continue;
             }
         };
@@ -995,7 +1002,7 @@ async fn backfill_set_ledger(
             }
         }
         processed+=1;
-        last_cursor=Some((event.ts_ms,event.event_id,event.venue));
+        last_cursor=Some(cursor_key);
     }
     let raw_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
         Ok(count)=>count,
