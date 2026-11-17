@@ -224,3 +224,6 @@ The persistent variable hub is exposed separately for specialist feature produce
 Hub snapshots and published vectors are persisted in MongoDB. Derived values retain dependency revisions, and upstream changes make dependent values Stale. The auto-generated event-window vector pipeline and the specialist variable-hub path are intentionally separate producer paths that converge on the same MarketVector schema.
 
 All routes above are internal research interfaces. This does not activate real-money order submission. Live execution remains behind the existing execution token and kill switch, and no deployment or merge is performed by this work.
+
+
+The backend also applies a wall-clock guard at event ingestion and at V1/V2 decision, variable-hub publication, and ledger-write boundaries. Future-dated event, availability, observation, and ledger timestamps are rejected; historical replay remains valid. This complements past-only normalization and stale-feature expiry, so an otherwise well-formed vector cannot introduce data that was not yet available.

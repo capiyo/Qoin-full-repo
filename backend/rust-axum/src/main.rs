@@ -2262,6 +2262,20 @@ mod execution_route_auth_tests {
     }
 
     #[test]
+    fn wall_clock_gate_rejects_future_market_availability(){
+        let now=chrono::Utc::now().timestamp_millis();
+        assert!(timestamps_are_not_future(now-1,now));
+        assert!(!timestamps_are_not_future(now,now+1));
+        let future=MarketEvent{
+            event_id:"future".into(),venue:"test".into(),symbol:"BTCUSDT".into(),
+            event_type:"trade".into(),ts_ms:now+1,price:Some(100.0),size:Some(1.0),
+            side:Some("buy".into()),bid:None,ask:None,bid_size:None,ask_size:None,
+            funding_rate:None,open_interest:None,liquidation_side:None,
+        };
+        assert!(validate_event(&future).is_err());
+    }
+
+    #[test]
     fn accepts_only_exact_execution_tokens() {
         assert!(constant_time_token_match(b"operator-token-123", b"operator-token-123"));
         assert!(!constant_time_token_match(b"operator-token-123", b"operator-token-124"));
