@@ -278,6 +278,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string, 0 | 1>>({});
+  const [viewModeBySymbol, setViewModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
+  const selectedMode = selected ? (viewModeBySymbol[selected.symbol] || "live") : "live";
   const cardTouchStart = useRef<Record<string, number>>({});
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
@@ -630,7 +632,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                   <Text style={styles.cardSwipeHint}>SWIPE TO EXPLORE</Text>
                 </View>
               </View>
-              {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 9, marginLeft: 48, flexWrap: "wrap" }}>
+                <Pressable accessibilityRole="button" accessibilityState={{ selected: (viewModeBySymbol[item.symbol] || "live") === "backtest" }} onPress={() => setViewModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} style={{ paddingVertical: 8, paddingHorizontal: 11, borderRadius: 10, backgroundColor: "#eaf1ff", borderWidth: 1, borderColor: "#cbdcff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{(viewModeBySymbol[item.symbol] || "live") === "live" ? "Switch to Backtest" : "Switch to Live"}</Text></Pressable>
+                {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
+              </View>
             </View>
           );
         }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
@@ -687,8 +692,16 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       </Modal>
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
         {selected ? <View style={styles.modalShade}><View style={styles.modalCard}>
-          <View style={styles.modalHeader}><View><Text style={styles.kicker}>INSTRUMENT SPACE</Text><Text style={styles.modalTitle}>{selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
+          <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
+            {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Market vector mechanics</Text><Text style={styles.attentionCaption}>Persisted V1 vector · raw event replay · no orders</Text></View>
+              <FeatureSpace decision={vector} />
+              {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; replay still evaluates stored events through the active Rust strategy."}</Text>}
+              <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+              <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
+              <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+            </View> : <>
             <Text style={styles.mapTitle}>Force map</Text><Text style={styles.mapCopy}>Persisted Axum decision vector on bullish and bearish axes.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
@@ -728,7 +741,6 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-            <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
               {decisionStrategy ? <>
@@ -819,6 +831,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>) : null}
             </View>
             <Text style={styles.disclaimer}>The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</Text>
+            </>}
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
         </View></View> : null}
