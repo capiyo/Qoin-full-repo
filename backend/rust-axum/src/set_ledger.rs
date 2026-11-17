@@ -5,7 +5,9 @@
 
 use std::collections::BTreeSet;
 
+use mongodb::bson::{doc, Document};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use super::MarketEvent;
 
@@ -160,6 +162,127 @@ fn relation(
     }
 }
 
+
+/// Build immutable, idempotent V2 ledger records for one newly persisted event.
+/// One observation record captures set membership and its source hash. Separate
+/// relation records capture every eligible temporal edge in the bounded local
+/// event-time neighbourhood. MongoDB's built-in unique _id makes retries safe.
+pub fn durable_records(
+    event: &MarketEvent,
+    neighbours: &[MarketEvent],
+    ingested_at: mongodb::bson::DateTime,
+) -> Result<Vec<Document>, String> {
+    let serialized = serde_json::to_vec(event).map_err(|error| error.to_string())?;
+    let source_hash = hex::encode(Sha256::digest(serialized));
+    let event_id = event_key(event);
+    let mut memberships = vec!["all_events"];
+    match event.event_type.as_str() {
+        "trade" => {
+            memberships.push("trades");
+            match event.side.as_deref() {
+                Some("buy") => memberships.push("buy_trades"),
+                Some("sell") => memberships.push("sell_trades"),
+                _ => {}
+            }
+        }
+        "book" => memberships.push("book_events"),
+        "funding" => {
+            memberships.push("funding_events");
+            match event.funding_rate {
+                Some(value) if value > 0.0 => memberships.push("positive_funding"),
+                Some(value) if value < 0.0 => memberships.push("negative_funding"),
+                _ => {}
+            }
+        }
+        "open_interest" => memberships.push("open_interest_events"),
+        "liquidation" => {
+            memberships.push("liquidations");
+            match event.liquidation_side.as_deref() {
+                Some("long") => memberships.push("long_liquidations"),
+                Some("short") => memberships.push("short_liquidations"),
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+    let event_document = mongodb::bson::to_document(event).map_err(|error| error.to_string())?;
+    let mut records = vec![doc! {
+        "_id": format!("observation|{}", event_id),
+        "record_id": format!("observation|{}", event_id),
+        "record_type": "observation",
+        "schema_version": "qoin-relation-ledger-v2-alpha2",
+        "symbol": &event.symbol,
+        "venue": &event.venue,
+        "source_event_id": &event.event_id,
+        "source_event_key": &event_id,
+        "source_event_hash_sha256": source_hash,
+        "event_time_ms": event.ts_ms,
+        "ingested_at": ingested_at,
+        "source_event": event_document,
+        "set_memberships": memberships,
+        "counting_measure": 1_i64,
+        "trade_size_measure": if event.event_type == "trade" { event.size.unwrap_or(0.0) } else { 0.0 },
+        "trade_size_observed": event.event_type == "trade" && event.size.is_some(),
+        "trade_size_unit": "instrument_quantity_units",
+        "immutability": "append_only_supersede_to_correct"
+    }];
+
+    for neighbour in neighbours {
+        if event_key(neighbour) == event_id { continue; }
+        let (relation_id, source, target) = match (
+            event.event_type.as_str(),
+            event.side.as_deref(),
+            neighbour.event_type.as_str(),
+            neighbour.side.as_deref(),
+        ) {
+            ("trade", Some("buy"), "liquidation", _) => ("buy_trades_before_liquidations", event, neighbour),
+            ("liquidation", _, "trade", Some("buy")) => ("buy_trades_before_liquidations", neighbour, event),
+            ("trade", Some("sell"), "liquidation", _) => ("sell_trades_before_liquidations", event, neighbour),
+            ("liquidation", _, "trade", Some("sell")) => ("sell_trades_before_liquidations", neighbour, event),
+            ("funding", _, "open_interest", _) => ("funding_before_open_interest", event, neighbour),
+            ("open_interest", _, "funding", _) => ("funding_before_open_interest", neighbour, event),
+            _ => continue,
+        };
+        let lag_ms = target.ts_ms - source.ts_ms;
+        if !(0..=RELATION_WINDOW_MS).contains(&lag_ms) { continue; }
+        let source_key = event_key(source);
+        let target_key = event_key(target);
+        let record_id = format!("relation|{relation_id}|{source_key}|{target_key}");
+        records.push(doc! {
+            "_id": &record_id,
+            "record_id": &record_id,
+            "record_type": "relation_edge",
+            "schema_version": "qoin-relation-ledger-v2-alpha2",
+            "symbol": &event.symbol,
+            "relation_id": relation_id,
+            "relation_type": "temporal_precedence",
+            "source_set": match relation_id {
+                "buy_trades_before_liquidations" => "buy_trades",
+                "sell_trades_before_liquidations" => "sell_trades",
+                _ => "funding_events"
+            },
+            "target_set": match relation_id {
+                "buy_trades_before_liquidations" | "sell_trades_before_liquidations" => "liquidations",
+                _ => "open_interest_events"
+            },
+            "source_event_key": source_key,
+            "target_event_key": target_key,
+            "source_event_id": &source.event_id,
+            "target_event_id": &target.event_id,
+            "source_venue": &source.venue,
+            "target_venue": &target.venue,
+            "source_event_time_ms": source.ts_ms,
+            "target_event_time_ms": target.ts_ms,
+            "lag_ms": lag_ms,
+            "window_ms": RELATION_WINDOW_MS,
+            "ingested_at": ingested_at,
+            "interpretation": "Observed temporal ordering only; this relation does not establish causation.",
+            "immutability": "append_only_supersede_to_correct"
+        });
+    }
+    Ok(records)
+}
+
 /// Build a deterministic finite-set view over one instrument's persisted events.
 pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize, requested_limit: usize, universe_truncated: bool) -> SetLedger {
     let mut ordered: Vec<&MarketEvent> = events.iter().collect();
@@ -214,7 +337,7 @@ pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize
             "Counting measure is exact for the returned finite event universe; volume measure is the sum of supplied trade sizes only.",
             "Missing trade sizes are counted separately and are never replaced with zero observations.",
             "Temporal relations use a fixed 60-second window and are not causal claims.",
-            "At most 100 edge examples per relation are returned; edge_count and mean lag are computed across all matching pairs."
+            "At most 100 edge examples per relation are returned; edge_count and mean lag are computed across all matching pairs.",
             "This is a derived read-only projection, not yet an append-only durable ledger.",
             "No V2 output changes the Version 1 vector decision or authorizes an order.",
         ],
