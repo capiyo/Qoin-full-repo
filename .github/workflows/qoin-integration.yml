@@ -51,6 +51,7 @@ jobs:
           export QOIN_AXUM_ADDR=127.0.0.1:8081
           export QOIN_AXUM_URL=http://127.0.0.1:8081
           export QOIN_DROGON_PORT=8080
+          export QOIN_EXECUTION_TOKEN=ci-backfill-token
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
           cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" 2>/dev/null || true; }
@@ -127,6 +128,10 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/duplicate-event.json
           jq -e '.status == "duplicate_ignored" and .ledger_repair_attempted == true' /tmp/duplicate-event.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger?symbol=BTCUSDT&limit=100' >/tmp/set-ledger.json
-          jq -e '.schema_version == "qoin-set-ledger-v2-alpha1" and .status == "derived_read_only" and .universe_count == 4 and .requested_limit == 100 and .universe_truncated == false and (.sets | length == 12) and (.relations | length == 3) and ([.sets[] | select(.set_id == "trades")][0].measure.counting_measure == 2) and ([.sets[] | select(.set_id == "buy_trades")][0].measure.counting_measure == 2) and .durable_record_count == 6 and .durable_relation_count == 2 and (.durable_records | length == 6) and (.persistence | contains("append_only"))' /tmp/set-ledger.json
+          jq -e '.schema_version == "qoin-set-ledger-v2-alpha1" and .status == "derived_projection_with_append_only_records" and .universe_count == 4 and .requested_limit == 100 and .universe_truncated == false and (.sets | length == 12) and (.relations | length == 3) and ([.sets[] | select(.set_id == "trades")][0].measure.counting_measure == 2) and ([.sets[] | select(.set_id == "buy_trades")][0].measure.counting_measure == 2) and .durable_record_count == 6 and .durable_relation_count == 2 and (.durable_records | length == 6) and (.persistence | contains("append_only"))' /tmp/set-ledger.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=250' -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-backfill.json
+          jq -e '.symbol == "BTCUSDT" and .processed_valid_events == 4 and .has_more == false and .source_event_count == 4 and .durable_observation_count == 4 and .remaining_observation_count_lower_bound == 0' /tmp/set-ledger-backfill.json
+          unauthenticated_backfill_status=$(curl -sS -o /tmp/unauthenticated-backfill.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=10')
+          test "$unauthenticated_backfill_status" = "401"
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
           jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
