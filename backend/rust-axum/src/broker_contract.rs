@@ -128,7 +128,7 @@ pub struct BrokerAccountSnapshot {
     pub available_margin: f64,
     pub gross_exposure: f64,
     pub daily_realized_pnl: f64,
-    pub unrealized_pnl: f64,
+    pub daily_unrealized_pnl: f64,
     pub open_positions: usize,
     pub observed_at_ms: i64,
 }
@@ -141,7 +141,7 @@ impl BrokerAccountSnapshot {
             return Err(ContractError::InvalidAccount("account identity, currency and observation time are required".into()));
         }
         let values = [self.equity, self.available_margin, self.gross_exposure,
-            self.daily_realized_pnl, self.unrealized_pnl];
+            self.daily_realized_pnl, self.daily_unrealized_pnl];
         if values.iter().any(|value| !value.is_finite())
             || self.equity <= 0.0 || self.available_margin < 0.0 || self.gross_exposure < 0.0
         {
@@ -152,7 +152,7 @@ impl BrokerAccountSnapshot {
 
     pub fn current_daily_loss(&self) -> Result<f64, ContractError> {
         self.validate()?;
-        let pnl = self.daily_realized_pnl + self.unrealized_pnl;
+        let pnl = self.daily_realized_pnl + self.daily_unrealized_pnl;
         if !pnl.is_finite() {
             return Err(ContractError::InvalidAccount("daily P&L overflow".into()));
         }
@@ -310,8 +310,12 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
         || !input.required_margin_account_currency.is_finite() || input.required_margin_account_currency < 0.0 {
         return Err(ContractError::InvalidOrder("market price is invalid or stale".into()));
     }
-    if !input.protective_order_supported {
+    if !input.protective_order_supported && !order.reduce_only {
         return Err(ContractError::Unsupported("selected broker/instrument cannot place a protective order".into()));
+    }
+    if instrument.quote_currency.eq_ignore_ascii_case(&account.account_currency)
+        && (instrument.price_currency_to_account_rate - 1.0).abs() > 1e-8 {
+        return Err(ContractError::InvalidInstrument("same-currency conversion rate must equal one".into()));
     }
     let execution_price = order.limit_price.unwrap_or(input.reference_price);
     let notional = instrument.notional_in_account_currency(order.quantity, execution_price)?;
@@ -430,7 +434,7 @@ mod tests {
         let spec = instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92);
         let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
             account_currency:"EUR".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
-            daily_realized_pnl:0.0, unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
+            daily_realized_pnl:0.0, daily_unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
         let order = NormalizedOrder { client_order_id:"fx-order-1".into(), account_id:"acct".into(),
             instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
             quantity:0.01, limit_price:None, stop_price:Some(1.09), time_in_force:None, reduce_only:false };
@@ -446,7 +450,7 @@ mod tests {
         let spec = instrument(AssetClass::Equity, "ABC", 1.0, 1.0);
         let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
             account_currency:"USD".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
-            daily_realized_pnl:0.0, unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
+            daily_realized_pnl:0.0, daily_unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
         let order = NormalizedOrder { client_order_id:"equity-order-1".into(), account_id:"acct".into(),
             instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
             quantity:1.0, limit_price:None, stop_price:Some(95.0), time_in_force:None, reduce_only:false };
