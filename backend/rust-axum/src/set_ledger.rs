@@ -215,7 +215,7 @@ pub fn durable_records(
         "_id": format!("observation|{}", event_id),
         "record_id": format!("observation|{}", event_id),
         "record_type": "observation",
-        "schema_version": "qoin-relation-ledger-v2-alpha2",
+        "schema_version": "qoin-relation-ledger-v2-alpha3",
         "symbol": &event.symbol,
         "venue": &event.venue,
         "source_event_id": &event.event_id,
@@ -233,6 +233,9 @@ pub fn durable_records(
         "immutability": "append_only_supersede_to_correct"
     }];
 
+    const MAX_EDGES_PER_RELATION: usize = 100;
+    let mut candidate_counts=[0usize;3];
+    let mut persisted_counts=[0usize;3];
     for neighbour in neighbours {
         if event_key(neighbour) == event_id { continue; }
         let (relation_id, source, target) = match (
@@ -251,6 +254,14 @@ pub fn durable_records(
         };
         let lag_ms = target.ts_ms - source.ts_ms;
         if !(1..=RELATION_WINDOW_MS).contains(&lag_ms) { continue; }
+        let relation_index=match relation_id {
+            "buy_trades_before_liquidations"=>0,
+            "sell_trades_before_liquidations"=>1,
+            _=>2,
+        };
+        candidate_counts[relation_index]+=1;
+        if persisted_counts[relation_index]>=MAX_EDGES_PER_RELATION { continue; }
+        persisted_counts[relation_index]+=1;
         let source_key = event_key(source);
         let target_key = event_key(target);
         let record_id = format!("relation|{relation_id}|{source_key}|{target_key}");
@@ -258,7 +269,7 @@ pub fn durable_records(
             "_id": &record_id,
             "record_id": &record_id,
             "record_type": "relation_edge",
-            "schema_version": "qoin-relation-ledger-v2-alpha2",
+            "schema_version": "qoin-relation-ledger-v2-alpha3",
             "symbol": &event.symbol,
             "relation_id": relation_id,
             "relation_type": "temporal_precedence",
@@ -285,6 +296,20 @@ pub fn durable_records(
             "interpretation": "Observed temporal ordering only; this relation does not establish causation.",
             "immutability": "append_only_supersede_to_correct"
         });
+    }
+    if let Some(observation)=records.first_mut() {
+        observation.insert("relation_edge_cap_per_type",MAX_EDGES_PER_RELATION as i64);
+        observation.insert("relation_edge_candidate_counts",doc!{
+            "buy_trades_before_liquidations":candidate_counts[0] as i64,
+            "sell_trades_before_liquidations":candidate_counts[1] as i64,
+            "funding_before_open_interest":candidate_counts[2] as i64
+        });
+        observation.insert("relation_edge_persisted_counts",doc!{
+            "buy_trades_before_liquidations":persisted_counts[0] as i64,
+            "sell_trades_before_liquidations":persisted_counts[1] as i64,
+            "funding_before_open_interest":persisted_counts[2] as i64
+        });
+        observation.insert("relation_edges_truncated",candidate_counts.iter().zip(persisted_counts.iter()).any(|(candidate,persisted)|candidate>persisted));
     }
     Ok(records)
 }
@@ -456,7 +481,7 @@ mod tests {
         ).unwrap();
         assert_eq!(records.len(), 2);
         let observation = records.iter().find(|record| record.get_str("record_type").ok() == Some("observation")).unwrap();
-        assert_eq!(observation.get_str("schema_version").ok(), Some("qoin-relation-ledger-v2-alpha2"));
+        assert_eq!(observation.get_str("schema_version").ok(), Some("qoin-relation-ledger-v2-alpha3"));
         assert_eq!(observation.get_str("source_event_hash_sha256").unwrap().len(), 64);
         let relation = records.iter().find(|record| record.get_str("record_type").ok() == Some("relation_edge")).unwrap();
         assert_eq!(relation.get_str("relation_id").ok(), Some("buy_trades_before_liquidations"));
