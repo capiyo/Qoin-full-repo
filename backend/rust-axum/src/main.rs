@@ -27,7 +27,7 @@ mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
-use qoin_market_space::{MarketFeature, MarketVector};
+use qoin_market_space::{attribution::AttributionReport, hub::{HubError, NormalizationProfile, VariableHub}, MarketFeature, MarketVector};
 use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, VectorEvidenceConfig, Vocabulary};
 use sha2::{Digest, Sha256};
 
@@ -85,6 +85,7 @@ struct AppState {
     events: Collection<Document>,
     states: Collection<Document>,
     market_vectors: Collection<Document>,
+    variable_hubs: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     relationship_ledger: Collection<Document>,
@@ -299,7 +300,7 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
 
 fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms:i64)->Option<MarketVector>{
     let cutoff=state.last_event_ts_ms?;
-    let identity=format!("{}|{}|event-window|{}",event.venue,event.symbol,cutoff);
+    let identity=format!("{}|{}|{}|event-window|{}",event.venue,event.symbol,event.event_id,cutoff);
     let digest=hex::encode(Sha256::digest(identity.as_bytes()));
     let vector_id=format!("mv-{}",&digest[..32]);
     let mut vector=MarketVector::new(vector_id,&event.venue,&event.symbol,"event-window",cutoff,available_at_ms.max(cutoff)).ok()?;
@@ -1391,6 +1392,135 @@ struct MarketVectorSignalRequest {
     has_open_position: bool,
 }
 
+#[derive(Deserialize)]
+struct VariableHubIdentityRequest { venue:String, symbol:String, timeframe:String }
+#[derive(Deserialize)]
+struct ObserveVariableRequest {
+    venue:String, symbol:String, timeframe:String, feature:MarketFeature,
+    raw_value:f64, quality:f64, event_time_ms:i64, available_at_ms:i64,
+    producer:String, calculation_version:String,
+}
+#[derive(Deserialize)]
+struct NormalizeVariableRequest {
+    venue:String, symbol:String, timeframe:String, feature:MarketFeature,
+    profile:NormalizationProfile,
+}
+#[derive(Deserialize)]
+struct DeriveVariableRequest {
+    venue:String, symbol:String, timeframe:String, feature:MarketFeature,
+    raw_value:f64, quality:f64, event_time_ms:i64, available_at_ms:i64,
+    producer:String, calculation_version:String,
+    #[serde(default)] attribution:Option<AttributionReport>,
+}
+#[derive(Deserialize)]
+struct MarkVariableNotApplicableRequest {
+    venue:String, symbol:String, timeframe:String, feature:MarketFeature,
+    event_time_ms:i64, available_at_ms:i64, producer:String, calculation_version:String,
+}
+#[derive(Deserialize)]
+struct PublishVariableHubRequest {
+    venue:String, symbol:String, timeframe:String, vector_id:String,
+    event_time_cutoff_ms:i64, available_at_ms:i64,
+}
+#[derive(Deserialize)]
+struct VariableHubQuery { venue:String, symbol:String, timeframe:String }
+
+async fn load_or_create_variable_hub(
+    state:&AppState, venue:&str, symbol:&str, timeframe:&str,
+)->Result<VariableHub,String>{
+    let filter=doc!{"identity.venue":venue,"identity.symbol":symbol,"identity.timeframe":timeframe};
+    match state.variable_hubs.find_one(filter,None).await.map_err(|error|error.to_string())?{
+        Some(mut document)=>{
+            document.remove("_id");
+            mongodb::bson::from_document::<VariableHub>(document).map_err(|error|error.to_string())
+        }
+        None=>VariableHub::new(venue,symbol,timeframe).map_err(|error|error.to_string()),
+    }
+}
+async fn persist_variable_hub(state:&AppState,hub:&VariableHub)->Result<(),String>{
+    let document=mongodb::bson::to_document(hub).map_err(|error|error.to_string())?;
+    let filter=doc!{"identity.venue":&hub.identity.venue,"identity.symbol":&hub.identity.symbol,
+        "identity.timeframe":&hub.identity.timeframe};
+    state.variable_hubs.replace_one(filter,document,
+        mongodb::options::ReplaceOptions::builder().upsert(true).build()).await
+        .map(|_|()).map_err(|error|error.to_string())
+}
+fn variable_hub_error(error:HubError)->(StatusCode,Json<serde_json::Value>){
+    (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":error.to_string()})))
+}
+async fn observe_variable(
+    State(state):State<AppState>,Json(request):Json<ObserveVariableRequest>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    let revision=hub.observe_input(request.feature,request.raw_value,request.quality,request.event_time_ms,
+        request.available_at_ms,request.producer,request.calculation_version).map_err(variable_hub_error)?;
+    persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
+    Ok(Json(serde_json::json!({"revision":revision,"progress":hub.progress(request.feature)})))
+}
+async fn normalize_variable(
+    State(state):State<AppState>,Json(request):Json<NormalizeVariableRequest>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    let revision=hub.normalize(request.feature,request.profile).map_err(variable_hub_error)?;
+    persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
+    Ok(Json(serde_json::json!({"revision":revision,"progress":hub.progress(request.feature)})))
+}
+async fn derive_variable(
+    State(state):State<AppState>,Json(request):Json<DeriveVariableRequest>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    let revision=if let Some(attribution)=request.attribution{
+        hub.record_derived_with_attribution(request.feature,request.raw_value,request.quality,
+            request.event_time_ms,request.available_at_ms,request.producer,request.calculation_version,attribution)
+    }else{
+        hub.record_derived(request.feature,request.raw_value,request.quality,
+            request.event_time_ms,request.available_at_ms,request.producer,request.calculation_version)
+    }.map_err(variable_hub_error)?;
+    persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
+    Ok(Json(serde_json::json!({"revision":revision,"progress":hub.progress(request.feature)})))
+}
+async fn mark_variable_not_applicable(
+    State(state):State<AppState>,Json(request):Json<MarkVariableNotApplicableRequest>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    let revision=hub.mark_not_applicable(request.feature,request.event_time_ms,request.available_at_ms,
+        request.producer,request.calculation_version).map_err(variable_hub_error)?;
+    persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
+    Ok(Json(serde_json::json!({"revision":revision,"progress":hub.progress(request.feature)})))
+}
+async fn get_variable_progress(
+    State(state):State<AppState>,Query(query):Query<VariableHubQuery>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let hub=load_or_create_variable_hub(&state,&query.venue,&query.symbol,&query.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    Ok(Json(serde_json::json!({"identity":hub.identity,"variables":hub.progress_all()})))
+}
+async fn publish_variable_hub(
+    State(state):State<AppState>,Json(request):Json<PublishVariableHubRequest>,
+)->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    let vector=hub.publish(request.vector_id,request.venue,request.symbol,request.timeframe,
+        request.event_time_cutoff_ms,request.available_at_ms).map_err(variable_hub_error)?;
+    let mut document=mongodb::bson::to_document(&vector).map_err(|error|(StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({"error":error.to_string()}))))?;
+    document.insert("stored_at",mongodb::bson::DateTime::now());
+    state.market_vectors.replace_one(doc!{"vector_id":&vector.vector_id},document,
+        mongodb::options::ReplaceOptions::builder().upsert(true).build()).await
+        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","detail":error.to_string()}))))?;
+    persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
+    Ok(Json(serde_json::json!({"market_vector":vector,"variables":hub.progress_all()})))
+}
+
 async fn evaluate_market_vector_signal(
     State(state): State<AppState>,
     Json(request): Json<MarketVectorSignalRequest>,
@@ -1677,6 +1807,7 @@ async fn main(){
     let events:Collection<Document>=db.collection("market_events");
     let states:Collection<Document>=db.collection("market_states");
     let market_vectors:Collection<Document>=db.collection("market_vectors");
+    let variable_hubs:Collection<Document>=db.collection("market_variable_hubs");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let relationship_ledger:Collection<Document>=db.collection("v2_relationship_ledger");
@@ -1698,6 +1829,10 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("market vector idempotency index");
     market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_cutoff_ms":-1}).build(),None)
         .await.expect("latest market vector lookup index");
+    variable_hubs.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"identity.venue":1,"identity.symbol":1,"identity.timeframe":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None)
+        .await.expect("variable hub identity index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
@@ -1770,7 +1905,7 @@ async fn main(){
     }
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,market_vectors,decisions,strategies,relationship_ledger,orders,trading_controls,
+        stream, database: db.clone(), events,states,market_vectors,variable_hubs,decisions,strategies,relationship_ledger,orders,trading_controls,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
@@ -1789,6 +1924,12 @@ async fn main(){
         .route("/internal/market-vector",get(get_latest_market_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/market-vector/history",get(get_market_vector_history))
+        .route("/internal/variables/observe",post(observe_variable))
+        .route("/internal/variables/normalize",post(normalize_variable))
+        .route("/internal/variables/derive",post(derive_variable))
+        .route("/internal/variables/not-applicable",post(mark_variable_not_applicable))
+        .route("/internal/variables/progress",get(get_variable_progress))
+        .route("/internal/variables/publish",post(publish_variable_hub))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))

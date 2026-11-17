@@ -240,7 +240,7 @@ pub struct VariableHubIdentity {
     pub timeframe: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariableHub {
     pub identity: VariableHubIdentity,
     values: BTreeMap<MarketFeature, VariableValue>,
