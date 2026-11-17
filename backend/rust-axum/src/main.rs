@@ -392,7 +392,8 @@ fn minute_return_buckets(state:&SymbolState,cutoff_ms:i64)->BTreeMap<i64,f64>{
         let bucket=timestamp.div_euclid(60_000);
         // Only completed minute buckets are eligible. This avoids partial-bar
         // and same-timestamp ordering leakage across instruments.
-        if bucket<current_bucket&&*timestamp<=cutoff_ms{
+        if bucket<current_bucket&&*timestamp<=cutoff_ms
+            && cutoff_ms.saturating_sub(*timestamp)<=24*60*60*1_000{
             *buckets.entry(bucket).or_insert(0.0)+=*log_return;
         }
     }
@@ -416,6 +417,10 @@ fn pearson_correlation(left:&[f64],right:&[f64])->Option<(f64,f64,f64)>{
 /// buckets. No index-order alignment or cross-venue price mixing is permitted.
 fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i64)->BTreeMap<MarketFeature,f64>{
     use MarketFeature::*;
+    if state.last_price_ts_ms.is_none_or(|timestamp|timestamp>cutoff_ms
+        ||cutoff_ms.saturating_sub(timestamp)>5*60_000){
+        return BTreeMap::new();
+    }
     let current=minute_return_buckets(state,cutoff_ms);
     let mut correlations=Vec::new();
     let mut covariances=Vec::new();
@@ -459,6 +464,10 @@ fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i6
 
 fn cross_asset_source_timestamp(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i64)->Option<i64>{
     let current_bucket=cutoff_ms.div_euclid(60_000);
+    if state.last_price_ts_ms.is_none_or(|timestamp|timestamp>cutoff_ms
+        ||cutoff_ms.saturating_sub(timestamp)>5*60_000){
+        return None;
+    }
     let has_peer=peers.iter().any(|peer|peer.venue==state.venue
         && peer.symbol!=state.symbol
         && peer.last_price_ts_ms.is_some_and(|timestamp|timestamp<=cutoff_ms
