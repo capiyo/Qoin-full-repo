@@ -436,7 +436,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
         </div>
         <span>SWIPE TO EXPLORE</span>
         <button type="button" className="text-action" aria-pressed={mode === "backtest"} onClick={onToggleMode}>{mode === "live" ? "Switch to backtest" : "Switch to live"}</button>
-        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>
+        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
       </div>
     </article>
   );
