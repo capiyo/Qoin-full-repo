@@ -220,6 +220,55 @@ int main() {
         const auto symbol = req->getParameter("symbol");
         proxyGet(req, std::move(cb), "/internal/vector" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/market-vector", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto venue = req->getParameter("venue");
+        std::string path = "/internal/market-vector";
+        bool first = true;
+        for (const auto& item : {std::pair<std::string, std::string>{"symbol", symbol}, {"venue", venue}}) {
+            if (item.second.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += item.first + "=" + drogon::utils::urlEncode(item.second);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/market-vector/history", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        const auto venue = req->getParameter("venue");
+        const auto limit = req->getParameter("limit");
+        std::string path = "/internal/market-vector/history";
+        bool first = true;
+        for (const auto& item : {std::pair<std::string, std::string>{"symbol", symbol}, {"venue", venue}, {"limit", limit}}) {
+            if (item.second.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += item.first + "=" + drogon::utils::urlEncode(item.second);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/variables/progress", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto venue = req->getParameter("venue");
+        const auto symbol = req->getParameter("symbol");
+        const auto timeframe = req->getParameter("timeframe");
+        std::string path = "/internal/variables/progress";
+        bool first = true;
+        for (const auto& item : {std::pair<std::string, std::string>{"venue", venue}, {"symbol", symbol}, {"timeframe", timeframe}}) {
+            if (item.second.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += item.first + "=" + drogon::utils::urlEncode(item.second);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/v2/relationships", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto limit = req->getParameter("limit");
+        proxyGet(req, std::move(cb), "/internal/v2/relationships" + (limit.empty() ? "" : "?limit=" + drogon::utils::urlEncode(limit)));
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) {
