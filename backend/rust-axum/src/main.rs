@@ -380,7 +380,16 @@ fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64)->Op
         TrendPersistence|MeanReversionStrength|TrendExhaustion|RegimeTrendStrength|
         RegimeVolatilityLevel|RegimeTransitionIntensity|RegimePersistence|SignalDecay
             =>(state.last_price_ts_ms,60_000_i64),
-        OrderFlowImbalance|VolumeDelta=>(state.last_trade_ts_ms,60_000_i64),
+        VolumeDelta=>(state.last_trade_ts_ms,60_000_i64),
+        OrderFlowImbalance=>{
+            let timestamp=match(state.last_trade_ts_ms,state.last_book_ts_ms){
+                (Some(trade),Some(book))=>Some(trade.max(book)),
+                (Some(trade),None)=>Some(trade),
+                (None,Some(book))=>Some(book),
+                _=>None,
+            };
+            (timestamp,60_000_i64)
+        },
         SpreadBps|OrderBookDepth|MarketImpact|SlippageEstimate|LiquidityConcentration|
         RegimeLiquidityStress=>(state.last_book_ts_ms,30_000_i64),
         FundingPressure=>(state.last_funding_ts_ms,8*60*60*1_000_i64),
