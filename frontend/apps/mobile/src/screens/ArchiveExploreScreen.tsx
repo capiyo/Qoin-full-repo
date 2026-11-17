@@ -24,7 +24,7 @@ type Instrument = {
 };
 
 const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", detail: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#E6A23C" },
+  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", detail: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", quoteCurrency: "USDT", archived: true, tint: "#E6A23C" },
   { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", detail: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#6477DF" },
   { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", detail: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#8B72E8" },
   { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#76A85A" },
