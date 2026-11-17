@@ -21,7 +21,7 @@ This is an early research baseline, not an exchange-ready trading system. State 
 
 ## Version 2 direction: sets and relation ledger
 
-Version 2 is planned as a set-theoretic research layer above the Version 1 vector baseline. It will represent timestamped observations and derived feature states as typed sets, make relations between states explicit, and append auditable relation/transition records to a ledger. The ledger is intended to explain why a state belongs to a set, which relations were evaluated, what measure/weight was assigned, and which transition produced a downstream interpretation. This layer is not implemented by the current runtime; Version 1 remains the active decision engine.
+Version 2 now has an initial read-only finite-set projection at `GET /api/v1/set-ledger`. It derives typed event sets (trades, buy/sell flow, books, funding, open interest and liquidations), counting/observed trade-size measures, and explicit temporal-precedence edges from persisted raw events. Relations use a fixed 60-second window and are explicitly not causal claims. The result is computed on read, not yet an append-only durable ledger; there are no V2 state transitions or execution authority. Version 1 remains the active decision engine.
 
 ## Client platforms
 
