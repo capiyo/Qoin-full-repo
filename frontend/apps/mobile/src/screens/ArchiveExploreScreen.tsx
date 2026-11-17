@@ -124,7 +124,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         </View>
         <Text style={styles.attentionCaption}>Mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"} · {item.interpretation}</Text>
         {item.edges.slice(0,4).map((edge,index) => <Text key={item.relation_id+index} style={styles.attentionCaption}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</Text>)}
-        {item.edges_truncated ? <Text style={styles.attentionCaption}>Showing sampled edges · {item.edge_count} total</Text> : null}
+        {item.edge_count > 4 ? <Text style={styles.attentionCaption}>Showing 4 of {item.edge_count} relation edges{item.edges_truncated ? " (sample capped at 100)" : ""}</Text> : null}
       </View>)}
       {ledger.limitations.map((item) => <Text key={item} style={styles.disclaimer}>• {item}</Text>)}
       <Text style={styles.attentionCaption}>Schema {ledger.schema_version} · {ledger.persistence}</Text>
