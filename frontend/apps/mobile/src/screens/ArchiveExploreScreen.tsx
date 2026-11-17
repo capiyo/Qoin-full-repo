@@ -112,9 +112,9 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
       {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.measure.count}</Text>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.measure.counting_measure}</Text>
         </View>
-        <Text style={styles.attentionCaption}>Counting measure · trade-size sum {item.measure.volume_total.toFixed(6)} · size observed {item.measure.volume_observed_count} / missing {item.measure.volume_missing_count}</Text>
+        <Text style={styles.attentionCaption}>Counting measure · trade-size sum {item.measure.trade_size_measure.toFixed(6)} · size observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</Text>
         <Text style={styles.attentionCaption} numberOfLines={2}>Members: {item.member_event_ids.slice(0,5).join(", ") || "∅"}{item.member_event_ids.length>5 ? " … +" + (item.member_event_ids.length-5) : ""}</Text>
       </View>)}
       <Text style={styles.engineLabel}>TEMPORAL RELATIONS · 60 SECOND WINDOW</Text>
