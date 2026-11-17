@@ -404,6 +404,19 @@ async fn persist_set_ledger_records(
     ledger: &Collection<Document>,
     event: &MarketEvent,
 ) -> Result<usize,String> {
+    // Always derive from the canonical event already stored in the immutable
+    // source log. A duplicate delivery with a reused ID but altered payload must
+    // never create memberships or relation edges from caller-supplied data.
+    let canonical_document=events.find_one(doc!{
+        "venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id
+    },None).await.map_err(|error|error.to_string())?
+        .ok_or_else(||"canonical source event is missing after ingestion".to_string())?;
+    let mut canonical_document=canonical_document;
+    canonical_document.remove("_id");
+    let canonical_event=mongodb::bson::from_document::<MarketEvent>(canonical_document)
+        .map_err(|error|error.to_string())?;
+    validate_event(&canonical_event)?;
+    let event=&canonical_event;
     let from_ts = event.ts_ms.saturating_sub(60_000);
     let to_ts = event.ts_ms.saturating_add(60_000);
     let options = FindOptions::builder()
@@ -1120,7 +1133,7 @@ async fn audit_set_ledger(
         "scan_limit":limit,
         "source_scan_complete":scanned+invalid==source_count,
         "relation_scan_complete":relations_scanned as u64==relation_count,
-        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && scanned+invalid==source_count && relations_scanned as u64==relation_count,
+        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && invalid==0 && scanned+invalid==source_count && relations_scanned as u64==relation_count,
         "sample_issues":sample
     })))
 }
