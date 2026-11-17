@@ -188,3 +188,12 @@ The shared Rust crate now supplies vector-projection attribution, overlap-aware 
 A derived variable can be recorded with a reconciled attribution report. Each contribution must name one of that variable's direct dependencies, include a signed effect and optional quality, and the effects must sum to the derived raw value relative to the stated baseline. Absolute-effect percentages must reconcile to 100% (or 0% when every effect is zero). The hub stores this breakdown beside the variable's revision and dependency revisions and exposes it through variable progress. If an upstream dependency changes, the variable and its attached attribution become stale together.
 
 Feature calculators must provide defensible dependency effects or coalition-based Shapley allocations. The hub does not invent percentages from equal weights. Raw input variables may have no dependency attribution; their own source/provenance and quality remain visible.
+
+
+## Backend attribution contract (V1 and V2)
+
+V1's shared-vector decision quality-weights its seven force coordinates and five regime coordinates before evaluation. The returned decision includes an exact 12-component Shapley report over the *risk-adjusted decision margin* (absolute directional score minus the regime-adjusted threshold), plus canonical aggregation by the ten feature families. Each coalition re-runs clipping, Pareto top-k selection, the OFI × open-interest interaction, volatility dampening and the regime threshold. Nonlinear interactions are allocated rather than hidden in a linear approximation. Percentages are shares of absolute Shapley effects; signed effects and positive/negative directions remain visible. Coverage is the mean quality of the twelve required inputs.
+
+V2 relationship records now carry a pairwise atomic set-measure report. Every evidence atom has unit mass; an atom shared by both sets is split across memberships, so the union is counted once. The report is validated again when a relationship ledger event is appended or read. The vector-discovery endpoint returns the relationship records, including each relationship's set measure and attention weight, instead of only returning aggregate write counts.
+
+These are research explanations of model score/evidence structure, not causal probabilities, win probabilities, or expected returns. V1 remains the only directional signal engine; V2 discovers and logs relationships and does not submit orders.

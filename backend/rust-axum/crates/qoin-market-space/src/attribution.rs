@@ -6,7 +6,7 @@
 //! allocate interactions in nonlinear outcomes; atomic measures allocate
 //! overlapping set evidence without double-counting the union.
 
-use crate::{FeatureAvailability, MarketFeature, MarketVector};
+use crate::{FeatureAvailability, FeatureFamily, MarketFeature, MarketVector};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -102,6 +102,53 @@ pub struct SignedEffectInput {
     pub feature: Option<MarketFeature>,
     pub signed_effect: f64,
     pub quality: Option<f64>,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FamilyContribution {
+    pub family: FeatureFamily,
+    pub signed_effect: f64,
+    pub absolute_effect: f64,
+    pub contribution_pct: f64,
+    pub quality: Option<f64>,
+    pub direction: ContributionDirection,
+}
+
+/// Aggregate coordinate-level effects by the schema's canonical feature
+/// families. Percentages sum absolute coordinate effects, not absolute net
+/// family effects, so opposing variables cannot disappear through cancellation.
+pub fn aggregate_by_family(report: &AttributionReport) -> Vec<FamilyContribution> {
+    let mut groups: BTreeMap<FeatureFamily, (f64, f64, f64, f64)> = BTreeMap::new();
+    for contribution in &report.contributions {
+        let Some(feature) = contribution.feature else { continue; };
+        let entry = groups.entry(feature.family()).or_insert((0.0, 0.0, 0.0, 0.0));
+        entry.0 += contribution.signed_effect;
+        entry.1 += contribution.signed_effect.abs();
+        if let Some(quality) = contribution.quality {
+            let weight = contribution.signed_effect.abs();
+            entry.2 += quality * weight;
+            entry.3 += weight;
+        }
+    }
+    let absolute_total = groups.values().map(|entry| entry.1).sum::<f64>();
+    groups.into_iter().map(|(family, (signed_effect, absolute_effect, quality_total, quality_weight))| {
+        let direction = if signed_effect > 0.0 {
+            ContributionDirection::Positive
+        } else if signed_effect < 0.0 {
+            ContributionDirection::Negative
+        } else {
+            ContributionDirection::Neutral
+        };
+        FamilyContribution {
+            family,
+            signed_effect,
+            absolute_effect,
+            contribution_pct: if absolute_total > 0.0 { absolute_effect / absolute_total * 100.0 } else { 0.0 },
+            quality: if quality_weight > 0.0 { Some(quality_total / quality_weight) } else { None },
+            direction,
+        }
+    }).collect()
 }
 
 /// Attribute an already-computed variable or score using signed component effects.

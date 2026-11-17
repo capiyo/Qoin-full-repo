@@ -5,8 +5,8 @@
 //! not generate orders, mutate the active strategy, or claim predictive edge.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
-use qoin_market_space::{FeatureAvailability, MarketFeature, MarketVector};
+use std::collections::{BTreeMap, BTreeSet};
+use qoin_market_space::{attribute_set_measure, FeatureAvailability, MarketFeature, MarketVector, SetMeasureInput, SetMeasureReport};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -384,6 +384,10 @@ pub struct RelationshipRecord {
     pub source_vector_snapshot: Option<MarketVector>,
     #[serde(default)]
     pub target_vector_snapshot: Option<MarketVector>,
+    /// Pairwise atomic measure of the source/target evidence union. Shared
+    /// atoms are split across memberships and retained in the immutable ledger.
+    #[serde(default)]
+    pub set_measure: Option<SetMeasureReport>,
 }
 
 impl RelationshipRecord {
@@ -397,6 +401,15 @@ impl RelationshipRecord {
         source.validate()?;
         target.validate()?;
         let model_version = model_version.into();
+        let pair_sets = vec![
+            SetMeasureInput { evidence_set_id: source.id.clone(), atoms: source.atoms.clone() },
+            SetMeasureInput { evidence_set_id: target.id.clone(), atoms: target.atoms.clone() },
+        ];
+        let atom_masses = source.atoms.union(&target.atoms)
+            .map(|atom| (atom.clone(), 1.0))
+            .collect::<BTreeMap<_, _>>();
+        let set_measure = attribute_set_measure(&pair_sets, &atom_masses)
+            .map_err(|_| SetAttentionError::InvalidSetMeasure)?;
         let record = Self {
             relationship_id: format!("{}::{}", source.id, target.id),
             source_set_id: source.id.clone(),
@@ -425,6 +438,7 @@ impl RelationshipRecord {
             target_timeframe: target.source_timeframe.clone(),
             source_vector_snapshot: source.source_vector_snapshot.clone(),
             target_vector_snapshot: target.source_vector_snapshot.clone(),
+            set_measure: Some(set_measure),
         };
         record.validate()?;
         Ok(record)
@@ -473,6 +487,20 @@ impl RelationshipRecord {
         let sorted_unique = |atoms: &[String]| atoms.windows(2).all(|pair| pair[0] < pair[1]);
         let source_atoms = self.source_atoms.iter().cloned().collect::<BTreeSet<_>>();
         let target_atoms = self.target_atoms.iter().cloned().collect::<BTreeSet<_>>();
+        if let Some(measure) = &self.set_measure {
+            let pair_sets = vec![
+                SetMeasureInput { evidence_set_id: self.source_set_id.clone(), atoms: source_atoms.clone() },
+                SetMeasureInput { evidence_set_id: self.target_set_id.clone(), atoms: target_atoms.clone() },
+            ];
+            let atom_masses = source_atoms.union(&target_atoms)
+                .map(|atom| (atom.clone(), 1.0))
+                .collect::<BTreeMap<_, _>>();
+            let expected_measure = attribute_set_measure(&pair_sets, &atom_masses)
+                .map_err(|_| SetAttentionError::InvalidSetMeasure)?;
+            if measure != &expected_measure {
+                return Err(SetAttentionError::InvalidSetMeasure);
+            }
+        }
         let actual_intersection = source_atoms.intersection(&target_atoms).count();
         let actual_union = source_atoms.union(&target_atoms).count();
         let expected_relation_kind = if source_atoms == target_atoms {
@@ -618,6 +646,8 @@ pub enum SetAttentionError {
     InvalidOutcome,
     #[error("invalid shared market vector")]
     InvalidMarketVector,
+    #[error("invalid or inconsistent pairwise set measure")]
+    InvalidSetMeasure,
     #[error("invalid vector-to-evidence binning configuration")]
     InvalidVectorEvidenceConfig,
 }

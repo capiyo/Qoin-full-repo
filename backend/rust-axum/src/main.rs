@@ -1309,12 +1309,14 @@ async fn discover_relationships(
 
     let mut persisted = 0usize;
     let mut already_present = 0usize;
+    let mut relationships = Vec::with_capacity(request.candidates.len());
     for (candidate, attention_weight) in request.candidates.iter().zip(weights) {
         let relationship = RelationshipRecord::discover(
             &request.query, candidate, request.model_version.clone(), attention_weight,
             request.temperature,
         ).map_err(|error| (StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error":error.to_string()}))))?;
+        relationships.push(relationship.clone());
         let identity = serde_json::to_vec(&(
             &relationship,
             request.recorded_at_ms,
@@ -1354,8 +1356,9 @@ async fn discover_relationships(
         "candidate_count":request.candidates.len(),
         "persisted":persisted,
         "already_present":already_present,
+        "relationships":relationships,
         "ledger":"append-only",
-        "decision_authority":"version-1-vector-engine"
+        "decision_authority":"version-2-set-theoretic-attention (research only)"
     }))))
 }
 

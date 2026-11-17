@@ -6,7 +6,7 @@
 //! not trained weights and not evidence of an edge.
 
 use serde::{Deserialize, Serialize};
-use qoin_market_space::{MarketFeature, MarketSpaceError, MarketVector};
+use qoin_market_space::{attribution::{aggregate_by_family, attribute_exact_shapley, AttributionError, AttributionReport, ContributionDirection, FamilyContribution}, MarketFeature, MarketSpaceError, MarketVector};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -208,6 +208,11 @@ pub struct MarketVectorDecision {
     pub regime_risk_score: f64,
     pub effective_signal_threshold: f64,
     pub effective_volatility_dampener: f64,
+    /// Exact Shapley decomposition of the risk-adjusted decision margin:
+    /// absolute directional score minus the regime-adjusted threshold.
+    pub risk_adjusted_margin: f64,
+    pub attribution: AttributionReport,
+    pub family_attribution: Vec<FamilyContribution>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -216,6 +221,8 @@ pub enum MarketVectorDecisionError {
     MarketSpace(#[from] MarketSpaceError),
     #[error(transparent)]
     Engine(#[from] EngineError),
+    #[error(transparent)]
+    Attribution(#[from] AttributionError),
 }
 
 /// Version 1 adapter for the shared 53-dimensional market vector.
@@ -229,38 +236,99 @@ pub fn decide_from_market_vector(
     has_open_position: bool,
 ) -> Result<MarketVectorDecision, MarketVectorDecisionError> {
     vector.validate()?;
-    let input = ForceObservation {
-        ofi: vector.require(MarketFeature::OrderFlowImbalance)?,
-        liquidity: vector.require(MarketFeature::OrderBookDepth)?,
-        volatility: vector.require(MarketFeature::RealizedVolatility)?,
-        funding: vector.require(MarketFeature::FundingPressure)?,
-        open_interest_change: vector.require(MarketFeature::OpenInterestChange)?,
-        liquidation_pressure: vector.require(MarketFeature::LiquidationPressure)?,
-        basis: vector.require(MarketFeature::Basis)?,
-    };
-
-    let regime_volatility = vector.require(MarketFeature::RegimeVolatilityLevel)?.max(0.0);
-    let regime_risk_components = [
-        regime_volatility,
-        vector.require(MarketFeature::RegimeLiquidityStress)?.max(0.0),
-        vector.require(MarketFeature::RegimeCorrelationStress)?.max(0.0),
-        vector.require(MarketFeature::RegimeTransitionIntensity)?.max(0.0),
-        vector.require(MarketFeature::RegimeUncertainty)?.max(0.0),
+    // Seven force/context coordinates and five regime coordinates share one
+    // attribution game. Quality scales evidence before it can influence a vote.
+    let features = [
+        MarketFeature::OrderFlowImbalance,
+        MarketFeature::OrderBookDepth,
+        MarketFeature::RealizedVolatility,
+        MarketFeature::FundingPressure,
+        MarketFeature::OpenInterestChange,
+        MarketFeature::LiquidationPressure,
+        MarketFeature::Basis,
+        MarketFeature::RegimeVolatilityLevel,
+        MarketFeature::RegimeLiquidityStress,
+        MarketFeature::RegimeCorrelationStress,
+        MarketFeature::RegimeTransitionIntensity,
+        MarketFeature::RegimeUncertainty,
     ];
-    let regime_risk_score = regime_risk_components.iter().sum::<f64>()
-        / regime_risk_components.len() as f64;
+    let mut observed = [0.0_f64; 12];
+    let mut qualities = [0.0_f64; 12];
+    for (index, feature) in features.iter().enumerate() {
+        let coordinate = vector.coordinates.get(feature)
+            .ok_or(MarketSpaceError::IncompleteVector)?;
+        observed[index] = vector.require(*feature)? * coordinate.quality;
+        qualities[index] = coordinate.quality;
+    }
+
+    let force_input = |values: &[f64; 12]| ForceObservation {
+        ofi: values[0],
+        liquidity: values[1],
+        volatility: values[2],
+        funding: values[3],
+        open_interest_change: values[4],
+        liquidation_pressure: values[5],
+        basis: values[6],
+    };
+    let regime_risk = |values: &[f64; 12]| {
+        values[7..12].iter().map(|value| value.max(0.0)).sum::<f64>() / 5.0
+    };
+    let regime_volatility = observed[7].max(0.0);
+    let regime_risk_score = regime_risk(&observed);
 
     let mut effective_config = config.clone();
     effective_config.signal_threshold = config.signal_threshold * (1.0 + regime_risk_score);
     effective_config.volatility_dampener =
         config.volatility_dampener * (1.0 + regime_volatility);
-    let signal = decide(input, &effective_config, config_version, has_open_position)?;
+    let signal = decide(force_input(&observed), &effective_config, config_version, has_open_position)?;
+
+    // Re-run the actual nonlinear engine for every coalition. This allocates
+    // clipping, Pareto top-k, the OFI×OI interaction, volatility dampening and
+    // the regime-adjusted threshold, rather than attributing a linear proxy.
+    let mut coalition_values = Vec::with_capacity(1 << features.len());
+    for mask in 0usize..(1usize << features.len()) {
+        let values = std::array::from_fn(|index| {
+            if mask & (1usize << index) != 0 { observed[index] } else { 0.0 }
+        });
+        let risk_score = regime_risk(&values);
+        let mut coalition_config = config.clone();
+        coalition_config.signal_threshold = config.signal_threshold * (1.0 + risk_score);
+        coalition_config.volatility_dampener =
+            config.volatility_dampener * (1.0 + values[7].max(0.0));
+        let coalition_signal = decide(
+            force_input(&values),
+            &coalition_config,
+            config_version,
+            false,
+        )?;
+        coalition_values.push(coalition_signal.score.abs() - coalition_config.signal_threshold);
+    }
+    let keys = features.iter().map(|feature| feature.as_str().to_owned()).collect::<Vec<_>>();
+    let mut attribution = attribute_exact_shapley(&keys, &coalition_values)?;
+    attribution.coverage_pct = qualities.iter().sum::<f64>() / qualities.len() as f64 * 100.0;
+    for (contribution, (feature, quality)) in attribution.contributions.iter_mut()
+        .zip(features.iter().zip(qualities.iter())) {
+        contribution.feature = Some(*feature);
+        contribution.quality = Some(*quality);
+        contribution.direction = if contribution.signed_effect > 0.0 {
+            ContributionDirection::Positive
+        } else if contribution.signed_effect < 0.0 {
+            ContributionDirection::Negative
+        } else {
+            ContributionDirection::Neutral
+        };
+    }
+    let family_attribution = aggregate_by_family(&attribution);
+    let risk_adjusted_margin = coalition_values[(1usize << features.len()) - 1];
 
     Ok(MarketVectorDecision {
         signal,
         regime_risk_score,
         effective_signal_threshold: effective_config.signal_threshold,
         effective_volatility_dampener: effective_config.volatility_dampener,
+        risk_adjusted_margin,
+        attribution,
+        family_attribution,
     })
 }
 
