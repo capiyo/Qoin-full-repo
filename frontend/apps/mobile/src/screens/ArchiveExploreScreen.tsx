@@ -8,6 +8,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
+type BrokerOption = { id: string; name: string; coverage: string; status: string };
+const brokerOptions: BrokerOption[] = [
+  { id: "binance", name: "Binance", coverage: "Crypto · USD-M adapter", status: "Adapter available · credentials required" },
+  { id: "coinbase", name: "Coinbase Advanced", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "kraken", name: "Kraken", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "interactive_brokers", name: "Interactive Brokers", coverage: "Global stocks, options, futures, FX", status: "Adapter pending" },
+  { id: "alpaca", name: "Alpaca", coverage: "US equities and crypto", status: "Adapter pending" },
+  { id: "oanda", name: "OANDA", coverage: "FX and CFDs", status: "Market data only · execution adapter pending" },
+  { id: "saxo", name: "Saxo", coverage: "Multi-asset brokerage", status: "Adapter pending" },
+  { id: "ig", name: "IG", coverage: "FX, indices, shares and CFDs", status: "Adapter pending" },
+  { id: "fxcm", name: "FXCM", coverage: "FX and CFDs", status: "Adapter pending" },
+  { id: "tradier", name: "Tradier", coverage: "US equities and options", status: "Adapter pending" },
+];
+
 type Instrument = {
   symbol: string;
   engineSymbol: string;
@@ -167,6 +181,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [market, setMarket] = useState("All");
   const [venueFilter, setVenueFilter] = useState("All exchanges");
   const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quotes");
+  const [selectedBroker, setSelectedBroker] = useState("binance");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
@@ -448,6 +463,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         {mode === "Explore" ? (
           <>
             <View style={styles.exchangePicker}>
+              <Text style={styles.kicker}>EXECUTION BROKER</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
+                {brokerOptions.map((broker) => <Pressable key={broker.id} onPress={() => setSelectedBroker(broker.id)} style={[styles.exchangeChip, selectedBroker === broker.id && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, selectedBroker === broker.id && styles.exchangeChipTextActive]}>{broker.name}</Text></Pressable>)}
+              </ScrollView>
+              <Text style={styles.brokerStatus}>{brokerOptions.find((broker) => broker.id === selectedBroker)?.status}</Text>
               <Text style={styles.kicker}>EXCHANGE / VENUE</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
                 {["All exchanges", ...availableVenues].map((venue) => <Pressable key={venue} onPress={() => setVenueFilter(venue)} style={[styles.exchangeChip, venueFilter === venue && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, venueFilter === venue && styles.exchangeChipTextActive]}>{venue}</Text></Pressable>)}
