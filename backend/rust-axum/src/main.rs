@@ -433,7 +433,8 @@ fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i6
     let mut relative_strengths=Vec::new();
     for peer in peers{
         if peer.venue!=state.venue||peer.symbol==state.symbol
-            || peer.last_price_ts_ms.is_none_or(|timestamp|cutoff_ms.saturating_sub(timestamp)>5*60_000){
+            || peer.last_price_ts_ms.is_none_or(|timestamp|timestamp>cutoff_ms
+                ||cutoff_ms.saturating_sub(timestamp)>5*60_000){
             continue;
         }
         let other=minute_return_buckets(peer,cutoff_ms);
