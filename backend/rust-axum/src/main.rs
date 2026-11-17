@@ -93,6 +93,7 @@ struct AppState {
     states: Collection<Document>,
     market_vectors: Collection<Document>,
     variable_hubs: Collection<Document>,
+    variable_hub_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     relationship_ledger: Collection<Document>,
@@ -1484,6 +1485,11 @@ struct PublishVariableHubRequest {
 #[derive(Deserialize)]
 struct VariableHubQuery { venue:String, symbol:String, timeframe:String }
 
+fn variable_hub_lock_index(state:&AppState,venue:&str,symbol:&str,timeframe:&str)->usize{
+    let key=format!("{venue}|{symbol}|{timeframe}");
+    key.bytes().fold(0usize,|hash,byte|hash.wrapping_mul(31).wrapping_add(byte as usize))
+        % state.variable_hub_locks.len()
+}
 async fn load_or_create_variable_hub(
     state:&AppState, venue:&str, symbol:&str, timeframe:&str,
 )->Result<VariableHub,String>{
@@ -1510,6 +1516,9 @@ fn variable_hub_error(error:HubError)->(StatusCode,Json<serde_json::Value>){
 async fn observe_variable(
     State(state):State<AppState>,Json(request):Json<ObserveVariableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let lock_index=variable_hub_lock_index(&state,&request.venue,&request.symbol,&request.timeframe);
+    let _hub_guard=state.variable_hub_locks[lock_index].lock().await;
+
     if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
         return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future variable timestamps are rejected"}))));
     }
@@ -1524,6 +1533,9 @@ async fn observe_variable(
 async fn normalize_variable(
     State(state):State<AppState>,Json(request):Json<NormalizeVariableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let lock_index=variable_hub_lock_index(&state,&request.venue,&request.symbol,&request.timeframe);
+    let _hub_guard=state.variable_hub_locks[lock_index].lock().await;
+
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     if hub.value(request.feature).is_some_and(|value|!timestamps_are_not_future(value.event_time_ms,value.available_at_ms)){
@@ -1537,6 +1549,9 @@ async fn normalize_variable(
 async fn derive_variable(
     State(state):State<AppState>,Json(request):Json<DeriveVariableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let lock_index=variable_hub_lock_index(&state,&request.venue,&request.symbol,&request.timeframe);
+    let _hub_guard=state.variable_hub_locks[lock_index].lock().await;
+
     if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
         return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future derived-variable timestamps are rejected"}))));
     }
@@ -1556,6 +1571,9 @@ async fn derive_variable(
 async fn mark_variable_not_applicable(
     State(state):State<AppState>,Json(request):Json<MarkVariableNotApplicableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let lock_index=variable_hub_lock_index(&state,&request.venue,&request.symbol,&request.timeframe);
+    let _hub_guard=state.variable_hub_locks[lock_index].lock().await;
+
     if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
         return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future not-applicable timestamps are rejected"}))));
     }
@@ -1577,6 +1595,9 @@ async fn get_variable_progress(
 async fn publish_variable_hub(
     State(state):State<AppState>,Json(request):Json<PublishVariableHubRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    let lock_index=variable_hub_lock_index(&state,&request.venue,&request.symbol,&request.timeframe);
+    let _hub_guard=state.variable_hub_locks[lock_index].lock().await;
+
     if !timestamps_are_not_future(request.event_time_cutoff_ms,request.available_at_ms){
         return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future market-vector publication timestamps are rejected"}))));
     }
@@ -2010,7 +2031,9 @@ async fn main(){
     }
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,market_vectors,variable_hubs,decisions,strategies,relationship_ledger,orders,trading_controls,
+        stream, database: db.clone(), events,states,market_vectors,variable_hubs,
+        variable_hub_locks:Arc::new((0..64).map(|_|tokio::sync::Mutex::new(())).collect()),
+        decisions,strategies,relationship_ledger,orders,trading_controls,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
