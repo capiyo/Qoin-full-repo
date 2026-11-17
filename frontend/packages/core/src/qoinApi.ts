@@ -194,6 +194,65 @@ export type QoinVectorHistory = {
   symbol: string; strategy_version?: string; decision_vector: [number, number];
   magnitude: number; angle_radians: number; action: string; stored_at?: string;
 };
+
+export type QoinV2RelationshipEvent = {
+  event_id: string;
+  event_type: "discovered" | "outcome_observed" | "invalidated" | string;
+  recorded_at_ms: number;
+  relationship: {
+    relationship_id: string;
+    source_set_id: string;
+    target_set_id: string;
+    source_domain: string;
+    target_domain: string;
+    source_observed_at_ms: number;
+    target_observed_at_ms: number;
+    source_atoms: string[];
+    target_atoms: string[];
+    observed_at_ms: number;
+    model_version: string;
+    relation_kind: string;
+    metrics: {
+      intersection_size: number;
+      union_size: number;
+      source_size: number;
+      target_size: number;
+      jaccard: number;
+      source_coverage: number;
+      target_coverage: number;
+    };
+    attention_weight: number;
+    attention_temperature: number;
+    source_vector_id?: string | null;
+    target_vector_id?: string | null;
+    source_vector_schema_version?: number | null;
+    target_vector_schema_version?: number | null;
+    source_venue?: string | null;
+    source_symbol?: string | null;
+    source_timeframe?: string | null;
+    target_venue?: string | null;
+    target_symbol?: string | null;
+    target_timeframe?: string | null;
+    set_measure?: {
+      union_mass: number;
+      contributions: Array<{ evidence_set_id: string; allocated_mass: number; contribution_pct: number }>;
+      atom_allocations: Array<{ atom: string; evidence_set_id: string; allocated_mass: number; membership_count: number }>;
+    } | null;
+  };
+  outcome?: {
+    evaluated_at_ms: number;
+    horizon_ms: number;
+    realized_return_bps: number | null;
+    max_adverse_excursion_bps: number | null;
+    max_favorable_excursion_bps: number | null;
+  } | null;
+};
+
+/** Reads the append-only V2 market relationship ledger through the read-only gateway. */
+export function getQoinV2Relationships(limit = 100): Promise<QoinV2RelationshipEvent[]> {
+  const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  return request<QoinV2RelationshipEvent[]>(`/api/v1/v2/relationships?limit=${boundedLimit}`);
+}
 function getWebSocketBaseUrl(): string {
   const runtime = globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> }; __QOIN_WS_URL?: string };
   const env = runtime.process?.env;
