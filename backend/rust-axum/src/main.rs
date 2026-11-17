@@ -2458,6 +2458,9 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None)
         .await.expect("variable hub identity index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"decision_key":1})
+        .options(IndexOptions::builder().unique(true).sparse(true).build()).build(),None)
+        .await.expect("decision recovery idempotency index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     relationship_ledger.create_index(mongodb::IndexModel::builder()
@@ -2542,18 +2545,62 @@ async fn main(){
             }
         }
     }
-    tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
-        "rebuilt market snapshots from immutable MongoDB event log");
-    for vector in restored_vectors.values(){
-        if let Ok(mut document)=mongodb::bson::to_document(vector){
-            document.insert("stored_at",mongodb::bson::DateTime::now());
-            match market_vectors.insert_one(document,None).await{
-                Ok(_)=>{},
-                Err(error) if error.to_string().contains("E11000")=>{},
-                Err(error)=>tracing::warn!(error=%error,vector_id=%vector.vector_id,"could not restore latest causal market vector"),
+    // Rebuild the latest decision per symbol as well as its vector. This
+    // repairs a crash after raw-event insertion but before decision persistence.
+    for (state_key,snapshot) in &restored_memory{
+        let Some(event)=restored_latest_events.get(state_key) else{continue;};
+        let mut decision=match active.decide(
+            &snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
+            snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,
+            snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref(),
+        ){
+            Ok(value)=>value,
+            Err(error)=>{
+                skipped_events+=1;
+                tracing::warn!(error=%error,symbol=%snapshot.symbol,
+                    "could not reconstruct latest decision during event-log recovery");
+                continue;
             }
+        };
+        decision.input_event=Some(DecisionInputEvent{
+            event_id:event.event_id.clone(),venue:event.venue.clone(),event_type:event.event_type.clone(),
+            event_ts_ms:event.ts_ms,state_event_count:snapshot.event_count,
+            state_last_event_ts_ms:snapshot.last_event_ts_ms,
+        });
+        let v1=restored_vectors.get(state_key)
+            .map(|vector|evaluate_ingested_v1_vector(vector,&signal_config,&signal_config_version))
+            .unwrap_or_else(||serde_json::json!({
+                "status":"warming_up","algorithm_version":"1",
+                "reason":"past-only feature calibration has not produced an observed market vector"
+            }));
+        let mut document=mongodb::bson::to_document(&decision).unwrap_or_default();
+        let key=market_event_decision_key(event);
+        document.insert("decision_key",&key);
+        document.insert("v1_shared_market_vector",mongodb::bson::to_bson(&v1).unwrap_or(mongodb::bson::Bson::Null));
+        if let Some(vector)=restored_vectors.get(state_key){document.insert("market_vector_id",&vector.vector_id);}
+        document.insert("recovered_from_event_log",true);
+        document.insert("stored_at",mongodb::bson::DateTime::now());
+        if let Err(error)=decisions.update_one(
+            doc!{"decision_key":&key},doc!{"$set":document},
+            UpdateOptions::builder().upsert(true).build(),
+        ).await{
+            skipped_events+=1;
+            tracing::warn!(error=%error,symbol=%snapshot.symbol,
+                "could not persist reconstructed latest decision");
         }
     }
+    if skipped_events==0{
+        if let Err(error)=events.update_many(
+            doc!{"_qoin_pipeline_status":"pending","_qoin_applied":true},
+            doc!{"$set":{"_qoin_pipeline_status":"complete","_qoin_recovered_at":mongodb::bson::DateTime::now()}},
+            None,
+        ).await{
+            skipped_events+=1;
+            tracing::warn!(error=%error,"could not complete recovered market-event pipeline markers");
+        }
+    }
+    tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
+        "rebuilt market states, vectors and latest decisions from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,states,market_vectors,variable_hubs,
