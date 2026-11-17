@@ -927,51 +927,49 @@ async fn backfill_set_ledger(
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill source query failed"})));
         }
     };
-    let mut page=Vec::new();
-    let mut skipped_invalid=0usize;
-    while let Some(mut document)=match cursor.try_next().await {
+    let mut documents=Vec::new();
+    while let Some(document)=match cursor.try_next().await {
         Ok(value)=>value,
         Err(error)=>{
             tracing::error!(error=%error,symbol=%symbol,"V2 ledger backfill cursor failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill source read failed"})));
         }
     } {
-        document.remove("_id");
-        match mongodb::bson::from_document::<MarketEvent>(document) {
-            Ok(event) if validate_event(&event).is_ok()=>page.push(event),
-            _=>skipped_invalid+=1,
-        }
-        if page.len()+skipped_invalid > batch_size as usize { break; }
+        documents.push(document);
     }
-    let has_more=page.len()+skipped_invalid > batch_size as usize;
-    if has_more {
-        // The extra row is only a look-ahead marker. It is not processed here;
-        // the next request resumes after the last fully processed source row.
-        if skipped_invalid > 0 && page.len()+skipped_invalid == batch_size as usize+1 {
-            // no-op: cursor is derived from the final processed valid event below
-        }
-        if page.len()+skipped_invalid > batch_size as usize {
-            if page.last().is_some() { /* final cursor remains the last valid event */ }
-        }
-    }
-    let process_count=page.len().min(batch_size as usize);
-    page.truncate(process_count);
+    let has_more=documents.len()>batch_size as usize;
+    documents.truncate(batch_size as usize);
+    let mut last_cursor:Option<(i64,String,String)>=None;
+    let mut skipped_invalid=0usize;
+    let mut processed=0usize;
     let mut appended=0usize;
-    for event in &page {
-        match persist_set_ledger_records(&s.events,&s.set_ledger_records,event).await {
+    for mut document in documents {
+        document.remove("_id");
+        let event=match mongodb::bson::from_document::<MarketEvent>(document.clone()) {
+            Ok(event) if validate_event(&event).is_ok()=>event,
+            _=>{
+                skipped_invalid+=1;
+                if let (Ok(ts),Ok(event_id),Ok(venue))=(document.get_i64("ts_ms"),document.get_str("event_id"),document.get_str("venue")) {
+                    last_cursor=Some((ts,event_id.to_owned(),venue.to_owned()));
+                }
+                continue;
+            }
+        };
+        match persist_set_ledger_records(&s.events,&s.set_ledger_records,&event).await {
             Ok(count)=>appended+=count,
             Err(error)=>{
                 tracing::error!(error=%error,symbol=%symbol,event_id=%event.event_id,"V2 ledger backfill append failed");
                 return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
-                    "error":"backfill append failed; retry from the returned cursor",
-                    "last_completed":page.iter().take_while(|candidate|candidate.event_id!=event.event_id).last().map(|previous|serde_json::json!({
-                        "after_ts_ms":previous.ts_ms,"after_event_id":previous.event_id,"after_venue":previous.venue
+                    "error":"backfill append failed; resume from last_completed_cursor",
+                    "last_completed_cursor":last_cursor.map(|(ts,event_id,venue)|serde_json::json!({
+                        "after_ts_ms":ts,"after_event_id":event_id,"after_venue":venue
                     }))
                 })));
             }
         }
+        processed+=1;
+        last_cursor=Some((event.ts_ms,event.event_id,event.venue));
     }
-    let last=page.last();
     let raw_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
         Ok(count)=>count,
         Err(error)=>{
@@ -989,17 +987,17 @@ async fn backfill_set_ledger(
     (StatusCode::OK,Json(serde_json::json!({
         "symbol":symbol,
         "batch_size":batch_size,
-        "processed_valid_events":page.len(),
+        "processed_valid_events":processed,
         "skipped_invalid_events":skipped_invalid,
         "new_records_inserted":appended,
         "source_event_count":raw_count,
         "durable_observation_count":observation_count,
         "remaining_observation_count_lower_bound":raw_count.saturating_sub(observation_count),
         "has_more":has_more,
-        "next_cursor":last.map(|event|serde_json::json!({
-            "after_ts_ms":event.ts_ms,"after_event_id":event.event_id,"after_venue":event.venue
+        "next_cursor":last_cursor.map(|(ts,event_id,venue)|serde_json::json!({
+            "after_ts_ms":ts,"after_event_id":event_id,"after_venue":venue
         })),
-        "resume_note":"Repeat the request with next_cursor fields. Re-running a page is safe because ledger record IDs are deterministic."
+        "resume_note":"Repeat with next_cursor fields until has_more is false. Re-running a page is safe because ledger record IDs are deterministic."
     })))
 }
 
