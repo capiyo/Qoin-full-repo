@@ -2517,8 +2517,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
-    events.create_index(mongodb::IndexModel::builder().keys(doc!{"ts_ms":1,"_id":1}).build(),None)
-        .await.expect("globally ordered event replay index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"_qoin_available_at_ms":1,"_id":1}).build(),None)
+        .await.expect("information-availability event replay index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"_qoin_pipeline_status":1}).build(),None)
         .await.expect("pending event pipeline health index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
