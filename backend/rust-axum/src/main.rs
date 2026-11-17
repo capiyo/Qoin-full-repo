@@ -1898,13 +1898,18 @@ async fn discover_vector_relationships_from_history(
         }))));
     }
     let query_vector=vectors.remove(0);
+    // Use the snapshot availability boundary as the deterministic ledger time.
+    // Retrying discovery for the same immutable vector window then resolves to
+    // the same event IDs instead of appending duplicate history on every retry.
+    let recorded_at_ms=vectors.iter().map(|vector|vector.available_at_ms)
+        .chain(std::iter::once(query_vector.available_at_ms)).max().unwrap_or(0);
     let request=DiscoverVectorRelationshipsRequest{
         query:query_vector,
         candidates:vectors,
         model_version:env::var("QOIN_V2_MODEL_VERSION")
             .unwrap_or_else(|_|"set-attention-v1".into()),
         temperature,
-        recorded_at_ms:chrono::Utc::now().timestamp_millis(),
+        recorded_at_ms,
         evidence_config:None,
     };
     let (status,Json(mut response))=
