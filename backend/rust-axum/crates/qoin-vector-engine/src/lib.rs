@@ -404,6 +404,21 @@ mod tests {
         ));
     }
 
+
+    #[test]
+    fn structurally_not_applicable_basis_is_neutral_and_excluded_from_coverage(){
+        let mut vector=shared_market_vector(0.0);
+        vector.set_not_applicable(MarketFeature::Basis);
+        let decision=decide_from_market_vector(
+            &vector,&EngineConfig::default(),"v1-spot",false,
+        ).unwrap();
+        assert_eq!(decision.attribution.coverage_pct,100.0);
+        let basis=decision.attribution.contributions.iter()
+            .find(|item|item.feature==Some(MarketFeature::Basis)).unwrap();
+        assert_eq!(basis.signed_effect,0.0);
+        assert_eq!(basis.contribution_pct,0.0);
+    }
+
     #[test]
     fn shared_vector_quality_scales_votes_and_shapley_percentages_reconcile() {
         let mut vector = MarketVector::new(
