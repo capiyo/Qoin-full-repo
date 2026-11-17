@@ -33,8 +33,12 @@ pub struct BrokerExecutionQuote {
     /// Minimum commission/fee charged by this account for one child order,
     /// already converted to portfolio currency.
     pub minimum_fee_portfolio: Decimal,
-    /// Expected spread/slippage estimate in bps.
+    /// Expected spread/slippage in bps if this account receives the full parent order.
     pub slippage_bps: Decimal,
+    /// Expected spread/slippage in bps for its equal-split child order. This
+    /// must be estimated for the smaller child size from a fresh depth/quote
+    /// snapshot; it is not assumed to equal the full-order estimate.
+    pub split_slippage_bps: Decimal,
     /// Currency conversion cost in bps, excluding the conversion rate itself.
     pub conversion_cost_bps: Decimal,
 }
@@ -117,7 +121,8 @@ fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
         ("margin requirement", quote.margin_requirement_bps),
         ("fee", quote.fee_bps),
         ("minimum fee", quote.minimum_fee_portfolio),
-        ("slippage", quote.slippage_bps),
+        ("full-order slippage", quote.slippage_bps),
+        ("split-order slippage", quote.split_slippage_bps),
         ("conversion cost", quote.conversion_cost_bps),
     ];
     for (name, value) in values {
@@ -131,6 +136,7 @@ fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
 fn cost_for(
     quote: &BrokerExecutionQuote,
     notional: Decimal,
+    split_order: bool,
 ) -> Result<BrokerCost, RoutingError> {
     let margin = notional.checked_mul(quote.margin_requirement_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
@@ -139,7 +145,8 @@ fn cost_for(
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("fee estimate overflow".into()))?;
     let fee = variable_fee.max(quote.minimum_fee_portfolio);
-    let slippage = notional.checked_mul(quote.slippage_bps)
+    let slippage_bps = if split_order { quote.split_slippage_bps } else { quote.slippage_bps };
+    let slippage = notional.checked_mul(slippage_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("slippage estimate overflow".into()))?;
     let conversion = notional.checked_mul(quote.conversion_cost_bps)
@@ -196,7 +203,7 @@ pub fn choose_execution_plan(
             std::slice::from_ref(&quote.target),
         ) else { continue };
         let actual = allocation.allocated_notional_portfolio;
-        let Ok(cost) = cost_for(quote, actual) else { continue };
+        let Ok(cost) = cost_for(quote, actual, false) else { continue };
         let replace = best_single.as_ref().map_or(true, |(best, _)| {
             cost.total_estimated_execution_cost_portfolio < best.total_estimated_execution_cost_portfolio
                 || (cost.total_estimated_execution_cost_portfolio == best.total_estimated_execution_cost_portfolio
@@ -235,7 +242,7 @@ pub fn choose_execution_plan(
         let mut total_cost = Decimal::ZERO;
         let mut all_margin_feasible = true;
         for (quote, child) in selected.iter().zip(allocation.children.iter()) {
-            match cost_for(quote, child.allocated_notional_portfolio) {
+            match cost_for(quote, child.allocated_notional_portfolio, true) {
                 Ok(cost) => {
                     total_cost = total_cost.checked_add(cost.total_estimated_execution_cost_portfolio)
                         .ok_or_else(|| RoutingError::Arithmetic("aggregate execution cost overflow".into()))?;
@@ -296,6 +303,7 @@ mod tests {
             fee_bps: d(fee),
             minimum_fee_portfolio: Decimal::ZERO,
             slippage_bps: d(slippage),
+            split_slippage_bps: d(slippage),
             conversion_cost_bps: d("0"),
         }
     }
@@ -309,7 +317,8 @@ mod tests {
 
     #[test]
     fn multi_broker_route_requires_lower_estimated_cost() {
-        let quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", true)];
+        let mut quotes = vec![quote(0, "0", "100", true), quote(1, "0", "100", true)];
+        for item in &mut quotes { item.split_slippage_bps = d("1"); }
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::EqualSplit { .. }));
     }
@@ -339,7 +348,8 @@ mod tests {
 
     #[test]
     fn minimum_commissions_are_counted_for_every_child_and_can_prevent_fanout() {
-        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        let mut quotes = vec![quote(0, "0", "10", true), quote(1, "0", "10", true)];
+        for item in &mut quotes { item.split_slippage_bps = d("0.1"); }
         quotes[0].minimum_fee_portfolio = d("0.10");
         quotes[1].minimum_fee_portfolio = d("5");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
@@ -348,7 +358,8 @@ mod tests {
 
     #[test]
     fn fanout_cost_includes_each_account_minimum_commission() {
-        let mut quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", true)];
+        let mut quotes = vec![quote(0, "0", "100", true), quote(1, "0", "100", true)];
+        for item in &mut quotes { item.split_slippage_bps = d("1"); }
         quotes[1].minimum_fee_portfolio = d("0.25");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         match plan {
