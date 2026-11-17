@@ -121,7 +121,7 @@ pub fn descriptor(feature: MarketFeature) -> VariableDescriptor {
 
         // Regime coordinates are derived from ordinary market variables.
         RegimeTrendStrength => (VariableStage::Regime, TREND_PERSISTENCE),
-        RegimeVolatilityLevel => (VariableStage::Regime, VOL_TAIL),
+        RegimeVolatilityLevel => (VariableStage::Regime, REGIME_VOL_INPUTS),
         RegimeLiquidityStress => (VariableStage::Regime, LIQUIDITY_STRESS_INPUTS),
         RegimeCorrelationStress => (VariableStage::Regime, CROSS_ASSET),
         RegimeTransitionIntensity => (VariableStage::Regime, TRANSITION_INPUTS),
