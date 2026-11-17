@@ -209,7 +209,7 @@ pub struct BrokerCapabilities {
     pub streaming_execution_reports: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrokerOrderReceipt {
     pub broker_id: String,
     pub account_id: String,
@@ -552,6 +552,28 @@ mod tests {
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
             reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
             protective_order_supported:true, required_margin_account_currency:6_000.0 }).is_err());
+    }
+
+    #[test]
+    fn broker_capabilities_gate_order_types_and_protective_orders() {
+        let order = NormalizedOrder {
+            client_order_id: "capability-order".into(), account_id: "acct".into(),
+            instrument_id: "instrument".into(), side: OrderSide::Buy, order_type: OrderType::Market,
+            quantity: 1.0, limit_price: None, stop_price: Some(90.0), time_in_force: None,
+            reduce_only: false,
+        };
+        let capabilities = BrokerCapabilities {
+            market_orders: true, limit_orders: false, stop_orders: false, stop_limit_orders: false,
+            native_protective_orders: true, amend_orders: false, cancel_orders: true,
+            fractional_quantity: false, streaming_execution_reports: false,
+        };
+        assert!(validate_capabilities(&order, &capabilities).is_ok());
+        let mut unsupported = order.clone();
+        unsupported.order_type = OrderType::Limit;
+        assert!(validate_capabilities(&unsupported, &capabilities).is_err());
+        let mut no_protection = capabilities;
+        no_protection.native_protective_orders = false;
+        assert!(validate_capabilities(&order, &no_protection).is_err());
     }
 
     #[test]
