@@ -108,13 +108,13 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
   return (
     <div className="vector-map">
       <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish vector space with native Rust motion on desktop">
-        <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e9eef6" strokeWidth=".45" /></pattern></defs>
+        <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#294232" strokeWidth=".45" /></pattern></defs>
         <rect width="100" height="100" fill="url(#grid)" />
-        <path d="M10 8V90H94" fill="none" stroke="#cbd5e1" strokeWidth=".8" />
-        <path d="M10 90L94 90 M10 90L10 8" stroke="#cbd5e1" strokeWidth=".5" strokeDasharray="2 2" />
-        {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#9bb9f3" strokeWidth="1.1" strokeLinejoin="round" />}
-        {nativeMotion.length ? nativeMotion.map((item) => <circle key={item.id} cx={10 + (item.x + 1) * 40} cy={90 - (item.y + 1) * 40} r="1.25" fill="#76a5ed" opacity=".78" style={{ transition: "cx 420ms ease, cy 420ms ease" }} />) : history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#9bb9f3" />; })}
-        {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#2867dc" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#2867dc" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
+        <path d="M10 8V90H94" fill="none" stroke="#6caa80" strokeWidth=".8" />
+        <path d="M10 90L94 90 M10 90L10 8" stroke="#6caa80" strokeWidth=".5" strokeDasharray="2 2" />
+        {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#70d99d" strokeWidth="1.1" strokeLinejoin="round" />}
+        {nativeMotion.length ? nativeMotion.map((item) => <circle key={item.id} cx={10 + (item.x + 1) * 40} cy={90 - (item.y + 1) * 40} r="1.25" fill="#70d99d" opacity=".78" style={{ transition: "cx 420ms ease, cy 420ms ease" }} />) : history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#70d99d" />; })}
+        {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#70d99d" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#70d99d" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
       </svg>
       <div className="axis-label axis-top">BEARISH COMPONENT ↑</div>
       <div className="axis-label axis-bottom">BULLISH COMPONENT →</div>
@@ -142,7 +142,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
         const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
         return <g key={label}><line x1="50" y1="50" x2={50 + Math.cos(angle) * 35} y2={50 + Math.sin(angle) * 35} stroke="#e5ebf4" strokeWidth=".5" /><text x={50 + Math.cos(angle) * 43} y={50 + Math.sin(angle) * 43} textAnchor="middle" dominantBaseline="middle" fill="#7f8da1" fontSize="4.5">{label}</text></g>;
       })}
-      {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#2867dc" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#2867dc" />)}</>}
+      {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#70d99d" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#70d99d" />)}</>}
       {!decision && <text x="50" y="52" textAnchor="middle" fill="#94a3b8" fontSize="5">NO FEATURE VECTOR</text>}
     </svg>
     <div className="feature-space-values">{labels.map((label,index) => <span key={label}>{label} <strong>{values[index].toFixed(3)}</strong></span>)}</div>
@@ -218,12 +218,12 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
   return <section aria-label="Research decision and evidence ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #e4eaf3", borderRadius: 16, background: "#fff" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <div><strong style={{ color: "#243750", fontSize: 14 }}>Decision &amp; evidence ledger</strong><p style={{ margin: "4px 0 0", color: "#8794a7", fontSize: 10 }}>A readable history of engine evaluations and their recorded market evidence.</p></div>
-      <span style={{ color: "#2867dc", fontSize: 10, fontWeight: 800 }}>{records.length} RECORDS</span>
+      <span style={{ color: "#70d99d", fontSize: 10, fontWeight: 800 }}>{records.length} RECORDS</span>
     </div>
     {records.length ? <div style={{ display: "grid", gap: 8 }}>
       {records.map((record) => <details key={record.id} style={{ padding: "11px 12px", border: "1px solid #edf1f6", borderRadius: 11, background: record.kind === "decision" ? "#f5f8ff" : "#fff" }}>
         <summary style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", listStyle: "none", flexWrap: "wrap" }}>
-          <span style={{ minWidth: 76, color: record.kind === "decision" ? "#2867dc" : "#8190a4", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{record.kind}</span>
+          <span style={{ minWidth: 76, color: record.kind === "decision" ? "#70d99d" : "#8190a4", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{record.kind}</span>
           <strong style={{ flex: "1 1 180px", color: "#34465f", fontSize: 11, textTransform: "capitalize" }}>{record.title}</strong>
           <small style={{ color: "#9aa6b5", fontSize: 9 }}>{formatTime(record.timestamp)}</small>
         </summary>
