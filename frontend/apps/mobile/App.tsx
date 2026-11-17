@@ -45,6 +45,7 @@ function MainTabs({ navigation }: MainTabsProps) {
 
 export default function App() {
   const [authReady, setAuthReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
   const [authError, setAuthError] = useState("");
   useEffect(() => {
     const config = {
@@ -62,7 +63,7 @@ export default function App() {
     }
     try {
       initializeQoinFirebase(config, getReactNativePersistence(AsyncStorage));
-      return subscribeQoinAuth(() => setAuthReady(true));
+      return subscribeQoinAuth((user) => { setSignedIn(Boolean(user)); setAuthReady(true); });
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Firebase initialization failed.");
       setAuthReady(true);
@@ -77,10 +78,13 @@ export default function App() {
           <StatusBar style="light" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Dashboard" component={MainTabs} />
-              <Stack.Screen name="Login">
-                {(props) => <LoginScreen {...props} configurationError={authError} />}
-              </Stack.Screen>
+              {signedIn ? (
+                <Stack.Screen name="Dashboard" component={MainTabs} />
+              ) : (
+                <Stack.Screen name="Login">
+                  {(props) => <LoginScreen {...props} configurationError={authError} />}
+                </Stack.Screen>
+              )}
             </Stack.Navigator>
           ) : null}
         </NavigationContainer>
