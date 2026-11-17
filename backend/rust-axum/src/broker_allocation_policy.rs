@@ -397,6 +397,7 @@ mod tests {
     #[test]
     fn fanout_is_not_rewarded_for_leaving_more_capital_unallocated() {
         let mut quotes = vec![quote(0, "1", "0", true), quote(1, "1", "0", true)];
+        for item in &mut quotes { item.target.native_unit_value_portfolio = d("100"); }
         quotes[1].target.quantity_step = d("4");
         quotes[1].target.minimum_quantity = d("4");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
