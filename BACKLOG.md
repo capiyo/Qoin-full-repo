@@ -26,6 +26,7 @@ Items are ordered by dependency and risk. Do not start a lower item while a high
 - [x] Decimal equal-notional allocation primitive: up to 15 targets, per-account native quantity conversion, step-size round-down and unallocated residual.
 - [x] Document explicit user-selected equal split; do not silently consolidate, drop selected accounts or redistribute rounding residual.
 - [ ] Implement verified per-user broker-account linking and a server-side credential vault; secrets never enter clients or chat.
+- [ ] Add React Native Broker Collection access without adding a third primary Archive/Explore tab; match the web directory, equal-share preview and fail-closed readiness messaging.
 - [ ] Implement real provider adapters for each supported broker and distinguish market-data-only providers from executable broker accounts.
 - [ ] Connect the allocator to a durable parent/child order model with stable idempotency keys.
 - [ ] Add atomic aggregate risk/margin reservation across every selected account before dispatch.
