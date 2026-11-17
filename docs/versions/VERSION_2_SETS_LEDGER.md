@@ -33,6 +33,8 @@ Relations are explicit typed subsets of a product space, \(R_k \subseteq A\times
 
 A transition maps a prior state to a new state only when its declared preconditions are satisfied. Transition rules must be deterministic for a fixed input snapshot and configuration version. The V2 layer must be able to abstain when evidence is incomplete, stale, contradictory, or outside the declared domain.
 
+The current V2 alpha projection implements two finite measures over each returned set: the counting measure (member cardinality) and the sum of observed trade sizes. Trade-size values retain instrument-native quantity units and are not comparable across different instruments or contracts without a separately defined conversion. Missing sizes are counted explicitly; they are not imputed as zero. The runtime does not yet expose a general-purpose user-defined measure algebra.
+
 ## Relation ledger
 
 The ledger is an append-only sequence of immutable records. A record should include:
