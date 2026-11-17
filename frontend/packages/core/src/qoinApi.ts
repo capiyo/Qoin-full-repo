@@ -301,6 +301,7 @@ export type QoinEventRelation = {
   edge_count: number;
   mean_lag_ms: number | null;
   edges: QoinRelationEdge[];
+  edges_truncated: boolean;
   interpretation: string;
 };
 export type QoinSetLedger = {
