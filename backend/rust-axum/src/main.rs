@@ -385,10 +385,16 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     output
 }
 
-fn minute_return_buckets(state:&SymbolState)->BTreeMap<i64,f64>{
+fn minute_return_buckets(state:&SymbolState,cutoff_ms:i64)->BTreeMap<i64,f64>{
     let mut buckets=BTreeMap::new();
+    let current_bucket=cutoff_ms.div_euclid(60_000);
     for (timestamp,log_return) in &state.recent_return_observations{
-        *buckets.entry(timestamp.div_euclid(60_000)).or_insert(0.0)+=*log_return;
+        let bucket=timestamp.div_euclid(60_000);
+        // Only completed minute buckets are eligible. This avoids partial-bar
+        // and same-timestamp ordering leakage across instruments.
+        if bucket<current_bucket&&*timestamp<=cutoff_ms{
+            *buckets.entry(bucket).or_insert(0.0)+=*log_return;
+        }
     }
     buckets
 }
@@ -410,7 +416,7 @@ fn pearson_correlation(left:&[f64],right:&[f64])->Option<(f64,f64,f64)>{
 /// buckets. No index-order alignment or cross-venue price mixing is permitted.
 fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i64)->BTreeMap<MarketFeature,f64>{
     use MarketFeature::*;
-    let current=minute_return_buckets(state);
+    let current=minute_return_buckets(state,cutoff_ms);
     let mut correlations=Vec::new();
     let mut covariances=Vec::new();
     let mut betas=Vec::new();
@@ -421,7 +427,7 @@ fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i6
             || peer.last_price_ts_ms.is_none_or(|timestamp|cutoff_ms.saturating_sub(timestamp)>5*60_000){
             continue;
         }
-        let other=minute_return_buckets(peer);
+        let other=minute_return_buckets(peer,cutoff_ms);
         let common=current.keys().filter_map(|bucket|{
             Some((*current.get(bucket)?,*other.get(bucket)?))
         }).collect::<Vec<_>>();
@@ -451,10 +457,13 @@ fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i6
     output
 }
 
-fn cross_asset_source_timestamp(state:&SymbolState,peers:&[SymbolState])->Option<i64>{
-    state.last_price_ts_ms.into_iter()
-        .chain(peers.iter().filter(|peer|peer.venue==state.venue).filter_map(|peer|peer.last_price_ts_ms))
-        .max()
+fn cross_asset_source_timestamp(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i64)->Option<i64>{
+    let current_bucket=cutoff_ms.div_euclid(60_000);
+    let has_peer=peers.iter().any(|peer|peer.venue==state.venue
+        && peer.symbol!=state.symbol
+        && peer.last_price_ts_ms.is_some_and(|timestamp|timestamp<=cutoff_ms
+            && cutoff_ms.saturating_sub(timestamp)<=5*60_000));
+    has_peer.then_some(current_bucket*60_000)
 }
 
 fn bounded_identity_feature(feature:MarketFeature)->bool{
@@ -573,7 +582,7 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
     }
     let mut raw_features=raw_feature_values(state);
     raw_features.extend(cross_asset_raw_features(state,peers,cutoff));
-    let cross_timestamp=cross_asset_source_timestamp(state,peers);
+    let cross_timestamp=cross_asset_source_timestamp(state,peers,cutoff);
     let mut observed=0usize;
     for (feature,raw) in raw_features{
         let Some(freshness)=feature_freshness(state,feature,cutoff,cross_timestamp) else {continue;};
@@ -2395,7 +2404,8 @@ async fn main(){
     // log closes that specific recovery gap and uses deterministic event-time
     // ordering across providers. Malformed legacy rows are skipped and surfaced.
     let replay_options = FindOptions::builder()
-        .sort(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1})
+        // Global event-time ordering is required for causal cross-asset features.
+        .sort(doc!{"ts_ms":1,"venue":1,"symbol":1,"event_id":1})
         .build();
     let mut event_cursor = events.find(None, Some(replay_options)).await
         .expect("open immutable market event log for recovery");
