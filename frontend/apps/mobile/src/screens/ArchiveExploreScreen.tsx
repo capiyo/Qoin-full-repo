@@ -767,6 +767,7 @@ const styles = StyleSheet.create({
   heading: { color: "#1D2E47", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
   subheading: { color: "#8995A7", fontSize: 10, marginTop: 4 },
   count: { color: "#9AA5B4", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
+  brokerStatus: { color: "#8794A7", fontSize: 9, lineHeight: 14, paddingHorizontal: 2 },
   exchangePicker: { marginBottom: 12, padding: 11, borderWidth: 1, borderColor: "#E4EAF3", borderRadius: 12, backgroundColor: "#FFFFFF", gap: 8 },
   exchangeChips: { flexDirection: "row", gap: 6, paddingVertical: 5 },
   exchangeChip: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: "#E7ECF3", borderRadius: 18, backgroundColor: "#FFFFFF" },
