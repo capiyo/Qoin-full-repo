@@ -461,6 +461,17 @@ fn bounded_identity_feature(feature:MarketFeature)->bool{
     )
 }
 
+fn fixed_scale_feature(feature:MarketFeature,raw:f64)->Option<f64>{
+    use MarketFeature::*;
+    let scale=match feature{
+        FundingPressure=>10_000.0,
+        OpenInterestChange=>20.0,
+        Basis=>1_000.0,
+        _=>return None,
+    };
+    raw.is_finite().then(||(raw*scale).tanh())
+}
+
 fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature,cross_timestamp:Option<i64>)->Option<i64>{
     use MarketFeature::*;
     match feature{
@@ -562,10 +573,13 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
         let Some(freshness)=feature_freshness(state,feature,cutoff,cross_timestamp) else {continue;};
         let source_timestamp=feature_source_timestamp(state,feature,cross_timestamp)?;
         let history=state.feature_history.entry(feature).or_default();
+        let history_quality=((history.len()+1) as f64/32.0).min(1.0);
         let normalized=if bounded_identity_feature(feature){
             if raw.is_finite()&&(-1.0..=1.0).contains(&raw){
-                Some((raw,((history.len()+1) as f64/32.0).min(1.0)))
+                Some((raw,history_quality))
             }else{None}
+        }else if let Some(value)=fixed_scale_feature(feature,raw){
+            Some((value,history_quality))
         }else{
             causal_robust_normalize(raw,history)
                 .map(|value|(value,(history.len() as f64/32.0).min(1.0)))
@@ -2668,6 +2682,14 @@ mod market_stream_tests {
 
 
 
+
+
+    #[test]
+    fn derivative_fixed_scales_keep_constant_valid_observations_observed(){
+        assert!((fixed_scale_feature(MarketFeature::FundingPressure,0.0001).unwrap()-0.761594).abs()<1.0e-5);
+        assert!(fixed_scale_feature(MarketFeature::OpenInterestChange,0.0).unwrap()==0.0);
+        assert!(fixed_scale_feature(MarketFeature::Basis,0.001).unwrap()>0.7);
+    }
 
     #[test]
     fn cross_asset_features_use_aligned_same_venue_returns(){
