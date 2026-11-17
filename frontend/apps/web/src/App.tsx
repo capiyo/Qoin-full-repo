@@ -454,9 +454,10 @@ export default function App() {
     }
   }
 
-  useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
-  useEffect(() => { let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, []);
+  useEffect(() => { if (!firebaseUser) return; getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, [firebaseUser]);
+  useEffect(() => { if (!firebaseUser) return; let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, [firebaseUser]);
   useEffect(() => {
+    if (!firebaseUser) return;
     let active = true;
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
@@ -469,8 +470,9 @@ export default function App() {
       })));
     }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
     return () => { active = false; };
-  }, []);
+  }, [firebaseUser]);
   useEffect(() => {
+    if (!firebaseUser) return;
     let active = true;
     const load = () => {
       setNewsStatus("loading");
@@ -485,9 +487,10 @@ export default function App() {
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
     return () => { active = false; clearInterval(timer); };
-  }, [newsCategory]);
+  }, [newsCategory, firebaseUser]);
 
   useEffect(() => {
+    if (!firebaseUser) return;
     let active = true;
     const load = () => getQoinCalendar().then((result) => {
       if (!active) return;
@@ -497,10 +500,10 @@ export default function App() {
     load();
     const timer = setInterval(load, 15 * 60 * 1000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [firebaseUser]);
 
   useEffect(() => {
-    if (!selected) {
+    if (!firebaseUser || !selected) {
       setVector(null);
       setVectorError("");
       return;
@@ -522,21 +525,21 @@ export default function App() {
       if (current) setVectorLoading(false);
     });
     return () => { current = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, firebaseUser]);
 
 
   useEffect(() => {
-    if (!selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
+    if (!firebaseUser || !selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
     let active = true;
     setVectorHistory([]);
     setRawEvents([]);
     getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items.slice().reverse()); }).catch(() => undefined);
     return () => { active = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, firebaseUser]);
 
   useEffect(() => {
-    if (!selected) { setV2LedgerEvents([]); setV2LedgerStatus("idle"); return; }
+    if (!firebaseUser || !selected) { setV2LedgerEvents([]); setV2LedgerStatus("idle"); return; }
     let active = true;
     setV2LedgerEvents([]);
     setV2LedgerStatus("loading");
@@ -551,9 +554,10 @@ export default function App() {
       setV2LedgerStatus("loaded");
     }).catch(() => { if (active) setV2LedgerStatus("error"); });
     return () => { active = false; };
-  }, [selected?.engineSymbol, selected?.symbol]);
+  }, [selected?.engineSymbol, selected?.symbol, firebaseUser]);
 
   useEffect(() => {
+    if (!firebaseUser) return;
     const symbols = instruments.map((item) => item.engineSymbol);
     if (!symbols.length) return;
     let active = true;
@@ -597,7 +601,7 @@ export default function App() {
       if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
     }, setStreamStatus);
     return () => { active = false; unsubscribe(); };
-  }, [instruments, selected?.engineSymbol]);
+  }, [instruments, selected?.engineSymbol, firebaseUser]);
 
   useEffect(() => {
     const current = selected ? liveBySymbol[selected.engineSymbol.toUpperCase()] : undefined;
