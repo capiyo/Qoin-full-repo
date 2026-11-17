@@ -27,7 +27,7 @@ mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
-use qoin_market_space::{attribution::AttributionReport, hub::{HubError, NormalizationProfile, VariableHub}, MarketFeature, MarketVector};
+use qoin_market_space::{attribution::AttributionReport, hub::{HubError, NormalizationProfile, VariableHub}, FeatureAvailability, MarketFeature, MarketVector};
 use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, VectorEvidenceConfig, Vocabulary};
 use sha2::{Digest, Sha256};
 
@@ -376,6 +376,65 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
     }
     if observed==0{None}else{Some(vector)}
 }
+
+/// Evaluate the actual V1 vector engine on the immutable snapshot produced by
+/// ingestion. Missing required coordinates are reported explicitly; the
+/// adapter never substitutes a neutral zero for unavailable market evidence.
+fn evaluate_ingested_v1_vector(
+    vector:&MarketVector,
+    config:&EngineConfig,
+    config_version:&str,
+)->serde_json::Value{
+    const REQUIRED:[MarketFeature;12]=[
+        MarketFeature::OrderFlowImbalance,
+        MarketFeature::OrderBookDepth,
+        MarketFeature::RealizedVolatility,
+        MarketFeature::FundingPressure,
+        MarketFeature::OpenInterestChange,
+        MarketFeature::LiquidationPressure,
+        MarketFeature::Basis,
+        MarketFeature::RegimeVolatilityLevel,
+        MarketFeature::RegimeLiquidityStress,
+        MarketFeature::RegimeCorrelationStress,
+        MarketFeature::RegimeTransitionIntensity,
+        MarketFeature::RegimeUncertainty,
+    ];
+    let unavailable=REQUIRED.iter().filter_map(|feature|{
+        let coordinate=vector.coordinates.get(feature)?;
+        (coordinate.status!=FeatureAvailability::Observed || coordinate.value.is_none())
+            .then(||serde_json::json!({
+                "feature":feature.as_str(),
+                "status":coordinate.status,
+                "quality":coordinate.quality
+            }))
+    }).collect::<Vec<_>>();
+    if !unavailable.is_empty(){
+        return serde_json::json!({
+            "status":"not_ready",
+            "algorithm_version":"1",
+            "vector_id":vector.vector_id,
+            "schema_version":vector.schema_version,
+            "missing_required_features":unavailable,
+            "reason":"V1 abstains until every required force and regime coordinate is observed"
+        });
+    }
+    match decide_from_market_vector(vector,config,config_version,false){
+        Ok(decision)=>serde_json::json!({
+            "status":"evaluated",
+            "algorithm_version":"1",
+            "vector_id":vector.vector_id,
+            "schema_version":vector.schema_version,
+            "decision":decision
+        }),
+        Err(error)=>serde_json::json!({
+            "status":"error",
+            "algorithm_version":"1",
+            "vector_id":vector.vector_id,
+            "schema_version":vector.schema_version,
+            "reason":error.to_string()
+        })
+    }
+}
 fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
     if expected.len() != supplied.len() { return false; }
     expected.iter().zip(supplied).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
@@ -627,17 +686,29 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         hash.wrapping_mul(31).wrapping_add(byte as usize)) % s.symbol_ingest_locks.len();
     let _symbol_guard = s.symbol_ingest_locks[lock_stripe].lock().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
-    let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    let latest_before_ingest=match s.memory.read(){
+        Ok(memory)=>memory.get(&state_key).and_then(|state|state.last_event_ts_ms),
+        Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))
+    };
+    let late_event=latest_before_ingest.is_some_and(|last|event.ts_ms<last);
+    let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    // The immutable log records whether the live state machine applied this
+    // event. Recovery must preserve the same policy for late arrivals.
+    raw.insert("_qoin_applied",!late_event);
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
+    if late_event{
+        return(StatusCode::ACCEPTED,Json(serde_json::json!({"status":"late_event_persisted_not_applied","event_id":event.event_id,
+            "event_ts_ms":event.ts_ms,"latest_state_ts_ms":latest_before_ingest})));
+    }
     let (snapshot,market_vector)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
         let state=guard.entry(state_key.clone()).or_default();
+        // The per-symbol ingest lock makes this a defensive invariant check.
         if state.last_event_ts_ms.is_some_and(|last|event.ts_ms<last){
-            return(StatusCode::ACCEPTED,Json(serde_json::json!({"status":"late_event_persisted_not_applied","event_id":event.event_id,
-                "event_ts_ms":event.ts_ms,"latest_state_ts_ms":state.last_event_ts_ms})));
+            return(StatusCode::CONFLICT,Json(serde_json::json!({"error":"event became late before state application","event_persisted":true})));
         }
         apply(state,&event);
         let vector=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis());
@@ -673,16 +744,27 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         state_event_count: snapshot.event_count,
         state_last_event_ts_ms: snapshot.last_event_ts_ms,
     });
+    let v1_vector_decision=market_vector.as_ref()
+        .map(|vector|evaluate_ingested_v1_vector(vector,&s.signal_config,&s.signal_config_version))
+        .unwrap_or_else(||serde_json::json!({
+            "status":"warming_up",
+            "algorithm_version":"1",
+            "reason":"past-only feature calibration has not produced an observed market vector"
+        }));
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
+    decision_doc.insert("v1_shared_market_vector",mongodb::bson::to_bson(&v1_vector_decision).unwrap_or(mongodb::bson::Bson::Null));
+    if let Some(vector)=market_vector.as_ref(){decision_doc.insert("market_vector_id",&vector.vector_id);}
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
-        "state":snapshot,"decision":decision,"market_vector":market_vector,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+        "state":snapshot,"decision":decision,"v1_shared_market_vector":v1_vector_decision,
+        "market_vector":market_vector,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"market_vector":market_vector})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,
+        "v1_shared_market_vector":v1_vector_decision,"market_vector":market_vector})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
@@ -1995,6 +2077,10 @@ async fn main(){
     let mut skipped_events: u64 = 0;
     while let Some(document) = event_cursor.try_next().await
         .expect("read immutable market event log during recovery") {
+        if document.get_bool("_qoin_applied").ok()==Some(false){
+            tracing::debug!("preserving persisted late event as unapplied during recovery");
+            continue;
+        }
         match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok() => {
                 let state_key=format!("{}|{}",event.venue,event.symbol);
