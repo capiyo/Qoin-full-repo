@@ -108,7 +108,9 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         <Text style={styles.engineValue}>Sets {ledger.sets.length}</Text>
         <Text style={styles.engineValue}>Relations {ledger.relations.length}</Text>
         <Text style={styles.engineValue}>Skipped {ledger.skipped_invalid_events}</Text>
+        <Text style={styles.engineValue}>Limit {ledger.requested_limit}</Text>
       </View>
+      {ledger.universe_truncated ? <Text style={[styles.disclaimer,{color:"#e0b45f"}]}>Universe capped at {ledger.requested_limit} source documents. Measures below apply only to this returned sample.</Text> : null}
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
       {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
