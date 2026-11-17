@@ -1213,6 +1213,17 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation ledger unavailable","symbol":symbol}))); }
     };
+    let source_event_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable history source count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable history source count unavailable","symbol":symbol}))); }
+    };
+    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable history observation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable history observation count unavailable","symbol":symbol}))); }
+    };
+    let durable_history_complete=source_event_count==observation_count;
     let record_options=FindOptions::builder().sort(doc!{"event_time_ms":-1,"record_type":1}).limit(limit as i64).build();
     let mut record_cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol},Some(record_options)).await {
         Ok(cursor)=>cursor,
@@ -1233,8 +1244,14 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         object.insert("durable_record_count".into(),serde_json::json!(durable_count));
         object.insert("durable_relation_count".into(),serde_json::json!(relation_count));
         object.insert("durable_records".into(),serde_json::Value::Array(durable_records));
-        object.insert("durable_history_complete".into(),serde_json::json!(false));
-        object.insert("durable_history_note".into(),serde_json::json!("Existing raw-event history has not been backfilled; relation scans are bounded to the nearest 5,000 observations in the 60-second window and expose truncation on persisted records."));
+        object.insert("source_event_count".into(),serde_json::json!(source_event_count));
+        object.insert("durable_observation_count".into(),serde_json::json!(observation_count));
+        object.insert("durable_history_complete".into(),serde_json::json!(durable_history_complete));
+        object.insert("durable_history_note".into(),serde_json::json!(if durable_history_complete {
+            "Every raw source event has an observation record. Check relation_scan_truncated on records for bounded-neighbour coverage."
+        } else {
+            "Historical source events remain without observation records; run the authenticated resumable backfill and then audit integrity."
+        }));
     }
     (StatusCode::OK,Json(response))
 }
