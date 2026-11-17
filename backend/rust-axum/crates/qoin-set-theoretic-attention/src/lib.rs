@@ -6,15 +6,17 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use qoin_market_space::{MarketFeature, MarketVector};
+use qoin_market_space::{FeatureAvailability, MarketFeature, MarketVector};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct VectorEvidenceConfig {
     pub negative_threshold: f64,
     pub positive_threshold: f64,
     pub minimum_quality: f64,
     pub include_missing: bool,
+    pub include_not_applicable: bool,
 }
 
 impl Default for VectorEvidenceConfig {
@@ -24,6 +26,7 @@ impl Default for VectorEvidenceConfig {
             positive_threshold: 0.25,
             minimum_quality: 0.5,
             include_missing: true,
+            include_not_applicable: true,
         }
     }
 }
@@ -103,22 +106,27 @@ impl EvidenceSet {
             let coordinate = vector.coordinates.get(&feature)
                 .ok_or(SetAttentionError::InvalidMarketVector)?;
             let name = feature.as_str();
-            match coordinate.value {
-                None => {
+            match coordinate.status {
+                FeatureAvailability::Missing => {
                     if config.include_missing {
                         atoms.insert(format!("missing:{name}"));
                     }
                 }
-                Some(_) if coordinate.quality < config.minimum_quality => {
+                FeatureAvailability::NotApplicable => {
+                    if config.include_not_applicable {
+                        atoms.insert(format!("not_applicable:{name}"));
+                    }
+                }
+                FeatureAvailability::Observed if coordinate.quality < config.minimum_quality => {
                     atoms.insert(format!("low_quality:{name}"));
                 }
-                Some(value) if value <= config.negative_threshold => {
+                FeatureAvailability::Observed if coordinate.value.is_some_and(|value| value <= config.negative_threshold) => {
                     atoms.insert(format!("{name}:negative"));
                 }
-                Some(value) if value >= config.positive_threshold => {
+                FeatureAvailability::Observed if coordinate.value.is_some_and(|value| value >= config.positive_threshold) => {
                     atoms.insert(format!("{name}:positive"));
                 }
-                Some(_) => {
+                FeatureAvailability::Observed => {
                     atoms.insert(format!("{name}:neutral"));
                 }
             }
@@ -580,11 +588,13 @@ mod tests {
         vector.set_value(MarketFeature::LogReturn, Some(0.8), 1.0).unwrap();
         vector.set_value(MarketFeature::RegimeTransitionIntensity, Some(0.6), 0.9).unwrap();
         vector.set_value(MarketFeature::OrderFlowImbalance, Some(-0.7), 1.0).unwrap();
+        vector.set_not_applicable(MarketFeature::GammaExposure);
         let set = EvidenceSet::from_market_vector(&vector, &VectorEvidenceConfig::default()).unwrap();
         assert!(set.atoms.contains("log_return:positive"));
         assert!(set.atoms.contains("regime_transition_intensity:positive"));
         assert!(set.atoms.contains("order_flow_imbalance:negative"));
         assert!(set.atoms.contains("missing:implied_volatility"));
+        assert!(set.atoms.contains("not_applicable:gamma_exposure"));
         assert_eq!(set.source_vector_id.as_deref(), Some("market-state-17"));
         assert_eq!(set.source_vector_schema_version, Some(1));
         assert_eq!(set.source_symbol.as_deref(), Some("BTCUSDT"));

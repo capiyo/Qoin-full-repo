@@ -25,6 +25,14 @@ pub enum FeatureFamily {
     Temporal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureAvailability {
+    Observed,
+    Missing,
+    NotApplicable,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarketFeature {
@@ -204,6 +212,8 @@ impl MarketFeature {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct FeatureCoordinate {
+    /// Distinguishes an unavailable applicable input from a dimension that does not apply.
+    pub status: FeatureAvailability,
     /// Past-only normalized value in [-1, 1]. None means unavailable, not zero.
     pub value: Option<f64>,
     /// Data/reliability quality in (0, 1] when value exists; zero when missing.
@@ -212,11 +222,11 @@ pub struct FeatureCoordinate {
 
 impl FeatureCoordinate {
     pub fn missing() -> Self {
-        Self { value: None, quality: 0.0 }
+        Self { status: FeatureAvailability::Missing, value: None, quality: 0.0 }
     }
 
     pub fn observed(value: f64, quality: f64) -> Result<Self, MarketSpaceError> {
-        let coordinate = Self { value: Some(value), quality };
+        let coordinate = Self { status: FeatureAvailability::Observed, value: Some(value), quality };
         coordinate.validate()?;
         Ok(coordinate)
     }
@@ -225,9 +235,11 @@ impl FeatureCoordinate {
         if !self.quality.is_finite() || !(0.0..=1.0).contains(&self.quality) {
             return Err(MarketSpaceError::InvalidCoordinate);
         }
-        match self.value {
-            Some(value) if value.is_finite() && (-1.0..=1.0).contains(&value) && self.quality > 0.0 => Ok(()),
-            None if self.quality == 0.0 => Ok(()),
+        match (self.status, self.value) {
+            (FeatureAvailability::Observed, Some(value))
+                if value.is_finite() && (-1.0..=1.0).contains(&value) && self.quality > 0.0 => Ok(()),
+            (FeatureAvailability::Missing | FeatureAvailability::NotApplicable, None)
+                if self.quality == 0.0 => Ok(()),
             _ => Err(MarketSpaceError::InvalidCoordinate),
         }
     }
@@ -280,10 +292,19 @@ impl MarketVector {
         value: Option<f64>,
         quality: f64,
     ) -> Result<(), MarketSpaceError> {
-        let coordinate = FeatureCoordinate { value, quality };
+        let status = if value.is_some() { FeatureAvailability::Observed } else { FeatureAvailability::Missing };
+        let coordinate = FeatureCoordinate { status, value, quality };
         coordinate.validate()?;
         self.coordinates.insert(feature, coordinate);
         Ok(())
+    }
+
+    pub fn set_not_applicable(&mut self, feature: MarketFeature) {
+        self.coordinates.insert(feature, FeatureCoordinate {
+            status: FeatureAvailability::NotApplicable,
+            value: None,
+            quality: 0.0,
+        });
     }
 
     pub fn value(&self, feature: MarketFeature) -> Option<f64> {
@@ -346,7 +367,9 @@ impl MarketVector {
         for feature in MarketFeature::ALL {
             let left = self.coordinates.get(&feature).expect("validated fixed schema");
             let right = other.coordinates.get(&feature).expect("validated fixed schema");
-            if let (Some(a), Some(b)) = (left.value, right.value) {
+            if left.status == FeatureAvailability::Observed
+                && right.status == FeatureAvailability::Observed
+                && let (Some(a), Some(b)) = (left.value, right.value) {
                 let weight = left.quality.min(right.quality);
                 if weight <= 0.0 { continue; }
                 common_dimensions += 1;
@@ -439,6 +462,7 @@ mod tests {
     fn missing_is_not_silently_imputed_as_zero() {
         let vector = vector("v-1");
         assert_eq!(vector.value(MarketFeature::ImpliedVolatility), None);
+        assert_eq!(vector.coordinates[&MarketFeature::ImpliedVolatility].status, FeatureAvailability::Missing);
         assert_eq!(vector.require(MarketFeature::ImpliedVolatility), Err(MarketSpaceError::MissingFeature(MarketFeature::ImpliedVolatility)));
     }
 
@@ -453,6 +477,16 @@ mod tests {
         assert!((comparison.coverage - 2.0 / 53.0).abs() < 1e-12);
         assert!(comparison.cosine_similarity > 0.95);
         assert!(comparison.weighted_euclidean_distance > 0.0);
+    }
+
+
+    #[test]
+    fn not_applicable_is_distinct_from_missing() {
+        let mut vector = vector("availability-state");
+        vector.set_not_applicable(MarketFeature::GammaExposure);
+        assert_eq!(vector.coordinates[&MarketFeature::GammaExposure].status, FeatureAvailability::NotApplicable);
+        assert_eq!(vector.coordinates[&MarketFeature::ImpliedVolatility].status, FeatureAvailability::Missing);
+        assert!(vector.validate().is_ok());
     }
 
     #[test]

@@ -8,7 +8,7 @@
 
 Each snapshot carries a stable vector ID and schema version; venue, symbol and timeframe; an event-time cutoff and the time the snapshot became available; all 53 coordinates in a stable enum order; and an optional normalized value plus an independent data-quality score for every coordinate.
 
-Every present coordinate must be finite and normalized to [-1, 1]. Missing values remain explicit `None` with quality zero; they are never silently imputed as zero. Calibration and normalization are the caller's responsibility and must use past-only data. A snapshot is rejected if its availability timestamp precedes its event-time cutoff.
+Every present coordinate must be finite and normalized to [-1, 1]. Missing values remain explicit `None` with quality zero; they are never silently imputed as zero. Each coordinate also distinguishes `observed`, `missing` (applicable but unavailable) and `not_applicable` (the feature does not apply to this instrument/provider). This prevents an absent options chain, for example, from being treated as an adverse options signal. Calibration and normalization are the caller's responsibility and must use past-only data. A snapshot is rejected if its availability timestamp precedes its event-time cutoff.
 
 ## Coordinate families
 
@@ -35,7 +35,7 @@ The original `decide(ForceObservation, ...)` API remains available as the legacy
 
 ## Version 2 — set intelligence and ledger
 
-`EvidenceSet::from_market_vector` converts the exact same schema into explicit condition atoms using a versioned, caller-configurable binning policy: positive, negative or neutral for sufficiently reliable observed coordinates; low-quality for observed values below the quality threshold; and missing for unavailable coordinates when missingness recording is enabled.
+`EvidenceSet::from_market_vector` converts the exact same schema into explicit condition atoms using a versioned, caller-configurable binning policy: positive, negative or neutral for sufficiently reliable observed coordinates; low-quality for observed values below the quality threshold; missing for applicable-but-unavailable coordinates; and not-applicable for dimensions outside the instrument/provider's scope. The latter two can be independently included or excluded by the evidence policy.
 
 The continuous normalized values remain in the common vector; V2's set conversion is a deliberate symbolic abstraction, not a replacement for the source vector. Evidence sets and relationship records retain vector ID, schema version, venue, symbol and timeframe. The relationship ledger therefore records which common vector snapshots produced each relationship.
 

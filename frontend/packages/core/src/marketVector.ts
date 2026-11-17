@@ -20,7 +20,10 @@ export type QoinMarketFeatureFamily =
   | "price" | "volatility" | "trend" | "liquidity" | "cross_asset"
   | "derivatives" | "events" | "regime" | "portfolio" | "temporal";
 
+export type QoinFeatureAvailability = "observed" | "missing" | "not_applicable";
+
 export type QoinFeatureCoordinate = {
+  status: QoinFeatureAvailability;
   /** Past-only normalized coordinate in [-1, 1]; null means unavailable, not zero. */
   value: number | null;
   /** Reliability in (0, 1] for observed values; exactly zero when missing. */
@@ -79,6 +82,7 @@ export type QoinVectorEvidenceConfig = {
   positive_threshold: number;
   minimum_quality: number;
   include_missing: boolean;
+  include_not_applicable: boolean;
 };
 
 export type QoinDiscoverVectorRelationshipsRequest = {
