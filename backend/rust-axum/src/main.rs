@@ -114,6 +114,10 @@ struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 #[derive(Deserialize)]
 struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 
+fn timestamps_are_not_future(event_time_ms:i64,available_at_ms:i64)->bool{
+    let now=chrono::Utc::now().timestamp_millis();
+    event_time_ms<=now && available_at_ms<=now
+}
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
@@ -132,6 +136,9 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("liquidation_side must be long or short when supplied".into());
     }
     if e.ts_ms <= 0 { return Err("ts_ms must be a positive Unix timestamp in milliseconds".into()); }
+    if e.ts_ms > chrono::Utc::now().timestamp_millis() {
+        return Err("future-dated market events are rejected to prevent look-ahead".into());
+    }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
         ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
@@ -1503,6 +1510,9 @@ fn variable_hub_error(error:HubError)->(StatusCode,Json<serde_json::Value>){
 async fn observe_variable(
     State(state):State<AppState>,Json(request):Json<ObserveVariableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future variable timestamps are rejected"}))));
+    }
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     let revision=hub.observe_input(request.feature,request.raw_value,request.quality,request.event_time_ms,
@@ -1516,6 +1526,9 @@ async fn normalize_variable(
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
+    if hub.value(request.feature).is_some_and(|value|!timestamps_are_not_future(value.event_time_ms,value.available_at_ms)){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future variable observations cannot be normalized"}))));
+    }
     let revision=hub.normalize(request.feature,request.profile).map_err(variable_hub_error)?;
     persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
         Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
@@ -1524,6 +1537,9 @@ async fn normalize_variable(
 async fn derive_variable(
     State(state):State<AppState>,Json(request):Json<DeriveVariableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future derived-variable timestamps are rejected"}))));
+    }
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     let revision=if let Some(attribution)=request.attribution{
@@ -1540,6 +1556,9 @@ async fn derive_variable(
 async fn mark_variable_not_applicable(
     State(state):State<AppState>,Json(request):Json<MarkVariableNotApplicableRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    if !timestamps_are_not_future(request.event_time_ms,request.available_at_ms){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future not-applicable timestamps are rejected"}))));
+    }
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     let revision=hub.mark_not_applicable(request.feature,request.event_time_ms,request.available_at_ms,
@@ -1558,6 +1577,9 @@ async fn get_variable_progress(
 async fn publish_variable_hub(
     State(state):State<AppState>,Json(request):Json<PublishVariableHubRequest>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    if !timestamps_are_not_future(request.event_time_cutoff_ms,request.available_at_ms){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future market-vector publication timestamps are rejected"}))));
+    }
     let mut hub=load_or_create_variable_hub(&state,&request.venue,&request.symbol,&request.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     let vector=hub.publish(request.vector_id,request.venue,request.symbol,request.timeframe,
@@ -1593,6 +1615,9 @@ async fn evaluate_market_vector_signal(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     let vector_id = request.vector.vector_id.clone();
     let schema_version = request.vector.schema_version;
+    if !timestamps_are_not_future(request.vector.event_time_cutoff_ms,request.vector.available_at_ms){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future market vectors cannot produce signals"}))));
+    }
     let decision = decide_from_market_vector(
         &request.vector,
         &state.signal_config,
@@ -1633,6 +1658,11 @@ async fn discover_vector_relationships(
         return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "error":"provide 1-500 candidate market vectors, a model_version, and a positive recorded_at_ms"
         }))));
+    }
+    let now=chrono::Utc::now().timestamp_millis();
+    if request.recorded_at_ms>now || request.query.event_time_cutoff_ms>now || request.query.available_at_ms>now
+        || request.candidates.iter().any(|vector|vector.event_time_cutoff_ms>now||vector.available_at_ms>now){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future market vectors or ledger timestamps are rejected"}))));
     }
     let latest_available = request.candidates.iter()
         .map(|vector| vector.available_at_ms)
@@ -1690,6 +1720,11 @@ async fn discover_relationships(
         return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "error":"provide 1-500 candidate sets, a model_version, and a positive recorded_at_ms"
         }))));
+    }
+    let now=chrono::Utc::now().timestamp_millis();
+    if request.recorded_at_ms>now || request.query.observed_at_ms>now
+        || request.candidates.iter().any(|candidate|candidate.observed_at_ms>now){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future evidence or ledger timestamps are rejected"}))));
     }
     request.query.validate().map_err(|error| (
         StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string()}))
@@ -1793,6 +1828,9 @@ async fn append_relationship_event(
     State(state): State<AppState>,
     Json(event): Json<RelationshipLedgerEvent>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    if event.recorded_at_ms>chrono::Utc::now().timestamp_millis(){
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"future ledger event timestamps are rejected"}))));
+    }
     event.validate().map_err(|error| (
         StatusCode::BAD_REQUEST,
         Json(serde_json::json!({"error": error.to_string()})),
