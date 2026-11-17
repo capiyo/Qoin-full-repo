@@ -78,6 +78,7 @@ struct SymbolState {
     #[serde(skip)] last_liquidation_ts_ms: Option<i64>,
     #[serde(skip)] recent_prices: VecDeque<f64>,
     #[serde(skip)] recent_returns: VecDeque<f64>,
+    #[serde(skip)] recent_return_observations: VecDeque<(i64,f64)>,
     #[serde(skip)] recent_trade_flow: VecDeque<f64>,
     #[serde(skip)] recent_trade_sizes: VecDeque<f64>,
     #[serde(skip)] recent_book_imbalance: VecDeque<f64>,
@@ -154,8 +155,11 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 fn push_bounded<T>(history: &mut VecDeque<T>, value: T) {
+    push_bounded_limit(history,value,256);
+}
+fn push_bounded_limit<T>(history:&mut VecDeque<T>,value:T,limit:usize){
     history.push_back(value);
-    while history.len() > 256 { history.pop_front(); }
+    while history.len()>limit{history.pop_front();}
 }
 
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
@@ -167,6 +171,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             let log_return = (price / previous).ln();
             state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * log_return.abs();
             push_bounded(&mut state.recent_returns, log_return);
+            push_bounded_limit(&mut state.recent_return_observations,(event.ts_ms,log_return),4096);
         }
         state.last_price = Some(price);
         state.last_price_ts_ms = Some(event.ts_ms);
@@ -283,6 +288,8 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     }
     if let Some(vol)=volatility{
         output.insert(RealizedVolatility,vol);
+        let directional_signal=average_return.unwrap_or(0.0).abs();
+        output.insert(RegimeUncertainty,vol/(vol+directional_signal+1.0e-12));
         let abs_returns=return_window.iter().map(|value|value.abs()).collect::<Vec<_>>();
         if let Some(vov)=standard_deviation(&abs_returns){output.insert(VolatilityOfVolatility,vov);}
         if vol>1.0e-12 && return_window.len()>=4{
@@ -347,7 +354,86 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     output
 }
 
-fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature)->Option<i64>{
+fn minute_return_buckets(state:&SymbolState)->BTreeMap<i64,f64>{
+    let mut buckets=BTreeMap::new();
+    for (timestamp,log_return) in &state.recent_return_observations{
+        *buckets.entry(timestamp.div_euclid(60_000)).or_insert(0.0)+=*log_return;
+    }
+    buckets
+}
+
+fn pearson_correlation(left:&[f64],right:&[f64])->Option<(f64,f64,f64)>{
+    if left.len()!=right.len()||left.len()<2{return None;}
+    let left_mean=mean(left)?;
+    let right_mean=mean(right)?;
+    let covariance=left.iter().zip(right).map(|(a,b)|(a-left_mean)*(b-right_mean)).sum::<f64>()/left.len() as f64;
+    let left_variance=left.iter().map(|value|(value-left_mean).powi(2)).sum::<f64>()/left.len() as f64;
+    let right_variance=right.iter().map(|value|(value-right_mean).powi(2)).sum::<f64>()/right.len() as f64;
+    if left_variance<=1.0e-18||right_variance<=1.0e-18{return None;}
+    let correlation=(covariance/(left_variance*right_variance).sqrt()).clamp(-1.0,1.0);
+    let beta=covariance/right_variance;
+    Some((correlation,covariance,beta))
+}
+
+/// Cross-asset features use same-venue, event-time-aligned one-minute return
+/// buckets. No index-order alignment or cross-venue price mixing is permitted.
+fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState])->BTreeMap<MarketFeature,f64>{
+    use MarketFeature::*;
+    let current=minute_return_buckets(state);
+    let mut correlations=Vec::new();
+    let mut covariances=Vec::new();
+    let mut betas=Vec::new();
+    let mut breakdowns=Vec::new();
+    let mut relative_strengths=Vec::new();
+    for peer in peers{
+        if peer.venue!=state.venue||peer.symbol==state.symbol{continue;}
+        let other=minute_return_buckets(peer);
+        let common=current.keys().filter_map(|bucket|{
+            Some((*current.get(bucket)?,*other.get(bucket)?))
+        }).collect::<Vec<_>>();
+        if common.len()<12{continue;}
+        let left=common.iter().map(|pair|pair.0).collect::<Vec<_>>();
+        let right=common.iter().map(|pair|pair.1).collect::<Vec<_>>();
+        let Some((correlation,covariance,beta))=pearson_correlation(&left,&right) else{continue;};
+        let split=left.len()/2;
+        let early=pearson_correlation(&left[..split],&right[..split]).map(|value|value.0);
+        let late=pearson_correlation(&left[split..],&right[split..]).map(|value|value.0);
+        let Some((early,late))=early.zip(late) else{continue;};
+        correlations.push(correlation);
+        covariances.push(covariance);
+        betas.push(beta);
+        breakdowns.push((late-early).abs().clamp(0.0,2.0)/2.0);
+        relative_strengths.push(mean(&left).unwrap_or(0.0)-mean(&right).unwrap_or(0.0));
+    }
+    let mut output=BTreeMap::new();
+    if !correlations.is_empty(){
+        output.insert(Correlation,mean(&correlations).unwrap_or(0.0));
+        output.insert(Covariance,mean(&covariances).unwrap_or(0.0));
+        output.insert(Beta,mean(&betas).unwrap_or(0.0));
+        output.insert(CorrelationBreakdown,mean(&breakdowns).unwrap_or(0.0));
+        output.insert(RelativeStrength,mean(&relative_strengths).unwrap_or(0.0));
+        output.insert(RegimeCorrelationStress,mean(&correlations.iter().map(|value|value.abs()).collect::<Vec<_>>()).unwrap_or(0.0));
+    }
+    output
+}
+
+fn cross_asset_source_timestamp(state:&SymbolState,peers:&[SymbolState])->Option<i64>{
+    state.last_price_ts_ms.into_iter()
+        .chain(peers.iter().filter(|peer|peer.venue==state.venue).filter_map(|peer|peer.last_price_ts_ms))
+        .max()
+}
+
+fn bounded_identity_feature(feature:MarketFeature)->bool{
+    use MarketFeature::*;
+    matches!(feature,
+        SwingPosition|TrendPersistence|MeanReversionStrength|TrendExhaustion|
+        OrderFlowImbalance|VolumeDelta|LiquidityConcentration|Correlation|
+        CorrelationBreakdown|LiquidationPressure|JumpIntensity|RegimeUncertainty|
+        RegimePersistence|RegimeCorrelationStress|SignalDecay
+    )
+}
+
+fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature,cross_timestamp:Option<i64>)->Option<i64>{
     use MarketFeature::*;
     match feature{
         LogReturn|PriceDisplacement|RateOfChange|SwingPosition|GapMagnitude|RealizedVolatility|
@@ -368,11 +454,12 @@ fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature)->Option<i6
         OpenInterestChange=>state.last_open_interest_ts_ms,
         LiquidationPressure=>state.last_liquidation_ts_ms,
         EventIntensity=>state.last_event_ts_ms,
+        Correlation|Covariance|Beta|CorrelationBreakdown|RelativeStrength|RegimeCorrelationStress=>cross_timestamp,
         _=>None,
     }
 }
 
-fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64)->Option<f64>{
+fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64,cross_timestamp:Option<i64>)->Option<f64>{
     use MarketFeature::*;
     let (timestamp,max_age_ms)=match feature{
         LogReturn|PriceDisplacement|RateOfChange|SwingPosition|GapMagnitude|RealizedVolatility|
@@ -396,6 +483,7 @@ fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64)->Op
         OpenInterestChange=>(state.last_open_interest_ts_ms,5*60*1_000_i64),
         LiquidationPressure=>(state.last_liquidation_ts_ms,60_000_i64),
         EventIntensity=>(state.last_event_ts_ms,60_000_i64),
+        Correlation|Covariance|Beta|CorrelationBreakdown|RelativeStrength|RegimeCorrelationStress=>(cross_timestamp,5*60_000_i64),
         _=>return None,
     };
     let timestamp=timestamp?;
@@ -404,7 +492,7 @@ fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64)->Op
     Some((-(age_ms as f64)/(max_age_ms as f64)).exp())
 }
 
-fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms:i64)->Option<MarketVector>{
+fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms:i64,peers:&[SymbolState])->Option<MarketVector>{
     let cutoff=state.last_event_ts_ms?;
     let identity=format!("{}|{}|{}|event-window|{}",event.venue,event.symbol,event.event_id,cutoff);
     let digest=hex::encode(Sha256::digest(identity.as_bytes()));
@@ -429,13 +517,23 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
         // derivative/index leg from which a basis could be defined.
         vector.set_not_applicable(MarketFeature::Basis);
     }
-    let raw_features=raw_feature_values(state);let mut observed=0usize;
+    let mut raw_features=raw_feature_values(state);
+    raw_features.extend(cross_asset_raw_features(state,peers));
+    let cross_timestamp=cross_asset_source_timestamp(state,peers);
+    let mut observed=0usize;
     for (feature,raw) in raw_features{
-        let Some(freshness)=feature_freshness(state,feature,cutoff) else {continue;};
-        let source_timestamp=feature_source_timestamp(state,feature)?;
+        let Some(freshness)=feature_freshness(state,feature,cutoff,cross_timestamp) else {continue;};
+        let source_timestamp=feature_source_timestamp(state,feature,cross_timestamp)?;
         let history=state.feature_history.entry(feature).or_default();
-        if let Some(value)=causal_robust_normalize(raw,history){
-            let calibration_quality=(history.len() as f64/32.0).min(1.0);
+        let normalized=if bounded_identity_feature(feature){
+            if raw.is_finite()&&(-1.0..=1.0).contains(&raw){
+                Some((raw,((history.len()+1) as f64/32.0).min(1.0)))
+            }else{None}
+        }else{
+            causal_robust_normalize(raw,history)
+                .map(|value|(value,(history.len() as f64/32.0).min(1.0)))
+        };
+        if let Some((value,calibration_quality))=normalized{
             let quality=state.state_quality.min(calibration_quality)*freshness;
             if quality>0.0 && vector.set_value(feature,Some(value),quality).is_ok(){observed+=1;}
         }
@@ -785,13 +883,17 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let (snapshot,market_vector)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
+        let venue_prefix=format!("{}|",event.venue);
+        let peer_states=guard.iter()
+            .filter(|(key,_)|key.starts_with(&venue_prefix)&&*key!=&state_key)
+            .map(|(_,peer)|peer.clone()).collect::<Vec<_>>();
         let state=guard.entry(state_key.clone()).or_default();
         // The per-symbol ingest lock makes this a defensive invariant check.
         if state.last_event_ts_ms.is_some_and(|last|event.ts_ms<last){
             return(StatusCode::CONFLICT,Json(serde_json::json!({"error":"event became late before state application","event_persisted":true})));
         }
         apply(state,&event);
-        let vector=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis());
+        let vector=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis(),&peer_states);
         (state.clone(),vector)
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
@@ -2252,9 +2354,13 @@ async fn main(){
         match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok() => {
                 let state_key=format!("{}|{}",event.venue,event.symbol);
+                let venue_prefix=format!("{}|",event.venue);
+                let peer_states=restored_memory.iter()
+                    .filter(|(key,_)|key.starts_with(&venue_prefix)&&*key!=&state_key)
+                    .map(|(_,peer)|peer.clone()).collect::<Vec<_>>();
                 let state = restored_memory.entry(state_key.clone()).or_default();
                 apply(state, &event);
-                if let Some(vector)=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis()){
+                if let Some(vector)=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis(),&peer_states){
                     restored_vectors.insert(state_key,vector);
                 }
                 replayed_events += 1;
@@ -2503,7 +2609,7 @@ mod market_stream_tests {
                 side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
                 funding_rate:None,open_interest:None,liquidation_side:None,
             };
-            apply(&mut state,&event);latest=build_market_vector(&mut state,&event,event.ts_ms);
+            apply(&mut state,&event);latest=build_market_vector(&mut state,&event,event.ts_ms,&[]);
         }
         let vector=latest.expect("past samples should warm the vector");
         assert!(vector.validate().is_ok());assert_eq!(vector.symbol,"BTCUSDT");assert_eq!(vector.venue,"test-venue");
@@ -2518,7 +2624,7 @@ mod market_stream_tests {
             open_interest:None,liquidation_side:None,
         };
         apply(&mut state,&stale_event);
-        let after_stale=build_market_vector(&mut state,&stale_event,stale_event.ts_ms).unwrap();
+        let after_stale=build_market_vector(&mut state,&stale_event,stale_event.ts_ms,&[]).unwrap();
         assert_eq!(after_stale.coordinates[&MarketFeature::LogReturn].status,qoin_market_space::FeatureAvailability::Missing);
     }
 
@@ -2536,7 +2642,7 @@ mod market_stream_tests {
                 open_interest:None,liquidation_side:None,
             };
             apply(&mut state,&event);
-            let _=build_market_vector(&mut state,&event,event.ts_ms);
+            let _=build_market_vector(&mut state,&event,event.ts_ms,&[]);
         }
         let before=state.feature_history[&MarketFeature::LogReturn].len();
         let book=MarketEvent{
@@ -2547,7 +2653,7 @@ mod market_stream_tests {
             open_interest:None,liquidation_side:None,
         };
         apply(&mut state,&book);
-        let _=build_market_vector(&mut state,&book,book.ts_ms);
+        let _=build_market_vector(&mut state,&book,book.ts_ms,&[]);
         assert_eq!(state.feature_history[&MarketFeature::LogReturn].len(),before);
     }
 
