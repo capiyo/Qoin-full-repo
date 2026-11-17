@@ -2565,9 +2565,10 @@ async fn main(){
     // log closes that specific recovery gap and uses deterministic event-time
     // ordering across providers. Malformed legacy rows are skipped and surfaced.
     let replay_options = FindOptions::builder()
-        // Preserve live per-symbol arrival order for equal timestamps while
-        // retaining global event-time ordering across symbols.
-        .sort(doc!{"ts_ms":1,"_id":1})
+        // Reproduce the actual information-availability order. Per-symbol
+        // accepted events are already monotonic in event time; cross-asset
+        // features must see peers only after those peer events arrived.
+        .sort(doc!{"_qoin_available_at_ms":1,"_id":1})
         .build();
     let mut event_cursor = events.find(None, Some(replay_options)).await
         .expect("open immutable market event log for recovery");
