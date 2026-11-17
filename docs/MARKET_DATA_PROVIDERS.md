@@ -13,6 +13,10 @@ Qoin's decision engine consumes normalized observations. It must not depend on a
 
 Each source has a distinct canonical `venue_id`. Spot instruments use venue-qualified engine symbols (for example, `BTCUSD_COINBASE` and `BTCUSD_KRAKEN`) so their rolling state and vector decisions cannot be accidentally blended. Observations from different venues are not merged into one replay: callers must select a venue when histories contain more than one source. Provider source and event identifiers remain attached to stored observations.
 
+## Shared execution instrument contract
+
+The Rust execution domain now has a broker-neutral contract in `backend/rust-axum/src/broker_contract.rs`. It models asset class, native quantity unit, contract multiplier, tick/lot constraints, quote and settlement currencies, broker/account identity, account-currency conversion, normalized orders, broker capabilities and execution reports. The conversion rate and market quote have separate freshness checks; the broker adapter must supply the account-currency margin requirement. The contract does not imply that a broker is connected or that its instruments are currently entitled.
+
 ## Normalization requirements
 
 Every new adapter must:
