@@ -292,7 +292,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"), provider: item.provider, providerStatus: item.provider_status,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
       })));
-    }).catch(() => undefined);
+    }).catch((error: unknown) => { if (active) setVectorError(error instanceof Error ? error.message : "Instrument registry unavailable. Check the backend connection and try again."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -462,7 +462,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</Text></View>
             {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
           </View>
-        )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
+        )) : <View style={styles.empty}><Text style={styles.emptyTitle}>{vectorError ? "Market registry unavailable." : "Nothing here yet."}</Text><Text style={styles.emptyCopy}>{vectorError || (mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market.")}</Text></View>}
 
         {mode === "Explore" ? <View style={styles.newsSection}>
           <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
