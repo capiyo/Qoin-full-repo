@@ -5,3 +5,17 @@ dist/
 .turbo/
 *.log
 .DS_Store
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local deployment state and credentials
+.firebase/
+*.pem
+*.key
+secrets/

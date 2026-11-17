@@ -1,53 +1,42 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getReactNativePersistence } from "firebase/auth";
 import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import { DashboardScreen } from "./src/screens/DashboardScreen";
-import { PositionsScreen } from "./src/screens/PositionsScreen";
-import { SettingsScreen } from "./src/screens/SettingsScreen";
-import { SignalScreen } from "./src/screens/SignalScreen";
+import { ArchiveExploreScreen } from "./src/screens/ArchiveExploreScreen";
+import { initializeQoinFirebase, subscribeQoinAuth } from "@qoin/core";
 
-export type RootStackParamList = {
-  Login: undefined;
-  Dashboard: undefined;
-  Positions: undefined;
-  Settings: undefined;
-};
-
+export type RootStackParamList = { Login: { mode?: "signin" | "register" } | undefined; Dashboard: undefined };
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
+type MainTab = "Archive" | "Explore";
+type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
-// Simple bottom tab bar hand-rolled to avoid an extra nav dependency;
-// swap for @react-navigation/bottom-tabs if you want native tab transitions.
-function TabBar({ current, onChange }: { current: "Dashboard" | "Positions" | "Signal" | "Settings"; onChange: (t: "Dashboard" | "Positions" | "Signal" | "Settings") => void }) {
-  const tabs: Array<"Dashboard" | "Positions" | "Signal" | "Settings"> = ["Dashboard", "Positions", "Signal", "Settings"];
+function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainTab) => void }) {
   return (
     <View style={styles.tabBar}>
-      {tabs.map((t) => (
-        <Pressable key={t} onPress={() => onChange(t)} style={styles.tabItem}>
-          <Text style={{ color: current === t ? colors.accentCyan : colors.textMuted, fontWeight: "600", fontSize: 12 }}>
-            {t}
-          </Text>
+      {(["Archive", "Explore"] as MainTab[]).map((tab) => (
+        <Pressable key={tab} onPress={() => onChange(tab)} style={styles.tabItem}>
+          <Text style={[styles.tabText, current === tab && styles.tabTextActive]}>{tab}</Text>
+          {current === tab ? <View style={styles.activeMark} /> : null}
         </Pressable>
       ))}
     </View>
   );
 }
 
-function MainTabs() {
-  const [tab, setTab] = useState<"Dashboard" | "Positions" | "Signal" | "Settings">("Dashboard");
+function MainTabs({ navigation }: MainTabsProps) {
+  const [tab, setTab] = useState<MainTab>("Archive");
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bgPrimary }}>
-      <View style={{ flex: 1 }}>
-        {tab === "Dashboard" && <DashboardScreen />}
-        {tab === "Positions" && <PositionsScreen />}
-        {tab === "Signal" && <SignalScreen />}
-        {tab === "Settings" && <SettingsScreen />}
+    <View style={styles.main}>
+      <View style={styles.screen}>
+        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} />
       </View>
       <TabBar current={tab} onChange={setTab} />
     </View>
@@ -55,15 +44,45 @@ function MainTabs() {
 }
 
 export default function App() {
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState("");
+  useEffect(() => {
+    const config = {
+      apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+      authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+      projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+      storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+      appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    };
+    if (!config.apiKey || !config.authDomain || !config.projectId || !config.storageBucket || !config.messagingSenderId || !config.appId) {
+      setAuthError("Firebase is not configured. Add the EXPO_PUBLIC_FIREBASE_* values before signing in.");
+      setAuthReady(true);
+      return;
+    }
+    try {
+      initializeQoinFirebase(config, getReactNativePersistence(AsyncStorage));
+      return subscribeQoinAuth(() => setAuthReady(true));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Firebase initialization failed.");
+      setAuthReady(true);
+      return undefined;
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <NavigationContainer>
-          <StatusBar style="light" backgroundColor={colors.bgPrimary} />
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Dashboard" component={MainTabs} />
-          </Stack.Navigator>
+          <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
+          {authReady ? (
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Dashboard" component={MainTabs} />
+              <Stack.Screen name="Login">
+                {(props) => <LoginScreen {...props} configurationError={authError} />}
+              </Stack.Screen>
+            </Stack.Navigator>
+          ) : null}
         </NavigationContainer>
       </SafeAreaProvider>
     </QueryClientProvider>
@@ -71,12 +90,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bgSecondary,
-    paddingVertical: 10,
-  },
-  tabItem: { flex: 1, alignItems: "center" },
+  main: { flex: 1, backgroundColor: colors.bgPrimary },
+  screen: { flex: 1 },
+  tabBar: { position: "absolute", left: 28, right: 28, bottom: 18, height: 52, flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF5", borderRadius: 28, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, shadowColor: "#1D3557", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
+  tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
+  tabTextActive: { color: colors.accentCyan, fontWeight: "800" },
+  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accentCyan },
 });

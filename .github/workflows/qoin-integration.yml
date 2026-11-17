@@ -1,8 +1,9 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map]
+    branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui]
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
@@ -10,6 +11,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "docs/READINESS.md"
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
@@ -42,6 +44,10 @@ jobs:
         run: |
           cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
           cmake --build build/drogon --parallel 2
+      - name: Build Drogon with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: |
+          cmake -S backend/cpp-drogon -B build/drogon-sanitized -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-g -fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -rdynamic"
+          cmake --build build/drogon-sanitized --parallel 2
       - name: Verify gateway, MongoDB strategy persistence, and event flow
         shell: bash
         run: |
@@ -53,19 +59,55 @@ jobs:
           export QOIN_DROGON_PORT=8080
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
-          ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
-          DROGON_PID=$!
-          cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
+          cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" 2>/dev/null || true; }
           trap cleanup EXIT
+          # The gateway proxies its first /health request to Axum. Wait for the
+          # upstream to be ready before starting Drogon so CI does not race its
+          # first outbound HttpClient connection during process initialization.
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            if curl -fsS http://127.0.0.1:8081/health >/tmp/axum-health.json; then break; fi
+            if ! kill -0 "$AXUM_PID" 2>/dev/null; then
+              echo "Axum exited before becoming healthy"
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
             sleep 1
           done
+          if [[ ! -s /tmp/axum-health.json ]]; then
+            echo "Axum health endpoint did not become ready"
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ./build/drogon-sanitized/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
+          DROGON_PID=$!
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            if ! kill -0 "$DROGON_PID" 2>/dev/null; then
+              echo "Drogon exited before becoming healthy"
+              cat /tmp/qoin-drogon.log
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ ! -s /tmp/health.json ]]; then
+            echo "Gateway health endpoint did not become ready"
+            cat /tmp/qoin-drogon.log
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
           jq -e '.status == "ok" and .mongodb == true' /tmp/health.json
+          curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' >/tmp/signal.json
+          jq -e '.decision == "BUY" and .config_version == "baseline-v2" and .score > 0' /tmp/signal.json
+          python3 -c 'print("x" * (1024 * 1024 + 1))' >/tmp/oversized-request.txt
+          oversized_status=$(curl -sS -o /tmp/oversized-response.json -w '%{http_code}' -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data-binary @/tmp/oversized-request.txt)
+          test "$oversized_status" = "413"
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
-          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
+          public_strategy_write_status=$(curl -sS -o /tmp/public-strategy-write.json -w '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$public_strategy_write_status" = "405"
+          curl -fsS -X PUT http://127.0.0.1:8081/internal/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
           jq -e '.status == "strategy_updated" and .strategy.version == "edge-map-ci-smoke-v2"' /tmp/strategy-put.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
@@ -77,6 +119,37 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          public_event_write_status=$(curl -sS -o /tmp/public-event-write.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"public-forbidden","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000200,"price":100.03,"size":1,"side":"buy"}')
+          test "$public_event_write_status" = "405"
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"finnhub","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.02,"size":1,"side":"buy"}' >/tmp/other-venue.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000&fee_bps=10&slippage_bps=5&latency_ms=50&max_participation_rate=0.5&market_impact_bps=10' >/tmp/backtest.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2" and .latency_ms == 50 and .max_participation_rate == 0.5 and .market_impact_bps == 10 and .market_impact_paid >= 0 and (.execution_stress_scenarios | length == 3) and .execution_stress_scenarios[2].cost_multiplier == 2 and .execution_stress_scenarios[2].fills_recomputed == false and .net_funding_cashflow == 0 and .funding_settlements == 0 and .max_event_gap_ms == 100 and .event_gaps_over_5m == 0' /tmp/backtest.json
+          mixed_status=$(curl -sS -o /tmp/mixed-venue-backtest.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
+          test "$mixed_status" = "422"
+          jq -e '.error | contains("exactly one")' /tmp/mixed-venue-backtest.json
+          curl -fsS http://127.0.0.1:8080/api/v1/instruments >/tmp/instruments.json
+          jq -e '[.items[] | select(.symbol == "BTC/USD")][0].venue_id == "binance_usdm" and [.items[] | select(.symbol == "NVDA")][0].venue_id == "finnhub"' /tmp/instruments.json
+          curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
+          jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
+          # Exercise the same gateway surface repeatedly. This is a stability
+          # stress loop, not proof of the historical std::length_error root cause.
+          for iteration in $(seq 1 20); do
+            event_ts=$((1792860000200 + iteration * 100))
+            curl -fsS http://127.0.0.1:8080/health | jq -e '.status == "ok" and .mongodb == true' >/dev/null
+            curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' | jq -e '.decision == "BUY"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/strategy | jq -e '.strategy_key == "active"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/instruments | jq -e '.items | length > 0' >/dev/null
+            curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data "{\"event_id\":\"ci-repeat-${iteration}\",\"venue\":\"ci\",\"symbol\":\"BTCUSDT\",\"event_type\":\"trade\",\"ts_ms\":${event_ts},\"price\":100.01,\"size\":1,\"side\":\"buy\"}" | jq -e '.status == "accepted"' >/dev/null
+            curl -fsS http://127.0.0.1:8080/api/v1/vector?symbol=BTCUSDT | jq -e '.symbol == "BTCUSDT"' >/dev/null
+            curl -fsS 'http://127.0.0.1:8080/api/v1/market-horizons?symbol=BTCUSDT&venue=ci&min_events=5' | jq -e '.mode == "research_only" and (.observations | length) == 8' >/dev/null
+          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/operating-cycle -H 'content-type: application/json' --data '{"observation_minutes":1,"weight_evaluation_minutes":1,"session_minutes":5,"mode":"paper","paper_accounts":[{"symbol":"BTCUSDT","venue":"ci","quote_currency":"USDT","initial_cash":10000,"notional_per_trade":1000,"contract_multiplier":1,"quantity_step":0.000001,"reinvest_profits":true,"fee_bps":10,"slippage_bps":5}]}' | jq -e '.config.mode == "paper" and (.config.paper_accounts | length) == 1' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/operating-cycle/start -H 'content-type: application/json' --data '{}' | jq -e '.phase == "observation" and .active == true' >/dev/null
+          curl -fsS http://127.0.0.1:8080/api/v1/paper-session | jq -e '.active == true and (.accounts | length) == 1 and .live_execution_enabled == false' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/operating-cycle/stop -H 'content-type: application/json' --data '{}' | jq -e '.phase == "stopped" and .active == false' >/dev/null
+          curl -fsS http://127.0.0.1:8080/api/v1/paper-session | jq -e '.active == false and .live_execution_enabled == false' >/dev/null
+            curl -fsS "http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=${event_ts}&initial_capital=10000" | jq -e '.events_replayed >= 2' >/dev/null
+            echo "gateway integration repetition ${iteration}/20 passed"
+          done
