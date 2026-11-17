@@ -138,12 +138,12 @@ paths:
     get:
       summary: Backfill immutable V2 ledger records from historical raw events
       description: |
-        Operator-only, bounded and resumable migration. Requires the Qoin execution
-        token in x-qoin-execution-token. Repeat with next_cursor fields until has_more
+        Operator-only, bounded and resumable migration. Requires the dedicated ledger-maintenance secret
+        in x-qoin-ledger-maintenance-token. Repeat with next_cursor fields until has_more
         is false. Deterministic record IDs make retries idempotent. Does not change V1.
       parameters:
         - in: header
-          name: x-qoin-execution-token
+          name: x-qoin-ledger-maintenance-token
           required: true
           schema: { type: string }
         - in: query
