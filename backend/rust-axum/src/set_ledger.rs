@@ -128,7 +128,7 @@ fn relation(
     for source in sources {
         for target in targets {
             let lag_ms = target.ts_ms - source.ts_ms;
-            if (0..=RELATION_WINDOW_MS).contains(&lag_ms) {
+            if (1..=RELATION_WINDOW_MS).contains(&lag_ms) {
                 edge_count += 1;
                 lag_total += lag_ms as i128;
                 if edges.len() < 100 {
@@ -250,7 +250,7 @@ pub fn durable_records(
             _ => continue,
         };
         let lag_ms = target.ts_ms - source.ts_ms;
-        if !(0..=RELATION_WINDOW_MS).contains(&lag_ms) { continue; }
+        if !(1..=RELATION_WINDOW_MS).contains(&lag_ms) { continue; }
         let source_key = event_key(source);
         let target_key = event_key(target);
         let record_id = format!("relation|{relation_id}|{source_key}|{target_key}");
@@ -430,6 +430,17 @@ mod tests {
         assert_eq!(relation.edges.len(), 100);
         assert!(relation.edges_truncated);
         assert!(relation.mean_lag_ms.is_some());
+    }
+
+    #[test]
+    fn equal_event_timestamps_do_not_claim_temporal_precedence() {
+        let mut buy = event("buy-same-time", "trade", 5_000);
+        buy.side = Some("buy".into());
+        let liquidation = event("liq-same-time", "liquidation", 5_000);
+        let ledger = build("BTCUSDT", &[buy.clone(), liquidation.clone()], 0, 100, false);
+        assert_eq!(ledger.relations[0].edge_count, 0);
+        let records = durable_records(&liquidation, &[buy, liquidation], mongodb::bson::DateTime::now()).unwrap();
+        assert_eq!(records.iter().filter(|record| record.get_str("record_type").ok() == Some("relation_edge")).count(), 0);
     }
 
     #[test]
