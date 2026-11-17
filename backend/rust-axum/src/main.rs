@@ -72,6 +72,8 @@ struct SymbolState {
     liquidation_events: usize,
     last_liquidation_side: Option<String>,
     state_quality: f64,
+    last_v1_decision: Option<serde_json::Value>,
+    last_v1_evaluated_at_ms: Option<i64>,
     order_book_depth: Option<f64>,
     open_interest_change: Option<f64>,
     #[serde(skip)] last_price_ts_ms: Option<i64>,
@@ -683,6 +685,29 @@ fn evaluate_ingested_v1_vector(
         })
     }
 }
+fn should_evaluate_v1(last_evaluated_at_ms:Option<i64>,current_event_ts_ms:i64)->bool{
+    last_evaluated_at_ms.is_none_or(|previous|{
+        previous.div_euclid(1_000)<current_event_ts_ms.div_euclid(1_000)
+    })
+}
+
+fn cached_v1_decision(state:&SymbolState,current_event_ts_ms:i64)->serde_json::Value{
+    match state.last_v1_decision.clone(){
+        Some(result) if state.last_v1_evaluated_at_ms==Some(current_event_ts_ms)=>result,
+        Some(result)=>serde_json::json!({
+            "status":"cached",
+            "algorithm_version":"1",
+            "evaluated_at_ms":state.last_v1_evaluated_at_ms,
+            "result":result
+        }),
+        None=>serde_json::json!({
+            "status":"warming_up",
+            "algorithm_version":"1",
+            "reason":"past-only feature calibration has not produced a V1 evaluation"
+        })
+    }
+}
+
 fn market_event_decision_key(event:&MarketEvent)->String{
     let identity=format!("{}|{}|{}",event.venue,event.symbol,event.event_id);
     hex::encode(Sha256::digest(identity.as_bytes()))
@@ -1001,7 +1026,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::ACCEPTED,Json(serde_json::json!({"status":"late_event_persisted_not_applied","event_id":event.event_id,
             "event_ts_ms":event.ts_ms,"latest_state_ts_ms":latest_before_ingest})));
     }
-    let (snapshot,market_vector)={
+    let (mut snapshot,market_vector,should_evaluate_v1_now)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
         let venue_prefix=format!("{}|",event.venue);
         let peer_states=guard.iter()
@@ -1014,14 +1039,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         }
         apply(state,&event);
         let vector=build_market_vector(state,&event,event_available_at_ms,&peer_states);
-        (state.clone(),vector)
+        let should_evaluate=vector.is_some()&&should_evaluate_v1(state.last_v1_evaluated_at_ms,event.ts_ms);
+        (state.clone(),vector,should_evaluate)
     };
-    let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
-    state_doc.insert("stored_at",mongodb::bson::DateTime::now());
-    if let Err(e)=s.states.insert_one(state_doc,None).await{
-        tracing::error!(error=%e,"state snapshot persistence failed");
-        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
-    }
     if let Some(vector)=market_vector.as_ref(){
         let mut document=match mongodb::bson::to_document(vector){Ok(value)=>value,Err(error)=>{
             tracing::error!(error=%error,"market vector serialization failed");
@@ -1046,13 +1066,32 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         state_event_count: snapshot.event_count,
         state_last_event_ts_ms: snapshot.last_event_ts_ms,
     });
-    let v1_vector_decision=market_vector.as_ref()
-        .map(|vector|evaluate_ingested_v1_vector(vector,&s.signal_config,&s.signal_config_version))
-        .unwrap_or_else(||serde_json::json!({
-            "status":"warming_up",
-            "algorithm_version":"1",
-            "reason":"past-only feature calibration has not produced an observed market vector"
-        }));
+    let v1_vector_decision=if should_evaluate_v1_now{
+        let result=evaluate_ingested_v1_vector(
+            market_vector.as_ref().expect("V1 evaluation requires a market vector"),
+            &s.signal_config,&s.signal_config_version,
+        );
+        snapshot.last_v1_decision=Some(result.clone());
+        snapshot.last_v1_evaluated_at_ms=Some(event.ts_ms);
+        match s.memory.write(){
+            Ok(mut memory)=>{
+                if let Some(state)=memory.get_mut(&state_key){
+                    state.last_v1_decision=Some(result.clone());
+                    state.last_v1_evaluated_at_ms=Some(event.ts_ms);
+                }
+            }
+            Err(_)=>tracing::error!(symbol=%event.symbol,"could not update cached V1 evaluation state"),
+        }
+        result
+    }else{
+        cached_v1_decision(&snapshot,event.ts_ms)
+    };
+    let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
+    state_doc.insert("stored_at",mongodb::bson::DateTime::now());
+    if let Err(e)=s.states.insert_one(state_doc,None).await{
+        tracing::error!(error=%e,"state snapshot persistence failed");
+        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+    }
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("v1_shared_market_vector",mongodb::bson::to_bson(&v1_vector_decision).unwrap_or(mongodb::bson::Bson::Null));
     decision_doc.insert("decision_key",market_event_decision_key(&event));
@@ -2534,6 +2573,12 @@ async fn main(){
                 restored_latest_events.insert(state_key.clone(),event.clone());
                 let available_at_ms=persisted_available_at_ms.unwrap_or(event.ts_ms).max(event.ts_ms);
                 if let Some(vector)=build_market_vector(state,&event,available_at_ms,&peer_states){
+                    if should_evaluate_v1(state.last_v1_evaluated_at_ms,event.ts_ms){
+                        state.last_v1_decision=Some(evaluate_ingested_v1_vector(
+                            &vector,&signal_config,&signal_config_version
+                        ));
+                        state.last_v1_evaluated_at_ms=Some(event.ts_ms);
+                    }
                     let mut vector_document=mongodb::bson::to_document(&vector)
                         .expect("serialize replayed causal market vector");
                     vector_document.insert("stored_at",mongodb::bson::DateTime::now());
@@ -2584,12 +2629,7 @@ async fn main(){
             event_ts_ms:event.ts_ms,state_event_count:snapshot.event_count,
             state_last_event_ts_ms:snapshot.last_event_ts_ms,
         });
-        let v1=restored_vectors.get(state_key)
-            .map(|vector|evaluate_ingested_v1_vector(vector,&signal_config,&signal_config_version))
-            .unwrap_or_else(||serde_json::json!({
-                "status":"warming_up","algorithm_version":"1",
-                "reason":"past-only feature calibration has not produced an observed market vector"
-            }));
+        let v1=cached_v1_decision(snapshot,event.ts_ms);
         let mut document=mongodb::bson::to_document(&decision).unwrap_or_default();
         let key=market_event_decision_key(event);
         document.insert("decision_key",&key);
@@ -3051,6 +3091,15 @@ mod market_stream_tests {
         assert_eq!(result["decision"]["attribution"]["contributions"].as_array().unwrap().len(),12);
     }
 
+
+
+    #[test]
+    fn v1_attribution_is_throttled_to_one_evaluation_per_second(){
+        assert!(should_evaluate_v1(None,1_000));
+        assert!(!should_evaluate_v1(Some(1_001),1_999));
+        assert!(should_evaluate_v1(Some(1_001),2_000));
+        assert!(!should_evaluate_v1(Some(2_001),2_999));
+    }
 
     #[test]
     fn v2_history_discovery_is_throttled_to_new_five_minute_buckets(){
