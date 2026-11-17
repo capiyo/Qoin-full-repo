@@ -906,12 +906,12 @@ async fn backfill_set_ledger(
     let batch_size = q.batch_size.unwrap_or(100).clamp(1, 250);
     let mut filter = doc!{"symbol":&symbol};
     if let Some(ts) = q.after_ts_ms {
-        let event_id = q.after_event_id.unwrap_or_default();
-        let venue = q.after_venue.unwrap_or_default();
+        let event_id = q.after_event_id.as_deref().unwrap_or("");
+        let venue = q.after_venue.as_deref().unwrap_or("");
         filter.insert("$or", mongodb::bson::to_bson(&vec![
             doc!{"ts_ms":{"$gt":ts}},
-            doc!{"ts_ms":ts,"event_id":{"$gt":&event_id}},
-            doc!{"ts_ms":ts,"event_id":&event_id,"venue":{"$gt":&venue}},
+            doc!{"ts_ms":ts,"event_id":{"$gt":event_id}},
+            doc!{"ts_ms":ts,"event_id":event_id,"venue":{"$gt":venue}},
         ]).unwrap_or(mongodb::bson::Bson::Null));
     } else if q.after_event_id.is_some() || q.after_venue.is_some() {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"after_event_id and after_venue require after_ts_ms"})));
