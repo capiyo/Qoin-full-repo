@@ -112,6 +112,7 @@ No unclassified work is considered complete. The backlog lists unfinished engine
 - Corrected the shared API request helper so every non-2xx HTTP response throws an error instead of treating selected error payloads as successful application data.
 - Removed the retired-model health field from the shared TypeScript API contract.
 - Confirmed the frontend API paths for algorithms, backtest, calendar, events, instruments, news, strategy, stream, vector and vector history have matching Drogon gateway handlers and Axum internal routes on this branch.
+- Added shared TypeScript request/response contracts and client methods for operating-cycle configuration, start/stop/status and paper-session snapshots, matching the existing Drogon and Axum routes. The corresponding interactive configuration and monitoring panels are not yet wired into the web/mobile screens.
 
 ### Boundaries confirmed
 
