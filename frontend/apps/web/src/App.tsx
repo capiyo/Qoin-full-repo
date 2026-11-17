@@ -247,7 +247,9 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
         <span>Sets <strong style={{ color: "#e6f1e9" }}>{ledger.sets.length}</strong></span>
         <span>Relations <strong style={{ color: "#e6f1e9" }}>{ledger.relations.length}</strong></span>
         <span>Invalid skipped <strong style={{ color: "#e6f1e9" }}>{ledger.skipped_invalid_events}</strong></span>
+        <span>Limit <strong style={{ color: "#e6f1e9" }}>{ledger.requested_limit}</strong></span>
       </div>
+      {ledger.universe_truncated ? <p style={{ margin: 0, color: "#e0b45f", fontSize: 9 }}>Universe capped at {ledger.requested_limit} source documents. Measures and relations below apply only to this returned sample.</p> : null}
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
         {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
