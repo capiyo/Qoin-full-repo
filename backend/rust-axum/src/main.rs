@@ -1260,7 +1260,9 @@ async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQ
                 return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"source hash calculation failed"})));}
         };
         if record.get_str("source_event_hash_sha256").ok()!=Some(expected_hash.as_str()) {
+            // Never let altered evidence silently influence a reconstructed set.
             hash_mismatches+=1;
+            continue;
         }
         events.push(event);
     }
@@ -1279,17 +1281,17 @@ async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQ
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed during reconstruction");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation count unavailable"})));}
     };
-    let projection=set_ledger::build(&symbol,&events,invalid_observations,limit as usize,truncated);
+    let projection=set_ledger::build(&symbol,&events,invalid_observations+hash_mismatches,limit as usize,truncated);
     let mut response=serde_json::to_value(projection).unwrap_or_default();
     if let Some(object)=response.as_object_mut() {
         object.insert("reconstruction_source".into(),serde_json::json!("mongodb.set_relation_ledger.observation.source_event"));
         object.insert("durable_observation_count".into(),serde_json::json!(observation_count));
         object.insert("durable_relation_record_count".into(),serde_json::json!(relation_count));
         object.insert("raw_source_event_count".into(),serde_json::json!(source_count));
-        object.insert("observations_scanned".into(),serde_json::json!(events.len()+invalid_observations));
+        object.insert("observations_scanned".into(),serde_json::json!(events.len()+invalid_observations+hash_mismatches));
         object.insert("invalid_observations".into(),serde_json::json!(invalid_observations));
         object.insert("source_hash_mismatches".into(),serde_json::json!(hash_mismatches));
-        object.insert("observation_scan_complete".into(),serde_json::json!(!truncated && events.len()+invalid_observations==observation_count as usize));
+        object.insert("observation_scan_complete".into(),serde_json::json!(!truncated && events.len()+invalid_observations+hash_mismatches==observation_count as usize));
         object.insert("coverage_complete".into(),serde_json::json!(!truncated && invalid_observations==0 && hash_mismatches==0 && observation_count==source_count));
         object.insert("note".into(),serde_json::json!("Sets and relation summaries were reconstructed from durable observation records. Persisted relation edges remain separately auditable; this projection does not authorize decisions or orders."));
     }
