@@ -113,6 +113,26 @@ paths:
       responses:
         '200': { description: Chronological decision-vector trajectory }
         '503': { description: Storage unavailable }
+  /api/v1/set-ledger:
+    get:
+      summary: Derive Version 2 finite event sets and temporal relations for a symbol
+      description: |
+        Read-only research projection over persisted raw events. Returns set memberships,
+        counting and observed trade-size measures, and temporal-precedence edges over a
+        fixed 60-second window. Temporal ordering is not causation. The result is computed
+        on read and is not yet an append-only durable ledger; it never changes V1 decisions.
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+      responses:
+        '200': { description: Derived set memberships and temporal relation ledger }
+        '400': { description: Invalid symbol }
+        '503': { description: Event storage unavailable }
   /api/v1/instruments:
     get:
       summary: Get the supported multi-asset instrument registry
