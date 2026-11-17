@@ -836,7 +836,7 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"symbol is required"})));
     }
     let limit=q.limit.unwrap_or(500).clamp(1,1000);
-    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1}).limit(limit).build();
+    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1}).limit(limit + 1).build();
     let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"set ledger event query failed");
@@ -844,9 +844,13 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
     };
     let mut events=Vec::new();
     let mut skipped_invalid_events=0usize;
+    let mut scanned_documents=0usize;
+    let mut universe_truncated=false;
     loop {
         match cursor.try_next().await {
             Ok(Some(mut document))=>{
+                scanned_documents += 1;
+                if scanned_documents > limit as usize { universe_truncated = true; break; }
                 document.remove("_id");
                 match mongodb::bson::from_document::<MarketEvent>(document) {
                     Ok(event) if validate_event(&event).is_ok()=>events.push(event),
@@ -860,7 +864,7 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         }
     }
     events.reverse();
-    let ledger=set_ledger::build(&symbol,&events,skipped_invalid_events);
+    let ledger=set_ledger::build(&symbol,&events,skipped_invalid_events,limit as usize,universe_truncated);
     (StatusCode::OK,Json(serde_json::to_value(ledger).unwrap_or_default()))
 }
 async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
