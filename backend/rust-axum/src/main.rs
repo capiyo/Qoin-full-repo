@@ -2744,6 +2744,28 @@ mod market_stream_tests {
 
 
 
+
+    #[test]
+    fn cross_asset_alignment_excludes_partial_and_future_buckets(){
+        let mut current=SymbolState::default();
+        current.venue="binance_usdm".into();current.symbol="BTCUSDT".into();
+        let mut peer=SymbolState::default();
+        peer.venue="binance_usdm".into();peer.symbol="ETHUSDT".into();
+        for index in 1..=15_i64{
+            let timestamp=index*60_000+1_000;
+            current.recent_return_observations.push_back((timestamp,index as f64*0.0001));
+            peer.recent_return_observations.push_back((timestamp,index as f64*0.0002));
+        }
+        current.last_price_ts_ms=Some(15*60_000+1_000);
+        peer.recent_return_observations.push_back((16*60_000+1_000,0.01));
+        peer.last_price_ts_ms=Some(16*60_000+1_000);
+        let partial=minute_return_buckets(&current,15*60_000+2_000);
+        assert!(!partial.contains_key(&15));
+        assert!(partial.contains_key(&14));
+        let features=cross_asset_raw_features(&current,&[peer],15*60_000+2_000);
+        assert!(features.is_empty(),"future peer observations must not leak into the current vector");
+    }
+
     #[test]
     fn derivative_fixed_scales_keep_constant_valid_observations_observed(){
         assert!((fixed_scale_feature(MarketFeature::FundingPressure,0.0001).unwrap()-0.761594).abs()<1.0e-5);
