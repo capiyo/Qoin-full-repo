@@ -2734,7 +2734,8 @@ async fn main(){
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
-    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    // Public read-only market data is enabled by default; set the flag to false to opt out.
+    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if kraken_enabled {
         let symbols=env::var("QOIN_KRAKEN_STREAM_SYMBOLS").unwrap_or_else(|_|"BTC/USD,ETH/USD,SOL/USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
@@ -2743,7 +2744,8 @@ async fn main(){
     } else {
         tracing::info!("Kraken Spot public market stream disabled by configuration");
     }
-    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    // Public read-only market data is enabled by default; set the flag to false to opt out.
+    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if coinbase_enabled {
         let products=env::var("QOIN_COINBASE_STREAM_PRODUCTS").unwrap_or_else(|_|"BTC-USD,ETH-USD,SOL-USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
