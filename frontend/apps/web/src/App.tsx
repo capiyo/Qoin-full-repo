@@ -318,26 +318,60 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   </section>;
 }
 
-function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision } }) {
-  const [algorithm, setAlgorithm] = useState<0 | 1>(0);
+function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
+  const [page, setPage] = useState<0 | 1>(0);
   const touchStart = useRef<number | null>(null);
-  const switchAlgorithm = () => setAlgorithm((current) => current === 0 ? 1 : 0);
+  const changePage = (next: 0 | 1) => setPage(next);
+  const decision = live?.decision;
+  const price = live?.state?.last_price;
+  const sourceTime = decision?.input_event?.event_ts_ms;
   return (
-    <article className="instrument-card">
-      <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} vector space`}>
+    <article className="instrument-card qoin-instrument-card"
+      onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }}
+      onTouchEnd={(event) => { const end = event.changedTouches[0]?.clientX; if (touchStart.current != null && end != null && Math.abs(end - touchStart.current) > 38) changePage(end < touchStart.current ? 1 : 0); touchStart.current = null; }}>
+      <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} research`}>
         <span className="asset-mark" style={{ background: item.color }}>{item.symbol.slice(0, 1)}</span>
         <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
         <span className="open-arrow" aria-hidden="true">↗</span>
       </button>
-      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</p><div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{algorithm === 0 ? (live?.decision?.action?.toUpperCase() || "NO LIVE DATA") : "V2 PREVIEW"}</span></div>
-      <div className="algorithm-swipe" onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }} onTouchEnd={(event) => { const end = event.changedTouches[0]?.clientX; if (touchStart.current != null && end != null && Math.abs(end - touchStart.current) > 42) switchAlgorithm(); touchStart.current = null; }}>
-        <div className="algorithm-switcher" role="group" aria-label={item.symbol + " algorithm preview"}>
-          <button type="button" className={algorithm === 0 ? "algorithm-choice active" : "algorithm-choice"} aria-pressed={algorithm === 0} onClick={() => setAlgorithm(0)}>01 · Vector</button>
-          <button type="button" className={algorithm === 1 ? "algorithm-choice active" : "algorithm-choice"} aria-pressed={algorithm === 1} onClick={() => setAlgorithm(1)}>02 · Set & Ledger <small>Preview</small></button>
-        </div>
-        <p className="algorithm-card-caption">{algorithm === 0 ? "Live deterministic vector baseline · swipe to inspect V2" : "Set membership · measures · relations · ledger · runtime preview only"}</p>
+      <div className="qoin-card-meta">
+        <span className="qoin-meta-chip">{item.market}</span>
+        <span className="qoin-meta-chip">{item.venue}</span>
+        <span className={`qoin-meta-chip ${item.providerStatus?.toLowerCase().includes("connected") ? "is-live" : ""}`}>{item.providerStatus || "Provider status unknown"}</span>
       </div>
-      {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
+      <div className="qoin-card-pager" aria-live="polite">
+        {page === 0 ? <>
+          <div className="qoin-card-primary">
+            <span className="qoin-card-kicker">LATEST MARKET PRICE</span>
+            <strong>{price != null ? price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong>
+            <span className={`qoin-signal-state ${decision?.action === "buy" ? "positive" : decision?.action === "sell" ? "negative" : ""}`}>{decision?.action?.toUpperCase() || "AWAITING DATA"}</span>
+          </div>
+          <div className="qoin-card-secondary">
+            <span><small>Feed</small><b>{item.provider}</b></span>
+            <span><small>Venue</small><b>{item.venue}</b></span>
+            <span><small>Coverage</small><b>{item.providerStatus || "Unverified"}</b></span>
+          </div>
+        </> : <>
+          <div className="qoin-card-primary qoin-card-research">
+            <span className="qoin-card-kicker">RESEARCH VIEW 02</span>
+            <strong>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</strong>
+            <span className="qoin-signal-state">{decision ? "DECISION MAGNITUDE" : "PREVIEW ONLY"}</span>
+          </div>
+          <div className="qoin-card-reason">
+            <small>Latest engine rationale</small>
+            <p>{decision?.reason || "A second analytical view is reserved for the set-and-measure research layer. No uncomputed values are shown."}</p>
+            <span>{sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</span>
+          </div>
+        </>}
+      </div>
+      <div className="qoin-card-footer">
+        <div className="qoin-page-dots" role="group" aria-label="Card pages">
+          <button type="button" aria-label="Show first card page" aria-pressed={page === 0} className={page === 0 ? "active" : ""} onClick={() => changePage(0)} />
+          <button type="button" aria-label="Show second card page" aria-pressed={page === 1} className={page === 1 ? "active" : ""} onClick={() => changePage(1)} />
+        </div>
+        <span>SWIPE TO EXPLORE</span>
+        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
+      </div>
     </article>
   );
 }
