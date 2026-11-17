@@ -203,6 +203,8 @@ pub struct VariableProgress {
 pub enum HubError {
     #[error("feature must be supplied by an input producer")]
     WrongStage,
+    #[error("variable hub identity does not match the published vector")]
+    IdentityMismatch,
     #[error("raw observation must be finite, have positive quality, and valid timestamps")]
     InvalidObservation,
     #[error("producer and calculation version are required")]
@@ -223,14 +225,44 @@ pub enum HubError {
     MarketSpace(#[from] MarketSpaceError),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VariableHubIdentity {
+    pub venue: String,
+    pub symbol: String,
+    pub timeframe: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct VariableHub {
+    pub identity: VariableHubIdentity,
     values: BTreeMap<MarketFeature, VariableValue>,
     published_revisions: BTreeMap<MarketFeature, u64>,
     next_revision: u64,
 }
 
 impl VariableHub {
+    /// Create a hub permanently scoped to one venue/symbol/timeframe stream.
+    pub fn new(
+        venue: impl Into<String>,
+        symbol: impl Into<String>,
+        timeframe: impl Into<String>,
+    ) -> Result<Self, HubError> {
+        let identity = VariableHubIdentity {
+            venue: venue.into(),
+            symbol: symbol.into(),
+            timeframe: timeframe.into(),
+        };
+        crate::validate_identifier(&identity.venue, 64)?;
+        crate::validate_identifier(&identity.symbol, 96)?;
+        crate::validate_identifier(&identity.timeframe, 32)?;
+        Ok(Self {
+            identity,
+            values: BTreeMap::new(),
+            published_revisions: BTreeMap::new(),
+            next_revision: 0,
+        })
+    }
+
     fn revision(&mut self) -> u64 {
         self.next_revision = self.next_revision.saturating_add(1);
         self.next_revision
@@ -497,6 +529,15 @@ impl VariableHub {
         event_time_cutoff_ms: i64,
         available_at_ms: i64,
     ) -> Result<MarketVector, HubError> {
+        let venue = venue.into();
+        let symbol = symbol.into();
+        let timeframe = timeframe.into();
+        if venue != self.identity.venue
+            || symbol != self.identity.symbol
+            || timeframe != self.identity.timeframe
+        {
+            return Err(HubError::IdentityMismatch);
+        }
         let mut vector = MarketVector::new(
             vector_id, venue, symbol, timeframe, event_time_cutoff_ms, available_at_ms,
         )?;
@@ -588,7 +629,7 @@ mod tests {
 
     #[test]
     fn variable_progresses_from_observed_to_normalized_to_published() {
-        let mut hub = VariableHub::default();
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
         hub.observe_input(MarketFeature::LogReturn, 0.02, 0.9,
             1_800_000_000_000, 1_800_000_000_001, "trade-aggregator", "returns-v1").unwrap();
         assert_eq!(hub.progress(MarketFeature::LogReturn).lifecycle, VariableLifecycle::Observed);
@@ -602,7 +643,7 @@ mod tests {
 
     #[test]
     fn derived_variable_waits_for_dependencies_then_becomes_stale_on_upstream_change() {
-        let mut hub = VariableHub::default();
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
         assert_eq!(hub.progress(MarketFeature::RealizedVolatility).lifecycle, VariableLifecycle::Blocked);
         input(&mut hub, MarketFeature::LogReturn, 0.01);
         hub.record_derived(MarketFeature::RealizedVolatility, 0.012, 0.9,
@@ -615,7 +656,7 @@ mod tests {
 
     #[test]
     fn derived_features_cannot_use_future_calibration_or_future_dependencies() {
-        let mut hub = VariableHub::default();
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
         input(&mut hub, MarketFeature::LogReturn, 0.01);
         assert_eq!(
             hub.normalize(MarketFeature::LogReturn, profile(1_800_000_000_001)),
@@ -630,7 +671,7 @@ mod tests {
 
     #[test]
     fn regime_coordinate_is_blocked_until_its_full_dependency_set_is_ready() {
-        let hub = VariableHub::default();
+        let hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
         let progress = hub.progress(MarketFeature::RegimeVolatilityLevel);
         assert_eq!(progress.stage, VariableStage::Regime);
         assert_eq!(progress.lifecycle, VariableLifecycle::Blocked);
@@ -639,12 +680,12 @@ mod tests {
 
     #[test]
     fn normalization_is_bounded_and_not_applicable_is_preserved() {
-        let mut hub = VariableHub::default();
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
         input(&mut hub, MarketFeature::LogReturn, 1_000_000.0);
         assert!(hub.value(MarketFeature::LogReturn).unwrap().normalized_value.unwrap() < 1.0);
         hub.mark_not_applicable(MarketFeature::GammaExposure, 1_800_000_000_000,
             1_800_000_000_001, "instrument-capabilities", "capability-map-v1").unwrap();
-        let vector = hub.publish("vector-2", "venue", "spot-pair", "5m",
+        let vector = hub.publish("vector-2", "venue", "BTCUSD", "5m",
             1_800_000_000_000, 1_800_000_000_002).unwrap();
         assert_eq!(vector.coordinates[&MarketFeature::GammaExposure].status, FeatureAvailability::NotApplicable);
     }

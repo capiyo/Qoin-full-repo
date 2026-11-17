@@ -515,4 +515,4 @@ mod tests {
 }
 
 pub mod hub;
-pub use hub::{NormalizationProfile, VariableHub, VariableLifecycle, VariableProgress, VariableStage, VariableDescriptor, HubError, validate_dependency_graph};
+pub use hub::{NormalizationProfile, VariableHub, VariableHubIdentity, VariableLifecycle, VariableProgress, VariableStage, VariableDescriptor, HubError, validate_dependency_graph};
