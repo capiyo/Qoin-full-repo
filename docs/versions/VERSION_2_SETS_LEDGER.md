@@ -1,6 +1,6 @@
 # Version 2 — Set theory, measure and relation ledger
 
-**Status:** finite-set projection, append-only MongoDB observation/relation records, and authenticated resumable historical backfill implemented; automated integrity audit, correction/supersession writes, generalized measure algebra and state transitions remain research work.
+**Status:** finite-set projection, append-only MongoDB observation/relation records, and authenticated resumable historical backfill implemented; automated scheduled integrity monitoring, correction/supersession writes, generalized measure algebra and state transitions remain research work.
 
 ## Purpose
 
@@ -62,6 +62,8 @@ New validated events append their observation and eligible temporal-relation rec
 - Re-running a page is safe: observation and relation record IDs are deterministic and MongoDB rejects duplicate IDs without rewriting prior records.
 - The response reports source-event count, persisted observation count and a lower bound on remaining observations. Invalid legacy rows are counted and skipped, not silently coerced.
 
+An authenticated audit is available at `GET /api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=1000`. It compares persisted observation hashes with canonical hashes recomputed from raw source events, checks that relation endpoints resolve to observation records, and reports whether both bounded scans are complete. A partial scan is never reported as a full integrity pass.
+
 The operation is intentionally explicit rather than an automatic startup migration. It does not alter source events, V1 state, decisions or orders. Backfill completion for a symbol is indicated only when the cursor is exhausted and the persisted observation count catches up with validated source events; relation coverage can still be incomplete where the 5,000-neighbour bound was exceeded, which is recorded on each derived record.
 ## V1 integration boundary
 
@@ -95,4 +97,4 @@ Users can expand records for detail, but do not need to manipulate sets or under
 
 ## Explicit non-goals
 
-V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics and an initial V2 finite-set projection over persisted raw events. New validated events append immutable observation records and temporal-relation edge records to the MongoDB `set_relation_ledger` collection. Deterministic record IDs make duplicate delivery idempotent; the ingestion path retries ledger persistence when a raw event is redelivered after an interrupted append. The read endpoint returns both the derived finite-set projection and persisted ledger records. Existing raw-event history can be migrated with the authenticated, resumable, bounded backfill endpoint. Backfill completion is operator-driven and must be checked per symbol; no correction/supersession API is exposed yet. V2 remains read-only and never drives V1 decisions or orders. This document defines the remaining V2 research direction.
+V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics and an initial V2 finite-set projection over persisted raw events. New validated events append immutable observation records and temporal-relation edge records to the MongoDB `set_relation_ledger` collection. Deterministic record IDs make duplicate delivery idempotent; the ingestion path retries ledger persistence when a raw event is redelivered after an interrupted append. The read endpoint returns both the derived finite-set projection and persisted ledger records. Existing raw-event history can be migrated with the authenticated, resumable, bounded backfill endpoint. Backfill completion is operator-driven and must be checked per symbol; no correction/supersession API is exposed yet. Integrity auditing is an on-demand bounded check, not scheduled monitoring. V2 remains read-only and never drives V1 decisions or orders. This document defines the remaining V2 research direction.
