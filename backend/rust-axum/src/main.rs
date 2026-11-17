@@ -26,6 +26,7 @@ mod set_ledger;
 mod order_safety;
 mod execution_lifecycle;
 mod trading;
+mod broker_contract;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
