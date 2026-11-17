@@ -275,9 +275,9 @@ impl Default for PortfolioRiskPolicy {
 pub struct RiskCheckInput {
     pub reference_price: f64,
     pub protective_stop_price: Option<f64>,
-    pub market_data_age_ms: i64,
+    pub now_ms: i64,
+    pub reference_price_observed_at_ms: i64,
     pub protective_order_supported: bool,
-    pub conversion_rate_age_ms: i64,
     /// Broker-calculated margin requirement, normalized to account currency.
     pub required_margin_account_currency: f64,
 }
@@ -304,9 +304,13 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
         || policy.max_open_positions == 0 || policy.max_market_data_age_ms < 0 {
         return Err(ContractError::InvalidOrder("portfolio risk policy is invalid".into()));
     }
-    if !input.reference_price.is_finite() || input.reference_price <= 0.0
-        || input.market_data_age_ms < 0 || input.market_data_age_ms > policy.max_market_data_age_ms
-        || input.conversion_rate_age_ms < 0 || input.conversion_rate_age_ms > policy.max_market_data_age_ms
+    let quote_age_ms = input.now_ms.saturating_sub(input.reference_price_observed_at_ms);
+    let conversion_age_ms = input.now_ms.saturating_sub(instrument.conversion_rate_observed_at_ms);
+    if input.now_ms <= 0 || input.reference_price_observed_at_ms <= 0
+        || input.reference_price_observed_at_ms > input.now_ms || instrument.conversion_rate_observed_at_ms > input.now_ms
+        || !input.reference_price.is_finite() || input.reference_price <= 0.0
+        || quote_age_ms < 0 || quote_age_ms > policy.max_market_data_age_ms
+        || conversion_age_ms < 0 || conversion_age_ms > policy.max_market_data_age_ms
         || !input.required_margin_account_currency.is_finite() || input.required_margin_account_currency < 0.0 {
         return Err(ContractError::InvalidOrder("market price is invalid or stale".into()));
     }
@@ -441,7 +445,7 @@ mod tests {
             quantity:0.01, limit_price:None, stop_price:Some(1.09), time_in_force:None, reduce_only:false };
         let approved = validate_portfolio_order(&PortfolioRiskPolicy::default(), &account, &spec, &order,
             &RiskCheckInput { reference_price:1.1, protective_stop_price:Some(1.09),
-                market_data_age_ms:100, protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).unwrap();
+                now_ms:10_100, reference_price_observed_at_ms:10_000, protective_order_supported:true, required_margin_account_currency:100.0 }).unwrap();
         assert!((approved.notional_account_currency-1_012.0).abs()<1e-8);
         assert!(approved.maximum_loss_account_currency>0.0);
     }
@@ -457,17 +461,17 @@ mod tests {
             quantity:1.0, limit_price:None, stop_price:Some(95.0), time_in_force:None, reduce_only:false };
         let policy = PortfolioRiskPolicy::default();
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:6_000,
-            protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).is_err());
+            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:16_100, reference_price_observed_at_ms:10_000,
+            protective_order_supported:true, required_margin_account_currency:100.0 }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
-            protective_order_supported:false, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).is_err());
+            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
+            protective_order_supported:false, required_margin_account_currency:100.0 }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
-            protective_order_supported:true, conversion_rate_age_ms:6_000, required_margin_account_currency:100.0 }).is_err());
+            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:16_100, reference_price_observed_at_ms:10_000,
+            protective_order_supported:true, required_margin_account_currency:100.0 }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
-            protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:6_000.0 }).is_err());
+            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
+            protective_order_supported:true, required_margin_account_currency:6_000.0 }).is_err());
     }
 
     #[test]
