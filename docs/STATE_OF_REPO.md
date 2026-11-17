@@ -4,11 +4,11 @@ This branch contains the Qoin multi-asset research platform and an operator-cont
 
 ## Implemented capabilities
 
-- Axum event ingestion, state snapshots, deterministic vector decisions, decision traces, algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs, the shared research-signal endpoint (`POST /v1/signal`), and a token-protected private live order route (`POST /internal/orders`).
+- Axum event ingestion, state snapshots, deterministic V1 vector decisions and traces, an initial read-only V2 finite-set/temporal-relation projection (`GET /api/v1/set-ledger`), algorithm catalogue, strategy configuration, WebSocket streaming, read-only APIs, the shared research-signal endpoint (`POST /v1/signal`), and a token-protected private live order route (`POST /internal/orders`).
 - Drogon proxies the research-signal endpoint to Axum; market ingestion and strategy mutation remain private to Axum.
 - A domain-neutral Rust core contract crate for entity identity, source-attributed observations, feature vectors and algorithm decisions. Finance remains the first implemented vertical; other verticals still require their own adapters and algorithms.
 - MongoDB persistence for raw events, state snapshots, decisions, strategy configuration. Axum rebuilds rolling per-symbol state from the immutable raw event log on startup in deterministic `(symbol, event time, event ID, venue)` order, so events persisted before a crash but not followed by a snapshot are recovered. Malformed legacy rows are logged and skipped. In-process ingestion is serialized through 64 bounded lock stripes across persistence and decision creation to prevent concurrent same-symbol events from writing stale snapshots out of order without allowing lock-map memory growth from arbitrary symbols. Recovery replayed/skipped counts are exposed by `/health`; any skipped persisted event marks service health degraded (`503`) instead of reporting a clean startup.
-- Historical event replay with venue filtering, deterministic event ordering, execution-cost assumptions, partial-fill simulation and explicit limitations. It is a research simulator, not a production portfolio accounting engine.
+- Historical event replay with venue filtering, deterministic event ordering, execution-cost assumptions, partial-fill simulation and explicit limitations. The V2 set-ledger projection is derived on read from persisted raw events; it is not yet append-only durable storage and does not alter V1 decisions. It is a research simulator, not a production portfolio accounting engine.
 - Market-data adapters:
   - Binance USD-M: trades, best bid/ask, mark/funding, liquidation events and open-interest polling.
   - Coinbase Advanced Trade: public spot trade feed.
