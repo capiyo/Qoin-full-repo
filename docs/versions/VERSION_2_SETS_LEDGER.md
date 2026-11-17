@@ -56,7 +56,7 @@ Corrections are represented by superseding records that reference the prior reco
 New validated events append their observation and eligible temporal-relation records during ingestion. Existing raw events are migrated with the bounded, resumable gateway operation:
 
 - `GET /api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=100`
-- Supply the operator token in the `x-qoin-execution-token` header. The request is rejected when the token is missing or invalid.
+- Configure a dedicated `QOIN_LEDGER_MAINTENANCE_TOKEN` secret and supply it in the `x-qoin-ledger-maintenance-token` header. This credential is separate from the live-order execution token. The request is rejected when the secret is missing or invalid.
 - The response returns `next_cursor` (`after_ts_ms`, `after_event_id`, `after_venue`) and `has_more`. Repeat with those cursor values until `has_more` is false.
 - Batch size is bounded to 1–250. The source scan is ordered by event time, event ID and venue. A compound index supports this keyset order.
 - Re-running a page is safe: observation and relation record IDs are deterministic and MongoDB rejects duplicate IDs without rewriting prior records.
