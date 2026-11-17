@@ -6,6 +6,7 @@
 //! not trained weights and not evidence of an edge.
 
 use serde::{Deserialize, Serialize};
+use qoin_market_space::{MarketFeature, MarketSpaceError, MarketVector};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -197,6 +198,72 @@ pub fn decide(
     })
 }
 
+
+/// Result of evaluating Version 1 against the shared market-state vector.
+/// Regime coordinates raise the evidence threshold and volatility dampening;
+/// they never create a directional vote of their own.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MarketVectorDecision {
+    pub signal: Signal,
+    pub regime_risk_score: f64,
+    pub effective_signal_threshold: f64,
+    pub effective_volatility_dampener: f64,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum MarketVectorDecisionError {
+    #[error(transparent)]
+    MarketSpace(#[from] MarketSpaceError),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
+}
+
+/// Version 1 adapter for the shared 53-dimensional market vector.
+/// Required coordinates remain explicit: unavailable observations fail closed.
+/// Positive regime coordinates represent elevated risk; negative values represent
+/// subdued conditions. No hard regime label is introduced.
+pub fn decide_from_market_vector(
+    vector: &MarketVector,
+    config: &EngineConfig,
+    config_version: &str,
+    has_open_position: bool,
+) -> Result<MarketVectorDecision, MarketVectorDecisionError> {
+    vector.validate()?;
+    let input = ForceObservation {
+        ofi: vector.require(MarketFeature::OrderFlowImbalance)?,
+        liquidity: vector.require(MarketFeature::OrderBookDepth)?,
+        volatility: vector.require(MarketFeature::RealizedVolatility)?,
+        funding: vector.require(MarketFeature::FundingPressure)?,
+        open_interest_change: vector.require(MarketFeature::OpenInterestChange)?,
+        liquidation_pressure: vector.require(MarketFeature::LiquidationPressure)?,
+        basis: vector.require(MarketFeature::Basis)?,
+    };
+
+    let regime_volatility = vector.require(MarketFeature::RegimeVolatilityLevel)?.max(0.0);
+    let regime_risk_components = [
+        regime_volatility,
+        vector.require(MarketFeature::RegimeLiquidityStress)?.max(0.0),
+        vector.require(MarketFeature::RegimeCorrelationStress)?.max(0.0),
+        vector.require(MarketFeature::RegimeTransitionIntensity)?.max(0.0),
+        vector.require(MarketFeature::RegimeUncertainty)?.max(0.0),
+    ];
+    let regime_risk_score = regime_risk_components.iter().sum::<f64>()
+        / regime_risk_components.len() as f64;
+
+    let mut effective_config = config.clone();
+    effective_config.signal_threshold = config.signal_threshold * (1.0 + regime_risk_score);
+    effective_config.volatility_dampener =
+        config.volatility_dampener * (1.0 + regime_volatility);
+    let signal = decide(input, &effective_config, config_version, has_open_position)?;
+
+    Ok(MarketVectorDecision {
+        signal,
+        regime_risk_score,
+        effective_signal_threshold: effective_config.signal_threshold,
+        effective_volatility_dampener: effective_config.volatility_dampener,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +273,56 @@ mod tests {
             ofi: 2.0, liquidity: 1.0, volatility: 0.2, funding: -0.5,
             open_interest_change: 1.0, liquidation_pressure: 0.5, basis: 0.0,
         }
+    }
+
+
+    fn shared_market_vector(regime_risk: f64) -> MarketVector {
+        let mut vector = MarketVector::new(
+            "v1-test-vector", "test-venue", "BTCUSD", "5m",
+            1_800_000_000_000, 1_800_000_000_001,
+        ).unwrap();
+        for (feature, value) in [
+            (MarketFeature::OrderFlowImbalance, 1.0),
+            (MarketFeature::OrderBookDepth, 1.0),
+            (MarketFeature::RealizedVolatility, 0.1),
+            (MarketFeature::FundingPressure, -0.5),
+            (MarketFeature::OpenInterestChange, 1.0),
+            (MarketFeature::LiquidationPressure, 0.5),
+            (MarketFeature::Basis, 0.0),
+            (MarketFeature::RegimeVolatilityLevel, regime_risk),
+            (MarketFeature::RegimeLiquidityStress, regime_risk),
+            (MarketFeature::RegimeCorrelationStress, regime_risk),
+            (MarketFeature::RegimeTransitionIntensity, regime_risk),
+            (MarketFeature::RegimeUncertainty, regime_risk),
+        ] {
+            vector.set_value(feature, Some(value), 1.0).unwrap();
+        }
+        vector
+    }
+
+    #[test]
+    fn shared_market_vector_drives_v1_and_includes_regime_overlay() {
+        let calm = decide_from_market_vector(
+            &shared_market_vector(0.0), &EngineConfig::default(), "v1-shared-space", false,
+        ).unwrap();
+        let stressed = decide_from_market_vector(
+            &shared_market_vector(1.0), &EngineConfig::default(), "v1-shared-space", false,
+        ).unwrap();
+        assert_eq!(calm.signal.decision, Decision::Buy);
+        assert!(stressed.effective_signal_threshold > calm.effective_signal_threshold);
+        assert_eq!(stressed.signal.decision, Decision::Wait);
+    }
+
+    #[test]
+    fn shared_market_vector_fails_closed_when_required_regime_is_missing() {
+        let mut vector = shared_market_vector(0.0);
+        vector.set_value(MarketFeature::RegimeUncertainty, None, 0.0).unwrap();
+        assert!(matches!(
+            decide_from_market_vector(&vector, &EngineConfig::default(), "v1", false),
+            Err(MarketVectorDecisionError::MarketSpace(MarketSpaceError::MissingFeature(
+                MarketFeature::RegimeUncertainty
+            )))
+        ));
     }
 
     #[test]

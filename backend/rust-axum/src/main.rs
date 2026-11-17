@@ -26,8 +26,9 @@ mod order_safety;
 mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
-use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
-use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, Vocabulary};
+use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
+use qoin_market_space::MarketVector;
+use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, VectorEvidenceConfig, Vocabulary};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1152,6 +1153,93 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
     match s.active_strategy.write(){Ok(mut current)=>*current=stored.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned after persistence"})))}
     (StatusCode::OK,Json(serde_json::json!({"status":"strategy_updated","strategy":stored,"live_trading":false})))
 }
+
+#[derive(Deserialize)]
+struct MarketVectorSignalRequest {
+    vector: MarketVector,
+    has_open_position: bool,
+}
+
+async fn evaluate_market_vector_signal(
+    State(state): State<AppState>,
+    Json(request): Json<MarketVectorSignalRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    let vector_id = request.vector.vector_id.clone();
+    let schema_version = request.vector.schema_version;
+    let decision = decide_from_market_vector(
+        &request.vector,
+        &state.signal_config,
+        &state.signal_config_version,
+        request.has_open_position,
+    ).map_err(|error| (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({"error": error.to_string()})),
+    ))?;
+    Ok((StatusCode::OK, Json(serde_json::json!({
+        "algorithm_version": "1",
+        "vector_id": vector_id,
+        "vector_schema_version": schema_version,
+        "decision": decision,
+        "live_trading": false
+    }))))
+}
+
+#[derive(Deserialize)]
+struct DiscoverVectorRelationshipsRequest {
+    query: MarketVector,
+    candidates: Vec<MarketVector>,
+    model_version: String,
+    temperature: f64,
+    recorded_at_ms: i64,
+    #[serde(default)]
+    evidence_config: Option<VectorEvidenceConfig>,
+}
+
+async fn discover_vector_relationships(
+    State(state): State<AppState>,
+    Json(request): Json<DiscoverVectorRelationshipsRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    if request.candidates.is_empty() || request.candidates.len() > 500
+        || request.recorded_at_ms <= 0 || request.model_version.trim().is_empty()
+        || request.model_version.len() > 128
+    {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error":"provide 1-500 candidate market vectors, a model_version, and a positive recorded_at_ms"
+        }))));
+    }
+    let latest_available = request.candidates.iter()
+        .map(|vector| vector.available_at_ms)
+        .chain(std::iter::once(request.query.available_at_ms))
+        .max().unwrap_or(0);
+    if request.recorded_at_ms < latest_available {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error":"recorded_at_ms cannot precede vector availability timestamps"
+        }))));
+    }
+
+    let config = request.evidence_config.unwrap_or_default();
+    let query = EvidenceSet::from_market_vector(&request.query, &config).map_err(|error| (
+        StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string()}))
+    ))?;
+    let candidates = request.candidates.iter()
+        .map(|vector| EvidenceSet::from_market_vector(vector, &config))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| (
+            StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string()}))
+        ))?;
+
+    discover_relationships(
+        State(state),
+        Json(DiscoverRelationshipsRequest {
+            query,
+            candidates,
+            model_version: request.model_version,
+            temperature: request.temperature,
+            recorded_at_ms: request.recorded_at_ms,
+        }),
+    ).await
+}
+
 #[derive(Deserialize)]
 struct RelationshipLedgerQuery { limit: Option<i64> }
 
@@ -1439,6 +1527,7 @@ async fn main(){
         recovery_skipped_events: skipped_events,
     };
     let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal))
+        .route("/internal/v1/market-vector/signal",post(evaluate_market_vector_signal))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
@@ -1449,6 +1538,7 @@ async fn main(){
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
         .route("/internal/v2/relationships/discover",post(discover_relationships))
+        .route("/internal/v2/relationships/discover-vectors",post(discover_vector_relationships))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());

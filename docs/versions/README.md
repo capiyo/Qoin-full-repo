@@ -28,3 +28,6 @@ Use identical timestamped source observations, chronological splits, feature ava
 - Live trading requires all risk gates to be implemented and independently verified plus explicit written user approval.
 - Web, mobile and desktop continue to use Qoin's existing Firebase-based client account/profile/Archive foundation. No Funspot backend/auth is used.
 - This branch does not claim backend Firebase ID-token verification.
+
+
+Both versions consume the common [shared market vector space](../SHARED_MARKET_VECTOR_SPACE.md); regime descriptors are coordinates within that shared state.

@@ -6,6 +6,43 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use qoin_market_space::{MarketFeature, MarketVector};
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VectorEvidenceConfig {
+    pub negative_threshold: f64,
+    pub positive_threshold: f64,
+    pub minimum_quality: f64,
+    pub include_missing: bool,
+}
+
+impl Default for VectorEvidenceConfig {
+    fn default() -> Self {
+        Self {
+            negative_threshold: -0.25,
+            positive_threshold: 0.25,
+            minimum_quality: 0.5,
+            include_missing: true,
+        }
+    }
+}
+
+impl VectorEvidenceConfig {
+    pub fn validate(&self) -> Result<(), SetAttentionError> {
+        if !self.negative_threshold.is_finite()
+            || !self.positive_threshold.is_finite()
+            || !self.minimum_quality.is_finite()
+            || !(-1.0..0.0).contains(&self.negative_threshold)
+            || !(0.0..=1.0).contains(&self.positive_threshold)
+            || self.positive_threshold <= 0.0
+            || !(0.0..=1.0).contains(&self.minimum_quality)
+        {
+            return Err(SetAttentionError::InvalidVectorEvidenceConfig);
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvidenceSet {
@@ -13,6 +50,16 @@ pub struct EvidenceSet {
     pub domain: String,
     pub observed_at_ms: i64,
     pub atoms: BTreeSet<String>,
+    #[serde(default)]
+    pub source_vector_id: Option<String>,
+    #[serde(default)]
+    pub source_vector_schema_version: Option<u16>,
+    #[serde(default)]
+    pub source_venue: Option<String>,
+    #[serde(default)]
+    pub source_symbol: Option<String>,
+    #[serde(default)]
+    pub source_timeframe: Option<String>,
 }
 
 impl EvidenceSet {
@@ -31,6 +78,61 @@ impl EvidenceSet {
             domain: domain.into(),
             observed_at_ms,
             atoms: atoms.into_iter().map(Into::into).collect(),
+            source_vector_id: None,
+            source_vector_schema_version: None,
+            source_venue: None,
+            source_symbol: None,
+            source_timeframe: None,
+        };
+        set.validate()?;
+        Ok(set)
+    }
+
+
+    /// Convert the common numerical state into a deterministic set of typed
+    /// conditions. Continuous magnitudes remain in the shared vector; V2 uses
+    /// explicit bins and preserves the originating vector identity/schema.
+    pub fn from_market_vector(
+        vector: &MarketVector,
+        config: &VectorEvidenceConfig,
+    ) -> Result<Self, SetAttentionError> {
+        vector.validate().map_err(|_| SetAttentionError::InvalidMarketVector)?;
+        config.validate()?;
+        let mut atoms = BTreeSet::new();
+        for feature in MarketFeature::ALL {
+            let coordinate = vector.coordinates.get(&feature)
+                .ok_or(SetAttentionError::InvalidMarketVector)?;
+            let name = feature.as_str();
+            match coordinate.value {
+                None => {
+                    if config.include_missing {
+                        atoms.insert(format!("missing:{name}"));
+                    }
+                }
+                Some(_) if coordinate.quality < config.minimum_quality => {
+                    atoms.insert(format!("low_quality:{name}"));
+                }
+                Some(value) if value <= config.negative_threshold => {
+                    atoms.insert(format!("{name}:negative"));
+                }
+                Some(value) if value >= config.positive_threshold => {
+                    atoms.insert(format!("{name}:positive"));
+                }
+                Some(_) => {
+                    atoms.insert(format!("{name}:neutral"));
+                }
+            }
+        }
+        let set = Self {
+            id: format!("market-vector:{}", vector.vector_id),
+            domain: "market_state".into(),
+            observed_at_ms: vector.event_time_cutoff_ms,
+            atoms,
+            source_vector_id: Some(vector.vector_id.clone()),
+            source_vector_schema_version: Some(vector.schema_version),
+            source_venue: Some(vector.venue.clone()),
+            source_symbol: Some(vector.symbol.clone()),
+            source_timeframe: Some(vector.timeframe.clone()),
         };
         set.validate()?;
         Ok(set)
@@ -42,6 +144,12 @@ impl EvidenceSet {
             || self.observed_at_ms <= 0
             || self.atoms.len() > 512
             || self.atoms.iter().any(|atom| atom.trim().is_empty() || atom.len() > 256)
+            || self.source_vector_id.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.source_vector_schema_version == Some(0)
+            || self.source_venue.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 64)
+            || self.source_symbol.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.source_timeframe.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 32)
+            || (self.source_vector_id.is_some() != self.source_vector_schema_version.is_some())
         {
             return Err(SetAttentionError::InvalidEvidenceSet);
         }
@@ -226,6 +334,26 @@ pub struct RelationshipRecord {
     pub metrics: SetRelationMetrics,
     pub attention_weight: f64,
     pub attention_temperature: f64,
+    #[serde(default)]
+    pub source_vector_id: Option<String>,
+    #[serde(default)]
+    pub target_vector_id: Option<String>,
+    #[serde(default)]
+    pub source_vector_schema_version: Option<u16>,
+    #[serde(default)]
+    pub target_vector_schema_version: Option<u16>,
+    #[serde(default)]
+    pub source_venue: Option<String>,
+    #[serde(default)]
+    pub source_symbol: Option<String>,
+    #[serde(default)]
+    pub source_timeframe: Option<String>,
+    #[serde(default)]
+    pub target_venue: Option<String>,
+    #[serde(default)]
+    pub target_symbol: Option<String>,
+    #[serde(default)]
+    pub target_timeframe: Option<String>,
 }
 
 impl RelationshipRecord {
@@ -255,6 +383,16 @@ impl RelationshipRecord {
             metrics: source.relation_metrics(target),
             attention_weight,
             attention_temperature,
+            source_vector_id: source.source_vector_id.clone(),
+            target_vector_id: target.source_vector_id.clone(),
+            source_vector_schema_version: source.source_vector_schema_version,
+            target_vector_schema_version: target.source_vector_schema_version,
+            source_venue: source.source_venue.clone(),
+            source_symbol: source.source_symbol.clone(),
+            source_timeframe: source.source_timeframe.clone(),
+            target_venue: target.source_venue.clone(),
+            target_symbol: target.source_symbol.clone(),
+            target_timeframe: target.source_timeframe.clone(),
         };
         record.validate()?;
         Ok(record)
@@ -305,6 +443,17 @@ impl RelationshipRecord {
             || !self.attention_weight.is_finite()
             || !(0.0..=1.0).contains(&self.attention_weight)
             || !self.attention_temperature.is_finite() || self.attention_temperature <= 0.0
+            || self.source_vector_id.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.target_vector_id.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.source_vector_schema_version == Some(0) || self.target_vector_schema_version == Some(0)
+            || self.source_vector_id.is_some() != self.source_vector_schema_version.is_some()
+            || self.target_vector_id.is_some() != self.target_vector_schema_version.is_some()
+            || self.source_venue.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 64)
+            || self.source_symbol.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.source_timeframe.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 32)
+            || self.target_venue.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 64)
+            || self.target_symbol.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 96)
+            || self.target_timeframe.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 32)
             || metrics.intersection_size > metrics.source_size.min(metrics.target_size)
             || metrics.intersection_size != actual_intersection
             || metrics.union_size != actual_union || metrics.union_size != expected_union
@@ -406,6 +555,10 @@ pub enum SetAttentionError {
     MissingOutcome,
     #[error("invalid relationship outcome")]
     InvalidOutcome,
+    #[error("invalid shared market vector")]
+    InvalidMarketVector,
+    #[error("invalid vector-to-evidence binning configuration")]
+    InvalidVectorEvidenceConfig,
 }
 
 #[cfg(test)]
@@ -415,6 +568,46 @@ mod tests {
     fn evidence(id: &str, atoms: &[&str]) -> EvidenceSet {
         EvidenceSet::new(id, "XAUUSD/5m", 1_800_000_000_000,
             atoms.iter().copied()).unwrap()
+    }
+
+
+    #[test]
+    fn v2_builds_evidence_sets_from_the_shared_vector_and_keeps_provenance() {
+        let mut vector = MarketVector::new(
+            "market-state-17", "binance_usdm", "BTCUSDT", "5m",
+            1_800_000_000_000, 1_800_000_000_010,
+        ).unwrap();
+        vector.set_value(MarketFeature::LogReturn, Some(0.8), 1.0).unwrap();
+        vector.set_value(MarketFeature::RegimeTransitionIntensity, Some(0.6), 0.9).unwrap();
+        vector.set_value(MarketFeature::OrderFlowImbalance, Some(-0.7), 1.0).unwrap();
+        let set = EvidenceSet::from_market_vector(&vector, &VectorEvidenceConfig::default()).unwrap();
+        assert!(set.atoms.contains("log_return:positive"));
+        assert!(set.atoms.contains("regime_transition_intensity:positive"));
+        assert!(set.atoms.contains("order_flow_imbalance:negative"));
+        assert!(set.atoms.contains("missing:implied_volatility"));
+        assert_eq!(set.source_vector_id.as_deref(), Some("market-state-17"));
+        assert_eq!(set.source_vector_schema_version, Some(1));
+        assert_eq!(set.source_symbol.as_deref(), Some("BTCUSDT"));
+    }
+
+    #[test]
+    fn v2_relationship_ledger_record_carries_shared_vector_provenance() {
+        let mut left = MarketVector::new(
+            "vector-left", "venue-a", "BTCUSD", "5m", 1_800_000_000_000, 1_800_000_000_010,
+        ).unwrap();
+        let mut right = MarketVector::new(
+            "vector-right", "venue-a", "BTCUSD", "5m", 1_800_000_000_100, 1_800_000_000_110,
+        ).unwrap();
+        left.set_value(MarketFeature::RegimeUncertainty, Some(0.8), 1.0).unwrap();
+        right.set_value(MarketFeature::RegimeUncertainty, Some(0.7), 1.0).unwrap();
+        let config = VectorEvidenceConfig::default();
+        let source = EvidenceSet::from_market_vector(&left, &config).unwrap();
+        let target = EvidenceSet::from_market_vector(&right, &config).unwrap();
+        let record = RelationshipRecord::discover(&source, &target, "v2-vector-set-1", 0.5, 0.2).unwrap();
+        assert_eq!(record.source_vector_id.as_deref(), Some("vector-left"));
+        assert_eq!(record.target_vector_id.as_deref(), Some("vector-right"));
+        assert_eq!(record.source_symbol.as_deref(), Some("BTCUSD"));
+        assert!(record.validate().is_ok());
     }
 
     #[test]

@@ -10,6 +10,12 @@ Version 2 carries the complete Version 1 application and deterministic vector en
 
 The V1 vector engine remains available and authoritative for existing decisions. The new `qoin-set-theoretic-attention` crate is separate. V2 research output is not wired to order submission, does not mutate the V1 strategy map, and cannot bypass risk controls.
 
+## Shared market-state input
+
+V1 and V2 consume the same versioned `qoin-market-space` schema v1 vector. Regime characteristics are coordinates in this vector, alongside price, volatility, momentum, liquidity, cross-asset relationships, derivatives, events, portfolio risk and temporal structure. The vector includes explicit missingness, quality, venue/symbol/timeframe identity, event-time cutoff and availability timestamp. It is normalized with past-only calibration by the producer.
+
+V2 converts that same vector into symbolic condition atoms using an explicit binning policy (positive, negative, neutral, low-quality and missing). Evidence sets and relationship records retain source vector IDs, schema versions and instrument/timeframe provenance. The continuous vector remains the common numerical input; set conversion is the V2 abstraction over it, not a replacement.
+
 ## V2 research pipeline
 
 1. Construct timestamped evidence sets from causal, source-attributed market observations.
@@ -28,6 +34,7 @@ The first implementation exposes the ledger only through Axum's internal researc
 ## Internal Axum research API
 
 - `POST /internal/v2/relationships/discover` accepts a query evidence set, 1-500 candidate sets, a model version, attention temperature and recording timestamp. Axum builds one stable vocabulary, embeds the sets, calculates normalized attention weights, derives set-relation metrics, and appends one discovery event per candidate.
+- `POST /internal/v2/relationships/discover-vectors` accepts a query market vector and candidate market vectors, converts each to a V2 evidence set with a configurable quality/threshold policy, then reuses the same attention and append-only ledger pipeline. Recording time must not precede any vector availability timestamp.
 - `GET /internal/v2/relationships?limit=100` reads the newest ledger events (limit is clamped to 1-500).
 - `POST /internal/v2/relationships` appends a validated discovery, outcome or invalidation event. Event IDs are unique; duplicate IDs are rejected as conflicts.
 - Discovery event IDs are deterministic hashes of the complete relationship snapshot and recording timestamp, making identical retries idempotent. Requests are bounded to 500 candidate sets, 512 atoms per set and 10,000 total atoms. A partial database outage can leave earlier records from a multi-candidate request persisted; the API reports the persisted count and does not rewrite those events.
