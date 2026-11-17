@@ -1830,6 +1830,89 @@ struct DiscoverVectorRelationshipsRequest {
     evidence_config: Option<VectorEvidenceConfig>,
 }
 
+#[derive(Deserialize)]
+struct DiscoverVectorHistoryQuery {
+    venue:String,
+    symbol:String,
+    limit:Option<i64>,
+    temperature:Option<f64>,
+}
+
+/// Build V2 evidence sets directly from immutable vectors already produced by
+/// ingestion. Clients do not need to upload or reconstruct market snapshots.
+async fn discover_vector_relationships_from_history(
+    State(state):State<AppState>,
+    Query(query):Query<DiscoverVectorHistoryQuery>,
+)->Result<(StatusCode,Json<serde_json::Value>),(StatusCode,Json<serde_json::Value>)>{
+    if query.venue.trim().is_empty() || query.venue.len()>64
+        || query.symbol.trim().is_empty() || query.symbol.len()>96{
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({
+            "error":"venue and symbol are required and must fit the market-vector identity limits"
+        }))));
+    }
+    let limit=query.limit.unwrap_or(21).clamp(2,101);
+    let temperature=query.temperature.unwrap_or(1.0);
+    if !temperature.is_finite() || temperature<=0.0 || temperature>10.0{
+        return Err((StatusCode::BAD_REQUEST,Json(serde_json::json!({
+            "error":"temperature must be finite and in (0, 10]"
+        }))));
+    }
+    let filter=doc!{"venue":&query.venue,"symbol":&query.symbol};
+    let options=FindOptions::builder()
+        .sort(doc!{"event_time_cutoff_ms":-1,"vector_id":1})
+        .limit(limit)
+        .build();
+    let mut cursor=state.market_vectors.find(filter,Some(options)).await.map_err(|error|{
+        tracing::error!(error=%error,venue=%query.venue,symbol=%query.symbol,
+            "V2 market-vector history lookup failed");
+        (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+            "error":"market-vector history unavailable"
+        })))
+    })?;
+    let mut vectors=Vec::new();
+    while let Some(mut document)=cursor.try_next().await.map_err(|error|{
+        tracing::error!(error=%error,"V2 market-vector history cursor failed");
+        (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+            "error":"market-vector history read failed"
+        })))
+    })?{
+        document.remove("_id");
+        document.remove("stored_at");
+        let vector=mongodb::bson::from_document::<MarketVector>(document).map_err(|error|{
+            tracing::error!(error=%error,"invalid vector in V2 discovery history");
+            (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+                "error":"market-vector history contains invalid snapshots"
+            })))
+        })?;
+        vectors.push(vector);
+    }
+    if vectors.len()<2{
+        return Ok((StatusCode::ACCEPTED,Json(serde_json::json!({
+            "status":"warming_up",
+            "source":"persisted_market_vector_history",
+            "venue":query.venue,
+            "symbol":query.symbol,
+            "available_vectors":vectors.len(),
+            "required_vectors":2,
+            "message":"V2 needs a query snapshot and at least one earlier candidate snapshot"
+        }))));
+    }
+    let query_vector=vectors.remove(0);
+    let request=DiscoverVectorRelationshipsRequest{
+        query:query_vector,
+        candidates:vectors,
+        model_version:env::var("QOIN_V2_MODEL_VERSION")
+            .unwrap_or_else(|_|"set-attention-v1".into()),
+        temperature,
+        recorded_at_ms:chrono::Utc::now().timestamp_millis(),
+        evidence_config:None,
+    };
+    let (status,Json(mut response))=
+        discover_vector_relationships(State(state),Json(request)).await?;
+    response["source"]=serde_json::json!("persisted_market_vector_history");
+    Ok((status,Json(response)))
+}
+
 async fn discover_vector_relationships(
     State(state): State<AppState>,
     Json(request): Json<DiscoverVectorRelationshipsRequest>,
@@ -2229,6 +2312,7 @@ async fn main(){
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
         .route("/internal/v2/relationships/discover",post(discover_relationships))
         .route("/internal/v2/relationships/discover-vectors",post(discover_vector_relationships))
+        .route("/internal/v2/relationships/discover-history",post(discover_vector_relationships_from_history))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
         .with_state(state).layer(TraceLayer::new_for_http());
