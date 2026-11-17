@@ -274,11 +274,11 @@ export type QoinMarketEvent = {
   funding_rate?: number | null; open_interest?: number | null; liquidation_side?: string | null;
 };
 export type QoinSetMeasure = {
-  measure: string;
-  count: number;
-  volume_total: number;
-  volume_observed_count: number;
-  volume_missing_count: number;
+  counting_measure: number;
+  trade_size_measure: number;
+  trade_size_unit: string;
+  trade_size_observed_count: number;
+  trade_size_missing_count: number;
 };
 export type QoinEventSet = {
   set_id: string;
