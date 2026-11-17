@@ -4,6 +4,20 @@ import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
+type BrokerOption = { id: string; name: string; coverage: string; status: string };
+const brokerOptions: BrokerOption[] = [
+  { id: "binance", name: "Binance", coverage: "Crypto · USD-M adapter", status: "Adapter available · credentials required" },
+  { id: "coinbase", name: "Coinbase Advanced", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "kraken", name: "Kraken", coverage: "Crypto spot", status: "Market data only · execution adapter pending" },
+  { id: "interactive_brokers", name: "Interactive Brokers", coverage: "Global stocks, options, futures, FX", status: "Adapter pending" },
+  { id: "alpaca", name: "Alpaca", coverage: "US equities and crypto", status: "Adapter pending" },
+  { id: "oanda", name: "OANDA", coverage: "FX and CFDs", status: "Market data only · execution adapter pending" },
+  { id: "saxo", name: "Saxo", coverage: "Multi-asset brokerage", status: "Adapter pending" },
+  { id: "ig", name: "IG", coverage: "FX, indices, shares and CFDs", status: "Adapter pending" },
+  { id: "fxcm", name: "FXCM", coverage: "FX and CFDs", status: "Adapter pending" },
+  { id: "tradier", name: "Tradier", coverage: "US equities and options", status: "Adapter pending" },
+];
+
 type Instrument = {
   symbol: string;
   name: string;
@@ -306,6 +320,7 @@ export default function App() {
   const [market, setMarket] = useState("All");
   const [venueFilter, setVenueFilter] = useState("All exchanges");
   const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quote currencies");
+  const [selectedBroker, setSelectedBroker] = useState("binance");
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
@@ -604,6 +619,7 @@ export default function App() {
           <section className="exchange-selector" aria-label="Exchange and quote currency selection">
             <div className="exchange-selector-heading"><div><p className="eyebrow">MARKET ROUTING</p><h3>Choose your exchange</h3><p>Browse instruments by venue and quote currency. Availability reflects the connected provider registry.</p></div><span className="exchange-selector-count">{availableVenues.length} venues listed</span></div>
             <div className="exchange-selector-controls">
+              <label><span>Execution broker</span><select value={selectedBroker} onChange={(event) => setSelectedBroker(event.target.value)}>{brokerOptions.map((broker) => <option key={broker.id} value={broker.id}>{broker.name} — {broker.status}</option>)}</select></label>
               <label><span>Exchange / venue</span><select value={venueFilter} onChange={(event) => setVenueFilter(event.target.value)}><option>All exchanges</option>{availableVenues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}</select></label>
               <label><span>Quote currency</span><select value={quoteCurrencyFilter} onChange={(event) => setQuoteCurrencyFilter(event.target.value)}><option>All quote currencies</option>{availableQuoteCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
             </div>
