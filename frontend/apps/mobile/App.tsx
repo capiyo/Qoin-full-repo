@@ -74,7 +74,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <NavigationContainer>
-          <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
+          <StatusBar style="light" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="Dashboard" component={MainTabs} />
@@ -92,9 +92,9 @@ export default function App() {
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: colors.bgPrimary },
   screen: { flex: 1 },
-  tabBar: { position: "absolute", left: 28, right: 28, bottom: 18, height: 52, flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF5", borderRadius: 28, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, shadowColor: "#1D3557", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
+  tabBar: { position: "absolute", left: 28, right: 28, bottom: 18, height: 52, flexDirection: "row", alignItems: "center", backgroundColor: "#17291f", borderWidth: 1, borderColor: "#365b41", borderRadius: 28, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
   tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
-  tabTextActive: { color: colors.accentCyan, fontWeight: "800" },
-  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accentCyan },
+  tabTextActive: { color: colors.accent, fontWeight: "800" },
+  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accent },
 });
