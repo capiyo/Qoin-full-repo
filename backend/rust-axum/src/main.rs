@@ -683,6 +683,12 @@ fn evaluate_ingested_v1_vector(
         })
     }
 }
+fn should_run_v2_history_discovery(previous_ts_ms:Option<i64>,current_ts_ms:i64)->bool{
+    previous_ts_ms.is_some_and(|previous|{
+        previous.div_euclid(5*60_000)<current_ts_ms.div_euclid(5*60_000)
+    })
+}
+
 fn persisted_event_is_applied(document:&Document)->bool{
     // Legacy event rows predate the explicit marker and are treated as applied.
     document.get_bool("_qoin_applied").unwrap_or(true)
@@ -944,6 +950,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))
     };
     let late_event=latest_before_ingest.is_some_and(|last|event.ts_ms<last);
+    let run_v2_discovery=should_run_v2_history_discovery(latest_before_ingest,event.ts_ms);
     let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     // The immutable log records whether the live state machine applied this
     // event. Recovery must preserve the same policy for late arrivals.
@@ -1016,12 +1023,40 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
+    let v2_discovery=if run_v2_discovery&&market_vector.is_some(){
+        let query=DiscoverVectorHistoryQuery{
+            venue:event.venue.clone(),symbol:event.symbol.clone(),limit:Some(6),temperature:Some(1.0),
+        };
+        match discover_vector_relationships_from_history(State(s.clone()),Query(query)).await{
+            Ok((http_status,Json(mut result)))=>{
+                result["http_status"]=serde_json::json!(http_status.as_u16());
+                if let Some(vector)=market_vector.as_ref(){
+                    if let Err(error)=s.decisions.update_one(
+                        doc!{"market_vector_id":&vector.vector_id},
+                        doc!{"$set":{"v2_relationship_discovery":mongodb::bson::to_bson(&result).unwrap_or(mongodb::bson::Bson::Null)}},
+                        None,
+                    ).await{
+                        tracing::warn!(error=%error,vector_id=%vector.vector_id,
+                            "V2 ledger append succeeded or warmed up but decision summary link failed");
+                    }
+                }
+                serde_json::Value::Object(result.as_object().cloned().unwrap_or_default())
+            }
+            Err((http_status,Json(error)))=>{
+                tracing::warn!(status=%http_status,error=?error,symbol=%event.symbol,
+                    "automatic V2 history discovery did not complete");
+                serde_json::json!({"status":"error","http_status":http_status.as_u16(),"error":error})
+            }
+        }
+    }else{serde_json::Value::Null};
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"v1_shared_market_vector":v1_vector_decision,
+        "v2_relationship_discovery":v2_discovery,
         "market_vector":market_vector,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,
-        "v1_shared_market_vector":v1_vector_decision,"market_vector":market_vector})))
+        "v1_shared_market_vector":v1_vector_decision,"v2_relationship_discovery":v2_discovery,
+        "market_vector":market_vector})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
@@ -2875,6 +2910,15 @@ mod market_stream_tests {
         assert_eq!(result["status"],"evaluated");
         assert_eq!(result["decision"]["attribution"]["method"],"exact_shapley");
         assert_eq!(result["decision"]["attribution"]["contributions"].as_array().unwrap().len(),12);
+    }
+
+
+    #[test]
+    fn v2_history_discovery_is_throttled_to_new_five_minute_buckets(){
+        assert!(!should_run_v2_history_discovery(None,300_001));
+        assert!(!should_run_v2_history_discovery(Some(300_001),599_999));
+        assert!(should_run_v2_history_discovery(Some(299_999),300_000));
+        assert!(should_run_v2_history_discovery(Some(300_001),600_000));
     }
 
     #[test]
