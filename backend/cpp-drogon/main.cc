@@ -119,6 +119,8 @@ void proxyGet(const drogon::HttpRequestPtr& incoming,
     request->addHeader("accept", "application/json");
     const auto executionToken = incoming->getHeader("x-qoin-execution-token");
     if (!executionToken.empty()) request->addHeader("x-qoin-execution-token", executionToken);
+    const auto ledgerMaintenanceToken = incoming->getHeader("x-qoin-ledger-maintenance-token");
+    if (!ledgerMaintenanceToken.empty()) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
     client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
         const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
