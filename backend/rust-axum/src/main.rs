@@ -70,10 +70,17 @@ struct SymbolState {
     state_quality: f64,
     order_book_depth: Option<f64>,
     open_interest_change: Option<f64>,
+    #[serde(skip)] last_price_ts_ms: Option<i64>,
+    #[serde(skip)] last_trade_ts_ms: Option<i64>,
+    #[serde(skip)] last_book_ts_ms: Option<i64>,
+    #[serde(skip)] last_funding_ts_ms: Option<i64>,
+    #[serde(skip)] last_open_interest_ts_ms: Option<i64>,
+    #[serde(skip)] last_liquidation_ts_ms: Option<i64>,
     #[serde(skip)] recent_prices: VecDeque<f64>,
     #[serde(skip)] recent_returns: VecDeque<f64>,
     #[serde(skip)] recent_trade_flow: VecDeque<f64>,
     #[serde(skip)] recent_trade_sizes: VecDeque<f64>,
+    #[serde(skip)] recent_book_imbalance: VecDeque<f64>,
     #[serde(skip)] recent_liquidation_flow: VecDeque<f64>,
     #[serde(skip)] recent_event_ts_ms: VecDeque<i64>,
     #[serde(skip)] feature_history: BTreeMap<MarketFeature, VecDeque<f64>>,
@@ -155,18 +162,24 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             push_bounded(&mut state.recent_returns, log_return);
         }
         state.last_price = Some(price);
+        state.last_price_ts_ms = Some(event.ts_ms);
         push_bounded(&mut state.recent_prices, price);
     }
     if let (Some(bid),Some(ask))=(event.bid,event.ask) {
         let mid=(bid+ask)/2.0;
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
+        state.last_book_ts_ms = Some(event.ts_ms);
         if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
             state.order_book_depth = Some(bs + as_);
-            if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;}
+            if bs+as_>0.0 {
+                push_bounded(&mut state.recent_book_imbalance,(bs-as_)/(bs+as_));
+                state.signed_flow+=(bs-as_)/(bs+as_)*0.1;
+            }
         }
     }
     match event.event_type.as_str() {
         "trade" => {
+            state.last_trade_ts_ms = Some(event.ts_ms);
             let size=event.size.unwrap_or(0.0);
             let signed = match event.side.as_deref() { Some("buy")=>size, Some("sell")=>-size, _=>0.0 };
             state.signed_flow += signed;
@@ -176,6 +189,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.event_intensity += 1.0;
         }
         "liquidation" => {
+            state.last_liquidation_ts_ms = Some(event.ts_ms);
             state.liquidation_events+=1;
             state.event_intensity+=2.0;
             state.last_liquidation_side=event.liquidation_side.clone();
@@ -184,8 +198,9 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.signed_flow+=signed;
             push_bounded(&mut state.recent_liquidation_flow,signed);
         }
-        "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
+        "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;state.last_funding_ts_ms=Some(event.ts_ms);},
         "open_interest" => if let Some(value)=event.open_interest {
+            state.last_open_interest_ts_ms=Some(event.ts_ms);
             state.open_interest_change=state.open_interest.filter(|previous|*previous>0.0)
                 .map(|previous|(value-previous)/previous);
             state.open_interest=Some(value);
@@ -277,11 +292,15 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     if let Some(depth)=state.order_book_depth.filter(|value|*value>0.0){
         output.insert(OrderBookDepth,depth.ln_1p());output.insert(LiquidityConcentration,1.0/(1.0+depth.ln_1p()));
     }
-    if state.total_trade_size>0.0{output.insert(OrderFlowImbalance,state.order_flow_imbalance);}
     let recent_flow=state.recent_trade_flow.iter().sum::<f64>();let recent_size=state.recent_trade_sizes.iter().sum::<f64>();
-    if recent_size>0.0{
-        output.insert(VolumeDelta,(recent_flow/recent_size).clamp(-1.0,1.0));
-        if let (Some(spread),Some(depth))=(state.spread_bps,state.order_book_depth){output.insert(MarketImpact,spread/(1.0+depth.max(0.0).sqrt()));}
+    let trade_imbalance=if recent_size>0.0{Some((recent_flow/recent_size).clamp(-1.0,1.0))}else{None};
+    if let Some(value)=trade_imbalance{output.insert(VolumeDelta,value);}
+    let book_imbalance=mean(&state.recent_book_imbalance.iter().copied().collect::<Vec<_>>());
+    if let Some(value)=match (trade_imbalance,book_imbalance){
+        (Some(trade),Some(book))=>Some((trade+book)/2.0),(Some(trade),None)=>Some(trade),(None,Some(book))=>Some(book),_=>None
+    }{output.insert(OrderFlowImbalance,value.clamp(-1.0,1.0));}
+    if let (Some(spread),Some(depth))=(state.spread_bps,state.order_book_depth){
+        output.insert(MarketImpact,spread/(1.0+depth.max(0.0).sqrt()));
     }
     if let Some(value)=state.funding_rate{output.insert(FundingPressure,value);}
     if let Some(value)=state.open_interest_change{output.insert(OpenInterestChange,value);}
@@ -300,6 +319,29 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     }
     if let Some(value)=persistence{output.insert(SignalDecay,1.0-value.abs());}
     output
+}
+
+fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64)->Option<f64>{
+    use MarketFeature::*;
+    let (timestamp,max_age_ms)=match feature{
+        LogReturn|PriceDisplacement|RateOfChange|SwingPosition|GapMagnitude|RealizedVolatility|
+        VolatilityOfVolatility|ReturnSkew|ReturnKurtosis|JumpIntensity|Momentum|TrendStrength|
+        TrendPersistence|MeanReversionStrength|TrendExhaustion|RegimeTrendStrength|
+        RegimeVolatilityLevel|RegimeTransitionIntensity|RegimePersistence|SignalDecay
+            =>(state.last_price_ts_ms,60_000_i64),
+        OrderFlowImbalance|VolumeDelta=>(state.last_trade_ts_ms,60_000_i64),
+        SpreadBps|OrderBookDepth|MarketImpact|SlippageEstimate|LiquidityConcentration|
+        RegimeLiquidityStress=>(state.last_book_ts_ms,30_000_i64),
+        FundingPressure=>(state.last_funding_ts_ms,8*60*60*1_000_i64),
+        OpenInterestChange=>(state.last_open_interest_ts_ms,5*60*1_000_i64),
+        LiquidationPressure=>(state.last_liquidation_ts_ms,60_000_i64),
+        EventIntensity=>(state.last_event_ts_ms,60_000_i64),
+        _=>return None,
+    };
+    let timestamp=timestamp?;
+    let age_ms=cutoff_ms.saturating_sub(timestamp).max(0);
+    if age_ms>max_age_ms{return None;}
+    Some((-(age_ms as f64)/(max_age_ms as f64)).exp())
 }
 
 fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms:i64)->Option<MarketVector>{
@@ -2130,6 +2172,15 @@ mod market_stream_tests {
         assert!(vector.validate().is_ok());assert_eq!(vector.symbol,"BTCUSDT");assert_eq!(vector.venue,"test-venue");
         assert!(vector.event_time_cutoff_ms<=vector.available_at_ms);
         assert_eq!(vector.coordinates[&MarketFeature::RegimeCorrelationStress].status,qoin_market_space::FeatureAvailability::Missing);
+        let stale_event=MarketEvent{
+            event_id:"stale-feed".into(),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
+            event_type:"funding".into(),ts_ms:1_800_000_000_000+24*1_000+120_000,price:None,size:None,
+            side:None,bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:Some(0.0001),
+            open_interest:None,liquidation_side:None,
+        };
+        apply(&mut state,&stale_event);
+        let after_stale=build_market_vector(&mut state,&stale_event,stale_event.ts_ms).unwrap();
+        assert_eq!(after_stale.coordinates[&MarketFeature::LogReturn].status,qoin_market_space::FeatureAvailability::Missing);
     }
 
 }
