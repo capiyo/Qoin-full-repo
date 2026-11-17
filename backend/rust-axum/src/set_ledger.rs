@@ -245,6 +245,7 @@ mod tests {
     fn creates_disjoint_event_type_sets_and_temporal_relations() {
         let mut buy = event("buy-1", "trade", 1_000);
         buy.side = Some("buy".into());
+        buy.size = None;
         let mut sell = event("sell-1", "trade", 1_500);
         sell.side = Some("sell".into());
         let mut liquidation = event("liq-1", "liquidation", 2_000);
@@ -262,7 +263,9 @@ mod tests {
         assert_eq!(set("sell_trades").measure.counting_measure, 1);
         assert_eq!(set("long_liquidations").measure.counting_measure, 1);
         assert_eq!(set("positive_funding").measure.counting_measure, 1);
-        assert_eq!(set("trades").measure.trade_size_measure, 4.0);
+        assert_eq!(set("trades").measure.trade_size_measure, 2.0);
+        assert_eq!(set("trades").measure.trade_size_observed_count, 1);
+        assert_eq!(set("trades").measure.trade_size_missing_count, 1);
         assert_eq!(ledger.relations[0].edge_count, 1);
         assert_eq!(ledger.relations[1].edge_count, 1);
         assert_eq!(ledger.relations[2].edge_count, 1);
