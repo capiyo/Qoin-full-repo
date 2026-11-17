@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, getQoinV2Relationships, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult, type QoinV2RelationshipEvent } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -269,6 +269,44 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   </section>;
 }
 
+function V2RelationshipLedgerPanel({ events, status }: { events: QoinV2RelationshipEvent[]; status: string }) {
+  const relationDescription: Record<string, string> = {
+    equal: "Both evidence sets contain the same conditions.",
+    source_subset_of_target: "The target contains every source condition and adds more.",
+    target_subset_of_source: "The target is contained within the source conditions.",
+    overlap: "The sets share some conditions but each also has unique evidence.",
+    disjoint: "The two evidence sets have no conditions in common.",
+  };
+  return <section className="v2-ledger-panel">
+    <div className="attention-heading"><strong>V2 · Set relationships & ledger</strong><span>{status === "loading" ? "Loading ledger…" : events.length + " matching events"}</span></div>
+    <p className="disclaimer">V2 compares timestamped evidence sets, measures overlap and records each relationship as an append-only event. Attention is a normalized similarity weight, not a probability of profit or a causal claim.</p>
+    {status === "error" ? <p className="v2-ledger-empty">The V2 ledger could not be loaded from the read-only research endpoint.</p> :
+      status === "loading" ? <p className="v2-ledger-empty">Retrieving persisted V2 relationship events…</p> :
+      events.length === 0 ? <p className="v2-ledger-empty">No V2 relationship events currently match this instrument. No synthetic sets or relations are displayed.</p> :
+      <div className="v2-ledger-list">{events.map((event) => {
+        const relationship = event.relationship;
+        const measure = relationship.set_measure;
+        return <article className="v2-ledger-event" key={event.event_id}>
+          <div className="v2-ledger-event-head"><strong>{relationship.relation_kind.replaceAll("_", " ")}</strong><span>{event.event_type.replaceAll("_", " ")}</span></div>
+          <p>{relationDescription[relationship.relation_kind] || "Recorded set relationship."}</p>
+          <div className="v2-ledger-metrics">
+            <div><span>Jaccard overlap</span><strong>{(relationship.metrics.jaccard * 100).toFixed(1)}%</strong></div>
+            <div><span>Source covered</span><strong>{(relationship.metrics.source_coverage * 100).toFixed(1)}%</strong></div>
+            <div><span>Target covered</span><strong>{(relationship.metrics.target_coverage * 100).toFixed(1)}%</strong></div>
+            <div><span>Attention weight</span><strong>{relationship.attention_weight.toFixed(4)}</strong></div>
+          </div>
+          <div className="v2-ledger-set-grid">
+            <div><span>Source set · {relationship.source_set_id}</span><small>{relationship.source_symbol || relationship.source_domain} · {relationship.source_timeframe || "timeframe not tagged"}</small><ul>{relationship.source_atoms.slice(0, 12).map((atom) => <li key={atom}>{atom}</li>)}</ul></div>
+            <div><span>Target set · {relationship.target_set_id}</span><small>{relationship.target_symbol || relationship.target_domain} · {relationship.target_timeframe || "timeframe not tagged"}</small><ul>{relationship.target_atoms.slice(0, 12).map((atom) => <li key={atom}>{atom}</li>)}</ul></div>
+          </div>
+          {measure && <div className="v2-ledger-measure"><strong>Overlap-aware set measure · union {measure.union_mass.toFixed(3)}</strong>{measure.contributions.map((item) => <span key={item.evidence_set_id}>{item.evidence_set_id}: {item.contribution_pct.toFixed(1)}% ({item.allocated_mass.toFixed(3)})</span>)}</div>}
+          {event.outcome ? <div className="v2-ledger-outcome"><strong>Observed outcome · horizon {(event.outcome.horizon_ms / 3600000).toFixed(2)}h</strong><span>Return {event.outcome.realized_return_bps == null ? "not supplied" : event.outcome.realized_return_bps.toFixed(2) + " bps"} · MAE {event.outcome.max_adverse_excursion_bps == null ? "—" : event.outcome.max_adverse_excursion_bps.toFixed(2) + " bps"} · MFE {event.outcome.max_favorable_excursion_bps == null ? "—" : event.outcome.max_favorable_excursion_bps.toFixed(2) + " bps"}</span></div> : <p className="v2-ledger-footnote">No forward outcome is attached to this ledger event yet.</p>}
+          <small className="v2-ledger-meta">{relationship.model_version} · temperature {relationship.attention_temperature.toFixed(3)} · recorded {new Date(event.recorded_at_ms).toLocaleString()}</small>
+        </article>;
+      })}</div>}
+  </section>;
+}
+
 function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision } }) {
   const [mechanicsOpen, setMechanicsOpen] = useState(false);
   const decision = live?.decision;
@@ -330,6 +368,8 @@ export default function App() {
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
   const [catalogueStatus, setCatalogueStatus] = useState("loading");
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
+  const [v2LedgerEvents, setV2LedgerEvents] = useState<QoinV2RelationshipEvent[]>([]);
+  const [v2LedgerStatus, setV2LedgerStatus] = useState("idle");
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
@@ -494,6 +534,24 @@ export default function App() {
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items.slice().reverse()); }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
+
+  useEffect(() => {
+    if (!selected) { setV2LedgerEvents([]); setV2LedgerStatus("idle"); return; }
+    let active = true;
+    setV2LedgerEvents([]);
+    setV2LedgerStatus("loading");
+    getQoinV2Relationships(100).then((events) => {
+      if (!active) return;
+      const tokens = [selected.engineSymbol, selected.symbol].map((value) => value.toUpperCase());
+      const matching = events.filter(({ relationship }) => {
+        const labels = [relationship.source_symbol, relationship.target_symbol, relationship.source_domain, relationship.target_domain, relationship.source_set_id, relationship.target_set_id].filter((value): value is string => Boolean(value)).map((value) => value.toUpperCase());
+        return labels.some((label) => tokens.some((token) => label.includes(token)));
+      });
+      setV2LedgerEvents(matching);
+      setV2LedgerStatus("loaded");
+    }).catch(() => { if (active) setV2LedgerStatus("error"); });
+    return () => { active = false; };
+  }, [selected?.engineSymbol, selected?.symbol]);
 
   useEffect(() => {
     const symbols = instruments.map((item) => item.engineSymbol);
@@ -697,6 +755,7 @@ export default function App() {
           <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorMap decision={vector} history={vectorHistory} />
           <FeatureSpace decision={vector} />
+          <V2RelationshipLedgerPanel events={v2LedgerEvents} status={v2LedgerStatus} />
           <section className="live-state-panel">
             <div className="live-state-heading"><strong>Live market state</strong><span>{lastEvent?.event_type || "awaiting event"}</span></div>
             <div className="live-state-grid">
