@@ -50,6 +50,7 @@ pub struct RiskSnapshot {
     pub current_gross_exposure: f64,
     pub current_daily_loss: f64,
     pub open_positions: usize,
+    pub symbol_position_quantity: f64,
     pub exchange_can_trade: bool,
     pub withdrawals_disabled: bool,
 }
@@ -121,8 +122,12 @@ impl BinanceExecutor {
         let rows = positions.as_array().ok_or_else(|| "exchange positions response is malformed".to_string())?;
         let mut current_gross_exposure = 0.0_f64;
         let mut open_positions = 0usize;
+        let mut symbol_position_quantity = 0.0_f64;
         for row in rows {
             let amount = numeric_field(row, "positionAmt")?;
+            if row.get("symbol").and_then(|value| value.as_str()) == Some(symbol.as_str()) {
+                symbol_position_quantity = amount;
+            }
             if amount.abs() > 0.0 {
                 let notional = row.get("notional")
                     .and_then(|value| value.as_str().and_then(|text| text.parse::<f64>().ok()).or_else(|| value.as_f64()))
@@ -168,7 +173,7 @@ impl BinanceExecutor {
 
         Ok(RiskSnapshot {
             mark_price, equity, current_gross_exposure, current_daily_loss,
-            open_positions, exchange_can_trade: true, withdrawals_disabled,
+            open_positions, symbol_position_quantity, exchange_can_trade: true, withdrawals_disabled,
         })
     }
 
