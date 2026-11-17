@@ -423,8 +423,8 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
     let raw_features=raw_feature_values(state);let mut observed=0usize;
     for (feature,raw) in raw_features{
         let Some(freshness)=feature_freshness(state,feature,cutoff) else {continue;};
-        let history=state.feature_history.entry(feature).or_default();
         let source_timestamp=feature_source_timestamp(state,feature)?;
+        let history=state.feature_history.entry(feature).or_default();
         if let Some(value)=causal_robust_normalize(raw,history){
             let calibration_quality=(history.len() as f64/32.0).min(1.0);
             let quality=state.state_quality.min(calibration_quality)*freshness;
