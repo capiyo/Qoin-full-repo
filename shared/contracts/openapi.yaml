@@ -135,7 +135,7 @@ paths:
         '400': { description: Invalid symbol }
         '503': { description: Event storage unavailable }
   /api/v1/set-ledger/backfill:
-    get:
+    post:
       summary: Backfill immutable V2 ledger records from historical raw events
       description: |
         Operator-only, bounded and resumable migration. Requires the dedicated ledger-maintenance secret
