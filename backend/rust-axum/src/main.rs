@@ -1220,6 +1220,81 @@ async fn audit_set_ledger(
     })))
 }
 
+/// Rebuild the finite-set projection exclusively from durable observation records.
+/// Hash checks make missing, malformed, or altered source evidence visible.
+async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    if symbol.trim().is_empty() || symbol.len()>96 {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"a valid symbol is required"})));
+    }
+    let limit=q.limit.unwrap_or(500).clamp(1,1000);
+    let options=FindOptions::builder().sort(doc!{"event_time_ms":1,"record_id":1}).limit(limit+1).build();
+    let mut cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol,"record_type":"observation"},Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable observation reconstruction query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation ledger unavailable","symbol":symbol})));}
+    };
+    let mut events=Vec::<MarketEvent>::new();
+    let mut invalid_observations=0usize;
+    let mut hash_mismatches=0usize;
+    let mut scanned=0usize;
+    let mut truncated=false;
+    while let Some(record)=match cursor.try_next().await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable observation reconstruction cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation ledger read failed","symbol":symbol})));}
+    } {
+        scanned+=1;
+        if scanned>limit as usize {truncated=true;break;}
+        let source=match record.get_document("source_event") {
+            Ok(document)=>document.clone(),
+            Err(_)=>{invalid_observations+=1;continue;},
+        };
+        let event=match mongodb::bson::from_document::<MarketEvent>(source) {
+            Ok(event) if validate_event(&event).is_ok()=>event,
+            _=>{invalid_observations+=1;continue;},
+        };
+        let expected_hash=match set_ledger::source_hash(&event) {
+            Ok(hash)=>hash,
+            Err(error)=>{tracing::error!(error=%error,"durable source hash calculation failed");
+                return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"source hash calculation failed"})));}
+        };
+        if record.get_str("source_event_hash_sha256").ok()!=Some(expected_hash.as_str()) {
+            hash_mismatches+=1;
+        }
+        events.push(event);
+    }
+    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable observation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation count unavailable"})));}
+    };
+    let source_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"raw source event count failed during reconstruction");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw source event count unavailable"})));}
+    };
+    let relation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"relation_edge"},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed during reconstruction");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation count unavailable"})));}
+    };
+    let projection=set_ledger::build(&symbol,&events,invalid_observations,limit as usize,truncated);
+    let mut response=serde_json::to_value(projection).unwrap_or_default();
+    if let Some(object)=response.as_object_mut() {
+        object.insert("reconstruction_source".into(),serde_json::json!("mongodb.set_relation_ledger.observation.source_event"));
+        object.insert("durable_observation_count".into(),serde_json::json!(observation_count));
+        object.insert("durable_relation_record_count".into(),serde_json::json!(relation_count));
+        object.insert("raw_source_event_count".into(),serde_json::json!(source_count));
+        object.insert("observations_scanned".into(),serde_json::json!(events.len()+invalid_observations));
+        object.insert("invalid_observations".into(),serde_json::json!(invalid_observations));
+        object.insert("source_hash_mismatches".into(),serde_json::json!(hash_mismatches));
+        object.insert("observation_scan_complete".into(),serde_json::json!(!truncated && events.len()+invalid_observations==observation_count as usize));
+        object.insert("coverage_complete".into(),serde_json::json!(!truncated && invalid_observations==0 && hash_mismatches==0 && observation_count==source_count));
+        object.insert("note".into(),serde_json::json!("Sets and relation summaries were reconstructed from durable observation records. Persisted relation edges remain separately auditable; this projection does not authorize decisions or orders."));
+    }
+    (StatusCode::OK,Json(response))
+}
 async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if symbol.trim().is_empty() {
@@ -1743,6 +1818,7 @@ async fn main(){
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/set-ledger",get(get_set_ledger))
+        .route("/internal/set-ledger/reconstruct",get(reconstruct_set_ledger))
         .route("/internal/set-ledger/backfill",get(backfill_set_ledger))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
