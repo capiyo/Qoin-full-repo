@@ -43,10 +43,10 @@ const brokerDirectory: BrokerDirectoryEntry[] = [
   { id: "tradier", name: "Tradier", market: "US equities · options", status: "adapter_pending", detail: "Execution adapter pending.", initials: "T" },
 ];
 
-function BrokerCollection() {
+function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBrokerIds: string[]; onToggleBroker: (brokerId: string) => void }) {
   const executionReady = brokerDirectory.filter((broker) => broker.status === "execution_adapter").length;
   const marketOnly = brokerDirectory.filter((broker) => broker.status === "market_data_only").length;
-  const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;
+  const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;\n  const selectedCount = selectedBrokerIds.length;\n  const selectedExecutionReady = brokerDirectory.filter((broker) => selectedBrokerIds.includes(broker.id) && broker.status === "execution_adapter").length;
   return <section className="content-section broker-collection">
     <div className="section-heading"><div><p className="eyebrow">EXECUTION NETWORK</p><h2>Broker collection</h2><p>One strategy can distribute an order across multiple selected broker accounts and currencies.</p></div><span className="count-label">{brokerDirectory.length} INTEGRATIONS TRACKED</span></div>
     <section className="broker-allocation-panel">
@@ -57,7 +57,7 @@ function BrokerCollection() {
       </div>
       <p className="broker-allocation-footnote">Illustrative allocation weights, not live orders. Quantity-step rounding can leave a small unallocated remainder; Qoin must not silently redistribute it or exceed the requested total. Aggregate exposure and risk are checked before any dispatch.</p>
     </section>
-    <div className="broker-collection-stats">
+    <div className="broker-selection-summary"><div><strong>{selectedCount} selected targets</strong><span>{selectedCount ? `Equal target: ${(100 / selectedCount).toFixed(2)}% per selected broker` : "Select broker targets below to preview equal allocation."}</span></div><small>{selectedExecutionReady} of {selectedCount} selected targets currently have an execution adapter; user account authentication and routing are still required.</small></div>\n    <div className="broker-collection-stats">
       <div><strong>{executionReady}</strong><span>Execution adapter present</span></div>
       <div><strong>{marketOnly}</strong><span>Market-data only</span></div>
       <div><strong>{pending}</strong><span>Adapters pending</span></div>
@@ -66,7 +66,7 @@ function BrokerCollection() {
       {brokerDirectory.map((broker) => <article className="broker-directory-card" key={broker.id}>
         <div className="broker-directory-top"><span className="broker-logo-mark">{broker.initials}</span><span className={"broker-status " + broker.status}>{broker.status === "execution_adapter" ? "ADAPTER PRESENT" : broker.status === "market_data_only" ? "DATA ONLY" : "INTEGRATION PENDING"}</span></div>
         <h3>{broker.name}</h3><p className="broker-market-label">{broker.market}</p><p className="broker-detail">{broker.detail}</p>
-        <div className="broker-card-footer"><span>{broker.status === "execution_adapter" ? "Backend adapter exists" : broker.status === "market_data_only" ? "Cannot receive orders" : "Not routable yet"}</span><span aria-hidden="true">↗</span></div>
+        <div className="broker-card-footer"><span>{broker.status === "execution_adapter" ? "Backend adapter exists" : broker.status === "market_data_only" ? "Cannot receive orders" : "Not routable yet"}</span><button type="button" className={selectedBrokerIds.includes(broker.id) ? "broker-select-target selected" : "broker-select-target"} aria-pressed={selectedBrokerIds.includes(broker.id)} onClick={() => onToggleBroker(broker.id)}>{selectedBrokerIds.includes(broker.id) ? "Selected ✓" : "＋ Select target"}</button></div>
       </article>)}
     </div>
     <div className="broker-connection-note"><strong>Account linking is not active yet.</strong><p>This collection reports verified integration status; it does not pretend that user accounts are connected. Only adapters with authenticated accounts, instrument support, fresh quotes, risk approval and reconciliation can join a live allocation. The current backend has one execution adapter, Binance USD-M.</p></div>
@@ -487,7 +487,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("Archive");
+  const [tab, setTab] = useState<Tab>("Archive");\n  const [selectedBrokerIds, setSelectedBrokerIds] = useState<string[]>([]);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -850,7 +850,7 @@ export default function App() {
 
 
 
-      {tab === "Brokers" ? <BrokerCollection /> : tab === "Archive" ? (
+      {tab === "Brokers" ? <BrokerCollection selectedBrokerIds={selectedBrokerIds} onToggleBroker={(brokerId) => setSelectedBrokerIds((current) => current.includes(brokerId) ? current.filter((id) => id !== brokerId) : current.length < 15 ? [...current, brokerId] : current)} /> : tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
           {archived.length ? <div className="archive-workspace">
