@@ -145,3 +145,39 @@ A variable is never treated as zero merely because it is missing. A variable can
 ### Important boundaries
 
 The hub now implements the shared dependency registry, lifecycle tracking, revision invalidation, causal normalization checks, topological graph validation and immutable vector publication. It does not invent feature values or claim that every producer is already connected to exchange ingestion. Provider-specific and statistical feature calculators still need to be implemented and wired to call the hub. A feature that is not ready remains blocked/missing rather than fabricated.
+
+
+## Contribution percentages: vectors, sets and measures
+
+Contribution attribution is a shared mathematical service, not a V1-only or V2-only feature. The same report contract can be attached to an intermediate variable, a V1 score, a V2 evidence relation, or the final continuous decision score.
+
+### What the percentages mean
+
+- **Variable contribution:** the signed effect of one input on a particular derived variable or score. The report shows positive/negative direction, absolute contribution share, quality and coverage.
+- **Set contribution:** the share of measured evidence mass allocated to each evidence set. Atomic measure prevents overlap from being counted more than once.
+- **Final outcome contribution:** how much each variable, set relation, regime factor or risk overlay contributed to the final continuous score. Additive models use their exact signed effects; nonlinear interactions use exact Shapley attribution from coalition evaluations.
+
+For an additive score, each effect is (e_i), the net effect is (sum_i e_i), and the displayed contribution percentage is (100|e_i| / sum_j |e_j|). Percentages therefore sum to 100% when at least one effect is non-zero, while signed effects still sum to the net score change. Positive and negative contributors are shown separately; opposing forces are not hidden by netting them first.
+
+For vector projection, the effect is coefficient × normalized coordinate × data quality. Missing applicable coordinates reduce coverage; not-applicable coordinates are excluded from the applicable-weight denominator. Quality is visible in the report and explicitly participates in the vector effect, rather than being silently mistaken for a missing value.
+
+### Set theory and measure
+
+V2's sets can overlap. Simply adding each set's measure would double-count shared atoms. The atomic measure service calculates the measure of the union and allocates each atom's mass equally across the sets containing it. For this union-coverage game, that is the Shapley allocation: all set allocations add back to the union measure, and their percentages add to 100%.
+
+This is a measure of evidence coverage, not automatically a probability that a trade succeeds. A probability requires a separately calibrated statistical model and out-of-sample calibration tests.
+
+### Nonlinear final outcomes
+
+When vector, set, regime and risk factors interact nonlinearly, fixed weights are not a truthful explanation. Qoin can evaluate the final score for each coalition of components and calculate exact Shapley values. The current exact implementation is bounded to 12 components per attribution calculation. Larger models should use a documented sampled/permutation approximation with error bounds rather than pretending exactness.
+
+### Percentage display rules
+
+1. Show signed effect and direction alongside percentage share.
+2. Show coverage and data quality beside percentages.
+3. Show variable-level attribution first, family/set-level aggregation second, and final-outcome attribution last.
+4. Keep interaction effects attributable; do not double-count the same evidence in vector and set summaries.
+5. Percentages describe contribution to the reported score or measure, not causal certainty, confidence, or win probability.
+6. A final BUY/SELL/WAIT label is a thresholded decision. Attribute the underlying continuous score and risk-adjusted score, and show the threshold separately.
+
+The shared Rust crate now supplies vector-projection attribution, overlap-aware atomic set-measure attribution and exact Shapley attribution. The TypeScript package contains matching report contracts. These primitives still need to be wired into each live research response and the eventual UI; no existing decision endpoint should claim to return percentages until it actually invokes the attribution service.

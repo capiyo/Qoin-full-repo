@@ -121,3 +121,39 @@ export type QoinMarketHubProgress = {
   timeframe: string;
   progress: QoinVariableProgress[];
 };
+
+export type QoinAttributionMethod = "vector_projection" | "exact_shapley";
+export type QoinContributionDirection = "positive" | "negative" | "neutral";
+export type QoinContribution = {
+  key: string;
+  feature: QoinMarketFeature | null;
+  signed_effect: number;
+  contribution_pct: number;
+  quality: number | null;
+  direction: QoinContributionDirection;
+};
+export type QoinAttributionReport = {
+  method: QoinAttributionMethod;
+  baseline: number;
+  outcome: number;
+  net_effect: number;
+  absolute_effect_total: number;
+  coverage_pct: number;
+  contributions: QoinContribution[];
+};
+export type QoinSetMeasureContribution = {
+  evidence_set_id: string;
+  allocated_mass: number;
+  contribution_pct: number;
+};
+export type QoinAtomMeasureAllocation = {
+  atom: string;
+  evidence_set_id: string;
+  allocated_mass: number;
+  membership_count: number;
+};
+export type QoinSetMeasureReport = {
+  union_mass: number;
+  contributions: QoinSetMeasureContribution[];
+  atom_allocations: QoinAtomMeasureAllocation[];
+};
