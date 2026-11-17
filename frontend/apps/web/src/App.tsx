@@ -27,7 +27,51 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
 ];
 
-type Tab = "Archive" | "Explore";
+type Tab = "Archive" | "Explore" | "Brokers";
+
+type BrokerDirectoryEntry = { id: string; name: string; market: string; status: "execution_adapter" | "market_data_only" | "adapter_pending"; detail: string; initials: string };
+const brokerDirectory: BrokerDirectoryEntry[] = [
+  { id: "binance_usdm", name: "Binance USD-M", market: "Crypto derivatives", status: "execution_adapter", detail: "Existing execution adapter; account-level connection and multi-broker fan-out are not yet exposed in this UI.", initials: "B" },
+  { id: "coinbase_advanced", name: "Coinbase Advanced", market: "Crypto spot", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "C" },
+  { id: "kraken_spot", name: "Kraken Spot", market: "Crypto spot", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "K" },
+  { id: "oanda", name: "OANDA", market: "Forex", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "O" },
+  { id: "interactive_brokers", name: "Interactive Brokers", market: "Multi-asset", status: "adapter_pending", detail: "Execution adapter pending.", initials: "IB" },
+  { id: "alpaca", name: "Alpaca", market: "Equities · ETFs · crypto", status: "adapter_pending", detail: "Execution adapter pending.", initials: "A" },
+  { id: "saxo", name: "Saxo", market: "Multi-asset", status: "adapter_pending", detail: "Execution adapter pending.", initials: "S" },
+  { id: "ig", name: "IG", market: "CFDs · forex · shares", status: "adapter_pending", detail: "Execution adapter pending.", initials: "IG" },
+  { id: "fxcm", name: "FXCM", market: "Forex · CFDs", status: "adapter_pending", detail: "Execution adapter pending.", initials: "FX" },
+  { id: "tradier", name: "Tradier", market: "US equities · options", status: "adapter_pending", detail: "Execution adapter pending.", initials: "T" },
+];
+
+function BrokerCollection() {
+  const executionReady = brokerDirectory.filter((broker) => broker.status === "execution_adapter").length;
+  const marketOnly = brokerDirectory.filter((broker) => broker.status === "market_data_only").length;
+  const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;
+  return <section className="content-section broker-collection">
+    <div className="section-heading"><div><p className="eyebrow">EXECUTION NETWORK</p><h2>Broker collection</h2><p>One strategy can distribute an order across multiple selected broker accounts and currencies.</p></div><span className="count-label">{brokerDirectory.length} INTEGRATIONS TRACKED</span></div>
+    <section className="broker-allocation-panel">
+      <div className="broker-allocation-copy"><p className="eyebrow">EQUAL ALLOCATION</p><h3>One parent order. Equal shares.</h3><p>Qoin divides the requested portfolio exposure evenly across eligible selected broker accounts. Each child order is converted to that broker's native instrument quantity, then rounded down to its permitted quantity step.</p></div>
+      <div className="broker-allocation-examples">
+        <div><strong>3</strong><span>accounts</span><b>33.33% each</b></div>
+        <div><strong>15</strong><span>accounts</span><b>6.67% each</b></div>
+      </div>
+      <p className="broker-allocation-footnote">Illustrative allocation weights, not live orders. Quantity-step rounding can leave a small unallocated remainder; Qoin must not silently redistribute it or exceed the requested total. Aggregate exposure and risk are checked before any dispatch.</p>
+    </section>
+    <div className="broker-collection-stats">
+      <div><strong>{executionReady}</strong><span>Execution adapter present</span></div>
+      <div><strong>{marketOnly}</strong><span>Market-data only</span></div>
+      <div><strong>{pending}</strong><span>Adapters pending</span></div>
+    </div>
+    <div className="broker-directory-grid">
+      {brokerDirectory.map((broker) => <article className="broker-directory-card" key={broker.id}>
+        <div className="broker-directory-top"><span className="broker-logo-mark">{broker.initials}</span><span className={"broker-status " + broker.status}>{broker.status === "execution_adapter" ? "ADAPTER PRESENT" : broker.status === "market_data_only" ? "DATA ONLY" : "INTEGRATION PENDING"}</span></div>
+        <h3>{broker.name}</h3><p className="broker-market-label">{broker.market}</p><p className="broker-detail">{broker.detail}</p>
+        <div className="broker-card-footer"><span>{broker.status === "execution_adapter" ? "Backend adapter exists" : broker.status === "market_data_only" ? "Cannot receive orders" : "Not routable yet"}</span><span aria-hidden="true">↗</span></div>
+      </article>)}
+    </div>
+    <div className="broker-connection-note"><strong>Account linking is not active yet.</strong><p>This collection reports verified integration status; it does not pretend that user accounts are connected. Only adapters with authenticated accounts, instrument support, fresh quotes, risk approval and reconciliation can join a live allocation. The current backend has one execution adapter, Binance USD-M.</p></div>
+  </section>;
+}
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
@@ -791,7 +835,7 @@ export default function App() {
         <div className="desktop-sidebar-label">WORKSPACE</div>
         <nav className="desktop-sidebar-nav" aria-label="Main sections">
           <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
-          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>
+          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>\n          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span aria-hidden="true">⇄</span>Brokers<small>10</small></button>
         </nav>
         <div className="desktop-sidebar-bottom">
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
@@ -806,7 +850,7 @@ export default function App() {
 
 
 
-      {tab === "Archive" ? (
+      {tab === "Brokers" ? <BrokerCollection /> : tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
           {archived.length ? <div className="archive-workspace">
@@ -894,7 +938,7 @@ export default function App() {
 
       <nav className="floating-navigation" aria-label="Primary navigation">
         <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
-        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
+        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>\n        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
       </nav>
 
 
