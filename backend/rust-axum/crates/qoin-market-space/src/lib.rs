@@ -369,15 +369,17 @@ impl MarketVector {
             let right = other.coordinates.get(&feature).expect("validated fixed schema");
             if left.status == FeatureAvailability::Observed
                 && right.status == FeatureAvailability::Observed
-                && let (Some(a), Some(b)) = (left.value, right.value) {
-                let weight = left.quality.min(right.quality);
-                if weight <= 0.0 { continue; }
-                common_dimensions += 1;
-                total_weight += weight;
-                dot += weight * a * b;
-                left_norm_sq += weight * a * a;
-                right_norm_sq += weight * b * b;
-                squared_distance += weight * (a - b).powi(2);
+            {
+                if let (Some(a), Some(b)) = (left.value, right.value) {
+                    let weight = left.quality.min(right.quality);
+                    if weight <= 0.0 { continue; }
+                    common_dimensions += 1;
+                    total_weight += weight;
+                    dot += weight * a * b;
+                    left_norm_sq += weight * a * a;
+                    right_norm_sq += weight * b * b;
+                    squared_distance += weight * (a - b).powi(2);
+                }
             }
         }
 
