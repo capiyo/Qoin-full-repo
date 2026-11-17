@@ -159,8 +159,6 @@ fn push_bounded<T>(history: &mut VecDeque<T>, value: T) {
 
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.venue = event.venue.clone();
-    state.venue = event.venue.clone();
-    state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
     push_bounded(&mut state.recent_event_ts_ms, event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
@@ -435,6 +433,11 @@ fn evaluate_ingested_v1_vector(
         })
     }
 }
+fn persisted_event_is_applied(document:&Document)->bool{
+    // Legacy event rows predate the explicit marker and are treated as applied.
+    document.get_bool("_qoin_applied").unwrap_or(true)
+}
+
 fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
     if expected.len() != supplied.len() { return false; }
     expected.iter().zip(supplied).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
@@ -2077,7 +2080,7 @@ async fn main(){
     let mut skipped_events: u64 = 0;
     while let Some(document) = event_cursor.try_next().await
         .expect("read immutable market event log during recovery") {
-        if document.get_bool("_qoin_applied").ok()==Some(false){
+        if !persisted_event_is_applied(&document){
             tracing::debug!("preserving persisted late event as unapplied during recovery");
             continue;
         }
@@ -2351,6 +2354,52 @@ mod market_stream_tests {
         assert_eq!(after_stale.coordinates[&MarketFeature::LogReturn].status,qoin_market_space::FeatureAvailability::Missing);
     }
 
+
+    #[test]
+    fn ingested_v1_vector_abstains_with_explicit_required_feature_gaps(){
+        let mut vector=MarketVector::new(
+            "ingest-v1-not-ready","test-venue","BTCUSDT","event-window",
+            1_800_000_000_000,1_800_000_000_001,
+        ).unwrap();
+        vector.set_value(MarketFeature::OrderFlowImbalance,Some(0.5),0.9).unwrap();
+        let result=evaluate_ingested_v1_vector(&vector,&EngineConfig::default(),"v1-test");
+        assert_eq!(result["status"],"not_ready");
+        assert_eq!(result["missing_required_features"].as_array().unwrap().len(),11);
+        assert_eq!(result["missing_required_features"][0]["feature"],"order_book_depth");
+    }
+
+    #[test]
+    fn ingested_v1_vector_runs_real_engine_and_returns_attribution_when_complete(){
+        let mut vector=MarketVector::new(
+            "ingest-v1-ready","test-venue","BTCUSDT","event-window",
+            1_800_000_000_000,1_800_000_000_001,
+        ).unwrap();
+        for feature in [
+            MarketFeature::OrderFlowImbalance,MarketFeature::OrderBookDepth,
+            MarketFeature::RealizedVolatility,MarketFeature::FundingPressure,
+            MarketFeature::OpenInterestChange,MarketFeature::LiquidationPressure,
+            MarketFeature::Basis,MarketFeature::RegimeVolatilityLevel,
+            MarketFeature::RegimeLiquidityStress,MarketFeature::RegimeCorrelationStress,
+            MarketFeature::RegimeTransitionIntensity,MarketFeature::RegimeUncertainty,
+        ]{
+            vector.set_value(feature,Some(0.0),0.95).unwrap();
+        }
+        vector.set_value(MarketFeature::OrderFlowImbalance,Some(0.9),0.95).unwrap();
+        let result=evaluate_ingested_v1_vector(&vector,&EngineConfig::default(),"v1-test");
+        assert_eq!(result["status"],"evaluated");
+        assert_eq!(result["decision"]["attribution"]["method"],"exact_shapley");
+        assert_eq!(result["decision"]["attribution"]["contributions"].as_array().unwrap().len(),12);
+    }
+
+    #[test]
+    fn recovery_preserves_late_event_exclusion_and_legacy_event_compatibility(){
+        let late=doc!{"_qoin_applied":false};
+        let applied=doc!{"_qoin_applied":true};
+        let legacy=doc!{"event_id":"legacy-event"};
+        assert!(!persisted_event_is_applied(&late));
+        assert!(persisted_event_is_applied(&applied));
+        assert!(persisted_event_is_applied(&legacy));
+    }
 }
 
 #[cfg(test)]
