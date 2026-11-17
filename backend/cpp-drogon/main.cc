@@ -232,6 +232,10 @@ int main() {
         }
         proxyPostJson(req, std::move(cb), path);
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/set-ledger/corrections", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/set-ledger/corrections");
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/set-ledger/integrity", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
