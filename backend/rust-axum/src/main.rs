@@ -93,6 +93,8 @@ struct SymbolState {
     #[serde(skip)] recent_event_ts_ms: VecDeque<i64>,
     #[serde(skip)] feature_history: BTreeMap<MarketFeature, VecDeque<f64>>,
     #[serde(skip)] feature_history_last_ts_ms: BTreeMap<MarketFeature, i64>,
+    #[serde(skip)] cross_asset_cache: BTreeMap<MarketFeature,f64>,
+    #[serde(skip)] cross_asset_cache_ts_ms: Option<i64>,
 }
 #[derive(Clone)]
 struct AppState {
@@ -592,8 +594,16 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
         }
     }
     let mut raw_features=raw_feature_values(state);
-    raw_features.extend(cross_asset_raw_features(state,peers,cutoff));
     let cross_timestamp=cross_asset_source_timestamp(state,peers,cutoff);
+    let cross_features=if cross_timestamp.is_some()&&state.cross_asset_cache_ts_ms==cross_timestamp{
+        state.cross_asset_cache.clone()
+    }else{
+        let features=cross_asset_raw_features(state,peers,cutoff);
+        state.cross_asset_cache=features.clone();
+        state.cross_asset_cache_ts_ms=cross_timestamp;
+        features
+    };
+    raw_features.extend(cross_features);
     let mut observed=0usize;
     for (feature,raw) in raw_features{
         let Some(freshness)=feature_freshness(state,feature,cutoff,cross_timestamp) else {continue;};
