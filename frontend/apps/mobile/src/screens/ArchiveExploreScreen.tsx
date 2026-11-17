@@ -5,7 +5,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -95,6 +95,39 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     <Text selectable style={styles.traceJson}>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</Text>
     <Text style={styles.traceSubhead}>Complete serialized decision</Text>
     <Text selectable style={styles.traceJson}>{JSON.stringify(decision, null, 2)}</Text>
+  </View>;
+}
+
+function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
+  return <View style={styles.tracePanel}>
+    <Text style={styles.attentionTitle}>Version 2 · Set &amp; relation ledger</Text>
+    <Text style={styles.attentionCaption}>Derived from persisted events · read-only · separate from V1 decisions</Text>
+    {!ledger ? <Text style={styles.disclaimer}>{status}</Text> : <>
+      <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
+        <Text style={styles.engineValue}>Universe {ledger.universe_count}</Text>
+        <Text style={styles.engineValue}>Sets {ledger.sets.length}</Text>
+        <Text style={styles.engineValue}>Relations {ledger.relations.length}</Text>
+        <Text style={styles.engineValue}>Skipped {ledger.skipped_invalid_events}</Text>
+      </View>
+      <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
+      {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
+        <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.measure.count}</Text>
+        </View>
+        <Text style={styles.attentionCaption}>Counting measure · trade-size sum {item.measure.volume_total.toFixed(6)} · size observed {item.measure.volume_observed_count} / missing {item.measure.volume_missing_count}</Text>
+        <Text style={styles.attentionCaption} numberOfLines={2}>Members: {item.member_event_ids.slice(0,5).join(", ") || "∅"}{item.member_event_ids.length>5 ? " … +" + (item.member_event_ids.length-5) : ""}</Text>
+      </View>)}
+      <Text style={styles.engineLabel}>TEMPORAL RELATIONS · 60 SECOND WINDOW</Text>
+      {ledger.relations.map((item) => <View key={item.relation_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
+        <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.edge_count} edges</Text>
+        </View>
+        <Text style={styles.attentionCaption}>Mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"} · {item.interpretation}</Text>
+        {item.edges.slice(0,4).map((edge,index) => <Text key={item.relation_id+index} style={styles.attentionCaption}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</Text>)}
+      </View>)}
+      {ledger.limitations.map((item) => <Text key={item} style={styles.disclaimer}>• {item}</Text>)}
+      <Text style={styles.attentionCaption}>Schema {ledger.schema_version} · {ledger.persistence}</Text>
+    </>}
   </View>;
 }
 
@@ -222,6 +255,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
+  const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
+  const [setLedgerStatus, setSetLedgerStatus] = useState("Select an instrument to inspect V2 sets.");
   const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
@@ -410,10 +445,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     return () => { current = false; };
   }, [selected?.engineSymbol]);
   useEffect(() => {
-    if (!selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
+    if (!selected) { setVectorHistory([]); setRawEvents([]); setSetLedger(null); setSetLedgerStatus("Select an instrument to inspect V2 sets."); setMarketState(null); setLastEvent(null); return; }
     let active = true;
     setVectorHistory([]);
     setRawEvents([]);
+    setSetLedger(null);
+    setSetLedgerStatus("Loading set memberships and temporal relations…");
+    getQoinSetLedger(selected.engineSymbol, 1000).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
     getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items.slice().reverse()); }).catch(() => undefined);
     return () => { active = false; };
@@ -686,6 +724,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+            <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
