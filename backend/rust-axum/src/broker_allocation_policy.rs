@@ -88,7 +88,7 @@ pub enum ExecutionPlan {
         allocation: EqualAllocation,
         costs: Vec<BrokerCost>,
         estimated_total_cost_portfolio: Decimal,
-        single_broker_comparator_cost_portfolio: Decimal,
+        single_broker_comparator_cost_portfolio: Option<Decimal>,
         reason: String,
     },
 }
@@ -231,19 +231,17 @@ pub fn choose_execution_plan(
             best_single = Some((cost, allocation, comparable));
         }
     }
-    let (single_cost, single_allocation, single_comparable_cost) =
-        best_single.ok_or(RoutingError::NoFeasibleAccount)?;
-
-    // One account is already the simplest valid plan. Do not manufacture a
-    // multi-broker route when it cannot diversify execution.
     if selected.len() == 1 {
-        return Ok(ExecutionPlan::Consolidated {
-            broker_id: single_cost.broker_id.clone(),
-            account_id: single_cost.account_id.clone(),
-            allocation: single_allocation,
-            cost: single_cost,
-            reason: "Only one selected account is available; consolidate execution".into(),
-        });
+        return match best_single {
+            Some((single_cost, single_allocation, _)) => Ok(ExecutionPlan::Consolidated {
+                broker_id: single_cost.broker_id.clone(),
+                account_id: single_cost.account_id.clone(),
+                allocation: single_allocation,
+                cost: single_cost,
+                reason: "Only one selected account is available; consolidate execution".into(),
+            }),
+            None => Err(RoutingError::NoFeasibleAccount),
+        };
     }
 
     let all_ready = selected.iter().all(|q| q.adapter_ready && q.account_healthy);
@@ -278,28 +276,52 @@ pub fn choose_execution_plan(
             )?;
             let multi_total = comparable_multi_cost.checked_add(policy.multi_broker_overhead_portfolio)
                 .ok_or_else(|| RoutingError::Arithmetic("multi-broker overhead overflow".into()))?;
-            let required = single_comparable_cost
-                .checked_sub(policy.minimum_saving_portfolio)
-                .ok_or_else(|| RoutingError::Arithmetic("saving hurdle overflow".into()))?;
-            if multi_total < required {
-                return Ok(ExecutionPlan::EqualSplit {
-                    allocation,
-                    costs,
-                    estimated_total_cost_portfolio: multi_total,
-                    single_broker_comparator_cost_portfolio: single_comparable_cost,
-                    reason: "All selected accounts passed sizing and margin checks; cost is normalized to the same parent notional and beats the best single-account route after overhead and the saving hurdle".into(),
+
+            // If no single account can safely carry the parent order, a
+            // feasible all-account split is the only executable plan. Do not
+            // reject it merely because there is no single-account comparator.
+            if let Some((single_cost, single_allocation, single_comparable_cost)) = best_single.as_ref() {
+                let required = single_comparable_cost
+                    .checked_sub(policy.minimum_saving_portfolio)
+                    .ok_or_else(|| RoutingError::Arithmetic("saving hurdle overflow".into()))?;
+                if multi_total < required {
+                    return Ok(ExecutionPlan::EqualSplit {
+                        allocation,
+                        costs,
+                        estimated_total_cost_portfolio: multi_total,
+                        single_broker_comparator_cost_portfolio: Some(*single_comparable_cost),
+                        reason: "All selected accounts passed sizing and margin checks; cost is normalized to the same parent notional and beats the best single-account route after overhead and the saving hurdle".into(),
+                    });
+                }
+                return Ok(ExecutionPlan::Consolidated {
+                    broker_id: single_cost.broker_id.clone(),
+                    account_id: single_cost.account_id.clone(),
+                    allocation: single_allocation.clone(),
+                    cost: single_cost.clone(),
+                    reason: "Consolidation is preferred: the equal split did not beat the best feasible single-account route after costs and overhead".into(),
                 });
             }
+
+            return Ok(ExecutionPlan::EqualSplit {
+                allocation,
+                costs,
+                estimated_total_cost_portfolio: multi_total,
+                single_broker_comparator_cost_portfolio: None,
+                reason: "No single selected account can safely carry the parent order; every selected account passed equal-child sizing and margin checks, so the feasible split is selected".into(),
+            });
         }
     }
 
-    Ok(ExecutionPlan::Consolidated {
-        broker_id: single_cost.broker_id.clone(),
-        account_id: single_cost.account_id.clone(),
-        allocation: single_allocation,
-        cost: single_cost,
-        reason: "Consolidation is preferred: multi-account sizing, readiness, margin, or estimated cost did not justify splitting".into(),
-    })
+    if let Some((single_cost, single_allocation, _)) = best_single {
+        return Ok(ExecutionPlan::Consolidated {
+            broker_id: single_cost.broker_id.clone(),
+            account_id: single_cost.account_id.clone(),
+            allocation: single_allocation,
+            cost: single_cost,
+            reason: "Consolidation is preferred: multi-account sizing, readiness, margin, or estimated cost did not justify splitting".into(),
+        });
+    }
+    Err(RoutingError::NoFeasibleMultiBrokerPlan)
 }
 
 #[cfg(test)]
@@ -415,6 +437,23 @@ mod tests {
                 assert!(allocation.children.iter().all(|child| child.target_notional_portfolio == d("1000")));
             }
             _ => panic!("expected a 15-account split when all accounts are feasible and child-size execution cost is lower"),
+        }
+    }
+
+    #[test]
+    fn split_can_be_feasible_when_no_single_account_has_enough_margin() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        for item in &mut quotes {
+            item.available_margin_portfolio = d("60");
+            item.margin_requirement_bps = d("1000");
+        }
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        match plan {
+            ExecutionPlan::EqualSplit { allocation, single_broker_comparator_cost_portfolio, .. } => {
+                assert_eq!(allocation.children.len(), 2);
+                assert_eq!(single_broker_comparator_cost_portfolio, None);
+            }
+            _ => panic!("a feasible split should be selected when no single account can carry the parent order"),
         }
     }
 
