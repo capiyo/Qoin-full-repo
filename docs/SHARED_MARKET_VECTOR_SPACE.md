@@ -58,3 +58,10 @@ These metrics are descriptive geometry, not probabilities, causal explanations o
 - Do not promote strategies based on similarity or attention weights alone.
 
 The new V1 and V2 endpoints are internal research interfaces. They do not submit orders, size positions or enable real-money execution.
+
+
+## Current integration boundary
+
+This change establishes the shared schema, vector geometry, V1/V2 adapters, internal Axum research routes, TypeScript contract and V2 snapshot provenance. It does **not** yet calculate and populate every one of the 53 coordinates from the existing raw exchange-event streams. Provider-specific feature producers and past-only calibration must supply those values. No unavailable or not-applicable coordinate is auto-filled with zero.
+
+In particular, the full multivariate regime detector/change-point pipeline is not yet connected to live ingestion. The V1 market-vector adapter fails closed unless its seven baseline force coordinates and five required regime-risk coordinates are present. The existing legacy `POST /v1/signal` ForceObservation interface remains available. Until the feature producers and regime detector are connected and validated, the new vector routes are research interfaces rather than an automatically populated live decision pipeline.
