@@ -141,6 +141,26 @@ jobs:
           jq -e '.durable_history_complete == true and .relation_coverage_complete == true and .durable_observation_count == 4 and .truncated_relation_scans == 0' /tmp/set-ledger-after-backfill.json
           unauthenticated_backfill_status=$(curl -sS -X POST -o /tmp/unauthenticated-backfill.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=10')
           test "$unauthenticated_backfill_status" = "401"
+          unauthenticated_correction_status=$(curl -sS -X POST -o /tmp/unauthenticated-correction.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' --data '{}')
+          test "$unauthenticated_correction_status" = "401"
+          curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-before-correction.json
+          source_hash=$(jq -r '.durable_records[] | select(.record_type == "observation" and .source_event_id == "ci-trade-1" and .venue == "ci") | .source_event_hash_sha256' /tmp/set-ledger-before-correction.json)
+          jq -n --arg hash "$source_hash" '{
+            symbol:"BTCUSDT",venue:"ci",event_id:"ci-trade-1",expected_source_hash:$hash,
+            reason:"CI audit fixture: correct the recorded trade price without rewriting source evidence",
+            corrected_event:{
+              event_id:"ci-trade-1",venue:"ci",symbol:"BTCUSDT",event_type:"trade",
+              ts_ms:1792860000100,price:100.015,size:1,side:"buy"
+            }
+          }' >/tmp/correction-request.json
+          correction_status=$(curl -sS -X POST -o /tmp/correction-response.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' --data-binary @/tmp/correction-request.json)
+          test "$correction_status" = "201"
+          jq -e '.status == "correction_proposed" and .active_projection_changed == false and .review_required == true' /tmp/correction-response.json
+          duplicate_correction_status=$(curl -sS -X POST -o /tmp/duplicate-correction-response.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' --data-binary @/tmp/correction-request.json)
+          test "$duplicate_correction_status" = "200"
+          jq -e '.status == "correction_already_proposed" and .active_projection_changed == false' /tmp/duplicate-correction-response.json
+          stale_correction_status=$(jq '.expected_source_hash = ("0" * 64)' /tmp/correction-request.json | curl -sS -X POST -o /tmp/stale-correction-response.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' --data-binary @-)
+          test "$stale_correction_status" = "409"
           unauthenticated_integrity_status=$(curl -sS -o /tmp/unauthenticated-integrity.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100')
           test "$unauthenticated_integrity_status" = "401"
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' >/tmp/set-ledger-integrity.json
