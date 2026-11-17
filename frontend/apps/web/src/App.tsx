@@ -796,6 +796,11 @@ export default function App() {
 
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
+      <nav className="floating-navigation" aria-label="Primary navigation">
+        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
+        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
+      </nav>
+
 
 
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
