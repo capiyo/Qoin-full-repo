@@ -420,15 +420,16 @@ impl VariableHub {
         if definition.stage == VariableStage::Input || definition.dependencies.is_empty() {
             return Err(HubError::WrongStage);
         }
-        let mut seen = BTreeSet::new();
+        let mut seen_keys = BTreeSet::new();
         let mut signed_total = 0.0;
         let mut absolute_total = 0.0;
         let mut percentage_total = 0.0;
         for contribution in &attribution.contributions {
             let dependency = contribution.feature.ok_or(HubError::InvalidAttribution)?;
             if !definition.dependencies.contains(&dependency)
-                || !seen.insert(dependency)
-                || contribution.key != dependency.as_str()
+                || contribution.key.trim().is_empty()
+                || contribution.key.len() > 128
+                || !seen_keys.insert(contribution.key.clone())
                 || !contribution.signed_effect.is_finite()
                 || !contribution.contribution_pct.is_finite()
                 || !(0.0..=100.0).contains(&contribution.contribution_pct)
@@ -787,6 +788,41 @@ mod tests {
             1_800_000_000_000, 1_800_000_000_002).unwrap();
         assert_eq!(vector.coordinates[&MarketFeature::GammaExposure].status, FeatureAvailability::NotApplicable);
     }
+    #[test]
+    fn derived_variable_can_attribute_multiple_paths_to_one_dependency() {
+        use crate::{attribute_signed_effects, AttributionMethod, SignedEffectInput};
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
+        input(&mut hub, MarketFeature::LogReturn, 0.01);
+        let report = attribute_signed_effects(
+            AttributionMethod::VectorProjection,
+            0.0,
+            vec![
+                SignedEffectInput {
+                    key: "log_return:momentum_path".into(),
+                    feature: Some(MarketFeature::LogReturn),
+                    signed_effect: 0.006,
+                    quality: Some(0.9),
+                },
+                SignedEffectInput {
+                    key: "log_return:volatility_path".into(),
+                    feature: Some(MarketFeature::LogReturn),
+                    signed_effect: 0.006,
+                    quality: Some(0.8),
+                },
+            ],
+            100.0,
+        ).unwrap();
+        hub.record_derived_with_attribution(
+            MarketFeature::RealizedVolatility, 0.012, 0.9,
+            1_800_000_000_000, 1_800_000_000_002,
+            "rolling-volatility", "multi-path-attributed-v1", report,
+        ).unwrap();
+        let stored = hub.progress(MarketFeature::RealizedVolatility).attribution.unwrap();
+        assert_eq!(stored.contributions.len(), 2);
+        assert_eq!(stored.contributions[0].contribution_pct, 50.0);
+        assert_eq!(stored.contributions[1].contribution_pct, 50.0);
+    }
+
     #[test]
     fn derived_variable_exposes_dependency_contribution_percentages() {
         use crate::{attribute_signed_effects, AttributionMethod, SignedEffectInput};

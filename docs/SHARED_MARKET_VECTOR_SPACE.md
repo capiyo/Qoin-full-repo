@@ -185,7 +185,7 @@ The shared Rust crate supplies vector-projection attribution, overlap-aware atom
 
 ### Per-variable dependency attribution
 
-A derived variable can be recorded with a reconciled attribution report. Each contribution must name one of that variable's direct dependencies, include a signed effect and optional quality, and the effects must sum to the derived raw value relative to the stated baseline. Absolute-effect percentages must reconcile to 100% (or 0% when every effect is zero). The hub stores this breakdown beside the variable's revision and dependency revisions and exposes it through variable progress. If an upstream dependency changes, the variable and its attached attribution become stale together.
+A derived variable can be recorded with a reconciled attribution report. Each contribution must map to one of that variable's direct dependencies (multiple distinct pathways may map to the same dependency), include a unique pathway key, signed effect and optional quality, and the effects must sum to the derived raw value relative to the stated baseline. Absolute-effect percentages must reconcile to 100% (or 0% when every effect is zero). The hub stores this breakdown beside the variable's revision and dependency revisions and exposes it through variable progress. If an upstream dependency changes, the variable and its attached attribution become stale together.
 
 Feature calculators must provide defensible dependency effects or coalition-based Shapley allocations. The hub does not invent percentages from equal weights. Raw input variables may have no dependency attribution; their own source/provenance and quality remain visible.
 
