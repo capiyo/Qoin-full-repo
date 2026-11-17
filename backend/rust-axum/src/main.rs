@@ -1046,7 +1046,7 @@ async fn list_set_ledger_corrections(
     }
     let limit=q.limit.unwrap_or(100).clamp(1,500);
     let mut filter=doc!{"record_type":"source_correction"};
-    if status!="all" {filter.insert("status",&status);}
+    if status!="all" {filter.insert("status",status.as_str());}
     if let Some(symbol)=q.symbol.as_deref() {filter.insert("symbol",symbol);}
     let options=FindOptions::builder().sort(doc!{"created_at":-1,"record_id":1}).limit(limit+1).build();
     let mut cursor=match s.set_ledger_records.find(filter,Some(options)).await {
@@ -1068,8 +1068,9 @@ async fn list_set_ledger_corrections(
                 return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"correction queue read failed"})));}
         }
     }
+    let count=records.len();
     (StatusCode::OK,Json(serde_json::json!({
-        "items":records,"count":records.len(),"limit":limit,"truncated":truncated,
+        "items":records,"count":count,"limit":limit,"truncated":truncated,
         "status_filter":status,"symbol":q.symbol
     })))
 }
