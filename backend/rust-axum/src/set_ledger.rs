@@ -221,8 +221,9 @@ pub fn durable_records(
         "source_event": event_document,
         "set_memberships": memberships,
         "counting_measure": 1_i64,
-        "trade_size_measure": if event.event_type == "trade" { event.size.unwrap_or(0.0) } else { 0.0 },
+        "trade_size_measure": if event.event_type == "trade" { event.size } else { None },
         "trade_size_observed": event.event_type == "trade" && event.size.is_some(),
+        "trade_size_missing": event.event_type == "trade" && event.size.is_none(),
         "trade_size_unit": "instrument_quantity_units",
         "immutability": "append_only_supersede_to_correct"
     }];
