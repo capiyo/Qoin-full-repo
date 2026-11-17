@@ -310,6 +310,8 @@ export type QoinSetLedger = {
   persistence: string;
   symbol: string;
   universe_count: number;
+  requested_limit: number;
+  universe_truncated: boolean;
   skipped_invalid_events: number;
   window_start_ts_ms: number | null;
   window_end_ts_ms: number | null;
