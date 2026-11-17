@@ -138,6 +138,8 @@ jobs:
           jq -e '.symbol == "BTCUSDT" and .processed_valid_events == 2 and .has_more == false and .source_event_count == 4 and .durable_observation_count == 4 and .remaining_observation_count_lower_bound == 0' /tmp/set-ledger-backfill-page2.json
           unauthenticated_backfill_status=$(curl -sS -o /tmp/unauthenticated-backfill.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=10')
           test "$unauthenticated_backfill_status" = "401"
+          unauthenticated_integrity_status=$(curl -sS -o /tmp/unauthenticated-integrity.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100')
+          test "$unauthenticated_integrity_status" = "401"
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100' -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-integrity.json
           jq -e '.source_event_count == 4 and .observation_record_count == 4 and .source_events_scanned == 4 and .missing_observations == 0 and .source_hash_mismatches == 0 and .relation_record_count == 2 and .relation_records_scanned == 2 and .orphan_relations == 0 and .malformed_relations == 0 and .source_scan_complete == true and .relation_scan_complete == true and .integrity_passed == true' /tmp/set-ledger-integrity.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
