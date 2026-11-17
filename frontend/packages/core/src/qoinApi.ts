@@ -1,3 +1,5 @@
+import { getQoinIdToken } from "./firebaseAuth";
+
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
 export type MarketForceObservation = {
@@ -132,16 +134,21 @@ function getBaseUrl(): string {
   const env = runtime.process?.env;
   const location = (globalThis as typeof globalThis & { location?: { protocol?: string; host?: string } }).location;
   const expoConfigured = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_QOIN_API_URL : undefined;
-  const configured = expoConfigured || runtime.__QOIN_API_URL || env?.EXPO_PUBLIC_QOIN_API_URL || env?.VITE_QOIN_API_URL || env?.NEXT_PUBLIC_QOIN_API_URL;
+  const configured = expoConfigured || runtime.__QOIN_API_URL || env?.EXPO_PUBLIC_QOIN_API_URL || env?.VITE_QOIN_API_URL;
   if (configured) return configured.replace(/\/$/, "");
   if (location?.host) return (location.protocol === "https:" ? "https://" : "http://") + location.host;
   return "http://127.0.0.1:8080";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const idToken = await getQoinIdToken();
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "application/json");
+  if (idToken) headers.set("authorization", `Bearer ${idToken}`);
+  else headers.delete("authorization");
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers,
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
