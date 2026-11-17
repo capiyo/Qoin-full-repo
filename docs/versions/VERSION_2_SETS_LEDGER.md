@@ -1,6 +1,6 @@
 # Version 2 — Set theory, measure and relation ledger
 
-**Status:** research architecture specification; not an implemented production engine.
+**Status:** initial read-only finite-set / temporal-relation projection implemented; durable append-only ledger, generalized measure layer and state transitions remain research work.
 
 ## Purpose
 
@@ -81,4 +81,4 @@ Users can expand records for detail, but do not need to manipulate sets or under
 
 ## Explicit non-goals
 
-V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics; this document defines the intended V2 research direction only.
+V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics and an initial V2 finite-set projection over persisted raw events. The V2 endpoint is read-only and computes its output on request; it does not persist ledger entries or drive decisions. This document defines the remaining V2 research direction.
