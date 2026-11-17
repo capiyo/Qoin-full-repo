@@ -1123,7 +1123,9 @@ async fn audit_set_ledger(
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity relation query failed"})));}
     };
     let mut relations_scanned=0usize;
-    let mut orphan_relations=0usize;
+    let mut malformed_relations=0usize;
+    let mut relation_endpoints=Vec::<(String,String)>::new();
+    let mut endpoint_ids=HashSet::<String>::new();
     while let Some(record)=match relation_cursor.try_next().await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation cursor failed");
@@ -1132,20 +1134,60 @@ async fn audit_set_ledger(
         relations_scanned+=1;
         let source=record.get_str("source_event_key").ok().map(|key|format!("observation|{key}"));
         let target=record.get_str("target_event_key").ok().map(|key|format!("observation|{key}"));
-        let (Some(source),Some(target))=(source,target) else {orphan_relations+=1;continue;};
-        let source_exists=match s.set_ledger_records.find_one(doc!{"_id":&source},None).await {
-            Ok(value)=>value.is_some(),
-            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger source endpoint lookup failed");
-                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity source endpoint lookup failed"})));}
+        let relation_id=record.get_str("relation_id").ok();
+        let expected_sets=match relation_id {
+            Some("buy_trades_before_liquidations")=>Some(("buy_trades","liquidations")),
+            Some("sell_trades_before_liquidations")=>Some(("sell_trades","liquidations")),
+            Some("funding_before_open_interest")=>Some(("funding_events","open_interest_events")),
+            _=>None,
         };
-        let target_exists=match s.set_ledger_records.find_one(doc!{"_id":&target},None).await {
-            Ok(value)=>value.is_some(),
-            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger target endpoint lookup failed");
-                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity target endpoint lookup failed"})));}
+        let source_ts=record.get_i64("source_event_time_ms").ok();
+        let target_ts=record.get_i64("target_event_time_ms").ok();
+        let lag=record.get_i64("lag_ms").ok();
+        let window=record.get_i64("window_ms").ok();
+        let expected_id=match (&source,&target,relation_id) {
+            (Some(source),Some(target),Some(relation_id))=>Some(format!("relation|{relation_id}|{}|{}",source.trim_start_matches("observation|"),target.trim_start_matches("observation|"))),
+            _=>None,
         };
-        if !source_exists || !target_exists {
+        let valid=source.is_some() && target.is_some() && source!=target && expected_sets.is_some()
+            && expected_sets==Some((record.get_str("source_set").unwrap_or(""),record.get_str("target_set").unwrap_or("")))
+            && source_ts.zip(target_ts).zip(lag).zip(window).is_some_and(|(((source_ts,target_ts),lag),window)|
+                target_ts.saturating_sub(source_ts)==lag && lag>=0 && window>0 && window<=60_000 && lag<=window)
+            && expected_id.as_deref()==record.get_str("record_id").ok();
+        if !valid {
+            malformed_relations+=1;
+            if sample.len()<25 {sample.push(serde_json::json!({"record_id":record.get_str("record_id").unwrap_or("unknown"),"issue":"malformed_relation_semantics"}));}
+            continue;
+        }
+        let (Some(source),Some(target))=(source,target) else {continue;};
+        endpoint_ids.insert(source.clone());
+        endpoint_ids.insert(target.clone());
+        relation_endpoints.push((source,target));
+    }
+    // Resolve all relation endpoints in one bounded query instead of issuing
+    // two database round trips per edge during large integrity scans.
+    let mut found_endpoints=HashSet::<String>::new();
+    if !endpoint_ids.is_empty() {
+        let ids=endpoint_ids.into_iter().collect::<Vec<_>>();
+        let endpoint_options=FindOptions::builder().limit(ids.len() as i64).build();
+        let mut endpoint_cursor=match s.set_ledger_records.find(doc!{"_id":{"$in":&ids},"record_type":"observation"},Some(endpoint_options)).await {
+            Ok(cursor)=>cursor,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation endpoint batch query failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity endpoint batch query failed"})));}
+        };
+        while let Some(record)=match endpoint_cursor.try_next().await {
+            Ok(value)=>value,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation endpoint batch cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity endpoint batch read failed"})));}
+        } {
+            if let Ok(id)=record.get_str("_id") {found_endpoints.insert(id.to_owned());}
+        }
+    }
+    let mut orphan_relations=0usize;
+    for (source,target) in relation_endpoints {
+        if !found_endpoints.contains(&source) || !found_endpoints.contains(&target) {
             orphan_relations+=1;
-            if sample.len()<25 {sample.push(serde_json::json!({"record_id":record.get_str("record_id").unwrap_or("unknown"),"issue":"relation_endpoint_missing"}));}
+            if sample.len()<25 {sample.push(serde_json::json!({"source":source,"target":target,"issue":"relation_endpoint_missing"}));}
         }
     }
     (StatusCode::OK,Json(serde_json::json!({
@@ -1159,10 +1201,11 @@ async fn audit_set_ledger(
         "relation_record_count":relation_count,
         "relation_records_scanned":relations_scanned,
         "orphan_relations":orphan_relations,
+        "malformed_relations":malformed_relations,
         "scan_limit":limit,
         "source_scan_complete":scanned as u64+invalid as u64==source_count,
         "relation_scan_complete":relations_scanned as u64==relation_count,
-        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && invalid==0 && scanned as u64+invalid as u64==source_count && relations_scanned as u64==relation_count,
+        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && malformed_relations==0 && invalid==0 && scanned as u64+invalid as u64==source_count && relations_scanned as u64==relation_count,
         "sample_issues":sample
     })))
 }
