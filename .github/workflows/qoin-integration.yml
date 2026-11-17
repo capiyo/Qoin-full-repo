@@ -129,8 +129,13 @@ jobs:
           jq -e '.status == "duplicate_ignored" and .ledger_repair_attempted == true' /tmp/duplicate-event.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger?symbol=BTCUSDT&limit=100' >/tmp/set-ledger.json
           jq -e '.schema_version == "qoin-set-ledger-v2-alpha1" and .status == "derived_projection_with_append_only_records" and .universe_count == 4 and .requested_limit == 100 and .universe_truncated == false and (.sets | length == 12) and (.relations | length == 3) and ([.sets[] | select(.set_id == "trades")][0].measure.counting_measure == 2) and ([.sets[] | select(.set_id == "buy_trades")][0].measure.counting_measure == 2) and .durable_record_count == 6 and .durable_relation_count == 2 and (.durable_records | length == 6) and (.durable_records | map(select(.record_type == "observation" and .source_event_id == "ci-trade-1" and .venue == "ci"))[0].source_event.price == 100.01) and (.persistence | contains("append_only"))' /tmp/set-ledger.json
-          curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=250' -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-backfill.json
-          jq -e '.symbol == "BTCUSDT" and .processed_valid_events == 4 and .has_more == false and .source_event_count == 4 and .durable_observation_count == 4 and .remaining_observation_count_lower_bound == 0' /tmp/set-ledger-backfill.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=2' -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-backfill-page1.json
+          jq -e '.symbol == "BTCUSDT" and .processed_valid_events == 2 and .has_more == true' /tmp/set-ledger-backfill-page1.json
+          cursor_ts=$(jq -r '.next_cursor.after_ts_ms' /tmp/set-ledger-backfill-page1.json)
+          cursor_id=$(jq -r '.next_cursor.after_event_id' /tmp/set-ledger-backfill-page1.json)
+          cursor_venue=$(jq -r '.next_cursor.after_venue' /tmp/set-ledger-backfill-page1.json)
+          curl -fsS "http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=2&after_ts_ms=$cursor_ts&after_event_id=$cursor_id&after_venue=$cursor_venue" -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-backfill-page2.json
+          jq -e '.symbol == "BTCUSDT" and .processed_valid_events == 2 and .has_more == false and .source_event_count == 4 and .durable_observation_count == 4 and .remaining_observation_count_lower_bound == 0' /tmp/set-ledger-backfill-page2.json
           unauthenticated_backfill_status=$(curl -sS -o /tmp/unauthenticated-backfill.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=10')
           test "$unauthenticated_backfill_status" = "401"
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100' -H 'x-qoin-execution-token: ci-backfill-token' >/tmp/set-ledger-integrity.json
