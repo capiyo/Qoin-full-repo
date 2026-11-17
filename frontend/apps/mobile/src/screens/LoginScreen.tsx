@@ -8,7 +8,7 @@ import type { RootStackParamList } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login"> & { configurationError?: string };
 
-export function LoginScreen({ configurationError, navigation, route }: Props) {
+export function LoginScreen({ configurationError, route }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [register, setRegister] = useState(route.params?.mode === "register");
@@ -21,7 +21,6 @@ export function LoginScreen({ configurationError, navigation, route }: Props) {
     try {
       if (register) await registerQoinUser(email, password);
       else await signInQoinUser(email, password);
-      navigation.goBack();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Authentication failed.");
     } finally { setBusy(false); }
@@ -46,9 +45,6 @@ export function LoginScreen({ configurationError, navigation, route }: Props) {
         <Pressable style={styles.switch} onPress={() => { setRegister((value) => !value); setError(""); }}>
           <Text style={styles.switchText}>{register ? "Already have an account? Sign in" : "New to Qoin? Create an account"}</Text>
         </Pressable>
-        <Pressable style={styles.guest} accessibilityRole="button" onPress={() => navigation.goBack()}>
-          <Text style={styles.guestText}>Continue browsing as guest</Text>
-        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -66,7 +62,5 @@ const styles = StyleSheet.create({
   buttonText: { color: "#FFFFFF", fontWeight: "700" },
   switch: { alignItems: "center", padding: 14 },
   switchText: { color: colors.accentCyan, fontSize: 12, fontWeight: "700" },
-  guest: { alignItems: "center", paddingVertical: 10 },
-  guestText: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
   error: { color: "#C24141", fontSize: 11, marginTop: 12 },
 });
