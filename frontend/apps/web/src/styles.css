@@ -385,3 +385,13 @@ body{background:var(--qoin-bg)}
 @media (max-width: 1099px) { .desktop-profile-sidebar { display:none; } .floating-navigation { display:flex; } }
 
 @media (min-width: 1100px) { .topbar-right .avatar { display:none; } }
+
+.explore-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,310px);align-items:start;gap:20px}
+.explore-main-column{min-width:0}
+.explore-market-sidebar{position:sticky;top:18px;display:grid;gap:12px;min-width:0}
+.explore-watch-row{width:100%;border:0;border-radius:0;background:transparent;text-align:left}
+.explore-watch-row:hover{background:#19291f}
+.explore-engine-panel{margin-top:0}
+@media(max-width:900px){.explore-workspace{grid-template-columns:minmax(0,1fr)}.explore-market-sidebar{position:static}}
+@media(max-width:650px){.explore-market-sidebar{display:none}}
+@media(min-width:1100px){.explore-workspace{grid-template-columns:minmax(0,1fr) minmax(260px,310px)}}
