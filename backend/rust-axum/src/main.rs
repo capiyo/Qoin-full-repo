@@ -2401,12 +2401,13 @@ mod market_stream_tests {
             MarketFeature::OrderFlowImbalance,MarketFeature::OrderBookDepth,
             MarketFeature::RealizedVolatility,MarketFeature::FundingPressure,
             MarketFeature::OpenInterestChange,MarketFeature::LiquidationPressure,
-            MarketFeature::Basis,MarketFeature::RegimeVolatilityLevel,
+            MarketFeature::RegimeVolatilityLevel,
             MarketFeature::RegimeLiquidityStress,MarketFeature::RegimeCorrelationStress,
             MarketFeature::RegimeTransitionIntensity,MarketFeature::RegimeUncertainty,
         ]{
             vector.set_value(feature,Some(0.0),0.95).unwrap();
         }
+        vector.set_not_applicable(MarketFeature::Basis);
         vector.set_value(MarketFeature::OrderFlowImbalance,Some(0.9),0.95).unwrap();
         let result=evaluate_ingested_v1_vector(&vector,&EngineConfig::default(),"v1-test");
         assert_eq!(result["status"],"evaluated");
