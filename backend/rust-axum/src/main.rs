@@ -419,21 +419,35 @@ async fn persist_set_ledger_records(
     let event=&canonical_event;
     let from_ts = event.ts_ms.saturating_sub(60_000);
     let to_ts = event.ts_ms.saturating_add(60_000);
-    let options = FindOptions::builder()
-        .sort(doc!{"ts_ms":1,"event_id":1,"venue":1})
-        .limit(5001)
+    // Fetch bounded nearest candidates independently on each side of the
+    // event-time pivot. A single ascending scan would bias truncation toward
+    // older events and could omit nearer future observations.
+    let before_options=FindOptions::builder()
+        .sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1})
+        .limit(2501)
         .build();
-    let mut cursor = events.find(doc!{"symbol":&event.symbol,"ts_ms":{"$gte":from_ts,"$lte":to_ts}},Some(options))
-        .await.map_err(|error|error.to_string())?;
+    let after_options=FindOptions::builder()
+        .sort(doc!{"ts_ms":1,"event_id":1,"venue":1})
+        .limit(2501)
+        .build();
     let mut neighbours=Vec::new();
-    while let Some(mut document)=cursor.try_next().await.map_err(|error|error.to_string())? {
-        document.remove("_id");
-        if let Ok(candidate)=mongodb::bson::from_document::<MarketEvent>(document) {
-            if validate_event(&candidate).is_ok() { neighbours.push(candidate); }
+    for (filter,options) in [
+        (doc!{"symbol":&event.symbol,"ts_ms":{"$gte":from_ts,"$lte":event.ts_ms}},before_options),
+        (doc!{"symbol":&event.symbol,"ts_ms":{"$gt":event.ts_ms,"$lte":to_ts}},after_options),
+    ] {
+        let mut cursor=events.find(filter,Some(options)).await.map_err(|error|error.to_string())?;
+        while let Some(mut document)=cursor.try_next().await.map_err(|error|error.to_string())? {
+            document.remove("_id");
+            if let Ok(candidate)=mongodb::bson::from_document::<MarketEvent>(document) {
+                if validate_event(&candidate).is_ok() { neighbours.push(candidate); }
+            }
         }
     }
     let relation_scan_truncated=neighbours.len()>5000;
-    neighbours.sort_by_key(|candidate|candidate.ts_ms.abs_diff(event.ts_ms));
+    neighbours.sort_by(|left,right|left.ts_ms.abs_diff(event.ts_ms).cmp(&right.ts_ms.abs_diff(event.ts_ms))
+        .then_with(||left.ts_ms.cmp(&right.ts_ms))
+        .then_with(||left.event_id.cmp(&right.event_id))
+        .then_with(||left.venue.cmp(&right.venue)));
     neighbours.truncate(5000);
     let records=set_ledger::durable_records(event,&neighbours,mongodb::bson::DateTime::now())?;
     let mut inserted=0usize;
