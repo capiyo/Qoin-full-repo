@@ -234,6 +234,20 @@ int main() {
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/set-ledger/corrections", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto names = {"symbol", "status", "limit"};
+        std::string path = "/internal/set-ledger/corrections";
+        bool first = true;
+        for (const auto* name : names) {
+            const auto value = req->getParameter(name);
+            if (value.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += std::string(name) + "=" + drogon::utils::urlEncode(value);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/set-ledger/corrections", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/set-ledger/corrections");
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/set-ledger/integrity", [](const drogon::HttpRequestPtr& req,
