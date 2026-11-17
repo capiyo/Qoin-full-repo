@@ -12,7 +12,7 @@ The baseline uses causal market observations, deterministic feature construction
 
 Branch: [`version-2-set-theoretic-attention`](https://github.com/capiyo/Qoin-full-repo/tree/version-2-set-theoretic-attention)
 
-Version 2 explores explicit sets of market conditions, relations among those conditions, attention/selection over the relations, and an append-only ledger that records the evidence and transformations behind each research decision. The vector baseline remains the Version 1 reference; Version 2 must not silently replace its outputs or become authoritative without comparative validation.
+Version 2 explores explicit sets of market conditions, relations among those conditions, attention/selection over the relations, and an append-only ledger that records the evidence and transformations behind each research decision. The vector baseline remains the Version 1 reference; Version 2 must not silently replace its outputs or become authoritative without comparative validation. See the [Version 2 set-and-ledger specification](VERSION_2_SET_LEDGER.md) for the mathematical model, ledger contract, reproducibility requirements and evaluation gates.
 
 The ledger is for traceability and reproducibility. It should record source timestamps, instrument/timeframe identity, feature and relation versions, selected evidence, decision provenance and evaluation outcomes. It must not imply that a relation is causal merely because it is recorded.
 
