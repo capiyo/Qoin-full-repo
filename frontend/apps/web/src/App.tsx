@@ -353,15 +353,35 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
           </div>
         </> : <>
           <div className="qoin-card-primary qoin-card-research">
-            <span className="qoin-card-kicker">RESEARCH VIEW 02</span>
+            <span className="qoin-card-kicker">VECTOR ENGINE · V1</span>
             <strong>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</strong>
-            <span className="qoin-signal-state">{decision ? "DECISION MAGNITUDE" : "PREVIEW ONLY"}</span>
+            <span className="qoin-signal-state">{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</span>
           </div>
-          <div className="qoin-card-reason">
-            <small>Latest engine rationale</small>
-            <p>{decision?.reason || "A second analytical view is reserved for the set-and-measure research layer. No uncomputed values are shown."}</p>
-            <span>{sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</span>
-          </div>
+          {decision ? <div className="qoin-card-reason" style={{ display: "grid", gap: 9 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+              <small>Decision vector · [bull, bear]</small>
+              <strong style={{ fontSize: 11 }}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</strong>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+              {QOIN_FEATURE_NAMES.map((name) => <div key={name} style={{ padding: "7px 8px", borderRadius: 8, background: "#f1f5f9", minWidth: 0 }}>
+                <small style={{ display: "block", fontSize: 8, color: "#718096", textTransform: "uppercase" }}>{name.replaceAll("_"," ")}</small>
+                <strong style={{ display: "block", fontSize: 11, color: "#26364b" }}>{decision.features?.[name]?.toFixed(3) ?? "—"}</strong>
+              </div>)}
+            </div>
+            <div style={{ display: "grid", gap: 5 }}>
+              <small>Feature contribution · bullish / bearish</small>
+              {(decision.feature_trace || []).slice(0, 6).map((feature) => <div key={feature.name} style={{ display: "grid", gridTemplateColumns: "minmax(65px,1fr) 1fr 1fr", gap: 7, alignItems: "center", fontSize: 9 }}>
+                <span style={{ color: "#52637a" }}>{feature.name.replaceAll("_"," ")}</span>
+                <strong style={{ color: "#24865a", textAlign: "right" }}>{feature.bullish_weighted_term.toFixed(3)}</strong>
+                <strong style={{ color: "#c15c65", textAlign: "right" }}>{feature.bearish_weighted_term.toFixed(3)}</strong>
+              </div>)}
+            </div>
+            <p style={{ margin: 0, color: "#52637a", fontSize: 10, lineHeight: 1.45 }}>{decision.reason || "The engine returned no rationale for this evaluation."}</p>
+            <span>{decision.angle_degrees != null ? "Decision angle " + decision.angle_degrees.toFixed(2) + "°" : "Angle not reported"} · {sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</span>
+          </div> : <div className="qoin-card-reason">
+            <small>V1 calculation status</small>
+            <p>No engine decision has been returned for this instrument. Vector coordinates, feature values and contributions will appear when the backend supplies a calculation; no preview values are substituted.</p>
+          </div>}
         </>}
       </div>
       <div className="qoin-card-footer">
