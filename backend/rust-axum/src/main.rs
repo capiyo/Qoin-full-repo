@@ -2590,20 +2590,20 @@ async fn main(){
                             &vector,&signal_config,&signal_config_version
                         ));
                         state.last_v1_evaluated_at_ms=Some(event.ts_ms);
-                    }
-                    let mut vector_document=mongodb::bson::to_document(&vector)
-                        .expect("serialize replayed causal market vector");
-                    vector_document.insert("stored_at",mongodb::bson::DateTime::now());
-                    match market_vectors.insert_one(vector_document,None).await{
-                        Ok(_)=>{},
-                        Err(error) if error.to_string().contains("E11000")=>{},
-                        Err(error)=>{
-                            skipped_events+=1;
-                            tracing::warn!(error=%error,vector_id=%vector.vector_id,
-                                "could not persist replayed market vector");
+                        let mut vector_document=mongodb::bson::to_document(&vector)
+                            .expect("serialize replayed causal market vector");
+                        vector_document.insert("stored_at",mongodb::bson::DateTime::now());
+                        match market_vectors.insert_one(vector_document,None).await{
+                            Ok(_)=>{},
+                            Err(error) if error.to_string().contains("E11000")=>{},
+                            Err(error)=>{
+                                skipped_events+=1;
+                                tracing::warn!(error=%error,vector_id=%vector.vector_id,
+                                    "could not persist replayed market vector");
+                            }
                         }
+                        restored_vectors.insert(state_key,vector);
                     }
-                    restored_vectors.insert(state_key,vector);
                 }
                 replayed_events += 1;
             }
