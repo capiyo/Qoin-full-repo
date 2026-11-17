@@ -237,7 +237,10 @@ pub fn durable_records(
     let mut candidate_counts=[0usize;3];
     let mut persisted_counts=[0usize;3];
     for neighbour in neighbours {
-        if event_key(neighbour) == event_id { continue; }
+        // A temporal relation is only meaningful inside one instrument's event
+        // universe. Keep this invariant here as well as in the MongoDB caller's
+        // query so future callers cannot accidentally connect different symbols.
+        if neighbour.symbol != event.symbol || event_key(neighbour) == event_id { continue; }
         let (relation_id, source, target) = match (
             event.event_type.as_str(),
             event.side.as_deref(),
@@ -455,6 +458,23 @@ mod tests {
         assert_eq!(relation.edges.len(), 100);
         assert!(relation.edges_truncated);
         assert!(relation.mean_lag_ms.is_some());
+    }
+
+    #[test]
+    fn durable_relations_never_cross_instrument_universes() {
+        let mut buy = event("buy-btc", "trade", 10_000);
+        buy.side = Some("buy".into());
+        let mut other_symbol_liquidation = event("liq-eth", "liquidation", 10_250);
+        other_symbol_liquidation.symbol = "ETHUSDT".into();
+        let records = durable_records(
+            &buy,
+            &[other_symbol_liquidation],
+            mongodb::bson::DateTime::now(),
+        ).unwrap();
+        assert_eq!(
+            records.iter().filter(|record| record.get_str("record_type").ok() == Some("relation_edge")).count(),
+            0
+        );
     }
 
     #[test]
