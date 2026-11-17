@@ -209,7 +209,7 @@ pub fn choose_execution_plan(
         validate_quote(quote)?;
     }
 
-    let mut best_single: Option<(BrokerCost, EqualAllocation)> = None;
+    let mut best_single: Option<(BrokerCost, EqualAllocation, Decimal)> = None;
     for quote in selected.iter().filter(|q| q.adapter_ready && q.account_healthy) {
         let Ok(allocation) = allocate_equal_notional(
             parent_notional_portfolio,
@@ -217,21 +217,22 @@ pub fn choose_execution_plan(
         ) else { continue };
         let actual = allocation.allocated_notional_portfolio;
         let Ok(cost) = cost_for(quote, actual, false) else { continue };
-        let replace = best_single.as_ref().map_or(true, |(best, _)| {
-            cost.total_estimated_execution_cost_portfolio < best.total_estimated_execution_cost_portfolio
-                || (cost.total_estimated_execution_cost_portfolio == best.total_estimated_execution_cost_portfolio
+        let comparable = comparable_cost_for_parent(
+            cost.total_estimated_execution_cost_portfolio,
+            cost.allocated_notional_portfolio,
+            parent_notional_portfolio,
+        )?;
+        let replace = best_single.as_ref().map_or(true, |(best, _, best_comparable)| {
+            comparable < *best_comparable
+                || (comparable == *best_comparable
                     && (&cost.broker_id, &cost.account_id) < (&best.broker_id, &best.account_id))
         });
         if replace {
-            best_single = Some((cost, allocation));
+            best_single = Some((cost, allocation, comparable));
         }
     }
-    let (single_cost, single_allocation) = best_single.ok_or(RoutingError::NoFeasibleAccount)?;
-    let single_comparable_cost = comparable_cost_for_parent(
-        single_cost.total_estimated_execution_cost_portfolio,
-        single_cost.allocated_notional_portfolio,
-        parent_notional_portfolio,
-    )?;
+    let (single_cost, single_allocation, single_comparable_cost) =
+        best_single.ok_or(RoutingError::NoFeasibleAccount)?;
 
     // One account is already the simplest valid plan. Do not manufacture a
     // multi-broker route when it cannot diversify execution.
