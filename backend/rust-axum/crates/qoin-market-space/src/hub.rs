@@ -56,6 +56,8 @@ const LIQUIDITY_COSTS: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeat
 const CROSS_ASSET: &[MarketFeature] = &[MarketFeature::Correlation, MarketFeature::Covariance, MarketFeature::Beta];
 const VOL_TAIL: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity];
 const TAIL_RISK_INPUTS: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity, MarketFeature::Drawdown];
+const FEATURE_PERSISTENCE_INPUTS: &[MarketFeature] = &[MarketFeature::LogReturn, MarketFeature::Momentum];
+const SIGNAL_DECAY_INPUTS: &[MarketFeature] = &[MarketFeature::FeaturePersistence, MarketFeature::TrendExhaustion];
 const REGIME_BASE: &[MarketFeature] = &[
     MarketFeature::RegimeTrendStrength,
     MarketFeature::RegimeVolatilityLevel,
@@ -129,8 +131,8 @@ pub fn descriptor(feature: MarketFeature) -> VariableDescriptor {
 
         // Portfolio/temporal outputs.
         TailRisk => (VariableStage::Portfolio, TAIL_RISK_INPUTS),
-        FeaturePersistence => (VariableStage::Temporal, &[LogReturn, Momentum]),
-        SignalDecay => (VariableStage::Temporal, &[FeaturePersistence, TrendExhaustion]),
+        FeaturePersistence => (VariableStage::Temporal, FEATURE_PERSISTENCE_INPUTS),
+        SignalDecay => (VariableStage::Temporal, SIGNAL_DECAY_INPUTS),
     };
     VariableDescriptor { feature, stage, dependencies }
 }
@@ -559,6 +561,7 @@ pub fn validate_dependency_graph() -> Result<Vec<MarketFeature>, HubError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FeatureAvailability;
 
     fn profile(cutoff: i64) -> NormalizationProfile {
         NormalizationProfile {
