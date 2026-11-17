@@ -624,6 +624,8 @@ mod tests {
         assert_eq!(order.len(), MarketFeature::ALL.len());
         assert_eq!(descriptor(MarketFeature::RegimeVolatilityLevel).stage, VariableStage::Regime);
         assert!(descriptor(MarketFeature::RegimeVolatilityLevel).dependencies.contains(&MarketFeature::RealizedVolatility));
+        assert_eq!(descriptor(MarketFeature::PortfolioExposure).stage, VariableStage::Portfolio);
+        assert_eq!(descriptor(MarketFeature::TimeframeAgreement).stage, VariableStage::Temporal);
     }
 
     #[test]
@@ -675,6 +677,18 @@ mod tests {
         assert_eq!(progress.stage, VariableStage::Regime);
         assert_eq!(progress.lifecycle, VariableLifecycle::Blocked);
         assert_eq!(progress.blocked_by.len(), 3);
+    }
+
+
+    #[test]
+    fn hub_cannot_publish_a_different_market_identity() {
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
+        input(&mut hub, MarketFeature::LogReturn, 0.01);
+        assert_eq!(
+            hub.publish("wrong-market", "venue", "ETHUSD", "5m",
+                1_800_000_000_000, 1_800_000_000_002),
+            Err(HubError::IdentityMismatch),
+        );
     }
 
     #[test]
