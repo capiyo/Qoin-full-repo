@@ -2751,6 +2751,76 @@ mod market_stream_tests {
         assert_eq!(state.feature_history[&MarketFeature::LogReturn].len(),before);
     }
 
+
+    #[test]
+    fn binance_event_sequence_builds_a_v1_ready_vector_with_real_required_inputs(){
+        let mut current=SymbolState::default();
+        let mut peer=SymbolState::default();
+        current.venue="binance_usdm".into();current.symbol="BTCUSDT".into();
+        peer.venue="binance_usdm".into();peer.symbol="ETHUSDT".into();
+        let mut latest=None;
+        let base=1_800_000_000_000_i64;
+        for index in 0..36_i64{
+            let minute=base+index*60_000;
+            let price=100.0+index as f64*0.18+(index%5) as f64*0.07;
+            let peer_price=200.0+index as f64*0.36+(index%5) as f64*0.14;
+            let trade=MarketEvent{
+                event_id:format!("btc-trade-{index}"),venue:"binance_usdm".into(),symbol:"BTCUSDT".into(),
+                event_type:"trade".into(),ts_ms:minute+1_000,price:Some(price),size:Some(1.0+(index%4) as f64),
+                side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
+                funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
+            };
+            apply(&mut current,&trade);
+            let peer_trade=MarketEvent{
+                event_id:format!("eth-trade-{index}"),venue:"binance_usdm".into(),symbol:"ETHUSDT".into(),
+                event_type:"trade".into(),ts_ms:minute+1_000,price:Some(peer_price),size:Some(2.0),
+                side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
+                funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
+            };
+            apply(&mut peer,&peer_trade);
+            let spread_fraction=0.0001+index as f64*0.000001;
+            let book=MarketEvent{
+                event_id:format!("btc-book-{index}"),venue:"binance_usdm".into(),symbol:"BTCUSDT".into(),
+                event_type:"book".into(),ts_ms:minute+2_000,price:None,size:None,side:None,
+                bid:Some(price*(1.0-spread_fraction)),ask:Some(price*(1.0+spread_fraction)),
+                bid_size:Some(20.0+index as f64),ask_size:Some(18.0+(index%7) as f64),
+                funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
+            };
+            apply(&mut current,&book);
+            let derivative=MarketEvent{
+                event_id:format!("btc-mark-{index}"),venue:"binance_usdm".into(),symbol:"BTCUSDT".into(),
+                event_type:"funding".into(),ts_ms:minute+3_000,price:None,size:None,side:None,
+                bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:Some(0.0001+index as f64*0.000001),
+                open_interest:None,mark_price:Some(price*1.0003),index_price:Some(price*1.0001),liquidation_side:None,
+            };
+            apply(&mut current,&derivative);
+            let oi=MarketEvent{
+                event_id:format!("btc-oi-{index}"),venue:"binance_usdm".into(),symbol:"BTCUSDT".into(),
+                event_type:"open_interest".into(),ts_ms:minute+4_000,price:None,size:None,side:None,
+                bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,
+                open_interest:Some(10_000.0+index as f64*17.0+(index%3) as f64),
+                mark_price:None,index_price:None,liquidation_side:None,
+            };
+            apply(&mut current,&oi);
+            latest=build_market_vector(&mut current,&oi,minute+5_000,&[peer.clone()]);
+        }
+        let vector=latest.expect("supported Binance event families should produce a vector");
+        for feature in [
+            MarketFeature::OrderFlowImbalance,MarketFeature::OrderBookDepth,
+            MarketFeature::RealizedVolatility,MarketFeature::FundingPressure,
+            MarketFeature::OpenInterestChange,MarketFeature::LiquidationPressure,
+            MarketFeature::Basis,MarketFeature::RegimeVolatilityLevel,
+            MarketFeature::RegimeLiquidityStress,MarketFeature::RegimeCorrelationStress,
+            MarketFeature::RegimeTransitionIntensity,MarketFeature::RegimeUncertainty,
+        ]{
+            assert_eq!(vector.coordinates[&feature].status,FeatureAvailability::Observed,
+                "required feature {feature:?} should be produced from the test event stream");
+        }
+        let result=evaluate_ingested_v1_vector(&vector,&EngineConfig::default(),"v1-ingestion-test");
+        assert_eq!(result["status"],"evaluated");
+        assert_eq!(result["decision"]["attribution"]["contributions"].as_array().unwrap().len(),12);
+    }
+
     #[test]
     fn ingested_v1_vector_abstains_with_explicit_required_feature_gaps(){
         let mut vector=MarketVector::new(
