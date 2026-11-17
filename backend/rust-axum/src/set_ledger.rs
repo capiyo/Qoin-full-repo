@@ -1,7 +1,7 @@
 //! Deterministic Version 2 finite-set and temporal-relation projection.
 //!
-//! This module derives a read-only ledger view from persisted raw events. It is
-//! not yet an append-only durable ledger and it has no trading authority.
+//! This module derives a read-only finite-set view and builds append-only
+//! observation/relation records. It has no trading authority.
 
 use std::collections::BTreeSet;
 
@@ -217,7 +217,7 @@ pub fn durable_records(
         "source_event_key": &event_id,
         "source_event_hash_sha256": source_hash,
         "event_time_ms": event.ts_ms,
-        "ingested_at": ingested_at,
+        "ingested_at": ingested_at.clone(),
         "source_event": event_document,
         "set_memberships": memberships,
         "counting_measure": 1_i64,
