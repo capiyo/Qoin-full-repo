@@ -1001,6 +1001,130 @@ async fn backfill_set_ledger(
     })))
 }
 
+#[derive(Deserialize)]
+struct LedgerIntegrityQuery {
+    symbol: Option<String>,
+    limit: Option<i64>,
+}
+
+async fn audit_set_ledger(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<LedgerIntegrityQuery>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let symbol=q.symbol.unwrap_or_default();
+    if symbol.trim().is_empty() || symbol.len()>96 {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"a valid symbol is required"})));
+    }
+    let limit=q.limit.unwrap_or(1000).clamp(1,5000);
+    let source_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger integrity source count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity source count failed"})));}
+    };
+    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger integrity observation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity observation count failed"})));}
+    };
+    let source_options=FindOptions::builder().sort(doc!{"ts_ms":1,"event_id":1,"venue":1}).limit(limit).build();
+    let mut source_cursor=match s.events.find(doc!{"symbol":&symbol},Some(source_options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger integrity source query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity source query failed"})));}
+    };
+    let mut scanned=0usize;
+    let mut invalid=0usize;
+    let mut missing=0usize;
+    let mut hash_mismatches=0usize;
+    let mut sample=Vec::new();
+    while let Some(mut document)=match source_cursor.try_next().await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger integrity source cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity source read failed"})));}
+    } {
+        document.remove("_id");
+        let event=match mongodb::bson::from_document::<MarketEvent>(document) {
+            Ok(event) if validate_event(&event).is_ok()=>event,
+            _=>{invalid+=1;continue;}
+        };
+        scanned+=1;
+        let source_key=format!("{}:{}:{}",event.venue,event.symbol,event.event_id);
+        let record_id=format!("observation|{}",source_key);
+        let record=match s.set_ledger_records.find_one(doc!{"_id":&record_id},None).await {
+            Ok(value)=>value,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger observation lookup failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity observation lookup failed"})));}
+        };
+        match record {
+            None=>{
+                missing+=1;
+                if sample.len()<25 {sample.push(serde_json::json!({"record_id":record_id,"issue":"missing_observation"}));}
+            }
+            Some(record)=>{
+                let expected=match set_ledger::source_hash(&event) {
+                    Ok(value)=>value,
+                    Err(error)=>{tracing::error!(error=%error,"source hash calculation failed");
+                        return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"source hash calculation failed"})));}
+                };
+                if record.get_str("source_event_hash_sha256").ok()!=Some(expected.as_str()) {
+                    hash_mismatches+=1;
+                    if sample.len()<25 {sample.push(serde_json::json!({"record_id":record_id,"issue":"source_hash_mismatch"}));}
+                }
+            }
+        }
+    }
+    let relation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"relation_edge"},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity relation count failed"})));}
+    };
+    let relation_options=FindOptions::builder().limit(limit).build();
+    let mut relation_cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol,"record_type":"relation_edge"},Some(relation_options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity relation query failed"})));}
+    };
+    let mut relations_scanned=0usize;
+    let mut orphan_relations=0usize;
+    while let Some(record)=match relation_cursor.try_next().await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity relation read failed"})));}
+    } {
+        relations_scanned+=1;
+        let source=record.get_str("source_event_key").ok().map(|key|format!("observation|{key}"));
+        let target=record.get_str("target_event_key").ok().map(|key|format!("observation|{key}"));
+        let (Some(source),Some(target))=(source,target) else {orphan_relations+=1;continue;};
+        let source_exists=s.set_ledger_records.find_one(doc!{"_id":&source},None).await.ok().flatten().is_some();
+        let target_exists=s.set_ledger_records.find_one(doc!{"_id":&target},None).await.ok().flatten().is_some();
+        if !source_exists || !target_exists {
+            orphan_relations+=1;
+            if sample.len()<25 {sample.push(serde_json::json!({"record_id":record.get_str("record_id").unwrap_or("unknown"),"issue":"relation_endpoint_missing"}));}
+        }
+    }
+    (StatusCode::OK,Json(serde_json::json!({
+        "symbol":symbol,
+        "source_event_count":source_count,
+        "observation_record_count":observation_count,
+        "source_events_scanned":scanned,
+        "invalid_source_events_skipped":invalid,
+        "missing_observations":missing,
+        "source_hash_mismatches":hash_mismatches,
+        "relation_record_count":relation_count,
+        "relation_records_scanned":relations_scanned,
+        "orphan_relations":orphan_relations,
+        "scan_limit":limit,
+        "source_scan_complete":scanned+invalid==source_count,
+        "relation_scan_complete":relations_scanned as u64==relation_count,
+        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && scanned+invalid==source_count && relations_scanned as u64==relation_count,
+        "sample_issues":sample
+    })))
+}
+
 async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if symbol.trim().is_empty() {
@@ -1501,6 +1625,7 @@ async fn main(){
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/set-ledger",get(get_set_ledger))
         .route("/internal/set-ledger/backfill",get(backfill_set_ledger))
+        .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
