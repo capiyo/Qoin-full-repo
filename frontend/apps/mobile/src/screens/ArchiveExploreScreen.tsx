@@ -138,6 +138,11 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   const [capital, setCapital] = useState("10000");
   const [fee, setFee] = useState("10");
   const [slippage, setSlippage] = useState("5");
+  const [latency, setLatency] = useState("0");
+  const [participation, setParticipation] = useState("0.1");
+  const [impact, setImpact] = useState("5");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [result, setResult] = useState<QoinBacktestResult | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -145,14 +150,28 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   const run = async () => {
     if (!authenticated) { setPendingRun(true); onRequireAuth(); setStatus("Sign in to continue the historical research replay."); return; }
     const initialCapital = Number(capital), feeBps = Number(fee), slippageBps = Number(slippage);
+    const latencyMs = Number(latency), participationRate = Number(participation), impactBps = Number(impact);
+    const fromMs = from.trim() ? Date.parse(from) : undefined;
+    const toMs = to.trim() ? Date.parse(to) : undefined;
+    if ((from.trim() && !Number.isFinite(fromMs)) || (to.trim() && !Number.isFinite(toMs)) ||
+        (fromMs !== undefined && toMs !== undefined && fromMs > toMs)) {
+      setStatus("Enter a valid date range; the start must not be after the end.");
+      return;
+    }
     if (!Number.isFinite(initialCapital) || initialCapital <= 0 || !Number.isFinite(feeBps) || feeBps < 0 ||
-        !Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10_000) {
-      setStatus("Enter positive capital, non-negative fees and slippage below 10,000 bps.");
+        !Number.isFinite(slippageBps) || slippageBps < 0 || !Number.isInteger(latencyMs) || latencyMs < 0 || latencyMs > 60000 ||
+        !Number.isFinite(participationRate) || participationRate <= 0 || participationRate > 1 ||
+        !Number.isFinite(impactBps) || impactBps < 0 || impactBps > 1000 || slippageBps + impactBps >= 10000) {
+      setStatus("Check capital, non-negative costs, latency (0–60000 ms), participation (0–1] and impact (0–1000 bps).");
       return;
     }
     setBusy(true); setStatus(""); setResult(null);
     try {
-      const replay = await runQoinBacktest({ symbol, venue, initial_capital: initialCapital, fee_bps: feeBps, slippage_bps: slippageBps, limit: 10_000 });
+      const replay = await runQoinBacktest({
+        symbol, venue, from_ts_ms: fromMs, to_ts_ms: toMs, initial_capital: initialCapital,
+        fee_bps: feeBps, slippage_bps: slippageBps, latency_ms: latencyMs,
+        max_participation_rate: participationRate, market_impact_bps: impactBps, limit: 10000,
+      });
       setResult(replay); setStatus("Replay completed from persisted events only.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Historical replay unavailable.");
@@ -161,19 +180,29 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   useEffect(() => {
     if (authenticated && pendingRun && !busy) { setPendingRun(false); void run(); }
   }, [authenticated, pendingRun, busy]);
+  const fields: Array<[string, string, (value: string) => void, "decimal-pad" | "default"]> = [
+    ["Starting capital", capital, setCapital, "decimal-pad"],
+    ["Fee (bps)", fee, setFee, "decimal-pad"],
+    ["Slippage (bps)", slippage, setSlippage, "decimal-pad"],
+    ["Latency (ms)", latency, setLatency, "decimal-pad"],
+    ["Max participation (0–1)", participation, setParticipation, "decimal-pad"],
+    ["Market impact (bps)", impact, setImpact, "decimal-pad"],
+    ["From (YYYY-MM-DDTHH:mm)", from, setFrom, "default"],
+    ["To (YYYY-MM-DDTHH:mm)", to, setTo, "default"],
+  ];
   return <View style={styles.mobileBacktest}>
     <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Historical event replay</Text><Text style={styles.attentionCaption}>Paper only · no orders</Text></View>
-    <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. This is a research simulation, not expected performance.</Text>
+    <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. Empty dates use the stored range. The active Rust V1 strategy is replayed; no order is sent.</Text>
     <View style={styles.backtestInputs}>
-      {[["Capital", capital, setCapital], ["Fee (bps)", fee, setFee], ["Slippage (bps)", slippage, setSlippage]].map(([label, value, setter]) => (
-        <View key={String(label)} style={styles.backtestInputWrap}>
-          <Text style={styles.engineLabel}>{String(label)}</Text>
-          <TextInput value={String(value)} onChangeText={setter as (value: string) => void} keyboardType="decimal-pad" style={styles.backtestInput} />
+      {fields.map(([label, value, setter, keyboardType]) => (
+        <View key={label} style={styles.backtestInputWrap}>
+          <Text style={styles.engineLabel}>{label}</Text>
+          <TextInput accessibilityLabel={label} value={value} onChangeText={setter} keyboardType={keyboardType} autoCapitalize="none" style={styles.backtestInput} placeholder={label.startsWith("From") || label.startsWith("To") ? "Optional" : undefined} />
         </View>
       ))}
     </View>
     <Pressable onPress={run} disabled={busy} style={[styles.backtestRun, busy && styles.backtestDisabled]}><Text style={styles.backtestRunText}>{busy ? "Replaying…" : "Run historical replay"}</Text></Pressable>
-    {status ? <Text style={styles.disclaimer}>{status}</Text> : null}
+    {status ? <Text accessibilityLiveRegion="polite" style={styles.disclaimer}>{status}</Text> : null}
     {result ? <>
       <View style={styles.backtestMetrics}>
         {[
@@ -183,19 +212,25 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
           ["Gaps over 5 minutes", String(result.event_gaps_over_5m)], ["BUY / SELL / WAIT", result.buy_decisions + " / " + result.sell_decisions + " / " + result.wait_decisions],
           ["Fees", result.fees_paid.toFixed(4)], ["Slippage", result.slippage_paid.toFixed(4)],
           ["Net funding · received +", result.net_funding_cashflow.toFixed(4)], ["Funding settlements", String(result.funding_settlements)],
+          ["Market impact", result.market_impact_paid.toFixed(4)], ["Latency", result.latency_ms + " ms"],
         ].map(([label, value]) => <View key={label} style={styles.backtestMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
       </View>
       <Text style={styles.disclaimer}>Strategy {result.strategy_key}@{result.strategy_version} · {result.venue} · {result.events_replayed} observations.</Text>
-      {result.fills.map((fill, index) => <View key={fill.event_id + index} style={styles.backtestFill}>
+      {result.execution_stress_scenarios.map((scenario) => <View key={scenario.name} style={styles.backtestFill}>
+        <Text style={styles.newsMeta}>{scenario.name} · {scenario.cost_multiplier.toFixed(1)}× execution costs</Text>
+        <Text style={styles.engineValue}>Estimated net P/L {scenario.estimated_net_pnl.toFixed(4)} · Return {scenario.estimated_return_pct.toFixed(3)}%</Text>
+        <Text style={styles.disclaimer}>Costs are repriced without recomputing fills or liquidity.</Text>
+      </View>)}
+      {result.unfilled_pending_order ? <Text style={styles.disclaimer}>Unfilled pending {result.unfilled_pending_order.action.toUpperCase()} order · {result.unfilled_pending_order.filled_quantity.toPrecision(6)} filled; {result.unfilled_pending_order.remaining_quantity?.toPrecision(6) ?? "unknown"} remaining.</Text> : null}
+      {result.fills.map((fill, index) => <View key={fill.order_id + ":" + index} style={styles.backtestFill}>
         <Text style={styles.newsMeta}>{fill.action} · {new Date(fill.ts_ms).toLocaleString()}</Text>
         <Text style={styles.engineValue}>Price {fill.price.toPrecision(8)} · Qty {fill.quantity.toPrecision(6)}</Text>
-        <Text style={styles.disclaimer}>Fee {fill.fee.toFixed(4)} · Slippage {fill.slippage_cost.toFixed(4)} · Realized {fill.realized_pnl.toFixed(4)}</Text>
+        <Text style={styles.disclaimer}>Fee {fill.fee.toFixed(4)} · Slippage {fill.slippage_cost.toFixed(4)} · Impact {fill.market_impact_cost.toFixed(4)} · Realized {fill.realized_pnl.toFixed(4)}</Text>
       </View>)}
       <Text style={styles.traceJson}>{result.assumptions.join("\n")}</Text>
     </> : null}
   </View>;
 }
-
 type MobileLedgerRecord = { id: string; timestamp: number | null; kind: "decision" | "observation" | "history"; title: string; summary: string; reference: string };
 function MobileResearchLedger({ decision, history, events }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[]; events: QoinMarketEvent[] }) {
   const records: MobileLedgerRecord[] = [
@@ -696,6 +731,17 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           <ScrollView contentContainerStyle={styles.modalContent}>
             {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Market vector mechanics</Text><Text style={styles.attentionCaption}>Persisted V1 vector · raw event replay · no orders</Text></View>
+              <View style={styles.mapWrap}>
+                <Svg viewBox="0 0 100 100" width="100%" height={220}>
+                  <Rect x="0" y="0" width="100" height="100" fill="#ffffff" />
+                  {Array.from({ length: 9 }, (_, i) => <Line key={"bg-v-" + i} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#e6edf7" strokeWidth=".4" />)}
+                  {Array.from({ length: 9 }, (_, i) => <Line key={"bg-h-" + i} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#e6edf7" strokeWidth=".4" />)}
+                  <Line x1="10" y1="8" x2="10" y2="90" stroke="#7b91b5" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#7b91b5" strokeWidth=".7" />
+                  {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#3475e8" strokeWidth="1.2" /> : null}
+                  {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#3475e8" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#3475e8" stroke="#ffffff" strokeWidth="1.2" /></> : <SvgText x="50" y="50" fill="#7b8798" fontSize="5" textAnchor="middle">NO VECTOR YET</SvgText>}
+                </Svg>
+              </View>
+              <Text style={styles.mapCopy}>Horizontal · bullish component. Vertical · bearish component. {vectorHistory.length} persisted decisions.</Text>
               <FeatureSpace decision={vector} />
               {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; replay still evaluates stored events through the active Rust strategy."}</Text>}
               <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
