@@ -986,6 +986,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))
     };
     let late_event=latest_before_ingest.is_some_and(|last|event.ts_ms<last);
+    let persist_snapshot=latest_before_ingest.is_none_or(|last|{
+        last.div_euclid(1_000)<event.ts_ms.div_euclid(1_000)
+    });
     let run_v2_discovery=should_run_v2_history_discovery(latest_before_ingest,event.ts_ms);
     let event_available_at_ms=chrono::Utc::now().timestamp_millis();
     let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
@@ -1042,15 +1045,16 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         let should_evaluate=vector.is_some()&&should_evaluate_v1(state.last_v1_evaluated_at_ms,event.ts_ms);
         (state.clone(),vector,should_evaluate)
     };
-    if let Some(vector)=market_vector.as_ref(){
+    if should_evaluate_v1_now{
+        let vector=market_vector.as_ref().expect("V1 evaluation requires a market vector");
         let mut document=match mongodb::bson::to_document(vector){Ok(value)=>value,Err(error)=>{
             tracing::error!(error=%error,"market vector serialization failed");
-            return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"market vector serialization failed","event_persisted":true,"state_persisted":true})));
+            return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"market vector serialization failed","event_persisted":true})));
         }};
         document.insert("stored_at",mongodb::bson::DateTime::now());
         if let Err(error)=s.market_vectors.insert_one(document,None).await{
             tracing::error!(error=%error,vector_id=%vector.vector_id,"market vector persistence failed");
-            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","event_persisted":true,"state_persisted":true})));
+            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","event_persisted":true})));
         }
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
@@ -1086,20 +1090,27 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }else{
         cached_v1_decision(&snapshot,event.ts_ms)
     };
-    let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
-    state_doc.insert("stored_at",mongodb::bson::DateTime::now());
-    if let Err(e)=s.states.insert_one(state_doc,None).await{
-        tracing::error!(error=%e,"state snapshot persistence failed");
-        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+    let persist_pipeline_snapshot=persist_snapshot||should_evaluate_v1_now;
+    if persist_pipeline_snapshot{
+        let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
+        state_doc.insert("stored_at",mongodb::bson::DateTime::now());
+        if let Err(e)=s.states.insert_one(state_doc,None).await{
+            tracing::error!(error=%e,"state snapshot persistence failed");
+            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+        }
     }
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("v1_shared_market_vector",mongodb::bson::to_bson(&v1_vector_decision).unwrap_or(mongodb::bson::Bson::Null));
     decision_doc.insert("decision_key",market_event_decision_key(&event));
-    if let Some(vector)=market_vector.as_ref(){decision_doc.insert("market_vector_id",&vector.vector_id);}
+    if should_evaluate_v1_now{
+        if let Some(vector)=market_vector.as_ref(){decision_doc.insert("market_vector_id",&vector.vector_id);}
+    }
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
-    if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
-        tracing::error!(error=%e,"decision persistence failed");
-        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
+    if persist_pipeline_snapshot{
+        if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
+            tracing::error!(error=%e,"decision persistence failed");
+            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":persist_pipeline_snapshot})));
+        }
     }
     let v2_discovery=if run_v2_discovery&&market_vector.is_some(){
         let query=DiscoverVectorHistoryQuery{
@@ -1138,11 +1149,12 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"v1_shared_market_vector":v1_vector_decision,
         "v2_relationship_discovery":v2_discovery,
-        "market_vector":market_vector,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+        "market_vector":market_vector,"market_vector_persisted":should_evaluate_v1_now,
+        "server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,
         "v1_shared_market_vector":v1_vector_decision,"v2_relationship_discovery":v2_discovery,
-        "market_vector":market_vector})))
+        "market_vector":market_vector,"market_vector_persisted":should_evaluate_v1_now})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
