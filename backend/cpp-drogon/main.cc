@@ -147,6 +147,10 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->addHeader("accept", "application/json");
     request->setBody(std::string(incoming->getBody()));
+    const auto executionToken = incoming->getHeader("x-qoin-execution-token");
+    if (!executionToken.empty()) request->addHeader("x-qoin-execution-token", executionToken);
+    const auto ledgerMaintenanceToken = incoming->getHeader("x-qoin-ledger-maintenance-token");
+    if (!ledgerMaintenanceToken.empty()) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
     client->sendRequest(request, [callback = std::move(callback)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
@@ -226,8 +230,8 @@ int main() {
             first = false;
             path += std::string(name) + "=" + drogon::utils::urlEncode(value);
         }
-        proxyGet(req, std::move(cb), path);
-    }, {drogon::Get});
+        proxyPostJson(req, std::move(cb), path);
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/set-ledger/integrity", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
