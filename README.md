@@ -7,7 +7,7 @@ Qoin is a multi-client, domain-extensible intelligence and decision platform. Fi
 - **[Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)** remains the deterministic control and comparison baseline.
 - **[Version 2 — Set-theoretic attention](https://github.com/capiyo/Qoin-full-repo/tree/version-2-set-theoretic-attention)** carries the full V1 application and adds a separate set-algebra, set-embedding, attention and append-only relationship-ledger research track. See [the V2 specification](docs/versions/VERSION_2_SET_THEORETIC_ATTENTION.md).
 
-V2 does not replace V1 decisions or activate order submission. The inherited JEPA sidecar is a legacy isolated research artifact, not the V2 decision model.
+V2 does not replace V1 decisions or activate order submission.
 
 ## Repository structure
 
@@ -29,7 +29,6 @@ Qoin-full-repo/
 │   │       └── qoin-domain-core/ # Domain-neutral contracts
 │   ├── rust-axum-api/            # Separate compatibility/research API
 │   ├── cpp-drogon/               # HTTP/WebSocket gateway
-│   ├── jepa-world-model/         # Research-only model service
 │   ├── config/
 │   ├── research/
 │   └── tests/
@@ -52,7 +51,7 @@ Qoin-full-repo/
 4. MongoDB stores raw observations, state snapshots, decisions and strategy configuration.
 5. Provider adapters normalize source observations into venue-scoped events. Current feeds include Binance USD-M, Coinbase Advanced Trade, Kraken Spot and optional Finnhub. See [docs/MARKET_DATA_PROVIDERS.md](docs/MARKET_DATA_PROVIDERS.md) for coverage and limitations.
 6. Domain-specific algorithms and safety policies sit above the domain-neutral contracts. The core does not assume financial instruments, trades, portfolios or orders.
-7. The inherited JEPA sidecar is a legacy isolated research artifact; the active Version 2 research track is set-theoretic attention. Neither can override Version 1 decision authority or bypass risk controls.
+7. The active Version 2 research track is set-theoretic attention. Neither version can bypass risk controls or silently replace Version 1 decision authority.
 
 The separate `backend/rust-axum-api` remains a compatibility/research reference; the deployed Compose stack uses the primary Axum service for both event-flow APIs and the shared vector-engine signal endpoint.
 
