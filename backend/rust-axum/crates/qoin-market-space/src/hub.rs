@@ -54,6 +54,7 @@ const LIQUIDITY_STRESS_INPUTS: &[MarketFeature] = &[MarketFeature::SpreadBps, Ma
 const FLOW_DEPTH: &[MarketFeature] = &[MarketFeature::OrderFlowImbalance, MarketFeature::OrderBookDepth];
 const LIQUIDITY_COSTS: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeature::MarketImpact];
 const CROSS_ASSET: &[MarketFeature] = &[MarketFeature::Correlation, MarketFeature::Covariance, MarketFeature::Beta];
+const REGIME_VOL_INPUTS: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::VolatilityOfVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity];
 const TAIL_RISK_INPUTS: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity, MarketFeature::Drawdown];
 const FEATURE_PERSISTENCE_INPUTS: &[MarketFeature] = &[MarketFeature::LogReturn, MarketFeature::Momentum];
 const SIGNAL_DECAY_INPUTS: &[MarketFeature] = &[MarketFeature::FeaturePersistence, MarketFeature::TrendExhaustion];
