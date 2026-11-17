@@ -87,7 +87,7 @@ struct SymbolState {
     #[serde(skip)] recent_trade_flow: VecDeque<f64>,
     #[serde(skip)] recent_trade_sizes: VecDeque<f64>,
     #[serde(skip)] recent_book_imbalance: VecDeque<f64>,
-    #[serde(skip)] recent_liquidation_flow: VecDeque<f64>,
+    #[serde(skip)] recent_liquidation_flow: VecDeque<(i64,f64)>,
     #[serde(skip)] recent_event_ts_ms: VecDeque<i64>,
     #[serde(skip)] feature_history: BTreeMap<MarketFeature, VecDeque<f64>>,
     #[serde(skip)] feature_history_last_ts_ms: BTreeMap<MarketFeature, i64>,
@@ -171,7 +171,7 @@ fn push_bounded_limit<T>(history:&mut VecDeque<T>,value:T,limit:usize){
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
-    push_bounded(&mut state.recent_event_ts_ms, event.ts_ms);
+    push_bounded_limit(&mut state.recent_event_ts_ms,event.ts_ms,4096);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
             let log_return = (price / previous).ln();
@@ -212,7 +212,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.last_liquidation_side=event.liquidation_side.clone();
             let size=event.size.unwrap_or(0.0);
             let signed=match event.liquidation_side.as_deref(){Some("long")=>-size,Some("short")=>size,_=>0.0};
-            push_bounded(&mut state.recent_liquidation_flow,signed);
+            push_bounded_limit(&mut state.recent_liquidation_flow,(event.ts_ms,signed),4096);
         }
         "funding" => {
             if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;state.last_funding_ts_ms=Some(event.ts_ms);}
@@ -252,6 +252,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     };
     state.event_intensity=state.recent_event_ts_ms.iter()
         .filter(|timestamp|event.ts_ms.saturating_sub(**timestamp)<=60_000).count() as f64;
+    state.liquidation_events=state.recent_liquidation_flow.iter()
+        .filter(|(timestamp,_)|event.ts_ms.saturating_sub(*timestamp)<=60_000).count();
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
 
@@ -355,9 +357,13 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     if let (Some(mark),Some(index))=(state.mark_price,state.index_price){
         if index>0.0{output.insert(Basis,mark/index-1.0);}
     }
-    let liquidation_abs=state.recent_liquidation_flow.iter().map(|value|value.abs()).sum::<f64>();
+    let cutoff=state.last_event_ts_ms.unwrap_or_default();
+    let recent_liquidations=state.recent_liquidation_flow.iter()
+        .filter(|(timestamp,_)|cutoff.saturating_sub(*timestamp)<=60_000)
+        .map(|(_,value)|*value).collect::<Vec<_>>();
+    let liquidation_abs=recent_liquidations.iter().map(|value|value.abs()).sum::<f64>();
     if liquidation_abs>0.0{
-        output.insert(LiquidationPressure,(state.recent_liquidation_flow.iter().sum::<f64>()/liquidation_abs).clamp(-1.0,1.0));
+        output.insert(LiquidationPressure,(recent_liquidations.iter().sum::<f64>()/liquidation_abs).clamp(-1.0,1.0));
     }else if state.venue=="binance_usdm"&&state.last_event_ts_ms.is_some(){
         // The Binance combined stream subscribes to forceOrder alongside trades,
         // book and mark-price updates. A live observation window with no force
