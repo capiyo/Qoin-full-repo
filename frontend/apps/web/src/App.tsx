@@ -267,7 +267,7 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
           <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Window {item.window_ms} ms · mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"}</p>
           <p style={{ margin: "0 0 6px", color: "#819989", fontSize: 8 }}>{item.interpretation}</p>
           {item.edges.slice(0, 8).map((edge, index) => <p key={item.relation_id + index} style={{ margin: "3px 0", color: "#c4d8c9", fontSize: 8, overflowWrap: "anywhere" }}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</p>)}
-          {item.edges.length > 8 ? <small style={{ color: "#819989" }}>Showing 8 of {item.edges.length} edges</small> : null}
+          {item.edges_truncated ? <small style={{ color: "#819989" }}>Showing 8 sampled edges; {item.edge_count} total relation edges</small> : null}
         </details>)}
       </div>
       <div style={{ display: "grid", gap: 4 }}>
