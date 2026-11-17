@@ -76,7 +76,10 @@ impl InstrumentSpec {
                 return Err(ContractError::InvalidInstrument(format!("{name} must be finite and positive")));
             }
         }
-        if self.conversion_rate_observed_at_ms <= 0 {\n            return Err(ContractError::InvalidInstrument("currency conversion observation time is required".into()));\n        }\n        if self.instrument_id.trim().is_empty()
+        if self.conversion_rate_observed_at_ms <= 0 {
+            return Err(ContractError::InvalidInstrument("currency conversion observation time is required".into()));
+        }
+        if self.instrument_id.trim().is_empty()
             || self.broker_id.trim().is_empty()
             || self.venue_id.trim().is_empty()
             || self.broker_symbol.trim().is_empty()
@@ -316,7 +319,13 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
     if !projected_gross_exposure.is_finite() || !notional_cap.is_finite() || !leverage_cap.is_finite() {
         return Err(ContractError::InvalidOrder("portfolio exposure calculation overflow".into()));
     }
-    if instrument.minimum_notional.is_some_and(|minimum| order.quantity * instrument.contract_multiplier * execution_price < minimum) {\n        return Err(ContractError::InvalidOrder("order is below instrument minimum notional".into()));\n    }\n    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }\n    if input.required_margin_account_currency > account.available_margin {\n        return Err(ContractError::InvalidOrder("insufficient available margin in broker account".into()));\n    }
+    if instrument.minimum_notional.is_some_and(|minimum| order.quantity * instrument.contract_multiplier * execution_price < minimum) {
+        return Err(ContractError::InvalidOrder("order is below instrument minimum notional".into()));
+    }
+    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }
+    if input.required_margin_account_currency > account.available_margin {
+        return Err(ContractError::InvalidOrder("insufficient available margin in broker account".into()));
+    }
     if projected_gross_exposure > leverage_cap { return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into())); }
     if account.open_positions >= policy.max_open_positions && !order.reduce_only {
         return Err(ContractError::InvalidOrder("open-position limit reached".into()));
@@ -376,7 +385,8 @@ mod tests {
             quantity_step: 0.01,
             minimum_quantity: 0.01,
             minimum_notional: None,
-            price_currency_to_account_rate: rate,\n            conversion_rate_observed_at_ms: 10_000,
+            price_currency_to_account_rate: rate,
+            conversion_rate_observed_at_ms: 10_000,
         }
     }
 
