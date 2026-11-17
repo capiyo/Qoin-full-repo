@@ -14,7 +14,7 @@ The V1 vector engine remains available and authoritative for existing decisions.
 
 V1 and V2 consume the same versioned `qoin-market-space` schema v1 vector. Regime characteristics are coordinates in this vector, alongside price, volatility, momentum, liquidity, cross-asset relationships, derivatives, events, portfolio risk and temporal structure. The vector includes explicit missingness, quality, venue/symbol/timeframe identity, event-time cutoff and availability timestamp. It is normalized with past-only calibration by the producer.
 
-V2 converts that same vector into symbolic condition atoms using an explicit binning policy (positive, negative, neutral, low-quality and missing). Evidence sets and relationship records retain source vector IDs, schema versions and instrument/timeframe provenance. The continuous vector remains the common numerical input; set conversion is the V2 abstraction over it, not a replacement.
+V2 converts that same vector into symbolic condition atoms using an explicit binning policy (positive, negative, neutral, low-quality and missing). Evidence sets retain the complete source vector snapshot. Relationship records copy both source and target snapshots into the append-only ledger, including every coordinate status, normalized value and quality score, plus vector IDs, schema versions and venue/symbol/timeframe provenance. The ledger can therefore replay the exact vector-to-set derivation without relying on a mutable external vector cache. The continuous vector remains the common numerical input; set conversion is the V2 abstraction over it, not a replacement.
 
 ## V2 research pipeline
 
