@@ -196,7 +196,7 @@ pub fn choose_execution_plan(
         ) else { continue };
         let actual = allocation.allocated_notional_portfolio;
         let Ok(cost) = cost_for(quote, actual) else { continue };
-        let replace = best_single.as_ref().is_none_or(|(best, _)| {
+        let replace = best_single.as_ref().map_or(true, |(best, _)| {
             cost.total_estimated_execution_cost_portfolio < best.total_estimated_execution_cost_portfolio
                 || (cost.total_estimated_execution_cost_portfolio == best.total_estimated_execution_cost_portfolio
                     && (&cost.broker_id, &cost.account_id) < (&best.broker_id, &best.account_id))
@@ -286,7 +286,7 @@ mod tests {
                 native_unit_value_portfolio: d("1"),
                 quantity_step: d("0.01"),
                 minimum_quantity: d("0.01"),
-                minimum_notional_portfolio: Some(d("1")),
+                minimum_notional_portfolio: Some(d("10")),
             },
             adapter_ready: ready,
             account_healthy: true,
