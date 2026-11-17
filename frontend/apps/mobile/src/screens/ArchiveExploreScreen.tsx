@@ -582,10 +582,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
-                {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#E9EEF6" strokeWidth=".4" />)}
-                {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#E9EEF6" strokeWidth=".4" />)}
-                <Line x1="10" y1="8" x2="10" y2="90" stroke="#CBD5E1" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#CBD5E1" strokeWidth=".7" />
-                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#9BB9F3" strokeWidth="1.1" /> : null}
+                {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#294232" strokeWidth=".4" />)}
+                {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#294232" strokeWidth=".4" />)}
+                <Line x1="10" y1="8" x2="10" y2="90" stroke="#6caa80" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#6caa80" strokeWidth=".7" />
+                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#70d99d" strokeWidth="1.1" /> : null}
                 {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#70d99d" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#70d99d" stroke="#14221a" strokeWidth="1.2" /></> : null}
                 <Circle cx="10" cy="90" r="2" fill="#94A3B8" />
               </Svg>
@@ -687,7 +687,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                       <Text style={styles.attentionRowLabel}>{QOIN_FEATURE_SHORT_NAMES[rowIndex]}</Text>
                       {QOIN_FEATURE_NAMES.map((columnName, columnIndex) => {
                         const weight = vector.attention?.[rowIndex]?.[columnIndex] ?? 0;
-                        return <View key={columnName} style={[styles.attentionCell, { backgroundColor: `rgba(40,103,220,${0.08 + weight * 0.82})` }]}>
+                        return <View key={columnName} style={[styles.attentionCell, { backgroundColor: `rgba(112,217,157,${0.08 + weight * 0.82})` }]}>
                           <Text style={[styles.attentionValue, { color: weight > 0.55 ? "#14221a" : "#d3e4d8" }]}>{weight.toFixed(2)}</Text>
                         </View>;
                       })}
