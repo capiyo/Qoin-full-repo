@@ -377,7 +377,7 @@ fn pearson_correlation(left:&[f64],right:&[f64])->Option<(f64,f64,f64)>{
 
 /// Cross-asset features use same-venue, event-time-aligned one-minute return
 /// buckets. No index-order alignment or cross-venue price mixing is permitted.
-fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState])->BTreeMap<MarketFeature,f64>{
+fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState],cutoff_ms:i64)->BTreeMap<MarketFeature,f64>{
     use MarketFeature::*;
     let current=minute_return_buckets(state);
     let mut correlations=Vec::new();
@@ -386,7 +386,10 @@ fn cross_asset_raw_features(state:&SymbolState,peers:&[SymbolState])->BTreeMap<M
     let mut breakdowns=Vec::new();
     let mut relative_strengths=Vec::new();
     for peer in peers{
-        if peer.venue!=state.venue||peer.symbol==state.symbol{continue;}
+        if peer.venue!=state.venue||peer.symbol==state.symbol
+            || peer.last_price_ts_ms.is_none_or(|timestamp|cutoff_ms.saturating_sub(timestamp)>5*60_000){
+            continue;
+        }
         let other=minute_return_buckets(peer);
         let common=current.keys().filter_map(|bucket|{
             Some((*current.get(bucket)?,*other.get(bucket)?))
@@ -518,7 +521,7 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
         vector.set_not_applicable(MarketFeature::Basis);
     }
     let mut raw_features=raw_feature_values(state);
-    raw_features.extend(cross_asset_raw_features(state,peers));
+    raw_features.extend(cross_asset_raw_features(state,peers,cutoff));
     let cross_timestamp=cross_asset_source_timestamp(state,peers);
     let mut observed=0usize;
     for (feature,raw) in raw_features{
@@ -2629,6 +2632,34 @@ mod market_stream_tests {
     }
 
 
+
+
+    #[test]
+    fn cross_asset_features_use_aligned_same_venue_returns(){
+        let mut current=SymbolState::default();
+        current.venue="binance_usdm".into();
+        current.symbol="BTCUSDT".into();
+        let mut peer=SymbolState::default();
+        peer.venue="binance_usdm".into();
+        peer.symbol="ETHUSDT".into();
+        let mut foreign=SymbolState::default();
+        foreign.venue="kraken_spot".into();
+        foreign.symbol="ETHUSD_KRAKEN".into();
+        for index in 0..24_i64{
+            let base=(index as f64-11.5)*0.0001+(index%3) as f64*0.00003;
+            let timestamp=(index+1)*60_000;
+            current.recent_return_observations.push_back((timestamp,base));
+            peer.recent_return_observations.push_back((timestamp,base*1.8+0.00001));
+            foreign.recent_return_observations.push_back((timestamp,-base));
+        }
+        current.last_price_ts_ms=Some(24*60_000);
+        peer.last_price_ts_ms=Some(24*60_000);
+        foreign.last_price_ts_ms=Some(24*60_000);
+        let features=cross_asset_raw_features(&current,&[peer,foreign],24*60_000);
+        assert!(features[&MarketFeature::Correlation]>0.99);
+        assert!(features[&MarketFeature::RegimeCorrelationStress]>0.99);
+        assert!(features.contains_key(&MarketFeature::CorrelationBreakdown));
+    }
 
     #[test]
     fn non_price_events_do_not_duplicate_price_samples_in_calibration(){
