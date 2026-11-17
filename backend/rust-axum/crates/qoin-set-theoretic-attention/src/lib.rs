@@ -47,7 +47,7 @@ impl VectorEvidenceConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvidenceSet {
     pub id: String,
     pub domain: String,
@@ -63,6 +63,8 @@ pub struct EvidenceSet {
     pub source_symbol: Option<String>,
     #[serde(default)]
     pub source_timeframe: Option<String>,
+    #[serde(default)]
+    pub source_vector_snapshot: Option<MarketVector>,
 }
 
 impl EvidenceSet {
@@ -86,6 +88,7 @@ impl EvidenceSet {
             source_venue: None,
             source_symbol: None,
             source_timeframe: None,
+            source_vector_snapshot: None,
         };
         set.validate()?;
         Ok(set)
@@ -141,13 +144,28 @@ impl EvidenceSet {
             source_venue: Some(vector.venue.clone()),
             source_symbol: Some(vector.symbol.clone()),
             source_timeframe: Some(vector.timeframe.clone()),
+            source_vector_snapshot: Some(vector.clone()),
         };
         set.validate()?;
         Ok(set)
     }
 
     pub fn validate(&self) -> Result<(), SetAttentionError> {
-        if self.id.trim().is_empty() || self.id.len() > 160
+        let vector_provenance_valid = match &self.source_vector_snapshot {
+            Some(vector) => vector.validate().is_ok()
+                && self.source_vector_id.as_deref() == Some(vector.vector_id.as_str())
+                && self.source_vector_schema_version == Some(vector.schema_version)
+                && self.source_venue.as_deref() == Some(vector.venue.as_str())
+                && self.source_symbol.as_deref() == Some(vector.symbol.as_str())
+                && self.source_timeframe.as_deref() == Some(vector.timeframe.as_str())
+                && self.observed_at_ms == vector.event_time_cutoff_ms,
+            None => self.source_vector_id.is_none()
+                && self.source_vector_schema_version.is_none()
+                && self.source_venue.is_none()
+                && self.source_symbol.is_none()
+                && self.source_timeframe.is_none(),
+        };
+        if !vector_provenance_valid || self.id.trim().is_empty() || self.id.len() > 160
             || self.domain.trim().is_empty() || self.domain.len() > 160
             || self.observed_at_ms <= 0
             || self.atoms.len() > 512
@@ -362,6 +380,10 @@ pub struct RelationshipRecord {
     pub target_symbol: Option<String>,
     #[serde(default)]
     pub target_timeframe: Option<String>,
+    #[serde(default)]
+    pub source_vector_snapshot: Option<MarketVector>,
+    #[serde(default)]
+    pub target_vector_snapshot: Option<MarketVector>,
 }
 
 impl RelationshipRecord {
@@ -401,6 +423,8 @@ impl RelationshipRecord {
             target_venue: target.source_venue.clone(),
             target_symbol: target.source_symbol.clone(),
             target_timeframe: target.source_timeframe.clone(),
+            source_vector_snapshot: source.source_vector_snapshot.clone(),
+            target_vector_snapshot: target.source_vector_snapshot.clone(),
         };
         record.validate()?;
         Ok(record)
@@ -408,6 +432,34 @@ impl RelationshipRecord {
 
     pub fn validate(&self) -> Result<(), SetAttentionError> {
         let metrics = &self.metrics;
+        let source_vector_provenance_valid = match &self.source_vector_snapshot {
+            Some(vector) => vector.validate().is_ok()
+                && self.source_vector_id.as_deref() == Some(vector.vector_id.as_str())
+                && self.source_vector_schema_version == Some(vector.schema_version)
+                && self.source_venue.as_deref() == Some(vector.venue.as_str())
+                && self.source_symbol.as_deref() == Some(vector.symbol.as_str())
+                && self.source_timeframe.as_deref() == Some(vector.timeframe.as_str())
+                && self.source_observed_at_ms == vector.event_time_cutoff_ms,
+            None => self.source_vector_id.is_none()
+                && self.source_vector_schema_version.is_none()
+                && self.source_venue.is_none()
+                && self.source_symbol.is_none()
+                && self.source_timeframe.is_none(),
+        };
+        let target_vector_provenance_valid = match &self.target_vector_snapshot {
+            Some(vector) => vector.validate().is_ok()
+                && self.target_vector_id.as_deref() == Some(vector.vector_id.as_str())
+                && self.target_vector_schema_version == Some(vector.schema_version)
+                && self.target_venue.as_deref() == Some(vector.venue.as_str())
+                && self.target_symbol.as_deref() == Some(vector.symbol.as_str())
+                && self.target_timeframe.as_deref() == Some(vector.timeframe.as_str())
+                && self.target_observed_at_ms == vector.event_time_cutoff_ms,
+            None => self.target_vector_id.is_none()
+                && self.target_vector_schema_version.is_none()
+                && self.target_venue.is_none()
+                && self.target_symbol.is_none()
+                && self.target_timeframe.is_none(),
+        };
         let expected_union = metrics.source_size.saturating_add(metrics.target_size)
             .saturating_sub(metrics.intersection_size);
         let expected_jaccard = if metrics.union_size == 0 { 1.0 }
@@ -434,7 +486,8 @@ impl RelationshipRecord {
         } else {
             SetRelationKind::Overlap
         };
-        if self.relationship_id != format!("{}::{}", self.source_set_id, self.target_set_id)
+        if !source_vector_provenance_valid || !target_vector_provenance_valid
+            || self.relationship_id != format!("{}::{}", self.source_set_id, self.target_set_id)
             || self.source_set_id.trim().is_empty() || self.source_set_id.len() > 160
             || self.target_set_id.trim().is_empty() || self.target_set_id.len() > 160
             || self.source_domain.trim().is_empty() || self.source_domain.len() > 160
@@ -617,6 +670,8 @@ mod tests {
         assert_eq!(record.source_vector_id.as_deref(), Some("vector-left"));
         assert_eq!(record.target_vector_id.as_deref(), Some("vector-right"));
         assert_eq!(record.source_symbol.as_deref(), Some("BTCUSD"));
+        assert_eq!(record.source_vector_snapshot.as_ref().map(|snapshot| snapshot.vector_id.as_str()), Some("vector-left"));
+        assert_eq!(record.target_vector_snapshot.as_ref().map(|snapshot| snapshot.vector_id.as_str()), Some("vector-right"));
         assert!(record.validate().is_ok());
     }
 

@@ -37,7 +37,7 @@ The original `decide(ForceObservation, ...)` API remains available as the legacy
 
 `EvidenceSet::from_market_vector` converts the exact same schema into explicit condition atoms using a versioned, caller-configurable binning policy: positive, negative or neutral for sufficiently reliable observed coordinates; low-quality for observed values below the quality threshold; missing for applicable-but-unavailable coordinates; and not-applicable for dimensions outside the instrument/provider's scope. The latter two can be independently included or excluded by the evidence policy.
 
-The continuous normalized values remain in the common vector; V2's set conversion is a deliberate symbolic abstraction, not a replacement for the source vector. Evidence sets and relationship records retain vector ID, schema version, venue, symbol and timeframe. The relationship ledger therefore records which common vector snapshots produced each relationship.
+The continuous normalized values remain in the common vector; V2's set conversion is a deliberate symbolic abstraction, not a replacement for the source vector. Evidence sets and relationship records retain the complete source vector snapshot, including coordinate status, normalized value and quality, plus vector ID, schema version, venue, symbol and timeframe. The append-only relationship ledger therefore remains replayable without depending on a mutable external vector cache.
 
 The internal route `POST /internal/v2/relationships/discover-vectors` accepts a query vector and candidate vectors, converts them to evidence sets and uses the existing deterministic set-attention and append-only ledger path.
 
