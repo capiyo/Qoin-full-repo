@@ -5,7 +5,7 @@ Qoin is a multi-client, domain-extensible intelligence and decision platform. Fi
 ## Versioned algorithm tracks
 
 - **[Version 1 — Vector baseline](https://github.com/capiyo/Qoin-full-repo/tree/version-1-vector-baseline)** remains the deterministic control and comparison baseline.
-- **Shared market state:** both versions consume `qoin-market-space` schema v1, a fixed 53-coordinate vector with explicit missingness, quality, timestamps and regime coordinates. See [the shared vector-space specification](docs/SHARED_MARKET_VECTOR_SPACE.md).
+- **Shared market state:** both versions consume `qoin-market-space` schema v1, a fixed 53-coordinate vector with explicit missingness, quality, timestamps and regime coordinates. A per-venue/symbol/timeframe variable hub owns the dependency graph, causal normalization, revision invalidation and immutable snapshot publication. See [the shared vector-space and variable-hub specification](docs/SHARED_MARKET_VECTOR_SPACE.md).
 - **[Version 2 — Set-theoretic attention](https://github.com/capiyo/Qoin-full-repo/tree/version-2-set-theoretic-attention)** carries the full V1 application and adds set algebra, evidence-set conversion from the shared vector, attention and an append-only relationship ledger. See [the V2 specification](docs/versions/VERSION_2_SET_THEORETIC_ATTENTION.md).
 
 V2 does not replace V1 decisions or activate order submission.
@@ -29,7 +29,7 @@ Qoin-full-repo/
 │   │       ├── qoin-vector-motion/
 │   │       ├── qoin-set-theoretic-attention/
 │   │       ├── qoin-domain-core/ # Domain-neutral contracts
-│   │       └── qoin-market-space/ # Shared 53-coordinate market vector
+│   │       └── qoin-market-space/ # Shared vector + variable lifecycle hub
 │   ├── rust-axum-api/            # Separate compatibility/research API
 │   ├── cpp-drogon/               # HTTP/WebSocket gateway
 │   ├── config/
@@ -49,7 +49,7 @@ Qoin-full-repo/
 ## Service boundaries
 
 1. Web, mobile and desktop use shared TypeScript contracts and never implement authoritative trading decisions.
-2. Rust/Axum owns event ingestion, state estimation, the shared `qoin-market-space` contract, independent V1 vector and V2 set-theoretic attention engines, the append-only V2 relationship ledger, strategy state and internal vector research endpoints.
+2. Rust/Axum owns event ingestion, state estimation, the shared `qoin-market-space` contract and per-market variable hub, independent V1 vector and V2 set-theoretic attention engines, the append-only V2 relationship ledger, strategy state and internal vector research endpoints.
 3. C++/Drogon is the public HTTP/WebSocket gateway. Provider ingestion and strategy mutation remain internal and are not exposed as public gateway writes.
 4. MongoDB stores raw observations, state snapshots, decisions and strategy configuration.
 5. Provider adapters normalize source observations into venue-scoped events. Current feeds include Binance USD-M, Coinbase Advanced Trade, Kraken Spot and optional Finnhub. See [docs/MARKET_DATA_PROVIDERS.md](docs/MARKET_DATA_PROVIDERS.md) for coverage and limitations.
