@@ -79,3 +79,13 @@ The web and React Native clients now expose a notification centre fed directly b
 On web, users may opt into browser desktop notifications from the notification centre. Those browser notifications are emitted only while the page is running and has an active WebSocket connection. The mobile app currently shows in-app notifications while the app is running; it does not yet register FCM/APNs/Expo push tokens or deliver background notifications.
 
 Notification history is currently in-memory and resets when the app process/page is restarted. It is not stored per user in MongoDB, synchronized across devices, or backed by a server-side notification queue. Those capabilities require authenticated user identity, device-token registration, durable notification storage, delivery retries, and user-configurable alert preferences. Do not describe the current client layer as remote push delivery.
+
+
+## Forest-green workspace visual system (2026-11-17)
+
+- Applied the shared Qoin visual direction across web, desktop and React Native: deep forest background `#0e1612`, raised surfaces `#14221a` / `#19291f`, emerald accent `#70d99d`, warm off-white text `#e6f1e9`, muted sage text `#9cb2a2`, and restrained green borders `#2b4032`.
+- Web and desktop use a vertically stacked instrument-card list and a compact floating Archive / Explore pill; desktop retains a left-side floating navigation rail.
+- React Native uses the same palette and a floating rounded Archive / Explore navigation pill; status bar switches to light content for the dark workspace.
+- Vector chart grid, axes, trajectory and current-vector marker use the forest/emerald palette.
+- The two algorithm concepts remain distinct in product design: Version 1 is the implemented deterministic vector baseline; Version 2 Set & Ledger remains a future/preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
+- No broker selection, order submission or live execution was added. Research/paper-only safety boundary is unchanged.
