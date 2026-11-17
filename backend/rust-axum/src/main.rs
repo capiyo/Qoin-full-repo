@@ -1323,7 +1323,7 @@ async fn audit_set_ledger(
         let valid=source.is_some() && target.is_some() && source!=target && expected_sets.is_some()
             && expected_sets==Some((record.get_str("source_set").unwrap_or(""),record.get_str("target_set").unwrap_or("")))
             && source_ts.zip(target_ts).zip(lag).zip(window).is_some_and(|(((source_ts,target_ts),lag),window)|
-                target_ts.saturating_sub(source_ts)==lag && lag>=0 && window>0 && window<=60_000 && lag<=window)
+                target_ts.saturating_sub(source_ts)==lag && lag>0 && window>0 && window<=60_000 && lag<=window)
             && expected_id.as_deref()==record.get_str("record_id").ok();
         if !valid {
             malformed_relations+=1;
