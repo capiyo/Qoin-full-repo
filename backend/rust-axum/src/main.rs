@@ -361,6 +361,25 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
     let digest=hex::encode(Sha256::digest(identity.as_bytes()));
     let vector_id=format!("mv-{}",&digest[..32]);
     let mut vector=MarketVector::new(vector_id,&event.venue,&event.symbol,"event-window",cutoff,available_at_ms.max(cutoff)).ok()?;
+    // These dimensions are outside the current per-symbol provider contract.
+    // They are not neutral observations and must not dilute missing-data quality.
+    for feature in [
+        MarketFeature::ImpliedVolatility,
+        MarketFeature::GammaExposure,
+        MarketFeature::DeltaExposure,
+        MarketFeature::PortfolioExposure,
+        MarketFeature::Concentration,
+        MarketFeature::Drawdown,
+        MarketFeature::TailRisk,
+        MarketFeature::RiskContribution,
+    ]{
+        vector.set_not_applicable(feature);
+    }
+    if event.venue!="binance_usdm"{
+        // Current Coinbase/Kraken spot and Finnhub feeds have no paired
+        // derivative/index leg from which a basis could be defined.
+        vector.set_not_applicable(MarketFeature::Basis);
+    }
     let raw_features=raw_feature_values(state);let mut observed=0usize;
     for (feature,raw) in raw_features{
         let Some(freshness)=feature_freshness(state,feature,cutoff) else {continue;};
@@ -399,7 +418,9 @@ fn evaluate_ingested_v1_vector(
     ];
     let unavailable=REQUIRED.iter().filter_map(|feature|{
         let coordinate=vector.coordinates.get(feature)?;
-        (coordinate.status!=FeatureAvailability::Observed || coordinate.value.is_none())
+        (coordinate.status!=FeatureAvailability::Observed
+            && !( *feature==MarketFeature::Basis && coordinate.status==FeatureAvailability::NotApplicable)
+            || coordinate.status==FeatureAvailability::Observed && coordinate.value.is_none())
             .then(||serde_json::json!({
                 "feature":feature.as_str(),
                 "status":coordinate.status,
@@ -2343,6 +2364,8 @@ mod market_stream_tests {
         assert!(vector.validate().is_ok());assert_eq!(vector.symbol,"BTCUSDT");assert_eq!(vector.venue,"test-venue");
         assert!(vector.event_time_cutoff_ms<=vector.available_at_ms);
         assert_eq!(vector.coordinates[&MarketFeature::RegimeCorrelationStress].status,qoin_market_space::FeatureAvailability::Missing);
+        assert_eq!(vector.coordinates[&MarketFeature::Basis].status,qoin_market_space::FeatureAvailability::NotApplicable);
+        assert_eq!(vector.coordinates[&MarketFeature::PortfolioExposure].status,qoin_market_space::FeatureAvailability::NotApplicable);
         let stale_event=MarketEvent{
             event_id:"stale-feed".into(),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
             event_type:"funding".into(),ts_ms:1_800_000_000_000+24*1_000+120_000,price:None,size:None,
