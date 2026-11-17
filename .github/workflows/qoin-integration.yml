@@ -147,10 +147,12 @@ jobs:
           jq -e '.source_event_count == 4 and .observation_record_count == 4 and .source_events_scanned == 4 and .missing_observations == 0 and .source_hash_mismatches == 0 and .relation_record_count == 2 and .relation_records_scanned == 2 and .orphan_relations == 0 and .malformed_relations == 0 and .source_scan_complete == true and .relation_scan_complete == true and .integrity_passed == true' /tmp/set-ledger-integrity.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/reconstruct?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-reconstructed.json
           jq -e '.symbol == "BTCUSDT" and .universe_count == 4 and (.sets | length == 12) and (.relations | length == 3) and .durable_observation_count == 4 and .durable_relation_record_count == 2 and .raw_source_event_count == 4 and .source_hash_mismatches == 0 and .invalid_observations == 0 and .observation_scan_complete == true and .coverage_complete == true and (.reconstruction_source | contains("set_relation_ledger"))' /tmp/set-ledger-reconstructed.json
-          mongosh "$QOIN_MONGODB_URI/$QOIN_MONGODB_DATABASE" --quiet --eval 'db.set_relation_ledger.updateOne({record_type:"relation_edge",symbol:"BTCUSDT"},{$set:{lag_ms:123456}})'
+          MONGO_CONTAINER=$(docker ps --filter ancestor=mongo:7 --format '{{.ID}}' | head -n1)
+          test -n "$MONGO_CONTAINER"
+          docker exec "$MONGO_CONTAINER" mongosh "mongodb://127.0.0.1:27017/$QOIN_MONGODB_DATABASE" --quiet --eval 'db.set_relation_ledger.updateOne({record_type:"relation_edge",symbol:"BTCUSDT"},{$set:{lag_ms:123456}})'
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' >/tmp/set-ledger-malformed-relation.json
           jq -e '.malformed_relations == 1 and .integrity_passed == false' /tmp/set-ledger-malformed-relation.json
-          mongosh "$QOIN_MONGODB_URI/$QOIN_MONGODB_DATABASE" --quiet --eval 'db.set_relation_ledger.updateOne({record_type:"observation",symbol:"BTCUSDT",venue:"ci",source_event_id:"ci-trade-1"},{$set:{"source_event.price":999.99}})'
+          docker exec "$MONGO_CONTAINER" mongosh "mongodb://127.0.0.1:27017/$QOIN_MONGODB_DATABASE" --quiet --eval 'db.set_relation_ledger.updateOne({record_type:"observation",symbol:"BTCUSDT",venue:"ci",source_event_id:"ci-trade-1"},{$set:{"source_event.price":999.99}})'
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/reconstruct?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-tampered-reconstruction.json
           jq -e '.source_hash_mismatches == 1 and .coverage_complete == false and .universe_count == 3' /tmp/set-ledger-tampered-reconstruction.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
