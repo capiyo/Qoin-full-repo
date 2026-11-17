@@ -549,17 +549,35 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.cardPager}>
+                  <View style={[styles.cardPager,{gap:10}]}>
                     <View style={styles.cardPagerPrimary}>
-                      <Text style={styles.cardKicker}>RESEARCH VIEW 02</Text>
+                      <Text style={styles.cardKicker}>VECTOR ENGINE · V1</Text>
                       <Text style={styles.cardPagerValue}>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</Text>
-                      <Text style={styles.cardPagerStatus}>{decision ? "DECISION MAGNITUDE" : "PREVIEW ONLY"}</Text>
+                      <Text style={styles.cardPagerStatus}>{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</Text>
                     </View>
-                    <View style={styles.cardPagerReason}>
-                      <Text style={styles.cardMetaLabel}>LATEST ENGINE RATIONALE</Text>
-                      <Text style={styles.cardReasonText} numberOfLines={3}>{decision?.reason || "The second analytical layer is a preview. No uncomputed values are shown."}</Text>
-                      <Text style={styles.cardMetaLabel}>{sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</Text>
-                    </View>
+                    {decision ? <View style={[styles.cardPagerReason,{gap:8}]}>
+                      <View style={{flexDirection:"row",justifyContent:"space-between",flexWrap:"wrap"}}>
+                        <Text style={styles.cardMetaLabel}>DECISION VECTOR · [BULL, BEAR]</Text>
+                        <Text style={styles.cardMetaValue}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</Text>
+                      </View>
+                      <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>
+                        {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={{width:"31%",minWidth:78,padding:7,borderRadius:8,background:"#F1F5F9"}}>
+                          <Text style={[styles.cardMetaLabel,{fontSize:8}]}>{name.replaceAll("_"," ")}</Text>
+                          <Text style={styles.cardMetaValue}>{decision.features?.[name]?.toFixed(3) ?? "—"}</Text>
+                        </View>)}
+                      </View>
+                      <Text style={styles.cardMetaLabel}>FEATURE CONTRIBUTION · BULL / BEAR</Text>
+                      {(decision.feature_trace || []).slice(0,6).map((feature) => <View key={feature.name} style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
+                        <Text style={[styles.cardMetaLabel,{flex:1}]}>{feature.name.replaceAll("_"," ")}</Text>
+                        <Text style={{fontSize:10,color:"#24865A"}}>{feature.bullish_weighted_term.toFixed(3)}</Text>
+                        <Text style={{fontSize:10,color:"#C15C65"}}>{feature.bearish_weighted_term.toFixed(3)}</Text>
+                      </View>)}
+                      <Text style={styles.cardReasonText}>{decision.reason || "The engine returned no rationale for this evaluation."}</Text>
+                      <Text style={styles.cardMetaLabel}>{decision.angle_degrees != null ? "Decision angle " + decision.angle_degrees.toFixed(2) + "°" : "Angle not reported"} · {sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</Text>
+                    </View> : <View style={styles.cardPagerReason}>
+                      <Text style={styles.cardMetaLabel}>V1 CALCULATION STATUS</Text>
+                      <Text style={styles.cardReasonText}>No engine decision has been returned for this instrument. Vector coordinates, feature values and contributions will appear when the backend supplies a calculation; no preview values are substituted.</Text>
+                    </View>}
                   </View>
                 )}
                 <View style={styles.cardPagerFooter}>
