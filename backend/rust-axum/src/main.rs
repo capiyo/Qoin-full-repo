@@ -1977,7 +1977,6 @@ async fn main(){
         .route("/internal/set-ledger",get(get_set_ledger))
         .route("/internal/set-ledger/reconstruct",get(reconstruct_set_ledger))
         .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
-         .route("/internal/set-ledger/corrections",post(propose_set_ledger_correction))
          .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
