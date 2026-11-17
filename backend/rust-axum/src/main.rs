@@ -882,6 +882,127 @@ async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl
     items.reverse();
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
+#[derive(Deserialize)]
+struct LedgerBackfillQuery {
+    symbol: Option<String>,
+    after_ts_ms: Option<i64>,
+    after_event_id: Option<String>,
+    after_venue: Option<String>,
+    batch_size: Option<i64>,
+}
+
+async fn backfill_set_ledger(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<LedgerBackfillQuery>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let symbol = q.symbol.unwrap_or_default();
+    if symbol.trim().is_empty() || symbol.len() > 96 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"a valid symbol is required"})));
+    }
+    let batch_size = q.batch_size.unwrap_or(100).clamp(1, 250);
+    let mut filter = doc!{"symbol":&symbol};
+    if let Some(ts) = q.after_ts_ms {
+        let event_id = q.after_event_id.unwrap_or_default();
+        let venue = q.after_venue.unwrap_or_default();
+        filter.insert("$or", mongodb::bson::to_bson(&vec![
+            doc!{"ts_ms":{"$gt":ts}},
+            doc!{"ts_ms":ts,"event_id":{"$gt":&event_id}},
+            doc!{"ts_ms":ts,"event_id":&event_id,"venue":{"$gt":&venue}},
+        ]).unwrap_or(mongodb::bson::Bson::Null));
+    } else if q.after_event_id.is_some() || q.after_venue.is_some() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"after_event_id and after_venue require after_ts_ms"})));
+    }
+    let options=FindOptions::builder()
+        .sort(doc!{"ts_ms":1,"event_id":1,"venue":1})
+        .limit(batch_size+1)
+        .build();
+    let mut cursor=match s.events.find(filter,Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{
+            tracing::error!(error=%error,symbol=%symbol,"V2 ledger backfill source query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill source query failed"})));
+        }
+    };
+    let mut page=Vec::new();
+    let mut skipped_invalid=0usize;
+    while let Some(mut document)=match cursor.try_next().await {
+        Ok(value)=>value,
+        Err(error)=>{
+            tracing::error!(error=%error,symbol=%symbol,"V2 ledger backfill cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill source read failed"})));
+        }
+    } {
+        document.remove("_id");
+        match mongodb::bson::from_document::<MarketEvent>(document) {
+            Ok(event) if validate_event(&event).is_ok()=>page.push(event),
+            _=>skipped_invalid+=1,
+        }
+        if page.len()+skipped_invalid > batch_size as usize { break; }
+    }
+    let has_more=page.len()+skipped_invalid > batch_size as usize;
+    if has_more {
+        // The extra row is only a look-ahead marker. It is not processed here;
+        // the next request resumes after the last fully processed source row.
+        if skipped_invalid > 0 && page.len()+skipped_invalid == batch_size as usize+1 {
+            // no-op: cursor is derived from the final processed valid event below
+        }
+        if page.len()+skipped_invalid > batch_size as usize {
+            if page.last().is_some() { /* final cursor remains the last valid event */ }
+        }
+    }
+    let process_count=page.len().min(batch_size as usize);
+    page.truncate(process_count);
+    let mut appended=0usize;
+    for event in &page {
+        match persist_set_ledger_records(&s.events,&s.set_ledger_records,event).await {
+            Ok(count)=>appended+=count,
+            Err(error)=>{
+                tracing::error!(error=%error,symbol=%symbol,event_id=%event.event_id,"V2 ledger backfill append failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+                    "error":"backfill append failed; retry from the returned cursor",
+                    "last_completed":page.iter().take_while(|candidate|candidate.event_id!=event.event_id).last().map(|previous|serde_json::json!({
+                        "after_ts_ms":previous.ts_ms,"after_event_id":previous.event_id,"after_venue":previous.venue
+                    }))
+                })));
+            }
+        }
+    }
+    let last=page.last();
+    let raw_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+        Ok(count)=>count,
+        Err(error)=>{
+            tracing::error!(error=%error,symbol=%symbol,"V2 ledger backfill source count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill source count failed"})));
+        }
+    };
+    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+        Ok(count)=>count,
+        Err(error)=>{
+            tracing::error!(error=%error,symbol=%symbol,"V2 ledger backfill observation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"backfill ledger count failed"})));
+        }
+    };
+    (StatusCode::OK,Json(serde_json::json!({
+        "symbol":symbol,
+        "batch_size":batch_size,
+        "processed_valid_events":page.len(),
+        "skipped_invalid_events":skipped_invalid,
+        "new_records_inserted":appended,
+        "source_event_count":raw_count,
+        "durable_observation_count":observation_count,
+        "remaining_observation_count_lower_bound":raw_count.saturating_sub(observation_count),
+        "has_more":has_more,
+        "next_cursor":last.map(|event|serde_json::json!({
+            "after_ts_ms":event.ts_ms,"after_event_id":event.event_id,"after_venue":event.venue
+        })),
+        "resume_note":"Repeat the request with next_cursor fields. Re-running a page is safe because ledger record IDs are deterministic."
+    })))
+}
+
 async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if symbol.trim().is_empty() {
@@ -1306,6 +1427,7 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1}).build(),None).await.expect("V2 ledger backfill keyset index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_ms":-1,"record_type":1}).build(),None).await.expect("durable V2 ledger symbol/time index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"record_type":1,"relation_id":1}).build(),None).await.expect("durable V2 relation lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
@@ -1380,6 +1502,7 @@ async fn main(){
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/set-ledger",get(get_set_ledger))
+        .route("/internal/set-ledger/backfill",get(backfill_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
