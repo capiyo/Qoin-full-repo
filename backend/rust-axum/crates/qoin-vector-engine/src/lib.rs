@@ -394,6 +394,54 @@ mod tests {
     }
 
     #[test]
+    fn shared_vector_quality_scales_votes_and_shapley_percentages_reconcile() {
+        let mut vector = MarketVector::new(
+            "quality-test", "test-venue", "BTCUSD", "5m",
+            1_800_000_000_000, 1_800_000_000_001,
+        ).unwrap();
+        for feature in [
+            MarketFeature::OrderFlowImbalance,
+            MarketFeature::OrderBookDepth,
+            MarketFeature::RealizedVolatility,
+            MarketFeature::FundingPressure,
+            MarketFeature::OpenInterestChange,
+            MarketFeature::LiquidationPressure,
+            MarketFeature::Basis,
+            MarketFeature::RegimeVolatilityLevel,
+            MarketFeature::RegimeLiquidityStress,
+            MarketFeature::RegimeCorrelationStress,
+            MarketFeature::RegimeTransitionIntensity,
+            MarketFeature::RegimeUncertainty,
+        ] {
+            vector.set_value(feature, Some(0.0), 1.0).unwrap();
+        }
+        vector.set_value(MarketFeature::OrderFlowImbalance, Some(1.0), 1.0).unwrap();
+        let full_quality = decide_from_market_vector(
+            &vector, &EngineConfig::default(), "v1-attribution-test", false,
+        ).unwrap();
+        vector.set_value(MarketFeature::OrderFlowImbalance, Some(1.0), 0.2).unwrap();
+        let reduced_quality = decide_from_market_vector(
+            &vector, &EngineConfig::default(), "v1-attribution-test", false,
+        ).unwrap();
+
+        let ofi_effect = |decision: &MarketVectorDecision| {
+            decision.attribution.contributions.iter()
+                .find(|item| item.feature == Some(MarketFeature::OrderFlowImbalance))
+                .unwrap().signed_effect
+        };
+        assert!(ofi_effect(&full_quality) > ofi_effect(&reduced_quality));
+        let coordinate_pct = full_quality.attribution.contributions.iter()
+            .map(|item| item.contribution_pct).sum::<f64>();
+        let family_pct = full_quality.family_attribution.iter()
+            .map(|item| item.contribution_pct).sum::<f64>();
+        assert!((coordinate_pct - 100.0).abs() < 1e-8);
+        assert!((family_pct - 100.0).abs() < 1e-8);
+        assert!((full_quality.attribution.outcome - full_quality.risk_adjusted_margin).abs() < 1e-10);
+        assert!((full_quality.attribution.contributions.iter()
+            .map(|item| item.signed_effect).sum::<f64>() - full_quality.attribution.net_effect).abs() < 1e-8);
+    }
+
+    #[test]
     fn strong_positive_force_produces_buy() {
         assert_eq!(decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Buy);
     }

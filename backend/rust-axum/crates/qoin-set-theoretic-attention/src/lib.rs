@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use qoin_market_space::{attribute_set_measure, FeatureAvailability, MarketFeature, MarketVector, SetMeasureInput, SetMeasureReport};
+use qoin_market_space::{attribution::{attribute_set_measure, SetMeasureInput, SetMeasureReport}, FeatureAvailability, MarketFeature, MarketVector};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -702,7 +702,13 @@ mod tests {
         assert_eq!(record.source_symbol.as_deref(), Some("BTCUSD"));
         assert_eq!(record.source_vector_snapshot.as_ref().map(|snapshot| snapshot.vector_id.as_str()), Some("vector-left"));
         assert_eq!(record.target_vector_snapshot.as_ref().map(|snapshot| snapshot.vector_id.as_str()), Some("vector-right"));
+        let measure = record.set_measure.as_ref().expect("relationship persists pairwise set measure");
+        assert!((measure.union_mass - record.metrics.union_size as f64).abs() < 1e-12);
+        assert!((measure.contributions.iter().map(|item| item.allocated_mass).sum::<f64>() - measure.union_mass).abs() < 1e-12);
         assert!(record.validate().is_ok());
+        let mut tampered = record.clone();
+        tampered.set_measure.as_mut().unwrap().union_mass += 1.0;
+        assert_eq!(tampered.validate(), Err(SetAttentionError::InvalidSetMeasure));
     }
 
     #[test]
