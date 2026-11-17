@@ -47,7 +47,9 @@ export function initializeQoinFirebase(config: QoinFirebaseConfig, persistence?:
  */
 export async function getQoinIdToken(): Promise<string | null> {
   const user = authInstance?.currentUser;
-  return user ? user.getIdToken() : null;
+  if (!user) return null;
+  try { return await user.getIdToken(); }
+  catch { return null; }
 }
 
 export function requireQoinFirebase() {
