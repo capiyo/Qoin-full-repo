@@ -1267,6 +1267,11 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable history observation count unavailable","symbol":symbol}))); }
     };
     let durable_history_complete=source_event_count==observation_count;
+    let truncated_relation_scans=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"relation_scan_truncated":true},None).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation coverage count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation coverage count unavailable","symbol":symbol}))); }
+    };
     let record_options=FindOptions::builder().sort(doc!{"event_time_ms":-1,"record_type":1}).limit(limit as i64).build();
     let mut record_cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol},Some(record_options)).await {
         Ok(cursor)=>cursor,
@@ -1289,6 +1294,8 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         object.insert("durable_records".into(),serde_json::Value::Array(durable_records));
         object.insert("source_event_count".into(),serde_json::json!(source_event_count));
         object.insert("durable_observation_count".into(),serde_json::json!(observation_count));
+        object.insert("truncated_relation_scans".into(),serde_json::json!(truncated_relation_scans));
+        object.insert("relation_coverage_complete".into(),serde_json::json!(truncated_relation_scans==0));
         object.insert("durable_history_complete".into(),serde_json::json!(durable_history_complete));
         object.insert("durable_history_note".into(),serde_json::json!(if durable_history_complete {
             "Every raw source event has an observation record. Check relation_scan_truncated on records for bounded-neighbour coverage."
