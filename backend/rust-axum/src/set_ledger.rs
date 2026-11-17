@@ -276,7 +276,7 @@ pub fn durable_records(
             "target_event_time_ms": target.ts_ms,
             "lag_ms": lag_ms,
             "window_ms": RELATION_WINDOW_MS,
-            "ingested_at": ingested_at,
+            "ingested_at": ingested_at.clone(),
             "interpretation": "Observed temporal ordering only; this relation does not establish causation.",
             "immutability": "append_only_supersede_to_correct"
         });
