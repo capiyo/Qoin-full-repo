@@ -836,7 +836,7 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"symbol is required"})));
     }
     let limit=q.limit.unwrap_or(500).clamp(1,1000);
-    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1}).limit(limit + 1).build();
+    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1}).limit(limit + 1).build();
     let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"set ledger event query failed");
