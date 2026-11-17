@@ -363,7 +363,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   </section>;
 }
 
-function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
+function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onToggleMode: () => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
   const [page, setPage] = useState<0 | 1>(0);
   const touchStart = useRef<number | null>(null);
   const changePage = (next: 0 | 1) => setPage(next);
@@ -435,7 +435,8 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
           <button type="button" aria-label="Show second card page" aria-pressed={page === 1} className={page === 1 ? "active" : ""} onClick={() => changePage(1)} />
         </div>
         <span>SWIPE TO EXPLORE</span>
-        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
+        <button type="button" className="text-action" aria-pressed={mode === "backtest"} onClick={onToggleMode}>{mode === "live" ? "Switch to backtest" : "Switch to live"}</button>
+        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>
       </div>
     </article>
   );
@@ -460,6 +461,8 @@ export default function App() {
   const pendingInstrumentRef = useRef<Instrument | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
+  const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
+  const selectedMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
@@ -807,7 +810,7 @@ export default function App() {
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
           {archived.length ? <div className="archive-workspace">
-            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => setCardModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
             <aside className="archive-market-sidebar" aria-label="Market pulse">
               <div className="market-pulse-panel">
                 <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
@@ -851,7 +854,7 @@ export default function App() {
             </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
             <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
           </section>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => setCardModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
@@ -897,8 +900,17 @@ export default function App() {
 
 
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
-        <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
+        <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => setCardModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></div></header>
         <div className="modal-body">
+          {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
+            <div className="vector-intro"><div><strong>Market vector mechanics</strong><p>Inspect the persisted decision vector, six normalized inputs, source evidence and the exact V1 strategy before replaying history.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <VectorMap decision={vector} history={vectorHistory} />
+            <FeatureSpace decision={vector} />
+            {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the active Rust vector strategy."}</p>}
+            <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+            <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
+            <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+          </section> : <>
           <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorMap decision={vector} history={vectorHistory} />
           <FeatureSpace decision={vector} />
@@ -963,7 +975,6 @@ export default function App() {
               <DecisionTracePanel decision={vector} />
               <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
               <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-              <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
@@ -1011,6 +1022,7 @@ export default function App() {
             </>
           ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
           <p className="disclaimer">The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</p>
+          </>}
         </div>
         <footer className="modal-footer"><button className="secondary-button" onClick={() => setSelected(null)}>Close</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
       </section></div>}
