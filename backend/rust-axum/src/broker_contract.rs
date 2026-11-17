@@ -365,6 +365,83 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
         remaining_daily_loss_budget, projected_gross_exposure })
 }
 
+#[derive(Debug, Clone)]
+pub struct ExecutionPreflight {
+    pub reference_price: f64,
+    pub reference_price_observed_at_ms: i64,
+    pub protective_stop_price: Option<f64>,
+    pub now_ms: i64,
+    /// The selected broker calculates margin using its own account mode,
+    /// instrument rules and current portfolio state.
+    pub required_margin_account_currency: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RiskCheckedReceipt {
+    pub risk: RiskApproval,
+    pub broker_receipt: BrokerOrderReceipt,
+}
+
+fn validate_capabilities(order: &NormalizedOrder, capabilities: &BrokerCapabilities) -> Result<(), ContractError> {
+    let supported = match order.order_type {
+        OrderType::Market => capabilities.market_orders,
+        OrderType::Limit => capabilities.limit_orders,
+        OrderType::Stop => capabilities.stop_orders,
+        OrderType::StopLimit => capabilities.stop_limit_orders,
+    };
+    if !supported {
+        return Err(ContractError::Unsupported("selected broker does not support this order type".into()));
+    }
+    if !order.reduce_only && !capabilities.native_protective_orders {
+        return Err(ContractError::Unsupported("selected broker cannot guarantee native protective orders".into()));
+    }
+    if !capabilities.cancel_orders {
+        return Err(ContractError::Unsupported("selected broker does not support order cancellation".into()));
+    }
+    Ok(())
+}
+
+/// Shared adapter invocation sequence. Callers must persist the client order
+/// intent before invoking this function and persist the returned receipt before
+/// reporting success. Any timeout/ambiguous adapter error requires reconciliation,
+/// never blind resubmission.
+pub async fn submit_risk_checked(
+    adapter: &dyn BrokerAdapter,
+    policy: &PortfolioRiskPolicy,
+    order: NormalizedOrder,
+    preflight: ExecutionPreflight,
+) -> Result<RiskCheckedReceipt, ContractError> {
+    if adapter.broker_id().trim().is_empty() {
+        return Err(ContractError::Broker("adapter has no broker identity".into()));
+    }
+    let account = adapter.account_snapshot(&order.account_id).await?;
+    let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
+    if account.broker_id != adapter.broker_id() || instrument.broker_id != adapter.broker_id() {
+        return Err(ContractError::InvalidAccount("adapter returned account or instrument for another broker".into()));
+    }
+    let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
+    validate_capabilities(&order, &capabilities)?;
+    let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
+        reference_price: preflight.reference_price,
+        protective_stop_price: preflight.protective_stop_price,
+        now_ms: preflight.now_ms,
+        reference_price_observed_at_ms: preflight.reference_price_observed_at_ms,
+        protective_order_supported: capabilities.native_protective_orders,
+        required_margin_account_currency: preflight.required_margin_account_currency,
+    })?;
+    let broker_receipt = adapter.submit_order(order.clone()).await?;
+    if broker_receipt.broker_id != adapter.broker_id()
+        || broker_receipt.account_id != order.account_id
+        || broker_receipt.client_order_id != order.client_order_id
+        || broker_receipt.broker_order_id.trim().is_empty()
+        || broker_receipt.accepted_at_ms <= 0
+        || broker_receipt.status.trim().is_empty()
+    {
+        return Err(ContractError::Broker("broker returned an invalid or mismatched acknowledgement; reconciliation is required".into()));
+    }
+    Ok(RiskCheckedReceipt { risk, broker_receipt })
+}
+
 /// Every broker implements the same account/order surface. Credentials and
 /// broker-specific payload translation remain inside the concrete adapter.
 #[async_trait]
