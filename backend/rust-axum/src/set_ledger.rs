@@ -13,11 +13,11 @@ const RELATION_WINDOW_MS: i64 = 60_000;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SetMeasure {
-    pub measure: &'static str,
-    pub count: usize,
-    pub volume_total: f64,
-    pub volume_observed_count: usize,
-    pub volume_missing_count: usize,
+    pub counting_measure: usize,
+    pub trade_size_measure: f64,
+    pub trade_size_unit: &'static str,
+    pub trade_size_observed_count: usize,
+    pub trade_size_missing_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,11 +82,11 @@ fn measure(events: &[&MarketEvent]) -> SetMeasure {
     }
     let trade_count = events.iter().filter(|event| event.event_type == "trade").count();
     SetMeasure {
-        measure: "counting_measure_with_trade_size_volume",
-        count: events.len(),
-        volume_total,
-        volume_observed_count,
-        volume_missing_count: trade_count.saturating_sub(volume_observed_count),
+        counting_measure: events.len(),
+        trade_size_measure: volume_total,
+        trade_size_unit: "instrument_quantity_units",
+        trade_size_observed_count: volume_observed_count,
+        trade_size_missing_count: trade_count.saturating_sub(volume_observed_count),
     }
 }
 
@@ -258,11 +258,11 @@ mod tests {
         assert_eq!(ledger.window_start_ts_ms, Some(1_000));
         assert_eq!(ledger.window_end_ts_ms, Some(4_000));
         let set = |id: &str| ledger.sets.iter().find(|item| item.set_id == id).unwrap();
-        assert_eq!(set("buy_trades").measure.count, 1);
-        assert_eq!(set("sell_trades").measure.count, 1);
-        assert_eq!(set("long_liquidations").measure.count, 1);
-        assert_eq!(set("positive_funding").measure.count, 1);
-        assert_eq!(set("trades").measure.volume_total, 4.0);
+        assert_eq!(set("buy_trades").measure.counting_measure, 1);
+        assert_eq!(set("sell_trades").measure.counting_measure, 1);
+        assert_eq!(set("long_liquidations").measure.counting_measure, 1);
+        assert_eq!(set("positive_funding").measure.counting_measure, 1);
+        assert_eq!(set("trades").measure.trade_size_measure, 4.0);
         assert_eq!(ledger.relations[0].edge_count, 1);
         assert_eq!(ledger.relations[1].edge_count, 1);
         assert_eq!(ledger.relations[2].edge_count, 1);
@@ -300,7 +300,7 @@ mod tests {
         let ledger = build("BTCUSDT", &[], 2);
         assert_eq!(ledger.universe_count, 0);
         assert_eq!(ledger.skipped_invalid_events, 2);
-        assert!(ledger.sets.iter().all(|item| item.measure.count == 0));
+        assert!(ledger.sets.iter().all(|item| item.measure.counting_measure == 0));
         assert!(ledger.relations.iter().all(|item| item.edges.is_empty()));
     }
 }
