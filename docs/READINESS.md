@@ -1,6 +1,6 @@
 # Qoin readiness and completion evidence
 
-**Candidate branch:** `qoin/integration-completion`  
+**Candidate branch:** `qoin/full-integration-rework-paper`  
 **Last source-code commit:** `4f9007ab6b` (Drogon paper-session/cycle routes); the subsequent workflow/docs commits are separately tracked  
 **Current PR head:** PR #16 live head (the latest evidence snapshot below was taken on `99357fbb67f1dbd4285d352dcce40a3b13cf470a`; subsequent commits may be documentation-only)  
 **Base snapshot:** PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`  
@@ -100,3 +100,34 @@ These prerequisites do not block implementation of the corresponding interfaces,
 ## Backlog policy
 
 No unclassified work is considered complete. The backlog lists unfinished engineering as IN PROGRESS. BLOCKED is reserved for the external prerequisites below. Real-money mode must stay disabled; no merge to `main` or production deployment is authorized by this readiness report.
+
+## Frontend/backend integration rework (2026-11-17)
+
+**Status: IN PROGRESS — source corrections committed; exact-head verification pending.**
+
+### Corrections applied on `qoin/full-integration-rework-paper`
+
+- Removed hardcoded starter instrument registries from both React web and React Native. Both clients now initialize with an empty registry and render only instruments returned by `GET /api/v1/instruments`; Archive membership is no longer fabricated from a fixed BTC/ETH/SOL list.
+- Replaced the mobile instrument-registry failure handler that silently swallowed errors with a visible error state. The web client also surfaces the registry failure in Explore.
+- Corrected the shared API request helper so every non-2xx HTTP response throws an error instead of treating selected error payloads as successful application data.
+- Removed the retired-model health field from the shared TypeScript API contract.
+- Confirmed the frontend API paths for algorithms, backtest, calendar, events, instruments, news, strategy, stream, vector and vector history have matching Drogon gateway handlers and Axum internal routes on this branch.
+
+### Boundaries confirmed
+
+- Firebase Authentication and Firestore profile/Archive persistence are client-side integrations. They are not currently routed through Axum or MongoDB.
+- Axum Firebase ID-token verification, UID-derived server-side authorization, durable Mongo-backed user Archive/notification endpoints and server-side paid-entitlement enforcement remain incomplete.
+- Public market-data WebSocket and read-only market APIs are not evidence of authenticated user-specific backend access.
+- Algorithm catalogue and market-access tiers remain preview-only.
+- The full chain from provider ingestion through vector decision, paper-session ledger and authenticated Archive has not yet been verified as one end-to-end test.
+
+### Required verification before marking complete
+
+- Run web production build and strict shared-core typecheck.
+- Run React Native typecheck/build.
+- Run Rust workspace tests and Axum–Drogon–MongoDB integration.
+- Run Drogon gateway build and repeated integration stress tests.
+- Run Python reference tests, Compose/container smoke tests and desktop platform checks.
+- Add and pass tests for registry failure rendering, no fabricated instruments, HTTP non-2xx propagation, cross-client API contract parity, Firebase token verification, UID isolation and Archive synchronization.
+- Record exact final commit SHA and completed workflow/job results. No older CI run is accepted as evidence for this branch.
+
