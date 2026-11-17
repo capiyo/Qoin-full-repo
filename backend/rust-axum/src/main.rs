@@ -71,6 +71,7 @@ struct AppState {
     stream: broadcast::Sender<serde_json::Value>,
     database: mongodb::Database,
     events: Collection<Document>,
+    set_ledger_records: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
@@ -394,6 +395,42 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "new_order_entry_enabled":order_entry_enabled,
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
+
+/// Append the immutable V2 observation and temporal-relation records associated
+/// with an event. The bounded neighbour query is supported by the raw-event
+/// symbol/time index; deterministic record IDs make this safe to retry.
+async fn persist_set_ledger_records(
+    events: &Collection<Document>,
+    ledger: &Collection<Document>,
+    event: &MarketEvent,
+) -> Result<usize,String> {
+    let from_ts = event.ts_ms.saturating_sub(60_000);
+    let to_ts = event.ts_ms.saturating_add(60_000);
+    let options = FindOptions::builder()
+        .sort(doc!{"ts_ms":1,"event_id":1,"venue":1})
+        .limit(5001)
+        .build();
+    let mut cursor = events.find(doc!{"symbol":&event.symbol,"ts_ms":{"$gte":from_ts,"$lte":to_ts}},Some(options))
+        .await.map_err(|error|error.to_string())?;
+    let mut neighbours=Vec::new();
+    while let Some(mut document)=cursor.try_next().await.map_err(|error|error.to_string())? {
+        document.remove("_id");
+        if let Ok(candidate)=mongodb::bson::from_document::<MarketEvent>(document) {
+            if validate_event(&candidate).is_ok() { neighbours.push(candidate); }
+        }
+    }
+    let records=set_ledger::durable_records(event,&neighbours,mongodb::bson::DateTime::now())?;
+    let mut inserted=0usize;
+    for record in records {
+        match ledger.insert_one(record,None).await {
+            Ok(_)=>inserted+=1,
+            Err(error) if error.to_string().contains("E11000")=>{},
+            Err(error)=>return Err(error.to_string()),
+        }
+    }
+    Ok(inserted)
+}
+
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
     // Serialize the full persistence/decision pipeline per canonical symbol.
     // The memory lock alone only protects state mutation; without this guard,
@@ -405,9 +442,19 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     let _symbol_guard = s.symbol_ingest_locks[lock_stripe].lock().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
-    match s.events.insert_one(raw,None).await{
-        Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
+    let newly_inserted = match s.events.insert_one(raw,None).await{
+        Ok(_)=>true,
+        Err(e) if e.to_string().contains("E11000")=>false,
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
+    };
+    // Repair the derived ledger on duplicate delivery too: this closes the
+    // crash window between raw-event persistence and ledger-record persistence.
+    if let Err(error)=persist_set_ledger_records(&s.events,&s.set_ledger_records,&event).await {
+        tracing::error!(error=%error,symbol=%event.symbol,event_id=%event.event_id,"durable V2 ledger append failed");
+        return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable set ledger append failed","event_persisted":true})));
+    }
+    if !newly_inserted {
+        return (StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id,"ledger_repair_attempted":true})));
     }
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
@@ -865,7 +912,40 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
     }
     events.reverse();
     let ledger=set_ledger::build(&symbol,&events,skipped_invalid_events,limit as usize,universe_truncated);
-    (StatusCode::OK,Json(serde_json::to_value(ledger).unwrap_or_default()))
+    let mut response=serde_json::to_value(ledger).unwrap_or_default();
+    let durable_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol},None).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable ledger count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable set ledger unavailable","symbol":symbol}))); }
+    };
+    let relation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"relation_edge"},None).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation ledger unavailable","symbol":symbol}))); }
+    };
+    let record_options=FindOptions::builder().sort(doc!{"event_time_ms":-1,"record_type":1}).limit(limit as i64).build();
+    let mut record_cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol},Some(record_options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable ledger records query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable ledger records unavailable","symbol":symbol}))); }
+    };
+    let mut durable_records=Vec::new();
+    loop {
+        match record_cursor.try_next().await {
+            Ok(Some(mut document))=>{document.remove("_id");durable_records.push(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default());}
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable ledger cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable ledger read failed","symbol":symbol}))); }
+        }
+    }
+    if let Some(object)=response.as_object_mut() {
+        object.insert("persistence".into(),serde_json::json!("append_only_mongodb_records_for_ingested_events"));
+        object.insert("durable_record_count".into(),serde_json::json!(durable_count));
+        object.insert("durable_relation_count".into(),serde_json::json!(relation_count));
+        object.insert("durable_records".into(),serde_json::Value::Array(durable_records));
+        object.insert("durable_history_complete".into(),serde_json::json!(false));
+    }
+    (StatusCode::OK,Json(response))
 }
 async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
@@ -1206,6 +1286,7 @@ async fn main(){
     let db=client.database(&env::var("QOIN_MONGODB_DATABASE").unwrap_or_else(|_|"qoin".into()));
     db.run_command(doc!{"ping":1},None).await.expect("MongoDB ping");
     let events:Collection<Document>=db.collection("market_events");
+    let set_ledger_records:Collection<Document>=db.collection("set_relation_ledger");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
@@ -1219,6 +1300,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
+    set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_ms":-1,"record_type":1}).build(),None).await.expect("durable V2 ledger symbol/time index");
+    set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"record_type":1,"relation_id":1}).build(),None).await.expect("durable V2 relation lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
@@ -1274,7 +1357,7 @@ async fn main(){
         "rebuilt market snapshots from immutable MongoDB event log");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,orders,trading_controls,
+        stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
