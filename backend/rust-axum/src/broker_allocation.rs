@@ -87,8 +87,10 @@ pub fn allocate_equal_notional(
         if target.broker_id.trim().is_empty()
             || target.account_id.trim().is_empty()
             || target.instrument_id.trim().is_empty()
-            || !accounts.insert((target.broker_id.clone(), target.account_id.clone()))
         {
+            return Err(AllocationError::InvalidTarget("broker, account and instrument identifiers are required".into()));
+        }
+        if !accounts.insert((target.broker_id.clone(), target.account_id.clone())) {
             return Err(AllocationError::DuplicateAccount);
         }
         if target.native_unit_value_portfolio <= Decimal::ZERO
@@ -111,8 +113,13 @@ pub fn allocate_equal_notional(
         let raw_quantity = target_share
             .checked_div(target.native_unit_value_portfolio)
             .ok_or_else(|| AllocationError::Arithmetic(format!("quantity conversion failed for {}", target.account_id)))?;
-        let step_count = (raw_quantity / target.quantity_step).floor();
-        let quantity = step_count * target.quantity_step;
+        let step_count = raw_quantity
+            .checked_div(target.quantity_step)
+            .ok_or_else(|| AllocationError::Arithmetic(format!("quantity step conversion failed for {}", target.account_id)))?
+            .floor();
+        let quantity = step_count
+            .checked_mul(target.quantity_step)
+            .ok_or_else(|| AllocationError::Arithmetic(format!("quantity rounding overflow for {}", target.account_id)))?;
         if quantity < target.minimum_quantity || quantity <= Decimal::ZERO {
             return Err(AllocationError::BelowMinimum(target.account_id.clone()));
         }
