@@ -962,7 +962,11 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     };
     let late_event=latest_before_ingest.is_some_and(|last|event.ts_ms<last);
     let run_v2_discovery=should_run_v2_history_discovery(latest_before_ingest,event.ts_ms);
+    let event_available_at_ms=chrono::Utc::now().timestamp_millis();
     let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    // Preserve the original availability boundary so replayed vectors retain
+    // their provenance and V2 ledger event IDs remain stable across restarts.
+    raw.insert("_qoin_available_at_ms",event_available_at_ms);
     // The immutable log records whether the live state machine applied this
     // event. Recovery must preserve the same policy for late arrivals.
     raw.insert("_qoin_applied",!late_event);
@@ -998,7 +1002,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return(StatusCode::CONFLICT,Json(serde_json::json!({"error":"event became late before state application","event_persisted":true})));
         }
         apply(state,&event);
-        let vector=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis(),&peer_states);
+        let vector=build_market_vector(state,&event,event_available_at_ms,&peer_states);
         (state.clone(),vector)
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
@@ -2480,17 +2484,20 @@ async fn main(){
     // log closes that specific recovery gap and uses deterministic event-time
     // ordering across providers. Malformed legacy rows are skipped and surfaced.
     let replay_options = FindOptions::builder()
-        // Global event-time ordering is required for causal cross-asset features.
-        .sort(doc!{"ts_ms":1,"venue":1,"symbol":1,"event_id":1})
+        // Preserve live per-symbol arrival order for equal timestamps while
+        // retaining global event-time ordering across symbols.
+        .sort(doc!{"ts_ms":1,"_id":1})
         .build();
     let mut event_cursor = events.find(None, Some(replay_options)).await
         .expect("open immutable market event log for recovery");
     let mut restored_memory: HashMap<String, SymbolState> = HashMap::new();
     let mut restored_vectors: HashMap<String, MarketVector> = HashMap::new();
+    let mut restored_latest_events: HashMap<String, MarketEvent> = HashMap::new();
     let mut replayed_events: u64 = 0;
     let mut skipped_events: u64 = 0;
     while let Some(document) = event_cursor.try_next().await
         .expect("read immutable market event log during recovery") {
+        let persisted_available_at_ms=document.get_i64("_qoin_available_at_ms").ok();
         if !persisted_event_is_applied(&document){
             tracing::debug!("preserving persisted late event as unapplied during recovery");
             continue;
@@ -2504,7 +2511,21 @@ async fn main(){
                     .map(|(_,peer)|peer.clone()).collect::<Vec<_>>();
                 let state = restored_memory.entry(state_key.clone()).or_default();
                 apply(state, &event);
-                if let Some(vector)=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis(),&peer_states){
+                restored_latest_events.insert(state_key.clone(),event.clone());
+                let available_at_ms=persisted_available_at_ms.unwrap_or(event.ts_ms).max(event.ts_ms);
+                if let Some(vector)=build_market_vector(state,&event,available_at_ms,&peer_states){
+                    let mut vector_document=mongodb::bson::to_document(&vector)
+                        .expect("serialize replayed causal market vector");
+                    vector_document.insert("stored_at",mongodb::bson::DateTime::now());
+                    match market_vectors.insert_one(vector_document,None).await{
+                        Ok(_)=>{},
+                        Err(error) if error.to_string().contains("E11000")=>{},
+                        Err(error)=>{
+                            skipped_events+=1;
+                            tracing::warn!(error=%error,vector_id=%vector.vector_id,
+                                "could not persist replayed market vector");
+                        }
+                    }
                     restored_vectors.insert(state_key,vector);
                 }
                 replayed_events += 1;
