@@ -1021,6 +1021,59 @@ async fn propose_set_ledger_correction(
     }
 }
 
+
+#[derive(Deserialize)]
+struct LedgerCorrectionQuery {
+    symbol: Option<String>,
+    status: Option<String>,
+    limit: Option<i64>,
+}
+
+async fn list_set_ledger_corrections(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<LedgerCorrectionQuery>,
+) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    if q.symbol.as_deref().is_some_and(|value| value.trim().is_empty() || value.len()>96) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol is invalid"})));
+    }
+    let status=q.status.unwrap_or_else(||"pending_review".into());
+    if !matches!(status.as_str(),"pending_review"|"all") {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"status must be pending_review or all"})));
+    }
+    let limit=q.limit.unwrap_or(100).clamp(1,500);
+    let mut filter=doc!{"record_type":"source_correction"};
+    if status!="all" {filter.insert("status",&status);}
+    if let Some(symbol)=q.symbol.as_deref() {filter.insert("symbol",symbol);}
+    let options=FindOptions::builder().sort(doc!{"created_at":-1,"record_id":1}).limit(limit+1).build();
+    let mut cursor=match s.set_ledger_records.find(filter,Some(options)).await {
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,"V2 correction queue query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"correction queue unavailable"})));}
+    };
+    let mut records=Vec::new();
+    let mut truncated=false;
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut record))=>{
+                if records.len()>=limit as usize {truncated=true;break;}
+                record.remove("_id");
+                records.push(mongodb::bson::from_document::<serde_json::Value>(record).unwrap_or_default());
+            }
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"V2 correction queue cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"correction queue read failed"})));}
+        }
+    }
+    (StatusCode::OK,Json(serde_json::json!({
+        "items":records,"count":records.len(),"limit":limit,"truncated":truncated,
+        "status_filter":status,"symbol":q.symbol
+    })))
+}
+
 #[derive(Deserialize)]
 struct LedgerBackfillQuery {
     symbol: Option<String>,
@@ -1925,6 +1978,7 @@ async fn main(){
         .route("/internal/set-ledger/reconstruct",get(reconstruct_set_ledger))
         .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
          .route("/internal/set-ledger/corrections",post(propose_set_ledger_correction))
+         .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
