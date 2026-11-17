@@ -270,6 +270,8 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
 }
 
 function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; live?: { state?: QoinMarketState; decision?: QoinVectorDecision } }) {
+  const [mechanicsOpen, setMechanicsOpen] = useState(false);
+  const decision = live?.decision;
   return (
     <article className="instrument-card">
       <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} vector space`}>
@@ -277,7 +279,26 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
         <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
         <span className="open-arrow" aria-hidden="true">↗</span>
       </button>
-      <p className="asset-description">{item.description}</p><p className="asset-provider">{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</p><div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{live?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</span></div>
+      <p className="asset-description">{item.description}</p>
+      <p className="asset-provider">{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</p>
+      <div className="asset-live-row"><strong>{live?.state?.last_price != null ? live.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><span>{decision?.action?.toUpperCase() || "NO LIVE DATA"}</span></div>
+      <button className="card-mechanics-toggle" type="button" aria-expanded={mechanicsOpen} onClick={() => setMechanicsOpen((open) => !open)}>{mechanicsOpen ? "Hide engine mechanics" : "Inspect engine mechanics"} <span>{mechanicsOpen ? "−" : "+"}</span></button>
+      {mechanicsOpen && <section className="card-mechanics-panel" aria-label={item.name + " engine mechanics"}>
+        {decision ? <>
+          <div className="card-mechanics-metrics">
+            <div><span>Decision vector</span><strong>{decision.decision_vector ? decision.decision_vector.map((value) => value.toFixed(4)).join(" / ") : "Not supplied"}</strong></div>
+            <div><span>Magnitude</span><strong>{decision.magnitude?.toFixed(4) ?? "—"}</strong></div>
+            <div><span>Angle</span><strong>{decision.angle_degrees?.toFixed(2) ?? "—"}°</strong></div>
+            <div><span>Strategy</span><strong>{decision.strategy_version || "Unversioned"}</strong></div>
+          </div>
+          <p className="card-mechanics-reason">{decision.action?.toUpperCase() || "WAIT"} · {decision.reason || "The engine did not provide a rationale."}</p>
+          <div className="card-mechanics-features">
+            {(decision.feature_trace || []).map((feature) => <div key={feature.name}><span>{feature.name.replaceAll("_", " ")}</span><strong>N {feature.clamped_value.toFixed(3)} · B {feature.bullish_weighted_term.toFixed(3)} · S {feature.bearish_weighted_term.toFixed(3)}</strong></div>)}
+            {!decision.feature_trace?.length && <p>Feature calculation trace was not included in this decision.</p>}
+          </div>
+          <p className="card-mechanics-footnote">Values are from the latest persisted engine decision, not estimates. Open the instrument to inspect raw inputs, attention weights, gate checks and the complete trace.</p>
+        </> : <p className="card-mechanics-footnote">No persisted engine decision is available for this instrument yet. The card will not invent feature values or a signal.</p>}
+      </section>}
       {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </article>
   );
@@ -286,6 +307,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
@@ -332,6 +354,7 @@ export default function App() {
       return subscribeQoinAuth((user) => {
         const requestGeneration = ++generation;
         setFirebaseUser(user);
+        setAuthReady(true);
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
@@ -361,6 +384,7 @@ export default function App() {
       });
     } catch {
       setFirebaseUser(null);
+      setAuthReady(true);
       setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in.");
       return undefined;
     }
@@ -552,6 +576,28 @@ export default function App() {
       }
       setAuthError(error instanceof Error ? error.message : "Could not save your archive.");
     });
+  }
+
+  if (!authReady || !firebaseUser) {
+    return (
+      <main className="auth-gate">
+        <section className="auth-gate-card">
+          <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
+          <p className="eyebrow">PRIVATE MARKET WORKSPACE</p>
+          <h1>{!authReady ? "Checking your session" : authMode === "register" ? "Create your Qoin account" : "Sign in to Qoin"}</h1>
+          <p className="auth-gate-copy">{!authReady ? "Restoring your Firebase account session…" : "Sign in to access Archive, Explore, instrument cards, research mechanics and your saved workspace."}</p>
+          {authReady && <form onSubmit={submitAuthentication} className="auth-gate-form">
+            <label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required /></label>
+            <label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>
+            {authError && <p role="alert">{authError}</p>}
+            <button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+            <button type="button" className="account-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already registered? Sign in" : "New to Qoin? Create an account"}</button>
+          </form>}
+          {!authReady && <p className="auth-gate-copy">No guest workspace is shown while authentication is being resolved.</p>}
+          {authReady && <p className="auth-gate-note">Authentication uses Firebase email/password. Server-side Firebase ID-token enforcement for future personalized API routes remains a separate backend requirement.</p>}
+        </section>
+      </main>
+    );
   }
 
   return (
