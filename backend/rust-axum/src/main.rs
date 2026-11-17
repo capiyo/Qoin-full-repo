@@ -1565,9 +1565,13 @@ async fn publish_variable_hub(
     let mut document=mongodb::bson::to_document(&vector).map_err(|error|(StatusCode::BAD_REQUEST,
         Json(serde_json::json!({"error":error.to_string()}))))?;
     document.insert("stored_at",mongodb::bson::DateTime::now());
-    state.market_vectors.replace_one(doc!{"vector_id":&vector.vector_id},document,
-        mongodb::options::ReplaceOptions::builder().upsert(true).build()).await
-        .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","detail":error.to_string()}))))?;
+    match state.market_vectors.insert_one(document,None).await{
+        Ok(_)=>{},
+        Err(error) if error.to_string().contains("E11000")=>{
+            return Err((StatusCode::CONFLICT,Json(serde_json::json!({"error":"market vector IDs are immutable and this vector_id already exists","vector_id":vector.vector_id}))));
+        }
+        Err(error)=>return Err((StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","detail":error.to_string()})))),
+    }
     persist_variable_hub(&state,&hub).await.map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,
         Json(serde_json::json!({"error":"variable hub persistence failed","detail":error}))))?;
     Ok(Json(serde_json::json!({"market_vector":vector,"variables":hub.progress_all()})))
@@ -1927,7 +1931,7 @@ async fn main(){
                 let state_key=format!("{}|{}",event.venue,event.symbol);
                 let state = restored_memory.entry(state_key.clone()).or_default();
                 apply(state, &event);
-                if let Some(vector)=build_market_vector(state,&event,event.ts_ms){
+                if let Some(vector)=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis()){
                     restored_vectors.insert(state_key,vector);
                 }
                 replayed_events += 1;
@@ -1949,9 +1953,10 @@ async fn main(){
     for vector in restored_vectors.values(){
         if let Ok(mut document)=mongodb::bson::to_document(vector){
             document.insert("stored_at",mongodb::bson::DateTime::now());
-            if let Err(error)=market_vectors.replace_one(doc!{"vector_id":&vector.vector_id},document,
-                mongodb::options::ReplaceOptions::builder().upsert(true).build()).await{
-                tracing::warn!(error=%error,vector_id=%vector.vector_id,"could not restore latest causal market vector");
+            match market_vectors.insert_one(document,None).await{
+                Ok(_)=>{},
+                Err(error) if error.to_string().contains("E11000")=>{},
+                Err(error)=>tracing::warn!(error=%error,vector_id=%vector.vector_id,"could not restore latest causal market vector"),
             }
         }
     }
