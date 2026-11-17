@@ -5,7 +5,7 @@
 //! dependency-checked derivation into immutable market-vector snapshots.
 //! Algorithm versions never own separate copies of these shared variables.
 
-use crate::{FeatureAvailability, MarketFeature, MarketSpaceError, MarketVector};
+use crate::{MarketFeature, MarketSpaceError, MarketVector};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -50,6 +50,7 @@ const MOMENTUM_VOL: &[MarketFeature] = &[MarketFeature::Momentum, MarketFeature:
 const MOMENTUM_TIMEFRAME: &[MarketFeature] = &[MarketFeature::Momentum, MarketFeature::TimeframeAgreement];
 const TREND_PERSISTENCE: &[MarketFeature] = &[MarketFeature::TrendStrength, MarketFeature::TrendPersistence];
 const SPREAD_DEPTH: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeature::OrderBookDepth];
+const LIQUIDITY_STRESS_INPUTS: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeature::OrderBookDepth, MarketFeature::MarketImpact, MarketFeature::LiquidityConcentration];
 const FLOW_DEPTH: &[MarketFeature] = &[MarketFeature::OrderFlowImbalance, MarketFeature::OrderBookDepth];
 const LIQUIDITY_COSTS: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeature::MarketImpact];
 const CROSS_ASSET: &[MarketFeature] = &[MarketFeature::Correlation, MarketFeature::Covariance, MarketFeature::Beta];
@@ -120,10 +121,7 @@ pub fn descriptor(feature: MarketFeature) -> VariableDescriptor {
         // Regime coordinates are derived from ordinary market variables.
         RegimeTrendStrength => (VariableStage::Regime, TREND_PERSISTENCE),
         RegimeVolatilityLevel => (VariableStage::Regime, VOL_TAIL),
-        RegimeLiquidityStress => (
-            VariableStage::Regime,
-            &[SpreadBps, OrderBookDepth, MarketImpact, LiquidityConcentration],
-        ),
+        RegimeLiquidityStress => (VariableStage::Regime, LIQUIDITY_STRESS_INPUTS),
         RegimeCorrelationStress => (VariableStage::Regime, CROSS_ASSET),
         RegimeTransitionIntensity => (VariableStage::Regime, TRANSITION_INPUTS),
         RegimeUncertainty => (VariableStage::Regime, UNCERTAINTY_INPUTS),
@@ -462,7 +460,7 @@ impl VariableHub {
                 && self.published_revisions.get(&feature) == Some(&value.revision) =>
                     VariableLifecycle::Published,
             Some(value) if value.normalized_value.is_some() => VariableLifecycle::Normalized,
-            Some(value) if definition.stage == VariableStage::Input => VariableLifecycle::Observed,
+            Some(_) if definition.stage == VariableStage::Input => VariableLifecycle::Observed,
             Some(_) => VariableLifecycle::Derived,
             None if !blocked_by.is_empty() => VariableLifecycle::Blocked,
             None => VariableLifecycle::AwaitingInput,
