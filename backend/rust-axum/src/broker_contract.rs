@@ -431,7 +431,8 @@ mod tests {
 
     #[test]
     fn portfolio_risk_is_account_currency_and_asset_class_agnostic() {
-        let spec = instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92);
+        let mut spec = instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92);
+        spec.quote_currency = "USD".into();
         let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
             account_currency:"EUR".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
             daily_realized_pnl:0.0, daily_unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
@@ -461,6 +462,12 @@ mod tests {
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
             reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
             protective_order_supported:false, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).is_err());
+        assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
+            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
+            protective_order_supported:true, conversion_rate_age_ms:6_000, required_margin_account_currency:100.0 }).is_err());
+        assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
+            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
+            protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:6_000.0 }).is_err());
     }
 
     #[test]
