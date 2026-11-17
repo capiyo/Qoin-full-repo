@@ -3051,12 +3051,15 @@ mod market_stream_tests {
 
     #[test]
     fn recovery_preserves_late_event_exclusion_and_legacy_event_compatibility(){
-        let late=doc!{"_qoin_applied":false};
-        let applied=doc!{"_qoin_applied":true};
+        let late=doc!{"_qoin_applied":false,"_qoin_pipeline_status":"ignored_late"};
+        let applied=doc!{"_qoin_applied":true,"_qoin_pipeline_status":"complete"};
+        let pending=doc!{"_qoin_applied":true,"_qoin_pipeline_status":"pending"};
         let legacy=doc!{"event_id":"legacy-event"};
         assert!(!persisted_event_is_applied(&late));
         assert!(persisted_event_is_applied(&applied));
         assert!(persisted_event_is_applied(&legacy));
+        assert!(pending_pipeline_event(&pending));
+        assert!(!pending_pipeline_event(&applied));
     }
 }
 
