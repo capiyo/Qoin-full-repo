@@ -144,6 +144,7 @@ fn push_bounded<T>(history: &mut VecDeque<T>, value: T) {
 
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.venue = event.venue.clone();
+    state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
     push_bounded(&mut state.recent_event_ts_ms, event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
@@ -254,6 +255,7 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
             output.insert(JumpIntensity,return_window.iter().filter(|value|value.abs()>3.0*vol).count() as f64/return_window.len() as f64);
         }
         if let Some(avg)=average_return{output.insert(TrendStrength,avg/vol.max(1.0e-12)*(return_window.len() as f64).sqrt());}
+        if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
         if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
     }
     if let Some(avg)=average_return{output.insert(Momentum,avg*return_window.len() as f64);}
@@ -2107,6 +2109,33 @@ mod market_stream_tests {
 #[cfg(test)]
 mod execution_route_auth_tests {
     use super::constant_time_token_match;
+
+    #[test]
+    fn causal_normalization_requires_past_samples_and_rejects_constant_history(){
+        let mut history=VecDeque::new();
+        for value in 1..=7{assert!(causal_robust_normalize(value as f64,&history).is_none());push_bounded(&mut history,value as f64);}
+        push_bounded(&mut history,8.0);
+        assert!(causal_robust_normalize(100.0,&history).unwrap()>0.99);
+        assert!(causal_robust_normalize(2.0,&VecDeque::from(vec![2.0;12])).is_none());
+    }
+    #[test]
+    fn event_pipeline_publishes_only_causally_normalized_features(){
+        let mut state=SymbolState::default();let mut latest=None;
+        for index in 0..24{
+            let price=100.0+index as f64*0.15+(index%3) as f64*0.08;
+            let event=MarketEvent{
+                event_id:format!("pipeline-{index}"),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
+                event_type:"trade".into(),ts_ms:1_800_000_000_000+index*1_000,price:Some(price),size:Some(1.0),
+                side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
+                funding_rate:None,open_interest:None,liquidation_side:None,
+            };
+            apply(&mut state,&event);latest=build_market_vector(&mut state,&event,event.ts_ms);
+        }
+        let vector=latest.expect("past samples should warm the vector");
+        assert!(vector.validate().is_ok());assert_eq!(vector.symbol,"BTCUSDT");assert_eq!(vector.venue,"test-venue");
+        assert!(vector.event_time_cutoff_ms<=vector.available_at_ms);
+        assert_eq!(vector.coordinates[&MarketFeature::RegimeCorrelationStress].status,qoin_market_space::FeatureAvailability::Missing);
+    }
 
     #[test]
     fn causal_normalization_requires_past_samples_and_rejects_constant_history(){

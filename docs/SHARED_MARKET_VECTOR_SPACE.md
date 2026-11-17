@@ -180,7 +180,7 @@ When vector, set, regime and risk factors interact nonlinearly, fixed weights ar
 5. Percentages describe contribution to the reported score or measure, not causal certainty, confidence, or win probability.
 6. A final BUY/SELL/WAIT label is a thresholded decision. Attribute the underlying continuous score and risk-adjusted score, and show the threshold separately.
 
-The shared Rust crate now supplies vector-projection attribution, overlap-aware atomic set-measure attribution and exact Shapley attribution. The TypeScript package contains matching report contracts. These primitives still need to be wired into each live research response and the eventual UI; no existing decision endpoint should claim to return percentages until it actually invokes the attribution service.
+The shared Rust crate supplies vector-projection attribution, overlap-aware atomic set-measure attribution and exact Shapley attribution. V1's shared-vector signal endpoint now returns coordinate-level and family-level Shapley attribution for its risk-adjusted decision margin. V2's vector relationship discovery endpoint returns each persisted relationship with its pairwise set-measure allocation. The TypeScript package contains matching report contracts; frontend rendering is the next phase.
 
 
 ### Per-variable dependency attribution
@@ -197,3 +197,30 @@ V1's shared-vector decision quality-weights its seven force coordinates and five
 V2 relationship records now carry a pairwise atomic set-measure report. Every evidence atom has unit mass; an atom shared by both sets is split across memberships, so the union is counted once. The report is validated again when a relationship ledger event is appended or read. The vector-discovery endpoint returns the relationship records, including each relationship's set measure and attention weight, instead of only returning aggregate write counts.
 
 These are research explanations of model score/evidence structure, not causal probabilities, win probabilities, or expected returns. V1 remains the only directional signal engine; V2 discovers and logs relationships and does not submit orders.
+
+
+## Backend ingestion and variable-hub API
+
+The Axum event pipeline now maintains isolated state per **venue + symbol**, preventing two exchanges that use the same symbol string from contaminating one another. It creates immutable `event-window` market-vector snapshots from the canonical trade, book, funding, open-interest and liquidation events. Raw rolling features include returns, displacement, rate of change, swing position, realized volatility, volatility-of-volatility, skew, kurtosis, jump intensity, momentum, trend strength/persistence, mean reversion, spread, depth, order-flow imbalance, volume delta, impact/slippage estimates, funding pressure, open-interest change, liquidation pressure, event intensity and selected regime/temporal coordinates.
+
+Each raw feature is normalized using a rolling median and MAD computed from **prior observations only**. The current sample is appended only after its normalization is calculated. At least eight prior samples and a non-degenerate historical scale are required; otherwise the coordinate remains Missing. Unsupported dimensions are not fabricated. In particular, cross-asset correlation stress, regime uncertainty, basis, options Greeks/IV, macro surprise and portfolio variables remain Missing until their specialist producers supply them. V1 continues to fail closed when its required coordinates are unavailable.
+
+Available routes:
+
+- `GET /internal/market-vector?symbol=BTCUSDT&venue=binance_usdm` — latest immutable vector
+- `GET /internal/market-vector/history?symbol=BTCUSDT&venue=binance_usdm&limit=120` — vector history
+- `POST /internal/v1/market-vector/signal` — V1 decision plus exact Shapley/family attribution
+- `POST /internal/v2/relationships/discover-vectors` — V2 evidence-set discovery and append-only ledger records
+
+The persistent variable hub is exposed separately for specialist feature producers and derived calculators:
+
+- `POST /internal/variables/observe` — register a raw input and provenance
+- `POST /internal/variables/normalize` — apply a past-only normalization profile
+- `POST /internal/variables/derive` — record a derived variable after all dependencies are current; optional attribution is validated
+- `POST /internal/variables/not-applicable` — explicitly mark a structurally inapplicable dimension
+- `GET /internal/variables/progress?venue=...&symbol=...&timeframe=...` — return all 53 lifecycle states and dependency blockers
+- `POST /internal/variables/publish` — freeze fresh normalized variables into a versioned MarketVector
+
+Hub snapshots and published vectors are persisted in MongoDB. Derived values retain dependency revisions, and upstream changes make dependent values Stale. The auto-generated event-window vector pipeline and the specialist variable-hub path are intentionally separate producer paths that converge on the same MarketVector schema.
+
+All routes above are internal research interfaces. This does not activate real-money order submission. Live execution remains behind the existing execution token and kill switch, and no deployment or merge is performed by this work.
