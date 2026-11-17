@@ -134,6 +134,25 @@ paths:
         '200': { description: Derived set memberships and temporal relation ledger }
         '400': { description: Invalid symbol }
         '503': { description: Event storage unavailable }
+  /api/v1/set-ledger/reconstruct:
+    get:
+      summary: Reconstruct Version 2 sets from durable observation records
+      description: |
+        Read-only reconstruction from MongoDB observation records. Recomputes source-event hashes
+        and reports observation coverage, invalid records, truncation and durable relation counts.
+        It does not repair records or grant decision or execution authority.
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+      responses:
+        '200': { description: Reconstructed finite sets and coverage diagnostics }
+        '400': { description: Invalid symbol }
+        '503': { description: Durable observation storage unavailable }
   /api/v1/set-ledger/backfill:
     post:
       summary: Backfill immutable V2 ledger records from historical raw events
@@ -176,7 +195,7 @@ paths:
         records. integrity_passed is true only when both scans are complete and clean.
       parameters:
         - in: header
-          name: x-qoin-execution-token
+          name: x-qoin-ledger-maintenance-token
           required: true
           schema: { type: string }
         - in: query
