@@ -305,7 +305,9 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
         return Err(ContractError::InvalidOrder("portfolio risk policy is invalid".into()));
     }
     if !input.reference_price.is_finite() || input.reference_price <= 0.0
-        || input.market_data_age_ms < 0 || input.market_data_age_ms > policy.max_market_data_age_ms {
+        || input.market_data_age_ms < 0 || input.market_data_age_ms > policy.max_market_data_age_ms
+        || input.conversion_rate_age_ms < 0 || input.conversion_rate_age_ms > policy.max_market_data_age_ms
+        || !input.required_margin_account_currency.is_finite() || input.required_margin_account_currency < 0.0 {
         return Err(ContractError::InvalidOrder("market price is invalid or stale".into()));
     }
     if !input.protective_order_supported {
@@ -451,10 +453,10 @@ mod tests {
         let policy = PortfolioRiskPolicy::default();
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
             reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:6_000,
-            protective_order_supported:true }).is_err());
+            protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
             reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
-            protective_order_supported:false }).is_err());
+            protective_order_supported:false, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).is_err());
     }
 
     #[test]
