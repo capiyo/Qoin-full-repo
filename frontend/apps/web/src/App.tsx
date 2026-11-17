@@ -51,18 +51,21 @@ const brokerDirectory: BrokerDirectoryEntry[] = [
 function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBrokerIds: string[]; onToggleBroker: (brokerId: string) => void }) {
   const executionReady = brokerDirectory.filter((broker) => broker.status === "execution_adapter").length;
   const marketOnly = brokerDirectory.filter((broker) => broker.status === "market_data_only").length;
-  const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;\n  const selectedCount = selectedBrokerIds.length;\n  const selectedExecutionReady = brokerDirectory.filter((broker) => selectedBrokerIds.includes(broker.id) && broker.status === "execution_adapter").length;
+  const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;
+  const selectedCount = selectedBrokerIds.length;
+  const selectedExecutionReady = brokerDirectory.filter((broker) => selectedBrokerIds.includes(broker.id) && broker.status === "execution_adapter").length;
   return <section className="content-section broker-collection">
     <div className="section-heading"><div><p className="eyebrow">EXECUTION NETWORK</p><h2>Broker collection</h2><p>One strategy can distribute an order across multiple selected broker accounts and currencies.</p></div><span className="count-label">{brokerDirectory.length} INTEGRATIONS TRACKED</span></div>
     <section className="broker-allocation-panel">
-      <div className="broker-allocation-copy"><p className="eyebrow">EQUAL ALLOCATION</p><h3>One parent order. Equal shares.</h3><p>Qoin divides the requested portfolio exposure evenly across eligible selected broker accounts. Each child order is converted to that broker's native instrument quantity, then rounded down to its permitted quantity step.</p></div>
+      <div className="broker-allocation-copy"><p className="eyebrow">CAPITAL-AWARE ROUTING</p><h3>Consolidate first. Split when it pays.</h3><p>Qoin compares the best feasible single-account route with an equal split across all selected accounts. It only fans out when every account is execution-ready, meets its minimum size and margin requirements, and the estimated fees, slippage and conversion costs beat consolidation after the configured operational-cost hurdle.</p></div>
       <div className="broker-allocation-examples">
         <div><strong>3</strong><span>accounts</span><b>33.33% each</b></div>
         <div><strong>15</strong><span>accounts</span><b>6.67% each</b></div>
       </div>
       <p className="broker-allocation-footnote">Illustrative allocation weights, not live orders. Quantity-step rounding can leave a small unallocated remainder; Qoin must not silently redistribute it or exceed the requested total. Aggregate exposure and risk are checked before any dispatch.</p>
     </section>
-    <div className="broker-selection-summary"><div><strong>{selectedCount} selected targets</strong><span>{selectedCount ? `Equal target: ${(100 / selectedCount).toFixed(2)}% per selected broker` : "Select broker targets below to preview equal allocation."}</span></div><small>{selectedExecutionReady} of {selectedCount} selected targets currently have an execution adapter; user account authentication and routing are still required.</small></div>\n    <div className="broker-collection-stats">
+    <div className="broker-selection-summary"><div><strong>{selectedCount} selected targets</strong><span>{selectedCount ? `Equal-split preview: ${(100 / selectedCount).toFixed(2)}% per selected target; routing may consolidate if splitting is not economical.` : "Select broker targets below to compare a consolidated route with an equal-split route."}</span></div><small>{selectedExecutionReady} of {selectedCount} selected targets currently have an execution adapter; user account authentication and routing are still required.</small></div>
+    <div className="broker-collection-stats">
       <div><strong>{executionReady}</strong><span>Execution adapter present</span></div>
       <div><strong>{marketOnly}</strong><span>Market-data only</span></div>
       <div><strong>{pending}</strong><span>Adapters pending</span></div>
@@ -492,7 +495,8 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("Archive");\n  const [selectedBrokerIds, setSelectedBrokerIds] = useState<string[]>([]);
+  const [tab, setTab] = useState<Tab>("Archive");
+  const [selectedBrokerIds, setSelectedBrokerIds] = useState<string[]>([]);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -840,7 +844,8 @@ export default function App() {
         <div className="desktop-sidebar-label">WORKSPACE</div>
         <nav className="desktop-sidebar-nav" aria-label="Main sections">
           <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
-          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>\n          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span aria-hidden="true">⇄</span>Brokers<small>10</small></button>
+          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>
+          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span aria-hidden="true">⇄</span>Brokers<small>15</small></button>
         </nav>
         <div className="desktop-sidebar-bottom">
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
@@ -943,7 +948,8 @@ export default function App() {
 
       <nav className="floating-navigation" aria-label="Primary navigation">
         <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
-        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>\n        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
+        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
+        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
       </nav>
 
 
