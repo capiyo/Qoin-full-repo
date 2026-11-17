@@ -755,6 +755,8 @@ export default function App() {
         </section>
       ) : (
         <section className="content-section">
+          <div className="explore-workspace">
+          <div className="explore-main-column">
           <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
           <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
           <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
@@ -791,6 +793,26 @@ export default function App() {
               <div className="macro-values"><span>Actual <b>{item.actual ?? "—"}</b></span><span>Estimate <b>{item.estimate ?? "—"}</b></span><span>Previous <b>{item.previous ?? "—"}</b></span></div>
             </article>)}</div> : <p className="provider-empty">{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</p>}
           </section>
+          </div>
+          <aside className="explore-market-sidebar" aria-label="Your market watchlist">
+            <div className="market-pulse-panel">
+              <div className="market-pulse-heading"><strong>Your watchlist</strong><span>{archived.length} SAVED</span></div>
+              <p className="market-pulse-copy">Live provider snapshots for instruments already in your Archive.</p>
+              {archived.length ? archived.slice(0, 8).map((item) => {
+                const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
+                return <button className="market-pulse-row explore-watch-row" key={item.symbol} onClick={() => openInstrument(item)}>
+                  <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
+                  <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
+                </button>;
+              }) : <p className="market-pulse-footnote">Add an instrument to your Archive to build a watchlist.</p>}
+              <p className="market-pulse-footnote">Unavailable or stale provider values remain blank. Qoin never fabricates a quote.</p>
+            </div>
+            <div className="market-pulse-panel explore-engine-panel">
+              <div className="market-pulse-heading"><strong>Research engine</strong><span>{health ? "CONNECTED" : "CHECKING"}</span></div>
+              <p className="market-pulse-copy">Research and historical replay only. No live order execution is available.</p>
+            </div>
+          </aside>
+          </div>
         </section>
       )}
 
