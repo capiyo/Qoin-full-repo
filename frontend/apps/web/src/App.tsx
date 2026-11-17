@@ -339,7 +339,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
         <span className="qoin-meta-chip">{item.venue}</span>
         <span className={`qoin-meta-chip ${item.providerStatus?.toLowerCase().includes("connected") ? "is-live" : ""}`}>{item.providerStatus || "Provider status unknown"}</span>
       </div>
-      <div className="qoin-card-pager" aria-live="polite">
+      <div className="qoin-card-pager" aria-live="polite" style={page === 1 ? { gridTemplateColumns: "minmax(0,1fr)", alignItems: "start" } : undefined}>
         {page === 0 ? <>
           <div className="qoin-card-primary">
             <span className="qoin-card-kicker">LATEST MARKET PRICE</span>
@@ -352,7 +352,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
             <span><small>Coverage</small><b>{item.providerStatus || "Unverified"}</b></span>
           </div>
         </> : <>
-          <div className="qoin-card-primary qoin-card-research">
+          <div className="qoin-card-primary qoin-card-research" style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", borderRight: 0, paddingRight: 0 }}>
             <span className="qoin-card-kicker">VECTOR ENGINE · V1</span>
             <strong>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</strong>
             <span className="qoin-signal-state">{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</span>
@@ -376,7 +376,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
                 <strong style={{ color: "#c15c65", textAlign: "right" }}>{feature.bearish_weighted_term.toFixed(3)}</strong>
               </div>)}
             </div>
-            <p style={{ margin: 0, color: "#52637a", fontSize: 10, lineHeight: 1.45 }}>{decision.reason || "The engine returned no rationale for this evaluation."}</p>
+            <p style={{ display: "block", WebkitLineClamp: "unset", overflow: "visible", margin: 0, color: "#52637a", fontSize: 10, lineHeight: 1.45 }}>{decision.reason || "The engine returned no rationale for this evaluation."}</p>
             <span>{decision.angle_degrees != null ? "Decision angle " + decision.angle_degrees.toFixed(2) + "°" : "Angle not reported"} · {sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</span>
           </div> : <div className="qoin-card-reason">
             <small>V1 calculation status</small>
