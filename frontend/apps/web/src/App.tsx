@@ -702,6 +702,29 @@ export default function App() {
         </section>}
       </header>
 
+      <aside className="desktop-profile-sidebar" aria-label="Qoin workspace navigation">
+        <a className="desktop-sidebar-brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
+        <div className="desktop-sidebar-profile">
+          <button className="desktop-profile-avatar" onClick={() => avatarInputRef.current?.click()} aria-label="Change profile picture">
+            {(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}
+            <span aria-hidden="true">+</span>
+          </button>
+          <strong>{firebaseUser?.displayName || firebaseUser?.email?.split("@")[0] || "Qoin member"}</strong>
+          <small>{firebaseUser?.email}</small>
+          <button className="desktop-profile-link" onClick={() => setProfileOpen((value) => !value)}>View profile</button>
+          {profileOpen && <div className="desktop-profile-details"><span>Account</span><strong>{firebaseUser?.email}</strong><small>Signed in securely with Firebase</small></div>}
+        </div>
+        <div className="desktop-sidebar-label">WORKSPACE</div>
+        <nav className="desktop-sidebar-nav" aria-label="Main sections">
+          <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
+          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>
+        </nav>
+        <div className="desktop-sidebar-bottom">
+          <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
+          <button onClick={() => avatarInputRef.current?.click()}><span aria-hidden="true">◉</span>Change photo</button>
+          <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
+        </div>
+      </aside>
       <section className="welcome">
         <div><p className="eyebrow">YOUR MARKET WORKSPACE</p><h1>See the market<br /><span>as a system.</span></h1><p className="welcome-copy">Keep the instruments that matter close. Explore the forces shaping each one.</p></div>
         <div className="welcome-orbit" aria-hidden="true"><span /><span /><span /><b>q</b></div>
@@ -773,14 +796,7 @@ export default function App() {
 
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
-      <nav className="floating-navigation" aria-label="Primary navigation">
-        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}>
-          <span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span>
-        </button>
-        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}>
-          <span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span>
-        </button>
-      </nav>
+
 
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">INSTRUMENT SPACE</p><h2 id="vector-title">{selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></header>
