@@ -379,6 +379,7 @@ function InstrumentCard({ item, onOpen, action, live }: { item: Instrument; onOp
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
@@ -425,6 +426,7 @@ export default function App() {
       return subscribeQoinAuth((user) => {
         const requestGeneration = ++generation;
         setFirebaseUser(user);
+        setAuthReady(true);
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
@@ -455,6 +457,7 @@ export default function App() {
     } catch {
       setFirebaseUser(null);
       setAuthError("Firebase is not configured. Add the VITE_FIREBASE_* values before signing in.");
+      setAuthReady(true);
       return undefined;
     }
   }, []);
@@ -645,6 +648,31 @@ export default function App() {
       }
       setAuthError(error instanceof Error ? error.message : "Could not save your archive.");
     });
+  }
+
+  if (!authReady) {
+    return <main className="auth-gate" aria-live="polite"><section className="auth-gate-card"><span className="auth-gate-mark">q</span><p className="eyebrow">PRIVATE MARKET WORKSPACE</p><h1>Welcome to Qoin.</h1><p className="auth-gate-copy">Sign in to open your Archive, explore markets, and inspect the research behind each instrument.</p><div className="auth-gate-loading"><span /> Checking your session…</div></section></main>;
+  }
+
+  if (!firebaseUser) {
+    return (
+      <main className="auth-gate">
+        <section className="auth-gate-card">
+          <span className="auth-gate-mark">q</span>
+          <p className="eyebrow">YOUR MARKET WORKSPACE</p>
+          <h1>{authMode === "register" ? "Create your Qoin account." : "Welcome back."}</h1>
+          <p className="auth-gate-copy">Your Archive, selected instruments, and research workspace are available after you sign in.</p>
+          <form className="auth-gate-form" onSubmit={submitAuthentication}>
+            <label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" required /></label>
+            <label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>
+            {authError && <p role="alert" className="auth-gate-error">{authError}</p>}
+            <button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+          </form>
+          <button type="button" className="auth-gate-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already have an account? Sign in" : "New to Qoin? Create an account"}</button>
+          <p className="auth-gate-footnote">Secure account access powered by Firebase Authentication.</p>
+        </section>
+      </main>
+    );
   }
 
   return (
