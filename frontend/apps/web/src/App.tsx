@@ -596,7 +596,7 @@ export default function App() {
       {tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
-          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+          {archived.length ? <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.engineSymbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
         </section>
       ) : (
         <section className="content-section">
@@ -631,7 +631,7 @@ export default function App() {
             </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
             <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
           </section>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.engineSymbol} item={item} onOpen={() => openInstrument(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
