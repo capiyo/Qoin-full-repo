@@ -160,11 +160,35 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   </View>;
 }
 
+function CardMechanicsPanel({ decision }: { decision?: QoinVectorDecision }) {
+  if (!decision) {
+    return <View style={styles.cardMechanicsPanel}><Text style={styles.cardMechanicsNote}>No persisted engine decision is available yet. No feature values or signal are estimated.</Text></View>;
+  }
+  return <View style={styles.cardMechanicsPanel}>
+    <View style={styles.cardMechanicsMetrics}>
+      {[
+        ["Vector", decision.decision_vector?.map((value) => value.toFixed(4)).join(" / ") || "Not supplied"],
+        ["Magnitude", decision.magnitude?.toFixed(4) ?? "—"],
+        ["Angle", (decision.angle_degrees?.toFixed(2) ?? "—") + "°"],
+        ["Strategy", decision.strategy_version || "Unversioned"],
+      ].map(([label, value]) => <View key={label} style={styles.cardMechanicsMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+    </View>
+    <Text style={styles.cardMechanicsNote}>{decision.action?.toUpperCase() || "WAIT"} · {decision.reason || "The engine did not provide a rationale."}</Text>
+    {(decision.feature_trace || []).map((feature) => <View key={feature.name} style={styles.cardMechanicsRow}>
+      <Text style={styles.cardMechanicsLabel}>{feature.name.replaceAll("_", " ")}</Text>
+      <Text style={styles.cardMechanicsValue}>N {feature.clamped_value.toFixed(3)} · B {feature.bullish_weighted_term.toFixed(3)} · S {feature.bearish_weighted_term.toFixed(3)}</Text>
+    </View>)}
+    {!decision.feature_trace?.length ? <Text style={styles.cardMechanicsNote}>Feature calculation trace was not included in this decision.</Text> : null}
+    <Text style={styles.cardMechanicsNote}>Exact persisted decision values. Open the instrument to inspect raw inputs, attention weights, gate checks and the full trace.</Text>
+  </View>;
+}
+
 export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
+  const [mechanicsOpenSymbols, setMechanicsOpenSymbols] = useState<string[]>([]);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
@@ -469,6 +493,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <Text style={styles.arrow}>↗</Text>
             </Pressable>
             <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</Text></View>
+            <Pressable onPress={() => setMechanicsOpenSymbols((current) => current.includes(item.symbol) ? current.filter((symbol) => symbol !== item.symbol) : [...current, item.symbol])} style={styles.cardMechanicsToggle}><Text style={styles.cardMechanicsToggleText}>{mechanicsOpenSymbols.includes(item.symbol) ? "Hide engine mechanics" : "Inspect engine mechanics"}</Text><Text style={styles.cardMechanicsToggleText}>{mechanicsOpenSymbols.includes(item.symbol) ? "−" : "+"}</Text></Pressable>
+            {mechanicsOpenSymbols.includes(item.symbol) ? <CardMechanicsPanel decision={liveBySymbol[item.engineSymbol.toUpperCase()]?.decision} /> : null}
             {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
           </View>
         )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
@@ -664,6 +690,15 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 }
 
 const styles = StyleSheet.create({
+  cardMechanicsToggle: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
+  cardMechanicsToggleText: { color: "#2867DC", fontSize: 9, fontWeight: "800" },
+  cardMechanicsPanel: { gap: 7, paddingTop: 4 },
+  cardMechanicsMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  cardMechanicsMetric: { flexGrow: 1, flexBasis: "46%", minWidth: 95, gap: 3, padding: 8, borderRadius: 8, backgroundColor: "#F5F8FD" },
+  cardMechanicsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 7, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: "#F0F3F8" },
+  cardMechanicsLabel: { flex: 1, color: "#8794A7", fontSize: 8 },
+  cardMechanicsValue: { flex: 2, color: "#52647C", fontSize: 8, textAlign: "right" },
+  cardMechanicsNote: { color: "#929EAF", fontSize: 8, lineHeight: 13 },
   tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
   mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
   backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
