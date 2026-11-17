@@ -22,7 +22,6 @@ Qoin-full-repo/
 │   │       └── qoin-domain-core/ # Domain-neutral contracts
 │   ├── rust-axum-api/            # Separate compatibility/research API
 │   ├── cpp-drogon/               # HTTP/WebSocket gateway
-│   ├── jepa-world-model/         # Research-only model service
 │   ├── config/
 │   ├── research/
 │   └── tests/
@@ -45,7 +44,7 @@ Qoin-full-repo/
 4. MongoDB stores raw observations, state snapshots, decisions and strategy configuration.
 5. Provider adapters normalize source observations into venue-scoped events. Current feeds include Binance USD-M, Coinbase Advanced Trade, Kraken Spot and optional Finnhub. See [docs/MARKET_DATA_PROVIDERS.md](docs/MARKET_DATA_PROVIDERS.md) for coverage and limitations.
 6. Domain-specific algorithms and safety policies sit above the domain-neutral contracts. The core does not assume financial instruments, trades, portfolios or orders.
-7. JEPA is research-only and cannot override Axum decision authority or bypass risk controls.
+7. Version 2 is planned around set theory, measure-aware relations and an explanatory ledger; Version 1 remains the active vector decision engine.
 
 The separate `backend/rust-axum-api` remains a compatibility/research reference; the deployed Compose stack uses the primary Axum service for both event-flow APIs and the shared vector-engine signal endpoint.
 
