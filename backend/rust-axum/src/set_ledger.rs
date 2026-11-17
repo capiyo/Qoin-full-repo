@@ -279,6 +279,23 @@ mod tests {
     }
 
     #[test]
+    fn caps_returned_relation_examples_without_truncating_exact_edge_count() {
+        let mut events = Vec::new();
+        for index in 0..101 {
+            let mut trade = event(&format!("buy-{index}"), "trade", 1_000 + index);
+            trade.side = Some("buy".into());
+            events.push(trade);
+            events.push(event(&format!("liq-{index}"), "liquidation", 2_000 + index));
+        }
+        let ledger = build("BTCUSDT", &events, 0);
+        let relation = &ledger.relations[0];
+        assert_eq!(relation.edge_count, 101 * 101);
+        assert_eq!(relation.edges.len(), 100);
+        assert!(relation.edges_truncated);
+        assert!(relation.mean_lag_ms.is_some());
+    }
+
+    #[test]
     fn reports_empty_universe_without_inventing_members() {
         let ledger = build("BTCUSDT", &[], 2);
         assert_eq!(ledger.universe_count, 0);
