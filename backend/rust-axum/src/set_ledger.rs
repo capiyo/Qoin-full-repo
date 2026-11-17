@@ -437,13 +437,13 @@ mod tests {
             mongodb::bson::DateTime::now(),
         ).unwrap();
         assert_eq!(records.len(), 2);
-        let observation = records.iter().find(|record| record.get_str("record_type") == Ok("observation")).unwrap();
-        assert_eq!(observation.get_str("schema_version"), Ok("qoin-relation-ledger-v2-alpha2"));
+        let observation = records.iter().find(|record| record.get_str("record_type").ok() == Some("observation")).unwrap();
+        assert_eq!(observation.get_str("schema_version").ok(), Some("qoin-relation-ledger-v2-alpha2"));
         assert_eq!(observation.get_str("source_event_hash_sha256").unwrap().len(), 64);
-        let relation = records.iter().find(|record| record.get_str("record_type") == Ok("relation_edge")).unwrap();
-        assert_eq!(relation.get_str("relation_id"), Ok("buy_trades_before_liquidations"));
-        assert_eq!(relation.get_i64("lag_ms"), Ok(250));
-        assert_eq!(relation.get_str("interpretation").unwrap().contains("does not establish causation"), true);
+        let relation = records.iter().find(|record| record.get_str("record_type").ok() == Some("relation_edge")).unwrap();
+        assert_eq!(relation.get_str("relation_id").ok(), Some("buy_trades_before_liquidations"));
+        assert_eq!(relation.get_i64("lag_ms").ok(), Some(250));
+        assert!(relation.get_str("interpretation").unwrap().contains("does not establish causation"));
     }
 
     #[test]
