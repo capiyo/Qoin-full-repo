@@ -146,10 +146,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    try {
-      const payload = JSON.parse(detail) as { status?: string; items?: unknown[] };
-      if (typeof payload.status === "string" && Array.isArray(payload.items)) return payload as T;
-    } catch { /* preserve the HTTP error below */ }
     throw new Error(`Qoin API ${response.status}: ${detail || response.statusText}`);
   }
   return response.json() as Promise<T>;
