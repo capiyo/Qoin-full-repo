@@ -478,7 +478,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         ) : null}
 
         {data.length ? data.map((item) => (
-          <View key={item.symbol} style={styles.card}>
+          <View key={item.engineSymbol} style={styles.card}>
             <Pressable onPress={() => openInstrument(item)} style={styles.cardMain}>
               <View style={[styles.assetMark, { backgroundColor: item.tint }]}><Text style={styles.assetMarkText}>{item.symbol.slice(0, 1)}</Text></View>
               <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
