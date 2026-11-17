@@ -419,9 +419,14 @@ async fn persist_set_ledger_records(
             if validate_event(&candidate).is_ok() { neighbours.push(candidate); }
         }
     }
+    let relation_scan_truncated=neighbours.len()>5000;
+    neighbours.sort_by_key(|candidate|candidate.ts_ms.abs_diff(event.ts_ms));
+    neighbours.truncate(5000);
     let records=set_ledger::durable_records(event,&neighbours,mongodb::bson::DateTime::now())?;
     let mut inserted=0usize;
-    for record in records {
+    for mut record in records {
+        record.insert("relation_scan_truncated",relation_scan_truncated);
+        record.insert("relation_scan_candidate_count_lower_bound",if relation_scan_truncated {5001_i64} else {neighbours.len() as i64});
         match ledger.insert_one(record,None).await {
             Ok(_)=>inserted+=1,
             Err(error) if error.to_string().contains("E11000")=>{},
@@ -944,6 +949,7 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         object.insert("durable_relation_count".into(),serde_json::json!(relation_count));
         object.insert("durable_records".into(),serde_json::Value::Array(durable_records));
         object.insert("durable_history_complete".into(),serde_json::json!(false));
+        object.insert("durable_history_note".into(),serde_json::json!("Existing raw-event history has not been backfilled; relation scans are bounded to the nearest 5,000 observations in the 60-second window and expose truncation on persisted records."));
     }
     (StatusCode::OK,Json(response))
 }
