@@ -54,7 +54,6 @@ const LIQUIDITY_STRESS_INPUTS: &[MarketFeature] = &[MarketFeature::SpreadBps, Ma
 const FLOW_DEPTH: &[MarketFeature] = &[MarketFeature::OrderFlowImbalance, MarketFeature::OrderBookDepth];
 const LIQUIDITY_COSTS: &[MarketFeature] = &[MarketFeature::SpreadBps, MarketFeature::MarketImpact];
 const CROSS_ASSET: &[MarketFeature] = &[MarketFeature::Correlation, MarketFeature::Covariance, MarketFeature::Beta];
-const VOL_TAIL: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity];
 const TAIL_RISK_INPUTS: &[MarketFeature] = &[MarketFeature::RealizedVolatility, MarketFeature::ReturnKurtosis, MarketFeature::JumpIntensity, MarketFeature::Drawdown];
 const FEATURE_PERSISTENCE_INPUTS: &[MarketFeature] = &[MarketFeature::LogReturn, MarketFeature::Momentum];
 const SIGNAL_DECAY_INPUTS: &[MarketFeature] = &[MarketFeature::FeaturePersistence, MarketFeature::TrendExhaustion];
@@ -80,8 +79,8 @@ const TRANSITION_INPUTS: &[MarketFeature] = &[
 ];
 
 /// The single source of truth for the variable dependency graph.
-/// Cross-asset, options, event, portfolio and multi-timeframe producers enter
-/// through Input nodes after their own alignment/validation steps.
+/// Cross-asset, options and event producers enter as aligned inputs; portfolio and
+/// temporal producers enter their own stages after validation.
 pub fn descriptor(feature: MarketFeature) -> VariableDescriptor {
     use MarketFeature::*;
     let (stage, dependencies) = match feature {
