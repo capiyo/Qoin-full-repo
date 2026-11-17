@@ -513,3 +513,6 @@ mod tests {
         assert!(comparison.weighted_euclidean_distance.abs() < 1e-12);
     }
 }
+
+pub mod hub;
+pub use hub::{NormalizationProfile, VariableHub, VariableLifecycle, VariableProgress, VariableStage, VariableDescriptor, HubError, validate_dependency_graph};

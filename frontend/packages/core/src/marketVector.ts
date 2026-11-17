@@ -93,3 +93,31 @@ export type QoinDiscoverVectorRelationshipsRequest = {
   recorded_at_ms: number;
   evidence_config?: QoinVectorEvidenceConfig;
 };
+
+ 
+export type QoinVariableStage = "input" | "derived" | "regime" | "portfolio" | "temporal";
+export type QoinVariableLifecycle =
+  | "awaiting_input" | "blocked" | "observed" | "derived" | "normalized"
+  | "published" | "stale" | "not_applicable";
+
+export type QoinVariableProgress = {
+  feature: QoinMarketFeature;
+  family: QoinMarketFeatureFamily;
+  stage: QoinVariableStage;
+  lifecycle: QoinVariableLifecycle;
+  dependency_count: number;
+  ready_dependencies: number;
+  blocked_by: QoinMarketFeature[];
+  revision: number | null;
+  quality: number | null;
+  event_time_ms: number | null;
+  available_at_ms: number | null;
+};
+
+export type QoinMarketHubProgress = {
+  schema_version: typeof QOIN_MARKET_VECTOR_SCHEMA_VERSION;
+  venue: string;
+  symbol: string;
+  timeframe: string;
+  progress: QoinVariableProgress[];
+};

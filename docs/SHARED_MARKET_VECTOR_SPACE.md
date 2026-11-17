@@ -65,3 +65,83 @@ The new V1 and V2 endpoints are internal research interfaces. They do not submit
 This change establishes the shared schema, vector geometry, V1/V2 adapters, internal Axum research routes, TypeScript contract and V2 snapshot provenance. It does **not** yet calculate and populate every one of the 53 coordinates from the existing raw exchange-event streams. Provider-specific feature producers and past-only calibration must supply those values. No unavailable or not-applicable coordinate is auto-filled with zero.
 
 In particular, the full multivariate regime detector/change-point pipeline is not yet connected to live ingestion. The V1 market-vector adapter fails closed unless its seven baseline force coordinates and five required regime-risk coordinates are present. The existing legacy `POST /v1/signal` ForceObservation interface remains available. Until the feature producers and regime detector are connected and validated, the new vector routes are research interfaces rather than an automatically populated live decision pipeline.
+
+
+## Shared variable hub and progression
+
+The schema is the shared vocabulary; the **variable hub** is the lifecycle manager that makes it operational. A hub instance is scoped to one `venue + symbol + timeframe`. It is not a global pool that mixes unrelated instruments. Cross-asset and multi-timeframe producers align their inputs first, then publish their resulting coordinates into the relevant instrument hub.
+
+### The progression
+
+```text
+Canonical events / external aligned feeds / portfolio state
+                         |
+                         v
+                INPUT VARIABLES
+          observed raw values + provenance
+                         |
+                         v
+             PAST-ONLY NORMALIZATION
+       center/scale/profile version + fit cutoff
+                         |
+                         v
+                DERIVED VARIABLES
+          dependency graph + captured revisions
+                         |
+                         v
+                 REGIME VARIABLES
+      structural state computed from ordinary features
+                         |
+                         v
+          PORTFOLIO / TEMPORAL VARIABLES
+                         |
+                         v
+              IMMUTABLE MARKET VECTOR
+             schema v1 + quality + timestamps
+                    /           \
+                   v             v
+                  V1             V2
+          numerical forces   evidence sets,
+          and risk overlay   attention + ledger
+                    \           /
+                     v         v
+                  SHARED RISK GATE
+```
+
+The dependency graph is a directed acyclic graph, not an arbitrary collection of formulas. For example:
+
+- `LogReturn -> RealizedVolatility -> VolatilityOfVolatility`
+- `LogReturn -> Momentum -> TrendStrength -> RegimeTrendStrength`
+- `SpreadBps + OrderBookDepth + OrderFlowImbalance -> MarketImpact -> SlippageEstimate`
+- `Correlation + Covariance + Beta -> CorrelationBreakdown -> RegimeCorrelationStress`
+- `RealizedVolatility + ReturnKurtosis + JumpIntensity -> RegimeVolatilityLevel`
+- `RegimeTrendStrength + RegimeVolatilityLevel + RegimeLiquidityStress + RegimeCorrelationStress + RegimeTransitionIntensity -> RegimePersistence`
+
+The Rust hub stores each variable's raw value, normalized value, quality, event/availability times, producer and calculation version, normalization profile, revision, and the exact revisions of its dependencies. If an upstream input changes, downstream values become **stale** automatically and cannot be published until recalculated.
+
+### Lifecycle states
+
+| State | Meaning | Next transition |
+|---|---|---|
+| Awaiting input | Input producer has not supplied the variable | Observed |
+| Blocked | A derived variable lacks one or more ready dependencies | Dependencies become ready |
+| Observed | Raw input received with provenance | Normalized |
+| Derived | Derived raw value calculated from fresh dependencies | Normalized |
+| Normalized | Past-only calibration mapped the value to [-1, 1] | Published |
+| Published | This exact revision was included in an immutable vector snapshot | New revision or stale |
+| Stale | An upstream dependency changed after this value was calculated | Recompute |
+| Not applicable | Dimension is structurally outside the instrument/provider scope | Remains explicit in the vector |
+
+A variable is never treated as zero merely because it is missing. A variable cannot advance by skipping a dependency. A derived value records the dependency revisions used to calculate it. A normalizer must carry a fit cutoff no later than the observation's event time. The hub rejects future calibration and out-of-order derived availability.
+
+### Ownership and sharing
+
+- The hub owns the canonical feature definitions, dependency graph, provenance, revision counters, freshness checks, normalization metadata and snapshot publication.
+- Feature producers own the mathematics for their variables: event aggregation, rolling statistics, order-book impact, cross-asset alignment, change-point/regime estimation, portfolio risk and temporal persistence.
+- V1 owns its numerical decision logic; V2 owns set conversion, attention and relationship discovery. Neither owns or silently recalculates the shared input features.
+- The risk gate consumes the published state and constrains both algorithms. It does not rewrite the market vector.
+- The V2 ledger keeps the exact source snapshots used in its relationship records; V1 results should likewise reference the immutable vector ID and schema version.
+
+### Important boundaries
+
+The hub now implements the shared dependency registry, lifecycle tracking, revision invalidation, causal normalization checks, topological graph validation and immutable vector publication. It does not invent feature values or claim that every producer is already connected to exchange ingestion. Provider-specific and statistical feature calculators still need to be implemented and wired to call the hub. A feature that is not ready remains blocked/missing rather than fabricated.
