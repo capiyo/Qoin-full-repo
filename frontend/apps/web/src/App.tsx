@@ -49,6 +49,9 @@ const brokerDirectory: BrokerDirectoryEntry[] = [
 ];
 
 function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBrokerIds: string[]; onToggleBroker: (brokerId: string) => void }) {
+  const [previewNotional, setPreviewNotional] = useState("100");
+  const parsedNotional = Number(previewNotional);
+  const previewValid = Number.isFinite(parsedNotional) && parsedNotional > 0;
   const executionReady = brokerDirectory.filter((broker) => broker.status === "execution_adapter").length;
   const marketOnly = brokerDirectory.filter((broker) => broker.status === "market_data_only").length;
   const pending = brokerDirectory.filter((broker) => broker.status === "adapter_pending").length;
@@ -65,6 +68,19 @@ function BrokerCollection({ selectedBrokerIds, onToggleBroker }: { selectedBroke
       <p className="broker-allocation-footnote">Illustrative allocation weights, not live orders. Quantity-step rounding can leave a small unallocated remainder; Qoin must not silently redistribute it or exceed the requested total. Aggregate exposure and risk are checked before any dispatch.</p>
     </section>
     <div className="broker-selection-summary"><div><strong>{selectedCount} selected targets</strong><span>{selectedCount ? `Equal-split preview: ${(100 / selectedCount).toFixed(2)}% per selected target; routing may consolidate if splitting is not economical.` : "Select broker targets below to compare a consolidated route with an equal-split route."}</span></div><small>{selectedExecutionReady} of {selectedCount} selected targets currently have an execution adapter; user account authentication and routing are still required.</small></div>
+    <div className="broker-capital-preview">
+      <div className="broker-capital-input">
+        <label htmlFor="broker-preview-notional">Portfolio notional preview</label>
+        <input id="broker-preview-notional" type="number" min="0.01" step="any" inputMode="decimal" value={previewNotional} onChange={(event) => setPreviewNotional(event.target.value)} aria-describedby="broker-preview-note" />
+        <small>Illustrative amount in your portfolio currency; not a live balance.</small>
+      </div>
+      <div className="broker-capital-result">
+        <span>Equal share {selectedCount > 0 ? `across ${selectedCount} targets` : "when targets are selected"}</span>
+        <strong>{previewValid && selectedCount > 0 ? (parsedNotional / selectedCount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</strong>
+        <small>{previewValid && selectedCount > 0 ? `${(100 / selectedCount).toFixed(2)}% of the parent notional per target before quantity-step rounding.` : "Enter a positive amount and select at least one target."}</small>
+      </div>
+      <p id="broker-preview-note">This is only the arithmetic split. Qoin consolidates when an equal split fails any account's minimum size, margin or risk checks, or costs more after commissions, spread/slippage, currency conversion and multi-account overhead. A live recommendation requires linked execution accounts and fresh broker quotes.</p>
+    </div>
     <div className="broker-collection-stats">
       <div><strong>{executionReady}</strong><span>Execution adapter present</span></div>
       <div><strong>{marketOnly}</strong><span>Market-data only</span></div>
