@@ -116,7 +116,6 @@ export type QoinHealth = {
   status: "ok" | "degraded" | string;
   mongodb?: boolean;
   strategy_version?: string;
-  jepa_research_inference?: string;
   market_streams?: { binance_usdm_enabled?: boolean; coinbase_advanced_trade_enabled?: boolean; kraken_spot_enabled?: boolean; finnhub_key_configured?: boolean };
   live_order_submission?: string;
   live_trading?: boolean | string;
