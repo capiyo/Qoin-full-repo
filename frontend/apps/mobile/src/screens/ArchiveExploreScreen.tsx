@@ -5,7 +5,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, getQoinV2Relationships, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinV2RelationshipEvent } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -160,6 +160,52 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
   </View>;
 }
 
+function MobileV2RelationshipLedger({ events, status }: { events: QoinV2RelationshipEvent[]; status: string }) {
+  const descriptions: Record<string, string> = {
+    equal: "Both sets contain the same conditions.",
+    source_subset_of_target: "Target contains all source conditions plus additional evidence.",
+    target_subset_of_source: "Target is contained within the source conditions.",
+    overlap: "The sets share some conditions but each has unique evidence.",
+    disjoint: "The sets have no conditions in common.",
+  };
+  return <View style={styles.v2LedgerPanel}>
+    <View style={styles.liveHeading}><Text style={styles.attentionTitle}>V2 · Set relationships & ledger</Text><Text style={styles.attentionCaption}>{status === "loading" ? "Loading…" : events.length + " events"}</Text></View>
+    <Text style={styles.disclaimer}>Persisted set relations, overlap-aware measure and append-only history. Attention is a similarity weight, not a probability of profit or a causal claim.</Text>
+    {status === "error" ? <Text style={styles.v2LedgerNote}>The V2 ledger could not be loaded from the read-only research endpoint.</Text> :
+      status === "loading" ? <Text style={styles.v2LedgerNote}>Retrieving persisted V2 relationship events…</Text> :
+      events.length === 0 ? <Text style={styles.v2LedgerNote}>No V2 relationship events currently match this instrument. No synthetic sets or relations are displayed.</Text> :
+      events.map((event) => {
+        const relationship = event.relationship;
+        const measure = relationship.set_measure;
+        return <View key={event.event_id} style={styles.v2LedgerEvent}>
+          <View style={styles.v2LedgerEventHeading}><Text style={styles.v2LedgerRelation}>{relationship.relation_kind.replaceAll("_", " ")}</Text><Text style={styles.v2LedgerEventType}>{event.event_type.replaceAll("_", " ")}</Text></View>
+          <Text style={styles.v2LedgerNote}>{descriptions[relationship.relation_kind] || "Recorded set relationship."}</Text>
+          <View style={styles.v2LedgerMetrics}>
+            {[
+              ["Jaccard", (relationship.metrics.jaccard * 100).toFixed(1) + "%"],
+              ["Source coverage", (relationship.metrics.source_coverage * 100).toFixed(1) + "%"],
+              ["Target coverage", (relationship.metrics.target_coverage * 100).toFixed(1) + "%"],
+              ["Attention", relationship.attention_weight.toFixed(4)],
+            ].map(([label, value]) => <View key={label} style={styles.v2LedgerMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+          </View>
+          <View style={styles.v2LedgerSet}>
+            <Text style={styles.engineLabel}>Source · {relationship.source_set_id}</Text>
+            <Text style={styles.v2LedgerNote}>{relationship.source_symbol || relationship.source_domain} · {relationship.source_timeframe || "timeframe not tagged"}</Text>
+            {relationship.source_atoms.slice(0, 10).map((atom) => <Text key={atom} style={styles.v2LedgerAtom}>• {atom}</Text>)}
+          </View>
+          <View style={styles.v2LedgerSet}>
+            <Text style={styles.engineLabel}>Target · {relationship.target_set_id}</Text>
+            <Text style={styles.v2LedgerNote}>{relationship.target_symbol || relationship.target_domain} · {relationship.target_timeframe || "timeframe not tagged"}</Text>
+            {relationship.target_atoms.slice(0, 10).map((atom) => <Text key={atom} style={styles.v2LedgerAtom}>• {atom}</Text>)}
+          </View>
+          {measure ? <View style={styles.v2LedgerSet}><Text style={styles.engineLabel}>Overlap-aware set measure · union {measure.union_mass.toFixed(3)}</Text>{measure.contributions.map((item) => <Text key={item.evidence_set_id} style={styles.v2LedgerNote}>{item.evidence_set_id}: {item.contribution_pct.toFixed(1)}% ({item.allocated_mass.toFixed(3)})</Text>)}</View> : null}
+          {event.outcome ? <Text style={styles.v2LedgerNote}>Outcome · {(event.outcome.horizon_ms / 3600000).toFixed(2)}h · return {event.outcome.realized_return_bps == null ? "not supplied" : event.outcome.realized_return_bps.toFixed(2) + " bps"} · MAE {event.outcome.max_adverse_excursion_bps == null ? "—" : event.outcome.max_adverse_excursion_bps.toFixed(2)} · MFE {event.outcome.max_favorable_excursion_bps == null ? "—" : event.outcome.max_favorable_excursion_bps.toFixed(2)}</Text> : <Text style={styles.v2LedgerNote}>No forward outcome is attached to this event yet.</Text>}
+          <Text style={styles.v2LedgerMeta}>{relationship.model_version} · temperature {relationship.attention_temperature.toFixed(3)} · {new Date(event.recorded_at_ms).toLocaleString()}</Text>
+        </View>;
+      })}
+  </View>;
+}
+
 function CardMechanicsPanel({ decision }: { decision?: QoinVectorDecision }) {
   if (!decision) {
     return <View style={styles.cardMechanicsPanel}><Text style={styles.cardMechanicsNote}>No persisted engine decision is available yet. No feature values or signal are estimated.</Text></View>;
@@ -190,6 +236,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsOpenSymbols, setMechanicsOpenSymbols] = useState<string[]>([]);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
+  const [v2LedgerEvents, setV2LedgerEvents] = useState<QoinV2RelationshipEvent[]>([]);
+  const [v2LedgerStatus, setV2LedgerStatus] = useState("idle");
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
   const [catalogueStatus, setCatalogueStatus] = useState("loading");
@@ -392,6 +440,24 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   }, [selected?.engineSymbol]);
 
   useEffect(() => {
+    if (!selected) { setV2LedgerEvents([]); setV2LedgerStatus("idle"); return; }
+    let active = true;
+    setV2LedgerEvents([]);
+    setV2LedgerStatus("loading");
+    getQoinV2Relationships(100).then((events) => {
+      if (!active) return;
+      const tokens = [selected.engineSymbol, selected.symbol].map((value) => value.toUpperCase());
+      const matching = events.filter(({ relationship }) => {
+        const labels = [relationship.source_symbol, relationship.target_symbol, relationship.source_domain, relationship.target_domain, relationship.source_set_id, relationship.target_set_id].filter((value): value is string => Boolean(value)).map((value) => value.toUpperCase());
+        return labels.some((label) => tokens.some((token) => label.includes(token)));
+      });
+      setV2LedgerEvents(matching);
+      setV2LedgerStatus("loaded");
+    }).catch(() => { if (active) setV2LedgerStatus("error"); });
+    return () => { active = false; };
+  }, [selected?.engineSymbol, selected?.symbol]);
+
+  useEffect(() => {
     const symbols = items.map((item) => item.engineSymbol);
     if (!symbols.length) return;
     let active = true;
@@ -589,6 +655,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
             </View>
             <FeatureSpace decision={vector} />
+            <MobileV2RelationshipLedger events={v2LedgerEvents} status={v2LedgerStatus} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             <View style={styles.strategyPanel}>
@@ -690,6 +757,17 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 }
 
 const styles = StyleSheet.create({
+  v2LedgerPanel: { gap: 10, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#DCE7F8", backgroundColor: "#FBFCFF" },
+  v2LedgerEvent: { gap: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#E8EDF5" },
+  v2LedgerEventHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  v2LedgerRelation: { color: "#30445F", fontSize: 10, fontWeight: "800", textTransform: "capitalize" },
+  v2LedgerEventType: { color: "#2867DC", fontSize: 8, fontWeight: "800", textTransform: "uppercase" },
+  v2LedgerMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  v2LedgerMetric: { flexGrow: 1, flexBasis: "45%", gap: 3, padding: 8, borderRadius: 8, backgroundColor: "#F0F5FD" },
+  v2LedgerSet: { gap: 4, padding: 8, borderRadius: 8, backgroundColor: "#F5F8FD" },
+  v2LedgerAtom: { color: "#52647C", fontSize: 8 },
+  v2LedgerNote: { color: "#8290A4", fontSize: 8, lineHeight: 13 },
+  v2LedgerMeta: { color: "#9AA6B5", fontSize: 7 },
   cardMechanicsToggle: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   cardMechanicsToggleText: { color: "#2867DC", fontSize: 9, fontWeight: "800" },
   cardMechanicsPanel: { gap: 7, paddingTop: 4 },
