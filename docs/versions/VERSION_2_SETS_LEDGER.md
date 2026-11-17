@@ -1,6 +1,6 @@
 # Version 2 — Set theory, measure and relation ledger
 
-**Status:** initial read-only finite-set / temporal-relation projection implemented; durable append-only ledger, generalized measure layer and state transitions remain research work.
+**Status:** finite-set projection and initial append-only MongoDB observation/relation records implemented; generalized measure algebra, durable historical backfill and state transitions remain research work.
 
 ## Purpose
 
@@ -33,7 +33,7 @@ Relations are explicit typed subsets of a product space, \(R_k \subseteq A\times
 
 A transition maps a prior state to a new state only when its declared preconditions are satisfied. Transition rules must be deterministic for a fixed input snapshot and configuration version. The V2 layer must be able to abstain when evidence is incomplete, stale, contradictory, or outside the declared domain.
 
-The current V2 alpha projection implements two finite measures over each returned set: the counting measure (member cardinality) and the sum of observed trade sizes. Trade-size values retain instrument-native quantity units and are not comparable across different instruments or contracts without a separately defined conversion. Missing sizes are counted explicitly; they are not imputed as zero. The runtime does not yet expose a general-purpose user-defined measure algebra.
+The current V2 read projection implements two finite measures over each returned set: the counting measure (member cardinality) and the sum of observed trade sizes. Trade-size values retain instrument-native quantity units and are not comparable across different instruments or contracts without a separately defined conversion. Missing sizes are counted explicitly; they are not imputed as zero. The runtime does not yet expose a general-purpose user-defined measure algebra.
 
 ## Relation ledger
 
@@ -76,11 +76,11 @@ Users can expand records for detail, but do not need to manipulate sets or under
 - property tests for set membership, relation composition and transition invariants;
 - measure conservation/normalization checks appropriate to each measure's declared semantics;
 - duplicate, late, missing, reordered and contradictory event tests;
-- schema migration and append-only correction behavior;
+- schema migration and append-only correction behavior (superseding records are specified but correction writes are not yet exposed);
 - ledger integrity checks and reproducible reconstruction from source events;
 - shadow-mode comparisons against V1 using chronological out-of-sample windows;
 - no execution authority in V2 until separately specified, tested and approved.
 
 ## Explicit non-goals
 
-V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics and an initial V2 finite-set projection over persisted raw events. The V2 endpoint is read-only and computes its output on request; it does not persist ledger entries or drive decisions. This document defines the remaining V2 research direction.
+V2 is not a neural embedding, a learned latent predictor, a replacement for V1, an order router, or a claim that set theory alone creates a trading advantage. The current repository implements V1 vector mechanics and an initial V2 finite-set projection over persisted raw events. New validated events append immutable observation records and temporal-relation edge records to the MongoDB `set_relation_ledger` collection. Deterministic record IDs make duplicate delivery idempotent; the ingestion path retries ledger persistence when a raw event is redelivered after an interrupted append. The read endpoint returns both the derived finite-set projection and persisted ledger records. Existing raw-event history is not yet backfilled into the durable ledger, and no correction/supersession API is exposed yet. V2 remains read-only and never drives V1 decisions or orders. This document defines the remaining V2 research direction.
