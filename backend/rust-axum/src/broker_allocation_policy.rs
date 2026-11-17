@@ -405,6 +405,20 @@ mod tests {
     }
 
     #[test]
+    fn fifteen_accounts_can_split_when_large_order_size_makes_it_economical() {
+        let mut quotes = (0..15).map(|i| quote(i, "0", "100", true)).collect::<Vec<_>>();
+        for item in &mut quotes { item.split_slippage_bps = d("1"); }
+        let plan = choose_execution_plan(d("15000"), &quotes, AllocationPolicy::default()).unwrap();
+        match plan {
+            ExecutionPlan::EqualSplit { allocation, .. } => {
+                assert_eq!(allocation.children.len(), 15);
+                assert!(allocation.children.iter().all(|child| child.target_notional_portfolio == d("1000")));
+            }
+            _ => panic!("expected a 15-account split when all accounts are feasible and child-size execution cost is lower"),
+        }
+    }
+
+    #[test]
     fn invalid_negative_cost_estimate_fails_closed() {
         let mut quotes = vec![quote(0, "1", "1", true)];
         quotes[0].fee_bps = d("-1");
