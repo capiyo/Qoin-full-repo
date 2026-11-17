@@ -18,6 +18,7 @@ type Instrument = {
   engineVenue: string;
   provider: string;
   providerStatus?: string;
+  quoteCurrency?: string;
   archived: boolean;
   tint: string;
 };
@@ -164,6 +165,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
+  const [venueFilter, setVenueFilter] = useState("All exchanges");
+  const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quotes");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
@@ -249,7 +252,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const addNotification = (notification: QoinNotification) => setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const decisionStrategy = vector?.strategy_parameters || strategy;
-  const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
+  const availableVenues = useMemo(() => [...new Set(items.map((item) => item.venue).filter(Boolean))].sort((a,b) => a.localeCompare(b)), [items]);
+  const availableQuotes = useMemo(() => [...new Set(items.map((item) => item.quoteCurrency).filter((value): value is string => Boolean(value)))].sort((a,b) => a.localeCompare(b)), [items]);
+  const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && (venueFilter === "All exchanges" || item.venue === venueFilter) && (quoteCurrencyFilter === "All quotes" || item.quoteCurrency === quoteCurrencyFilter) && `${item.name} ${item.symbol} ${item.venue} ${item.quoteCurrency || ""}`.toLowerCase().includes(query.toLowerCase())), [items, market, venueFilter, quoteCurrencyFilter, query]);
   const requireAuthentication = () => {
     setAccountOpen(true);
     Alert.alert("Sign in required", "Sign in to open instrument research, change your archive or run a historical replay.", [
@@ -298,7 +303,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
       setItems(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"), provider: item.provider, providerStatus: item.provider_status,
+        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"), provider: item.provider, providerStatus: item.provider_status, quoteCurrency: item.quote_currency || undefined,
         archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), tint: colors[index % colors.length],
       })));
     }).catch(() => undefined);
@@ -442,7 +447,18 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 
         {mode === "Explore" ? (
           <>
-            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
+            <View style={styles.exchangePicker}>
+              <Text style={styles.kicker}>EXCHANGE / VENUE</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
+                {["All exchanges", ...availableVenues].map((venue) => <Pressable key={venue} onPress={() => setVenueFilter(venue)} style={[styles.exchangeChip, venueFilter === venue && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, venueFilter === venue && styles.exchangeChipTextActive]}>{venue}</Text></Pressable>)}
+              </ScrollView>
+              <Text style={styles.kicker}>QUOTE CURRENCY</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
+                {["All quotes", ...availableQuotes].map((currency) => <Pressable key={currency} onPress={() => setQuoteCurrencyFilter(currency)} style={[styles.exchangeChip, quoteCurrencyFilter === currency && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, quoteCurrencyFilter === currency && styles.exchangeChipTextActive]}>{currency}</Text></Pressable>)}
+              </ScrollView>
+              <Pressable onPress={() => { setVenueFilter("All exchanges"); setQuoteCurrencyFilter("All quotes"); setMarket("All"); setQuery(""); }}><Text style={styles.exchangeReset}>Reset market filters</Text></Pressable>
+            </View>
+            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments, symbols or venues" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
             <View style={styles.coverageSection}>
               <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
