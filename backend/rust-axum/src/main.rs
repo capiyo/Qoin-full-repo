@@ -2445,6 +2445,10 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"ts_ms":1,"_id":1}).build(),None)
+        .await.expect("globally ordered event replay index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"_qoin_pipeline_status":1}).build(),None)
+        .await.expect("pending event pipeline health index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
@@ -2453,6 +2457,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("market vector idempotency index");
     market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_cutoff_ms":-1}).build(),None)
         .await.expect("latest market vector lookup index");
+    market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_time_cutoff_ms":-1}).build(),None)
+        .await.expect("venue-scoped V2 vector history index");
     variable_hubs.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"identity.venue":1,"identity.symbol":1,"identity.timeframe":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None)
