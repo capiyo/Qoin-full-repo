@@ -273,6 +273,53 @@ export type QoinMarketEvent = {
   bid?: number | null; ask?: number | null; bid_size?: number | null; ask_size?: number | null;
   funding_rate?: number | null; open_interest?: number | null; liquidation_side?: string | null;
 };
+export type QoinSetMeasure = {
+  measure: string;
+  count: number;
+  volume_total: number;
+  volume_observed_count: number;
+  volume_missing_count: number;
+};
+export type QoinEventSet = {
+  set_id: string;
+  label: string;
+  member_event_ids: string[];
+  measure: QoinSetMeasure;
+};
+export type QoinRelationEdge = {
+  from_event_id: string;
+  to_event_id: string;
+  lag_ms: number;
+};
+export type QoinEventRelation = {
+  relation_id: string;
+  label: string;
+  relation_type: string;
+  source_set: string;
+  target_set: string;
+  window_ms: number;
+  edge_count: number;
+  mean_lag_ms: number | null;
+  edges: QoinRelationEdge[];
+  interpretation: string;
+};
+export type QoinSetLedger = {
+  schema_version: string;
+  status: "derived_read_only" | string;
+  persistence: string;
+  symbol: string;
+  universe_count: number;
+  skipped_invalid_events: number;
+  window_start_ts_ms: number | null;
+  window_end_ts_ms: number | null;
+  sets: QoinEventSet[];
+  relations: QoinEventRelation[];
+  limitations: string[];
+};
+export function getQoinSetLedger(symbol: string, limit = 500): Promise<QoinSetLedger> {
+  return request<QoinSetLedger>("/api/v1/set-ledger?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
+}
+
 export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: string; items: QoinMarketEvent[]; count: number }> {
   return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
 }
