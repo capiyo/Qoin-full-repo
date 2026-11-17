@@ -43,6 +43,24 @@ pub struct BinanceExecutor {
     client: Client, api_key: String, api_secret: String, base_url: String,
     max_notional_usdt: f64, max_quantity: f64, mode: &'static str,
 }
+#[derive(Debug, Clone)]
+pub struct RiskSnapshot {
+    pub mark_price: f64,
+    pub equity: f64,
+    pub current_gross_exposure: f64,
+    pub current_daily_loss: f64,
+    pub open_positions: usize,
+    pub exchange_can_trade: bool,
+    pub withdrawals_disabled: bool,
+}
+
+fn numeric_field(value: &serde_json::Value, key: &str) -> Result<f64, String> {
+    value.get(key)
+        .and_then(|item| item.as_str().and_then(|text| text.parse::<f64>().ok()).or_else(|| item.as_f64()))
+        .filter(|number| number.is_finite())
+        .ok_or_else(|| format!("exchange risk snapshot has invalid {key}"))
+}
+
 impl BinanceExecutor {
     pub fn from_env() -> Result<Self, String> {
         let configured_mode = env::var("QOIN_TRADING_MODE").unwrap_or_else(|_| "disabled".into());
@@ -82,6 +100,78 @@ impl BinanceExecutor {
             api_key, api_secret, base_url: base_url.trim_end_matches('/').to_string(),
             max_notional_usdt, max_quantity, mode })
     }
+    pub fn mode(&self) -> &'static str { self.mode }
+
+    /// Pull account equity, open exposure, daily net income and current mark
+    /// from the exchange itself. Missing or incomplete fields fail closed.
+    pub async fn risk_snapshot(&self, symbol: &str) -> Result<RiskSnapshot, String> {
+        let symbol = symbol.trim().to_ascii_uppercase();
+        if symbol.is_empty() || !symbol.bytes().all(|byte| byte.is_ascii_alphanumeric()) || !symbol.ends_with("USDT") {
+            return Err("risk snapshot requires a valid USDT-quoted symbol".into());
+        }
+        let account = self.signed_request(Method::GET, "/fapi/v2/account", Vec::new()).await?;
+        if account.get("canTrade").and_then(|value| value.as_bool()) != Some(true) {
+            return Err("exchange account is not permitted to trade".into());
+        }
+        let withdrawals_disabled = account.get("canWithdraw").and_then(|value| value.as_bool()) == Some(false);
+        let equity = numeric_field(&account, "totalMarginBalance")?;
+        if equity <= 0.0 { return Err("exchange account equity must be positive".into()); }
+
+        let positions = self.signed_request(Method::GET, "/fapi/v2/positionRisk", Vec::new()).await?;
+        let rows = positions.as_array().ok_or_else(|| "exchange positions response is malformed".to_string())?;
+        let mut current_gross_exposure = 0.0_f64;
+        let mut open_positions = 0usize;
+        for row in rows {
+            let amount = numeric_field(row, "positionAmt")?;
+            if amount.abs() > 0.0 {
+                let notional = row.get("notional")
+                    .and_then(|value| value.as_str().and_then(|text| text.parse::<f64>().ok()).or_else(|| value.as_f64()))
+                    .filter(|value| value.is_finite())
+                    .ok_or_else(|| "exchange position has invalid notional".to_string())?;
+                current_gross_exposure += notional.abs();
+                open_positions += 1;
+            }
+        }
+        if !current_gross_exposure.is_finite() {
+            return Err("exchange gross exposure overflowed".into());
+        }
+
+        let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_millis() as u64;
+        let start_ms = now_ms.saturating_sub(86_400_000);
+        let income = self.signed_request(Method::GET, "/fapi/v1/income", vec![
+            ("startTime".into(), start_ms.to_string()),
+            ("limit".into(), "1000".into()),
+        ]).await?;
+        let income_rows = income.as_array().ok_or_else(|| "exchange income history response is malformed".to_string())?;
+        if income_rows.len() >= 1000 {
+            return Err("exchange returned a full 1000-row income page; daily loss cannot be verified without pagination".into());
+        }
+        let mut net_income = 0.0_f64;
+        for row in income_rows {
+            net_income += numeric_field(row, "income")?;
+        }
+        let unrealized = numeric_field(&account, "totalUnrealizedProfit")?;
+        let current_daily_loss = (-(net_income + unrealized)).max(0.0);
+        if !current_daily_loss.is_finite() {
+            return Err("exchange daily loss calculation is invalid".into());
+        }
+
+        let mark_url = format!("{}/fapi/v1/premiumIndex?symbol={}", self.base_url, symbol);
+        let mark_response = self.client.get(mark_url).timeout(std::time::Duration::from_secs(5))
+            .send().await.map_err(|error| format!("mark-price request failed: {error}"))?;
+        if !mark_response.status().is_success() {
+            return Err(format!("mark-price lookup failed with HTTP {}", mark_response.status().as_u16()));
+        }
+        let mark: serde_json::Value = mark_response.json().await.map_err(|error| error.to_string())?;
+        let mark_price = numeric_field(&mark, "markPrice")?;
+        if mark_price <= 0.0 { return Err("exchange mark price must be positive".into()); }
+
+        Ok(RiskSnapshot {
+            mark_price, equity, current_gross_exposure, current_daily_loss,
+            open_positions, exchange_can_trade: true, withdrawals_disabled,
+        })
+    }
+
     fn sign(&self, query: &str) -> Result<String, String> {
         let mut mac = HmacSha256::new_from_slice(self.api_secret.as_bytes()).map_err(|e| e.to_string())?;
         mac.update(query.as_bytes()); Ok(hex::encode(mac.finalize().into_bytes()))
