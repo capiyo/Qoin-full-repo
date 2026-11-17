@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -442,6 +442,48 @@ pub async fn submit_risk_checked(
     Ok(RiskCheckedReceipt { risk, broker_receipt })
 }
 
+/// Runtime broker registry. Frontend broker selection resolves by stable
+/// broker_id; the selected adapter owns all provider-specific behavior.
+#[derive(Clone, Default)]
+pub struct BrokerRegistry {
+    adapters: Arc<RwLock<HashMap<String, Arc<dyn BrokerAdapter>>>>,
+}
+
+impl BrokerRegistry {
+    pub fn register(&self, adapter: Arc<dyn BrokerAdapter>) -> Result<(), ContractError> {
+        let broker_id = adapter.broker_id().trim().to_ascii_lowercase();
+        if broker_id.is_empty() {
+            return Err(ContractError::Broker("cannot register adapter without broker identity".into()));
+        }
+        let mut adapters = self.adapters.write()
+            .map_err(|_| ContractError::Broker("broker registry lock is poisoned".into()))?;
+        if adapters.contains_key(&broker_id) {
+            return Err(ContractError::Broker(format!("broker adapter {broker_id} is already registered")));
+        }
+        adapters.insert(broker_id, adapter);
+        Ok(())
+    }
+
+    pub fn resolve(&self, broker_id: &str) -> Result<Arc<dyn BrokerAdapter>, ContractError> {
+        let key = broker_id.trim().to_ascii_lowercase();
+        if key.is_empty() {
+            return Err(ContractError::InvalidOrder("selected broker_id is required".into()));
+        }
+        self.adapters.read()
+            .map_err(|_| ContractError::Broker("broker registry lock is poisoned".into()))?
+            .get(&key).cloned()
+            .ok_or_else(|| ContractError::Unsupported(format!("selected broker {key} is not configured on this deployment")))
+    }
+
+    pub fn configured_brokers(&self) -> Result<Vec<String>, ContractError> {
+        let mut ids = self.adapters.read()
+            .map_err(|_| ContractError::Broker("broker registry lock is poisoned".into()))?
+            .keys().cloned().collect::<Vec<_>>();
+        ids.sort();
+        Ok(ids)
+    }
+}
+
 /// Every broker implements the same account/order surface. Credentials and
 /// broker-specific payload translation remain inside the concrete adapter.
 #[async_trait]
@@ -552,6 +594,14 @@ mod tests {
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
             reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
             protective_order_supported:true, required_margin_account_currency:6_000.0 }).is_err());
+    }
+
+    #[test]
+    fn broker_registry_fails_closed_for_unconfigured_selection() {
+        let registry = BrokerRegistry::default();
+        assert!(registry.resolve("   ").is_err());
+        assert!(registry.resolve("selected-broker").is_err());
+        assert!(registry.configured_brokers().unwrap().is_empty());
     }
 
     #[test]
