@@ -390,7 +390,7 @@ export default function App() {
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
+        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
         provider: item.provider, providerStatus: item.provider_status,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, color: colors[index % colors.length],
       })));
