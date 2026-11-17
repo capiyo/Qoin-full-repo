@@ -164,11 +164,6 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/v1/signal");
     }, {drogon::Post});
-    drogon::app().registerHandler("/api/v1/jepa", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        const auto symbol = req->getParameter("symbol");
-        proxyGet(req, std::move(cb), "/internal/jepa" + (symbol.empty() ? "" : "?symbol=" + drogon::utils::urlEncode(symbol)));
-    }, {drogon::Get});
     drogon::app().registerHandler("/health", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) { proxyGet(req, std::move(cb), "/health"); }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/state", [](const drogon::HttpRequestPtr& req,
