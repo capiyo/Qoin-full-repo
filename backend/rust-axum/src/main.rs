@@ -1229,6 +1229,11 @@ async fn audit_set_ledger(
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger integrity observation count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"integrity observation count failed"})));}
     };
+    let truncated_relation_observations=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation","relation_edges_truncated":true},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"ledger relation coverage count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"relation coverage count failed"})));}
+    };
     let source_options=FindOptions::builder().sort(doc!{"ts_ms":1,"event_id":1,"venue":1}).limit(limit).build();
     let mut source_cursor=match s.events.find(doc!{"symbol":&symbol},Some(source_options)).await {
         Ok(cursor)=>cursor,
@@ -1367,6 +1372,8 @@ async fn audit_set_ledger(
         "relation_records_scanned":relations_scanned,
         "orphan_relations":orphan_relations,
         "malformed_relations":malformed_relations,
+        "truncated_relation_observations":truncated_relation_observations,
+        "relation_coverage_complete":truncated_relation_observations==0,
         "scan_limit":limit,
         "source_scan_complete":scanned as u64+invalid as u64==source_count,
         "relation_scan_complete":relations_scanned as u64==relation_count,
@@ -1436,18 +1443,25 @@ async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQ
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed during reconstruction");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation count unavailable"})));}
     };
+    let truncated_relation_observations=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation","relation_edges_truncated":true},None).await {
+        Ok(count)=>count,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"relation coverage count failed during reconstruction");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"relation coverage count unavailable"})));}
+    };
     let projection=set_ledger::build(&symbol,&events,invalid_observations+hash_mismatches,limit as usize,truncated);
     let mut response=serde_json::to_value(projection).unwrap_or_default();
     if let Some(object)=response.as_object_mut() {
         object.insert("reconstruction_source".into(),serde_json::json!("mongodb.set_relation_ledger.observation.source_event"));
         object.insert("durable_observation_count".into(),serde_json::json!(observation_count));
         object.insert("durable_relation_record_count".into(),serde_json::json!(relation_count));
+        object.insert("truncated_relation_observations".into(),serde_json::json!(truncated_relation_observations));
+        object.insert("relation_coverage_complete".into(),serde_json::json!(truncated_relation_observations==0));
         object.insert("raw_source_event_count".into(),serde_json::json!(source_count));
         object.insert("observations_scanned".into(),serde_json::json!(events.len()+invalid_observations+hash_mismatches));
         object.insert("invalid_observations".into(),serde_json::json!(invalid_observations));
         object.insert("source_hash_mismatches".into(),serde_json::json!(hash_mismatches));
         object.insert("observation_scan_complete".into(),serde_json::json!(!truncated && events.len()+invalid_observations+hash_mismatches==observation_count as usize));
-        object.insert("coverage_complete".into(),serde_json::json!(!truncated && invalid_observations==0 && hash_mismatches==0 && observation_count==source_count));
+        object.insert("coverage_complete".into(),serde_json::json!(!truncated && invalid_observations==0 && hash_mismatches==0 && observation_count==source_count && truncated_relation_observations==0));
         object.insert("note".into(),serde_json::json!("Sets and relation summaries were reconstructed from durable observation records. Persisted relation edges remain separately auditable; this projection does not authorize decisions or orders."));
     }
     (StatusCode::OK,Json(response))
