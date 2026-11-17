@@ -57,6 +57,8 @@ pub struct SetLedger {
     pub persistence: &'static str,
     pub symbol: String,
     pub universe_count: usize,
+    pub requested_limit: usize,
+    pub universe_truncated: bool,
     pub skipped_invalid_events: usize,
     pub window_start_ts_ms: Option<i64>,
     pub window_end_ts_ms: Option<i64>,
@@ -159,7 +161,7 @@ fn relation(
 }
 
 /// Build a deterministic finite-set view over one instrument's persisted events.
-pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize) -> SetLedger {
+pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize, requested_limit: usize, universe_truncated: bool) -> SetLedger {
     let mut ordered: Vec<&MarketEvent> = events.iter().collect();
     ordered.sort_by(|left, right| {
         left.ts_ms.cmp(&right.ts_ms)
@@ -200,6 +202,8 @@ pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize
         persistence: "computed_from_persisted_events_on_read_not_append_only",
         symbol: symbol.to_owned(),
         universe_count: unique_ids.len(),
+        requested_limit,
+        universe_truncated,
         skipped_invalid_events,
         window_start_ts_ms,
         window_end_ts_ms,
@@ -254,7 +258,7 @@ mod tests {
         funding.funding_rate = Some(0.0001);
         let oi = event("oi-1", "open_interest", 4_000);
 
-        let ledger = build("BTCUSDT", &[oi, funding, liquidation, sell, buy], 0);
+        let ledger = build("BTCUSDT", &[oi, funding, liquidation, sell, buy], 0, 1000, false);
         assert_eq!(ledger.universe_count, 5);
         assert_eq!(ledger.window_start_ts_ms, Some(1_000));
         assert_eq!(ledger.window_end_ts_ms, Some(4_000));
@@ -277,7 +281,7 @@ mod tests {
         let mut buy = event("buy-1", "trade", 1_000);
         buy.side = Some("buy".into());
         let liquidation = event("liq-1", "liquidation", 61_001);
-        let ledger = build("BTCUSDT", &[buy, liquidation], 0);
+        let ledger = build("BTCUSDT", &[buy, liquidation], 0, 1000, false);
         assert_eq!(ledger.relations[0].edge_count, 0);
     }
 
@@ -290,7 +294,7 @@ mod tests {
             events.push(trade);
             events.push(event(&format!("liq-{index}"), "liquidation", 2_000 + index));
         }
-        let ledger = build("BTCUSDT", &events, 0);
+        let ledger = build("BTCUSDT", &events, 0, 1000, false);
         let relation = &ledger.relations[0];
         assert_eq!(relation.edge_count, 101 * 101);
         assert_eq!(relation.edges.len(), 100);
@@ -300,7 +304,7 @@ mod tests {
 
     #[test]
     fn reports_empty_universe_without_inventing_members() {
-        let ledger = build("BTCUSDT", &[], 2);
+        let ledger = build("BTCUSDT", &[], 2, 1000, false);
         assert_eq!(ledger.universe_count, 0);
         assert_eq!(ledger.skipped_invalid_events, 2);
         assert!(ledger.sets.iter().all(|item| item.measure.counting_measure == 0));
