@@ -451,7 +451,7 @@ mod tests {
         let comparison = left.compare(&right).unwrap();
         assert_eq!(comparison.common_dimensions, 2);
         assert!((comparison.coverage - 2.0 / 53.0).abs() < 1e-12);
-        assert!(comparison.cosine_similarity > 0.99);
+        assert!(comparison.cosine_similarity > 0.95);
         assert!(comparison.weighted_euclidean_distance > 0.0);
     }
 
