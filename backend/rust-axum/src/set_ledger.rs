@@ -426,6 +426,27 @@ mod tests {
     }
 
     #[test]
+    fn durable_records_capture_memberships_hash_and_temporal_edges() {
+        let mut buy = event("buy-immutable", "trade", 10_000);
+        buy.side = Some("buy".into());
+        let mut liquidation = event("liq-immutable", "liquidation", 10_250);
+        liquidation.liquidation_side = Some("long".into());
+        let records = durable_records(
+            &liquidation,
+            &[buy.clone(), liquidation.clone()],
+            mongodb::bson::DateTime::now(),
+        ).unwrap();
+        assert_eq!(records.len(), 2);
+        let observation = records.iter().find(|record| record.get_str("record_type") == Ok("observation")).unwrap();
+        assert_eq!(observation.get_str("schema_version"), Ok("qoin-relation-ledger-v2-alpha2"));
+        assert_eq!(observation.get_str("source_event_hash_sha256").unwrap().len(), 64);
+        let relation = records.iter().find(|record| record.get_str("record_type") == Ok("relation_edge")).unwrap();
+        assert_eq!(relation.get_str("relation_id"), Ok("buy_trades_before_liquidations"));
+        assert_eq!(relation.get_i64("lag_ms"), Ok(250));
+        assert_eq!(relation.get_str("interpretation").unwrap().contains("does not establish causation"), true);
+    }
+
+    #[test]
     fn reports_empty_universe_without_inventing_members() {
         let ledger = build("BTCUSDT", &[], 2, 1000, false);
         assert_eq!(ledger.universe_count, 0);
