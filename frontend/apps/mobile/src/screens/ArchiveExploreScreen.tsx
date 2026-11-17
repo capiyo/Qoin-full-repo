@@ -512,17 +512,68 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           </>
         ) : null}
 
-        {data.length ? data.map((item) => (
-          <View key={item.symbol} style={styles.card}>
-            <Pressable onPress={() => openInstrument(item)} style={styles.cardMain}>
-              <View style={[styles.assetMark, { backgroundColor: item.tint }]}><Text style={styles.assetMarkText}>{item.symbol.slice(0, 1)}</Text></View>
-              <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
-              <Text style={styles.arrow}>↗</Text>
-            </Pressable>
-            <Text style={styles.detail}>{item.detail}</Text><Text style={styles.providerLine}>{item.venue} · {item.provider} · {item.providerStatus || "provider status unknown"}</Text><View style={styles.cardLiveRow}><Text style={styles.cardLivePrice}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text><Text style={styles.cardLiveDecision}>{liveBySymbol[item.engineSymbol.toUpperCase()]?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</Text></View>
-            {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
-          </View>
-        )) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
+        {data.length ? data.map((item) => {
+          const live = liveBySymbol[item.engineSymbol.toUpperCase()];
+          const decision = live?.decision;
+          const page = algorithmBySymbol[item.symbol] ?? 0;
+          const setPage = (next: 0 | 1) => setAlgorithmBySymbol((current) => ({ ...current, [item.symbol]: next }));
+          const sourceTime = decision?.input_event?.event_ts_ms;
+          return (
+            <View key={item.symbol} style={styles.card}>
+              <View onTouchStart={(event) => { cardTouchStart.current[item.symbol] = event.nativeEvent.pageX; }} onTouchEnd={(event) => {
+                const start = cardTouchStart.current[item.symbol];
+                const end = event.nativeEvent.pageX;
+                if (start != null && Math.abs(end - start) > 38) setPage(end < start ? 1 : 0);
+                delete cardTouchStart.current[item.symbol];
+              }}>
+                <Pressable onPress={() => openInstrument(item)} style={styles.cardMain}>
+                  <View style={[styles.assetMark, { backgroundColor: item.tint }]}><Text style={styles.assetMarkText}>{item.symbol.slice(0, 1)}</Text></View>
+                  <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
+                  <Text style={styles.arrow}>↗</Text>
+                </Pressable>
+                <View style={styles.cardMetaRow}>
+                  <Text style={styles.cardMetaChip}>{item.market}</Text>
+                  <Text style={styles.cardMetaChip}>{item.venue}</Text>
+                  <Text style={[styles.cardMetaChip, item.providerStatus?.toLowerCase().includes("connected") && styles.cardMetaLive]}>{item.providerStatus || "Provider unknown"}</Text>
+                </View>
+                {page === 0 ? (
+                  <View style={styles.cardPager}>
+                    <View style={styles.cardPagerPrimary}>
+                      <Text style={styles.cardKicker}>LATEST MARKET PRICE</Text>
+                      <Text style={styles.cardPagerValue}>{live?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text>
+                      <Text style={[styles.cardPagerStatus, decision?.action === "sell" && styles.cardPagerNegative]}>{decision?.action?.toUpperCase() || "AWAITING DATA"}</Text>
+                    </View>
+                    <View style={styles.cardPagerSecondary}>
+                      <Text style={styles.cardMetaLabel}>FEED</Text><Text style={styles.cardMetaValue}>{item.provider}</Text>
+                      <Text style={styles.cardMetaLabel}>VENUE</Text><Text style={styles.cardMetaValue}>{item.venue}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.cardPager}>
+                    <View style={styles.cardPagerPrimary}>
+                      <Text style={styles.cardKicker}>RESEARCH VIEW 02</Text>
+                      <Text style={styles.cardPagerValue}>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</Text>
+                      <Text style={styles.cardPagerStatus}>{decision ? "DECISION MAGNITUDE" : "PREVIEW ONLY"}</Text>
+                    </View>
+                    <View style={styles.cardPagerReason}>
+                      <Text style={styles.cardMetaLabel}>LATEST ENGINE RATIONALE</Text>
+                      <Text style={styles.cardReasonText} numberOfLines={3}>{decision?.reason || "The second analytical layer is a preview. No uncomputed values are shown."}</Text>
+                      <Text style={styles.cardMetaLabel}>{sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</Text>
+                    </View>
+                  </View>
+                )}
+                <View style={styles.cardPagerFooter}>
+                  <View style={styles.cardPagerDots}>
+                    <Pressable accessibilityLabel="Show first card page" accessibilityState={{ selected: page === 0 }} onPress={() => setPage(0)} style={[styles.cardPagerDot, page === 0 && styles.cardPagerDotActive]} />
+                    <Pressable accessibilityLabel="Show second card page" accessibilityState={{ selected: page === 1 }} onPress={() => setPage(1)} style={[styles.cardPagerDot, page === 1 && styles.cardPagerDotActive]} />
+                  </View>
+                  <Text style={styles.cardSwipeHint}>SWIPE TO EXPLORE</Text>
+                </View>
+              </View>
+              {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
+            </View>
+          );
+        }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
 
         {mode === "Explore" ? <View style={styles.newsSection}>
           <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
@@ -888,4 +939,26 @@ const styles = StyleSheet.create({
   closeActionText: { color: "#64748B", fontSize: 11, fontWeight: "700" },
   saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#70d99d" },
   saveActionText: { color: "#14221a", fontSize: 11, fontWeight: "700" },
+
+  card: { padding: 13, backgroundColor: "#17271e", borderWidth: 1, borderColor: "#2b4032", borderRadius: 17, marginBottom: 11, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  cardMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginLeft: 48, marginTop: 9, marginBottom: 9 },
+  cardMetaChip: { overflow: "hidden", color: "#9cb2a2", backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2e4937", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
+  cardMetaLive: { color: "#9be8b5", borderColor: "#396b49", backgroundColor: "#1d3928" },
+  cardPager: { flexDirection: "row", minHeight: 90, gap: 10, padding: 10, borderRadius: 13, borderWidth: 1, borderColor: "#2b4032", backgroundColor: "#101c15" },
+  cardPagerPrimary: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0 },
+  cardKicker: { color: "#819989", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
+  cardPagerValue: { color: "#e6f1e9", fontSize: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  cardPagerStatus: { color: "#70d99d", fontSize: 7, fontWeight: "900", letterSpacing: 0.8 },
+  cardPagerNegative: { color: "#e47a82" },
+  cardPagerSecondary: { width: "39%", justifyContent: "center", gap: 4, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#2b4032" },
+  cardMetaLabel: { color: "#819989", fontSize: 7, fontWeight: "800" },
+  cardMetaValue: { color: "#d3e4d8", fontSize: 9, fontWeight: "700" },
+  cardPagerReason: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#2b4032" },
+  cardReasonText: { color: "#c4d8c9", fontSize: 8, lineHeight: 12 },
+  cardPagerFooter: { flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 48, marginTop: 8 },
+  cardPagerDots: { flexDirection: "row", alignItems: "center", gap: 5 },
+  cardPagerDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#45604d" },
+  cardPagerDotActive: { width: 18, backgroundColor: "#70d99d" },
+  cardSwipeHint: { color: "#718b79", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
+
 });
