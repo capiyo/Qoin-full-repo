@@ -89,12 +89,12 @@ fn measure(events: &[&MarketEvent]) -> SetMeasure {
     }
 }
 
-fn make_set(
+fn make_set<'a>(
     set_id: &'static str,
     label: &'static str,
-    universe: &[&MarketEvent],
+    universe: &[&'a MarketEvent],
     predicate: impl Fn(&MarketEvent) -> bool,
-) -> (EventSet, Vec<&MarketEvent>) {
+) -> (EventSet, Vec<&'a MarketEvent>) {
     let members: Vec<&MarketEvent> = universe.iter().copied().filter(|event| predicate(event)).collect();
     let mut ids: Vec<String> = members.iter().map(|event| event_key(event)).collect();
     ids.sort();
