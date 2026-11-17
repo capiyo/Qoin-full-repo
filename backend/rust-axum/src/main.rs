@@ -272,8 +272,6 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
         }
         if let Some(avg)=average_return{output.insert(TrendStrength,avg/vol.max(1.0e-12)*(return_window.len() as f64).sqrt());}
         if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
-        if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
-        if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
     }
     if let Some(avg)=average_return{output.insert(Momentum,avg*return_window.len() as f64);}
     if let Some(value)=persistence{
@@ -359,10 +357,11 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
     let mut vector=MarketVector::new(vector_id,&event.venue,&event.symbol,"event-window",cutoff,available_at_ms.max(cutoff)).ok()?;
     let raw_features=raw_feature_values(state);let mut observed=0usize;
     for (feature,raw) in raw_features{
+        let Some(freshness)=feature_freshness(state,feature,cutoff) else {continue;};
         let history=state.feature_history.entry(feature).or_default();
         if let Some(value)=causal_robust_normalize(raw,history){
             let calibration_quality=(history.len() as f64/32.0).min(1.0);
-            let quality=state.state_quality.min(calibration_quality);
+            let quality=state.state_quality.min(calibration_quality)*freshness;
             if quality>0.0 && vector.set_value(feature,Some(value),quality).is_ok(){observed+=1;}
         }
         push_bounded(history,raw);
