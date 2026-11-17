@@ -119,8 +119,9 @@ paths:
       description: |
         Read-only research projection over persisted raw events. Returns set memberships,
         counting and observed trade-size measures, and temporal-precedence edges over a
-        fixed 60-second window. Temporal ordering is not causation. The result is computed
-        on read and is not yet an append-only durable ledger; it never changes V1 decisions.
+        fixed 60-second window. Temporal ordering is not causation. Immutable observation
+        and relation records are stored separately in MongoDB; historical coverage is
+        operator-driven through the authenticated resumable backfill operation. V1 is unchanged.
       parameters:
         - in: query
           name: symbol
@@ -133,6 +134,63 @@ paths:
         '200': { description: Derived set memberships and temporal relation ledger }
         '400': { description: Invalid symbol }
         '503': { description: Event storage unavailable }
+  /api/v1/set-ledger/backfill:
+    get:
+      summary: Backfill immutable V2 ledger records from historical raw events
+      description: |
+        Operator-only, bounded and resumable migration. Requires the Qoin execution
+        token in x-qoin-execution-token. Repeat with next_cursor fields until has_more
+        is false. Deterministic record IDs make retries idempotent. Does not change V1.
+      parameters:
+        - in: header
+          name: x-qoin-execution-token
+          required: true
+          schema: { type: string }
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: batch_size
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - in: query
+          name: after_ts_ms
+          schema: { type: integer }
+        - in: query
+          name: after_event_id
+          schema: { type: string }
+        - in: query
+          name: after_venue
+          schema: { type: string }
+      responses:
+        '200': { description: Backfill progress, counts and next cursor }
+        '400': { description: Invalid symbol or cursor }
+        '401': { description: Missing or invalid operator token }
+        '503': { description: Source or ledger storage unavailable }
+  /api/v1/set-ledger/integrity:
+    get:
+      summary: Audit V2 observation hashes and relation endpoints
+      description: |
+        Operator-only bounded audit. Recomputes source-event SHA-256 hashes, checks
+        observation coverage and verifies that relation endpoints resolve to observation
+        records. integrity_passed is true only when both scans are complete and clean.
+      parameters:
+        - in: header
+          name: x-qoin-execution-token
+          required: true
+          schema: { type: string }
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 }
+      responses:
+        '200': { description: Bounded source and relation integrity report }
+        '400': { description: Invalid symbol }
+        '401': { description: Missing or invalid operator token }
+        '503': { description: Storage unavailable }
   /api/v1/instruments:
     get:
       summary: Get the supported multi-asset instrument registry
