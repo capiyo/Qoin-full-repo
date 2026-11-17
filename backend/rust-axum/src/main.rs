@@ -1139,9 +1139,9 @@ async fn audit_set_ledger(
         "relation_records_scanned":relations_scanned,
         "orphan_relations":orphan_relations,
         "scan_limit":limit,
-        "source_scan_complete":scanned+invalid==source_count,
+        "source_scan_complete":scanned as u64+invalid as u64==source_count,
         "relation_scan_complete":relations_scanned as u64==relation_count,
-        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && invalid==0 && scanned+invalid==source_count && relations_scanned as u64==relation_count,
+        "integrity_passed":missing==0 && hash_mismatches==0 && orphan_relations==0 && invalid==0 && scanned as u64+invalid as u64==source_count && relations_scanned as u64==relation_count,
         "sample_issues":sample
     })))
 }
