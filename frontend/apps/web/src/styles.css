@@ -168,3 +168,26 @@ html[data-qoin-platform="desktop"] button{user-select:none}
 .card-mechanics-features strong{color:#52647c;font-size:8px;text-align:right}
 .card-mechanics-features>p,.card-mechanics-footnote{margin:0;color:#929eaf;font-size:8px;line-height:1.5}
 @media(max-width:580px){.auth-gate-card{padding:23px;border-radius:18px}}
+
+
+.v2-ledger-panel{display:flex;flex-direction:column;gap:12px;margin:18px 0;padding:17px;border:1px solid #dce7f8;border-radius:15px;background:#fbfcff}
+.v2-ledger-empty{margin:0;color:#8795a8;font-size:10px;line-height:1.6}
+.v2-ledger-list{display:grid;gap:11px}
+.v2-ledger-event{display:flex;flex-direction:column;gap:9px;padding-top:12px;border-top:1px solid #e8edf5}
+.v2-ledger-event-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.v2-ledger-event-head strong{color:#30445f;font-size:11px;text-transform:capitalize}
+.v2-ledger-event-head span{color:#2867d8;font-size:9px;font-weight:800;text-transform:uppercase}
+.v2-ledger-event>p{margin:0;color:#8795a8;font-size:9px;line-height:1.5}
+.v2-ledger-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.v2-ledger-metrics>div{display:flex;flex-direction:column;gap:4px;padding:8px;border-radius:8px;background:#f0f5fd;min-width:0}
+.v2-ledger-metrics span{color:#8795a8;font-size:8px}
+.v2-ledger-metrics strong{color:#30445f;font-size:10px}
+.v2-ledger-set-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.v2-ledger-set-grid>div{min-width:0;padding:9px;border-radius:8px;background:#f5f8fd}
+.v2-ledger-set-grid>div>span{display:block;color:#43546c;font-size:9px;font-weight:800;overflow-wrap:anywhere}
+.v2-ledger-set-grid small{display:block;margin-top:4px;color:#929eaf;font-size:8px}
+.v2-ledger-set-grid ul{display:grid;gap:3px;margin:7px 0 0;padding-left:15px;color:#52647c;font-size:8px;overflow-wrap:anywhere}
+.v2-ledger-measure,.v2-ledger-outcome{display:flex;flex-direction:column;gap:4px;padding:9px;border-radius:8px;background:#f0f5fd;color:#52647c;font-size:8px;line-height:1.5}
+.v2-ledger-measure strong,.v2-ledger-outcome strong{color:#30445f;font-size:9px}
+.v2-ledger-footnote,.v2-ledger-meta{margin:0;color:#98a3b2;font-size:8px;line-height:1.5}
+@media(max-width:580px){.v2-ledger-panel{padding:13px}.v2-ledger-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.v2-ledger-set-grid{grid-template-columns:1fr}}
