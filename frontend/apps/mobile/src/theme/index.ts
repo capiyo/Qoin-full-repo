@@ -1,4 +1,14 @@
-import { qoinColors, fonts } from "@qoin/core";
-
-export const colors = qoinColors;
-export const typography = fonts;
+export const colors = {
+  bgPrimary: "#0e1612",
+  bgSecondary: "#14221a",
+  bgRaised: "#19291f",
+  bgSoft: "#203329",
+  border: "#2b4032",
+  accent: "#70d99d",
+  accentCyan: "#70d99d",
+  bullish: "#70d99d",
+  bearish: "#e47a82",
+  textPrimary: "#e6f1e9",
+  textMuted: "#9cb2a2",
+  white: "#ffffff",
+} as const;
