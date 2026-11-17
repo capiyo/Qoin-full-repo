@@ -210,6 +210,7 @@ pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize
             "Counting measure is exact for the returned finite event universe; volume measure is the sum of supplied trade sizes only.",
             "Missing trade sizes are counted separately and are never replaced with zero observations.",
             "Temporal relations use a fixed 60-second window and are not causal claims.",
+            "At most 100 edge examples per relation are returned; edge_count and mean lag are computed across all matching pairs."
             "This is a derived read-only projection, not yet an append-only durable ledger.",
             "No V2 output changes the Version 1 vector decision or authorizes an order.",
         ],
