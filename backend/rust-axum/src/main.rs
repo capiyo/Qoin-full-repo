@@ -48,6 +48,8 @@ struct MarketEvent {
     #[serde(default)] ask_size: Option<f64>,
     #[serde(default)] funding_rate: Option<f64>,
     #[serde(default)] open_interest: Option<f64>,
+    #[serde(default)] mark_price: Option<f64>,
+    #[serde(default)] index_price: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -65,6 +67,8 @@ struct SymbolState {
     ewma_abs_return: f64,
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
+    mark_price: Option<f64>,
+    index_price: Option<f64>,
     liquidation_events: usize,
     last_liquidation_side: Option<String>,
     state_quality: f64,
@@ -75,6 +79,7 @@ struct SymbolState {
     #[serde(skip)] last_book_ts_ms: Option<i64>,
     #[serde(skip)] last_funding_ts_ms: Option<i64>,
     #[serde(skip)] last_open_interest_ts_ms: Option<i64>,
+    #[serde(skip)] last_basis_ts_ms: Option<i64>,
     #[serde(skip)] last_liquidation_ts_ms: Option<i64>,
     #[serde(skip)] recent_prices: VecDeque<f64>,
     #[serde(skip)] recent_returns: VecDeque<f64>,
@@ -143,13 +148,14 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("future-dated market events are rejected to prevent look-ahead".into());
     }
     for (name, value) in [("price",e.price),("size",e.size),("bid",e.bid),("ask",e.ask),
-        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest)] {
+        ("bid_size",e.bid_size),("ask_size",e.ask_size),("funding_rate",e.funding_rate),("open_interest",e.open_interest),
+        ("mark_price",e.mark_price),("index_price",e.index_price)] {
         if !valid_number(value) { return Err(format!("{name} must be finite")); }
     }
     if let (Some(bid),Some(ask))=(e.bid,e.ask) {
         if bid < 0.0 || ask < bid { return Err("book prices must be non-negative and ask >= bid".into()); }
     }
-    if [e.price,e.size,e.bid,e.ask,e.bid_size,e.ask_size,e.open_interest].into_iter().flatten().any(|v| v < 0.0) {
+    if [e.price,e.size,e.bid,e.ask,e.bid_size,e.ask_size,e.open_interest,e.mark_price,e.index_price].into_iter().flatten().any(|v| v < 0.0) {
         return Err("prices, sizes, and open interest must be non-negative".into());
     }
     Ok(())
@@ -208,7 +214,16 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             let signed=match event.liquidation_side.as_deref(){Some("long")=>-size,Some("short")=>size,_=>0.0};
             push_bounded(&mut state.recent_liquidation_flow,signed);
         }
-        "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;state.last_funding_ts_ms=Some(event.ts_ms);},
+        "funding" => {
+            if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;state.last_funding_ts_ms=Some(event.ts_ms);}
+            if let (Some(mark),Some(index))=(event.mark_price,event.index_price){
+                if mark>0.0&&index>0.0{
+                    state.mark_price=Some(mark);
+                    state.index_price=Some(index);
+                    state.last_basis_ts_ms=Some(event.ts_ms);
+                }
+            }
+        },
         "open_interest" => if let Some(value)=event.open_interest {
             state.last_open_interest_ts_ms=Some(event.ts_ms);
             state.open_interest_change=state.open_interest.filter(|previous|*previous>0.0)
@@ -337,8 +352,18 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     }
     if let Some(value)=state.funding_rate{output.insert(FundingPressure,value);}
     if let Some(value)=state.open_interest_change{output.insert(OpenInterestChange,value);}
+    if let (Some(mark),Some(index))=(state.mark_price,state.index_price){
+        if index>0.0{output.insert(Basis,mark/index-1.0);}
+    }
     let liquidation_abs=state.recent_liquidation_flow.iter().map(|value|value.abs()).sum::<f64>();
-    if liquidation_abs>0.0{output.insert(LiquidationPressure,(state.recent_liquidation_flow.iter().sum::<f64>()/liquidation_abs).clamp(-1.0,1.0));}
+    if liquidation_abs>0.0{
+        output.insert(LiquidationPressure,(state.recent_liquidation_flow.iter().sum::<f64>()/liquidation_abs).clamp(-1.0,1.0));
+    }else if state.venue=="binance_usdm"&&state.last_event_ts_ms.is_some(){
+        // The Binance combined stream subscribes to forceOrder alongside trades,
+        // book and mark-price updates. A live observation window with no force
+        // orders is an observed zero, not a missing liquidation feature.
+        output.insert(LiquidationPressure,0.0);
+    }
     if let Some(cutoff)=state.last_event_ts_ms{
         let count=state.recent_event_ts_ms.iter().filter(|timestamp|cutoff.saturating_sub(**timestamp)<=60_000).count();
         output.insert(EventIntensity,count as f64);
@@ -455,7 +480,8 @@ fn feature_source_timestamp(state:&SymbolState,feature:MarketFeature,cross_times
         RegimeLiquidityStress=>state.last_book_ts_ms,
         FundingPressure=>state.last_funding_ts_ms,
         OpenInterestChange=>state.last_open_interest_ts_ms,
-        LiquidationPressure=>state.last_liquidation_ts_ms,
+        Basis=>state.last_basis_ts_ms,
+        LiquidationPressure=>if state.venue=="binance_usdm"{state.last_event_ts_ms}else{state.last_liquidation_ts_ms},
         EventIntensity=>state.last_event_ts_ms,
         Correlation|Covariance|Beta|CorrelationBreakdown|RelativeStrength|RegimeCorrelationStress=>cross_timestamp,
         _=>None,
@@ -484,7 +510,8 @@ fn feature_freshness(state:&SymbolState,feature:MarketFeature,cutoff_ms:i64,cros
         RegimeLiquidityStress=>(state.last_book_ts_ms,30_000_i64),
         FundingPressure=>(state.last_funding_ts_ms,8*60*60*1_000_i64),
         OpenInterestChange=>(state.last_open_interest_ts_ms,5*60*1_000_i64),
-        LiquidationPressure=>(state.last_liquidation_ts_ms,60_000_i64),
+        Basis=>(state.last_basis_ts_ms,60_000_i64),
+        LiquidationPressure=>(if state.venue=="binance_usdm"{state.last_event_ts_ms}else{state.last_liquidation_ts_ms},60_000_i64),
         EventIntensity=>(state.last_event_ts_ms,60_000_i64),
         Correlation|Covariance|Beta|CorrelationBreakdown|RelativeStrength|RegimeCorrelationStress=>(cross_timestamp,5*60_000_i64),
         _=>return None,
@@ -516,9 +543,16 @@ fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms
         vector.set_not_applicable(feature);
     }
     if event.venue!="binance_usdm"{
-        // Current Coinbase/Kraken spot and Finnhub feeds have no paired
-        // derivative/index leg from which a basis could be defined.
-        vector.set_not_applicable(MarketFeature::Basis);
+        // Current Coinbase/Kraken spot and Finnhub feeds have no perpetual
+        // funding, open-interest, liquidation or paired index/derivative basis.
+        for feature in [
+            MarketFeature::FundingPressure,
+            MarketFeature::OpenInterestChange,
+            MarketFeature::LiquidationPressure,
+            MarketFeature::Basis,
+        ]{
+            vector.set_not_applicable(feature);
+        }
     }
     let mut raw_features=raw_feature_values(state);
     raw_features.extend(cross_asset_raw_features(state,peers,cutoff));
@@ -1113,7 +1147,7 @@ async fn spawn_binance_open_interest(axum_addr: String, symbols: Vec<String>) {
                 event_id:format!("open_interest:{ts_ms}"),venue:"binance_usdm".into(),symbol:symbol.clone(),
                 event_type:"open_interest".into(),ts_ms,price:None,size:None,side:None,
                 bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,
-                open_interest:Some(open_interest),liquidation_side:None,
+                open_interest:Some(open_interest),mark_price:None,index_price:None,liquidation_side:None,
             };
             submit_market_event(&client,&endpoint,&event,"binance_usdm_open_interest").await;
         }
@@ -1143,7 +1177,7 @@ fn parse_kraken_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent> {
             symbol:format!("{}_KRAKEN",product.replace('/',"").replace('-',"").to_ascii_uppercase()),
             event_type:"trade".into(),ts_ms:timestamp,price:Some(price),size:Some(size),
             side:Some(side.into()),bid:None,ask:None,bid_size:None,ask_size:None,
-            funding_rate:None,open_interest:None,liquidation_side:None,
+            funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
         };
         if validate_event(&observation).is_ok(){parsed.push(observation);}
     }
@@ -1223,7 +1257,7 @@ fn parse_coinbase_trade_message(payload: &serde_json::Value) -> Vec<MarketEvent>
                 size: Some(size),
                 side: Some(side.into()),
                 bid: None, ask: None, bid_size: None, ask_size: None,
-                funding_rate: None, open_interest: None, liquidation_side: None,
+                funding_rate: None, open_interest: None,mark_price:None,index_price:None, liquidation_side: None,
             };
             if validate_event(&observation).is_ok() {
                 parsed.push(observation);
@@ -1329,7 +1363,7 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
                         let event = MarketEvent {
                             event_id, venue:"finnhub".into(), symbol:symbol.into(), event_type:"trade".into(), ts_ms,
                             price, size, side:None, bid:None, ask:None, bid_size:None, ask_size:None,
-                            funding_rate:None, open_interest:None, liquidation_side:None,
+                            funding_rate:None, open_interest:None,mark_price:None,index_price:None, liquidation_side:None,
                         };
                         submit_market_event(&client,&endpoint,&event,"finnhub").await;
                     }
@@ -1659,19 +1693,20 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                         Some(MarketEvent{event_id:format!("trade:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
                             event_type:"trade".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:stream_number(data.get("q")),
                             side:Some(if data.get("m").and_then(|v|v.as_bool()).unwrap_or(false){"sell"}else{"buy"}.into()),
-                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,liquidation_side:None})
+                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None})
                     } else if data.get("b").is_some()&&data.get("a").is_some()&&data.get("u").is_some() {
                         let id=data.get("u").map(|v|v.to_string()).unwrap_or_else(||timestamp.to_string());
                         Some(MarketEvent{event_id:format!("book:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
                             event_type:"book".into(),ts_ms:timestamp,price:None,size:None,side:None,
                             bid:stream_number(data.get("b")),ask:stream_number(data.get("a")),
                             bid_size:stream_number(data.get("B")),ask_size:stream_number(data.get("A")),
-                            funding_rate:None,open_interest:None,liquidation_side:None})
+                            funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None})
                     } else if event_name=="markPriceUpdate" {
                         Some(MarketEvent{event_id:format!("funding:{timestamp}"),venue:"binance_usdm".into(),symbol:symbol.into(),
-                            event_type:"funding".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:None,side:None,
+                            event_type:"funding".into(),ts_ms:timestamp,price:None,size:None,side:None,
                             bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:stream_number(data.get("r")),
-                            open_interest:None,liquidation_side:None})
+                            open_interest:None,mark_price:stream_number(data.get("p")),index_price:stream_number(data.get("i")),
+                            liquidation_side:None})
                     } else if event_name=="forceOrder" {
                         let order=data.get("o").unwrap_or(data);
                         let side=order.get("S").and_then(|v|v.as_str()).unwrap_or_default();
@@ -1680,7 +1715,7 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                         Some(MarketEvent{event_id:format!("liquidation:{id}"),venue:"binance_usdm".into(),symbol:symbol.into(),
                             event_type:"liquidation".into(),ts_ms:order.get("T").and_then(|v|v.as_i64()).unwrap_or(timestamp),
                             price:stream_number(order.get("p")),size:stream_number(order.get("q")),side:None,
-                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,
+                            bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,mark_price:None,index_price:None,
                             liquidation_side:liquidation_side.map(str::to_owned)})
                     } else {None};
                     if let Some(event)=event {
@@ -2560,7 +2595,7 @@ mod market_stream_tests {
             event_id: "test-1".into(), venue: "test".into(), symbol: "BTCUSDT".into(),
             event_type: "trade".into(), ts_ms: 1_700_000_000_000, price: Some(100.0),
             size: Some(1.0), side: Some("buy".into()), bid: None, ask: None,
-            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,
+            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,mark_price:None,index_price:None,
             liquidation_side: None,
         };
         assert!(validate_event(&base).is_ok());
@@ -2581,7 +2616,7 @@ mod market_stream_tests {
             event_id: "test-1".into(), venue: "test".into(), symbol: "BTCUSDT".into(),
             event_type: "trade".into(), ts_ms: 1_700_000_000_000, price: Some(100.0),
             size: Some(1.0), side: Some("buy".into()), bid: None, ask: None,
-            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,
+            bid_size: None, ask_size: None, funding_rate: None, open_interest: None,mark_price:None,index_price:None,
             liquidation_side: None,
         };
         assert!(validate_event(&base).is_ok());
@@ -2610,7 +2645,7 @@ mod market_stream_tests {
                 event_id:format!("pipeline-{index}"),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
                 event_type:"trade".into(),ts_ms:1_800_000_000_000+index*1_000,price:Some(price),size:Some(1.0),
                 side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
-                funding_rate:None,open_interest:None,liquidation_side:None,
+                funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
             };
             apply(&mut state,&event);latest=build_market_vector(&mut state,&event,event.ts_ms,&[]);
         }
@@ -2624,7 +2659,7 @@ mod market_stream_tests {
             event_id:"stale-feed".into(),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
             event_type:"funding".into(),ts_ms:1_800_000_000_000+24*1_000+120_000,price:None,size:None,
             side:None,bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:Some(0.0001),
-            open_interest:None,liquidation_side:None,
+            open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
         };
         apply(&mut state,&stale_event);
         let after_stale=build_market_vector(&mut state,&stale_event,stale_event.ts_ms,&[]).unwrap();
@@ -2670,7 +2705,7 @@ mod market_stream_tests {
                 event_type:"trade".into(),ts_ms:1_800_000_000_000+index*1_000,
                 price:Some(100.0+index as f64),size:Some(1.0),side:Some("buy".into()),
                 bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,
-                open_interest:None,liquidation_side:None,
+                open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
             };
             apply(&mut state,&event);
             let _=build_market_vector(&mut state,&event,event.ts_ms,&[]);
@@ -2681,7 +2716,7 @@ mod market_stream_tests {
             event_type:"book".into(),ts_ms:1_800_000_000_000+12_000,
             price:None,size:None,side:None,bid:Some(99.9),ask:Some(100.1),
             bid_size:Some(10.0),ask_size:Some(11.0),funding_rate:None,
-            open_interest:None,liquidation_side:None,
+            open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
         };
         apply(&mut state,&book);
         let _=build_market_vector(&mut state,&book,book.ts_ms,&[]);
@@ -2762,7 +2797,7 @@ mod execution_route_auth_tests {
             event_id:"future".into(),venue:"test".into(),symbol:"BTCUSDT".into(),
             event_type:"trade".into(),ts_ms:now+1,price:Some(100.0),size:Some(1.0),
             side:Some("buy".into()),bid:None,ask:None,bid_size:None,ask_size:None,
-            funding_rate:None,open_interest:None,liquidation_side:None,
+            funding_rate:None,open_interest:None,mark_price:None,index_price:None,liquidation_side:None,
         };
         assert!(validate_event(&future).is_err());
     }
