@@ -11,7 +11,7 @@ use mongodb::{
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
+use std::{collections::{BTreeMap, HashMap, HashSet, VecDeque}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
@@ -27,7 +27,7 @@ mod execution_lifecycle;
 mod trading;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
-use qoin_market_space::MarketVector;
+use qoin_market_space::{MarketFeature, MarketVector};
 use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, VectorEvidenceConfig, Vocabulary};
 use sha2::{Digest, Sha256};
 
@@ -67,6 +67,15 @@ struct SymbolState {
     liquidation_events: usize,
     last_liquidation_side: Option<String>,
     state_quality: f64,
+    order_book_depth: Option<f64>,
+    open_interest_change: Option<f64>,
+    #[serde(skip)] recent_prices: VecDeque<f64>,
+    #[serde(skip)] recent_returns: VecDeque<f64>,
+    #[serde(skip)] recent_trade_flow: VecDeque<f64>,
+    #[serde(skip)] recent_trade_sizes: VecDeque<f64>,
+    #[serde(skip)] recent_liquidation_flow: VecDeque<f64>,
+    #[serde(skip)] recent_event_ts_ms: VecDeque<i64>,
+    #[serde(skip)] feature_history: BTreeMap<MarketFeature, VecDeque<f64>>,
 }
 #[derive(Clone)]
 struct AppState {
@@ -74,6 +83,7 @@ struct AppState {
     database: mongodb::Database,
     events: Collection<Document>,
     states: Collection<Document>,
+    market_vectors: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     relationship_ledger: Collection<Document>,
@@ -125,37 +135,182 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     }
     Ok(())
 }
+fn push_bounded<T>(history: &mut VecDeque<T>, value: T) {
+    history.push_back(value);
+    while history.len() > 256 { history.pop_front(); }
+}
+
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.symbol = event.symbol.clone();
+    push_bounded(&mut state.recent_event_ts_ms, event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
-            state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
+            let log_return = (price / previous).ln();
+            state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * log_return.abs();
+            push_bounded(&mut state.recent_returns, log_return);
         }
         state.last_price = Some(price);
+        push_bounded(&mut state.recent_prices, price);
     }
     if let (Some(bid),Some(ask))=(event.bid,event.ask) {
         let mid=(bid+ask)/2.0;
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
         if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
+            state.order_book_depth = Some(bs + as_);
             if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;}
         }
     }
     match event.event_type.as_str() {
-        "trade" => { let size=event.size.unwrap_or(0.0); match event.side.as_deref() {
-            Some("buy")=>state.signed_flow+=size, Some("sell")=>state.signed_flow-=size, _=>{} }
-            state.total_trade_size+=size; state.event_intensity+=1.0; }
-        "liquidation" => { state.liquidation_events+=1; state.event_intensity+=2.0;
+        "trade" => {
+            let size=event.size.unwrap_or(0.0);
+            let signed = match event.side.as_deref() { Some("buy")=>size, Some("sell")=>-size, _=>0.0 };
+            state.signed_flow += signed;
+            state.total_trade_size += size;
+            push_bounded(&mut state.recent_trade_flow, signed);
+            push_bounded(&mut state.recent_trade_sizes, size);
+            state.event_intensity += 1.0;
+        }
+        "liquidation" => {
+            state.liquidation_events+=1;
+            state.event_intensity+=2.0;
             state.last_liquidation_side=event.liquidation_side.clone();
-            if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
-            if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);} }
+            let size=event.size.unwrap_or(0.0);
+            let signed=match event.liquidation_side.as_deref(){Some("long")=>-size,Some("short")=>size,_=>0.0};
+            state.signed_flow+=signed;
+            push_bounded(&mut state.recent_liquidation_flow,signed);
+        }
         "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
-        "open_interest" => if event.open_interest.is_some(){state.open_interest=event.open_interest;},
-        "book" => {}, _ => {}
+        "open_interest" => if let Some(value)=event.open_interest {
+            state.open_interest_change=state.open_interest.filter(|previous|*previous>0.0)
+                .map(|previous|(value-previous)/previous);
+            state.open_interest=Some(value);
+        },
+        "book" => {},
+        _ => {}
     }
     state.event_count+=1;
     state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
     if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
+}
+
+fn mean(values: &[f64]) -> Option<f64> {
+    if values.is_empty() { None } else { Some(values.iter().sum::<f64>()/values.len() as f64) }
+}
+fn standard_deviation(values: &[f64]) -> Option<f64> {
+    let center=mean(values)?;
+    Some((values.iter().map(|value|(value-center).powi(2)).sum::<f64>()/values.len() as f64).sqrt())
+}
+fn median(values: &mut [f64]) -> Option<f64> {
+    if values.is_empty(){return None;}
+    values.sort_by(f64::total_cmp);
+    let middle=values.len()/2;
+    Some(if values.len()%2==0 {(values[middle-1]+values[middle])/2.0}else{values[middle]})
+}
+/// Past-only robust normalization. The current raw value is appended only after
+/// the historical center and scale have been calculated.
+fn causal_robust_normalize(raw:f64,past:&VecDeque<f64>)->Option<f64>{
+    if past.len()<8 || !raw.is_finite(){return None;}
+    let mut ordered=past.iter().copied().collect::<Vec<_>>();
+    let center=median(&mut ordered)?;
+    let mut deviations=past.iter().map(|value|(value-center).abs()).collect::<Vec<_>>();
+    let mut scale=1.4826*median(&mut deviations)?;
+    if scale<=1.0e-12 {scale=standard_deviation(&ordered).unwrap_or(0.0);}
+    if !scale.is_finite() || scale<=1.0e-12{return None;}
+    Some(((raw-center)/scale).tanh().clamp(-1.0,1.0))
+}
+
+fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
+    use MarketFeature::*;
+    let mut output=BTreeMap::new();
+    let prices=state.recent_prices.iter().copied().collect::<Vec<_>>();
+    let returns=state.recent_returns.iter().copied().collect::<Vec<_>>();
+    let price_window=&prices[prices.len().saturating_sub(64)..];
+    let return_window=&returns[returns.len().saturating_sub(64)..];
+    let volatility=standard_deviation(return_window);
+    let average_return=mean(return_window);
+    let persistence=if return_window.is_empty(){None}else{
+        let up=return_window.iter().filter(|value|**value>0.0).count() as f64;
+        let down=return_window.iter().filter(|value|**value<0.0).count() as f64;
+        Some((up-down)/return_window.len() as f64)
+    };
+    if let Some(value)=return_window.last(){output.insert(LogReturn,*value);output.insert(GapMagnitude,value.abs());}
+    if let (Some(current),Some(avg))=(price_window.last(),mean(price_window)){if avg>0.0{output.insert(PriceDisplacement,current/avg-1.0);}}
+    if price_window.len()>=6{let old=price_window[price_window.len()-6];if old>0.0{output.insert(RateOfChange,(price_window[price_window.len()-1]/old).ln());}}
+    if let (Some(current),Some(low),Some(high))=(price_window.last(),price_window.iter().copied().reduce(f64::min),price_window.iter().copied().reduce(f64::max)){
+        if high>low{output.insert(SwingPosition,2.0*(current-low)/(high-low)-1.0);}
+    }
+    if let Some(vol)=volatility{
+        output.insert(RealizedVolatility,vol);
+        let abs_returns=return_window.iter().map(|value|value.abs()).collect::<Vec<_>>();
+        if let Some(vov)=standard_deviation(&abs_returns){output.insert(VolatilityOfVolatility,vov);}
+        if vol>1.0e-12 && return_window.len()>=4{
+            let center=average_return.unwrap_or(0.0);
+            output.insert(ReturnSkew,return_window.iter().map(|value|((value-center)/vol).powi(3)).sum::<f64>()/return_window.len() as f64);
+            output.insert(ReturnKurtosis,return_window.iter().map(|value|((value-center)/vol).powi(4)).sum::<f64>()/return_window.len() as f64-3.0);
+            output.insert(JumpIntensity,return_window.iter().filter(|value|value.abs()>3.0*vol).count() as f64/return_window.len() as f64);
+        }
+        if let Some(avg)=average_return{output.insert(TrendStrength,avg/vol.max(1.0e-12)*(return_window.len() as f64).sqrt());}
+    }
+    if let Some(avg)=average_return{output.insert(Momentum,avg*return_window.len() as f64);}
+    if let Some(value)=persistence{
+        output.insert(TrendPersistence,value);output.insert(TrendExhaustion,1.0-value.abs());
+        output.insert(RegimeTrendStrength,value);output.insert(RegimePersistence,value);
+    }
+    if return_window.len()>=4{
+        let left=&return_window[..return_window.len()-1];let right=&return_window[1..];
+        if let (Some(lm),Some(rm))=(mean(left),mean(right)){
+            let covariance=left.iter().zip(right).map(|(a,b)|(a-lm)*(b-rm)).sum::<f64>()/left.len() as f64;
+            let scale=standard_deviation(left).unwrap_or(0.0)*standard_deviation(right).unwrap_or(0.0);
+            if scale>1.0e-12{output.insert(MeanReversionStrength,-covariance/scale);}
+        }
+    }
+    if let Some(spread)=state.spread_bps{output.insert(SpreadBps,spread);output.insert(SlippageEstimate,spread/2.0);output.insert(RegimeLiquidityStress,spread);}
+    if let Some(depth)=state.order_book_depth.filter(|value|*value>0.0){
+        output.insert(OrderBookDepth,depth.ln_1p());output.insert(LiquidityConcentration,1.0/(1.0+depth.ln_1p()));
+    }
+    if state.total_trade_size>0.0{output.insert(OrderFlowImbalance,state.order_flow_imbalance);}
+    let recent_flow=state.recent_trade_flow.iter().sum::<f64>();let recent_size=state.recent_trade_sizes.iter().sum::<f64>();
+    if recent_size>0.0{
+        output.insert(VolumeDelta,(recent_flow/recent_size).clamp(-1.0,1.0));
+        if let (Some(spread),Some(depth))=(state.spread_bps,state.order_book_depth){output.insert(MarketImpact,spread/(1.0+depth.max(0.0).sqrt()));}
+    }
+    if let Some(value)=state.funding_rate{output.insert(FundingPressure,value);}
+    if let Some(value)=state.open_interest_change{output.insert(OpenInterestChange,value);}
+    let liquidation_abs=state.recent_liquidation_flow.iter().map(|value|value.abs()).sum::<f64>();
+    if liquidation_abs>0.0{output.insert(LiquidationPressure,(state.recent_liquidation_flow.iter().sum::<f64>()/liquidation_abs).clamp(-1.0,1.0));}
+    if let Some(cutoff)=state.last_event_ts_ms{
+        let count=state.recent_event_ts_ms.iter().filter(|timestamp|cutoff.saturating_sub(**timestamp)<=60_000).count();
+        output.insert(EventIntensity,count as f64);
+    }
+    if let Some(vol)=volatility{output.insert(RegimeVolatilityLevel,vol);}
+    if return_window.len()>=12{
+        let split=return_window.len()-6;
+        if let (Some(prior),Some(current))=(standard_deviation(&return_window[split-6..split]),standard_deviation(&return_window[split..])){
+            output.insert(RegimeTransitionIntensity,(current-prior).abs());
+        }
+    }
+    if let Some(value)=persistence{output.insert(SignalDecay,1.0-value.abs());}
+    output
+}
+
+fn build_market_vector(state:&mut SymbolState,event:&MarketEvent,available_at_ms:i64)->Option<MarketVector>{
+    let cutoff=state.last_event_ts_ms?;
+    let identity=format!("{}|{}|event-window|{}",event.venue,event.symbol,cutoff);
+    let digest=hex::encode(Sha256::digest(identity.as_bytes()));
+    let vector_id=format!("mv-{}",&digest[..32]);
+    let mut vector=MarketVector::new(vector_id,&event.venue,&event.symbol,"event-window",cutoff,available_at_ms.max(cutoff)).ok()?;
+    let raw_features=raw_feature_values(state);let mut observed=0usize;
+    for (feature,raw) in raw_features{
+        let history=state.feature_history.entry(feature).or_default();
+        if let Some(value)=causal_robust_normalize(raw,history){
+            let calibration_quality=(history.len() as f64/32.0).min(1.0);
+            let quality=state.state_quality.min(calibration_quality);
+            if quality>0.0 && vector.set_value(feature,Some(value),quality).is_ok(){observed+=1;}
+        }
+        push_bounded(history,raw);
+    }
+    if observed==0{None}else{Some(vector)}
 }
 fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
     if expected.len() != supplied.len() { return false; }
@@ -412,15 +567,33 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>return(StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id}))),
         Err(e)=>{tracing::error!(error=%e,"event persistence failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event persistence failed"})));}
     }
-    let snapshot={
+    let (snapshot,market_vector)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let state=guard.entry(event.symbol.clone()).or_default();
+        if state.last_event_ts_ms.is_some_and(|last|event.ts_ms<last){
+            return(StatusCode::ACCEPTED,Json(serde_json::json!({"status":"late_event_persisted_not_applied","event_id":event.event_id,
+                "event_ts_ms":event.ts_ms,"latest_state_ts_ms":state.last_event_ts_ms})));
+        }
+        apply(state,&event);
+        let vector=build_market_vector(state,&event,chrono::Utc::now().timestamp_millis());
+        (state.clone(),vector)
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.states.insert_one(state_doc,None).await{
         tracing::error!(error=%e,"state snapshot persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
+    }
+    if let Some(vector)=market_vector.as_ref(){
+        let mut document=match mongodb::bson::to_document(vector){Ok(value)=>value,Err(error)=>{
+            tracing::error!(error=%error,"market vector serialization failed");
+            return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"market vector serialization failed","event_persisted":true,"state_persisted":true})));
+        }};
+        document.insert("stored_at",mongodb::bson::DateTime::now());
+        if let Err(error)=s.market_vectors.insert_one(document,None).await{
+            tracing::error!(error=%error,vector_id=%vector.vector_id,"market vector persistence failed");
+            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector persistence failed","event_persisted":true,"state_persisted":true})));
+        }
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
@@ -442,9 +615,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
-        "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+        "state":snapshot,"decision":decision,"market_vector":market_vector,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"market_vector":market_vector})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
@@ -463,6 +636,23 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
+async fn get_latest_market_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    match s.market_vectors.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).build()).await{
+        Ok(Some(mut document))=>{
+            document.remove("_id");
+            match mongodb::bson::from_document::<MarketVector>(document){
+                Ok(vector)=>(StatusCode::OK,Json(serde_json::to_value(vector).unwrap_or_default())),
+                Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"stored market vector is invalid");
+                    (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"stored market vector is invalid","symbol":symbol})))}
+            }
+        }
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"status":"warming_up","message":"causal feature normalization requires at least eight prior observations"}))),
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"market vector lookup failed");
+            (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector storage unavailable"})))}
+    }
+}
+
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
@@ -860,6 +1050,35 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     items.reverse();
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
+async fn get_market_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse{
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    let limit=q.limit.unwrap_or(120).clamp(1,500);
+    let options=FindOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).limit(limit).build();
+    let mut cursor=match s.market_vectors.find(doc!{"symbol":&symbol},Some(options)).await{
+        Ok(cursor)=>cursor,
+        Err(error)=>{tracing::error!(error=%error,"market vector history query failed");
+            return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector history unavailable","symbol":symbol}))); }
+    };
+    let mut items=Vec::new();
+    loop{
+        match cursor.try_next().await{
+            Ok(Some(mut document))=>{
+                document.remove("_id");document.remove("stored_at");
+                match mongodb::bson::from_document::<MarketVector>(document){
+                    Ok(vector)=>items.push(serde_json::to_value(vector).unwrap_or_default()),
+                    Err(error)=>{tracing::error!(error=%error,"invalid market vector in history");
+                        return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector history contains invalid data"}))); }
+                }
+            }
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"market vector history cursor failed");
+                return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector history read failed","symbol":symbol}))); }
+        }
+    }
+    items.reverse();
+    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
+}
+
 async fn get_instruments()->impl IntoResponse {
     let finnhub_configured=env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false);
     let binance_enabled=env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
@@ -1445,6 +1664,7 @@ async fn main(){
     db.run_command(doc!{"ping":1},None).await.expect("MongoDB ping");
     let events:Collection<Document>=db.collection("market_events");
     let states:Collection<Document>=db.collection("market_states");
+    let market_vectors:Collection<Document>=db.collection("market_vectors");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let relationship_ledger:Collection<Document>=db.collection("v2_relationship_ledger");
@@ -1462,6 +1682,10 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
+    market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"vector_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("market vector idempotency index");
+    market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_cutoff_ms":-1}).build(),None)
+        .await.expect("latest market vector lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
@@ -1494,6 +1718,7 @@ async fn main(){
     let mut event_cursor = events.find(None, Some(replay_options)).await
         .expect("open immutable market event log for recovery");
     let mut restored_memory: HashMap<String, SymbolState> = HashMap::new();
+    let mut restored_vectors: HashMap<String, MarketVector> = HashMap::new();
     let mut replayed_events: u64 = 0;
     let mut skipped_events: u64 = 0;
     while let Some(document) = event_cursor.try_next().await
@@ -1502,6 +1727,9 @@ async fn main(){
             Ok(event) if validate_event(&event).is_ok() => {
                 let state = restored_memory.entry(event.symbol.clone()).or_default();
                 apply(state, &event);
+                if let Some(vector)=build_market_vector(state,&event,event.ts_ms){
+                    restored_vectors.insert(event.symbol.clone(),vector);
+                }
                 replayed_events += 1;
             }
             Ok(event) => {
@@ -1518,9 +1746,18 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
+    for vector in restored_vectors.values(){
+        if let Ok(mut document)=mongodb::bson::to_document(vector){
+            document.insert("stored_at",mongodb::bson::DateTime::now());
+            if let Err(error)=market_vectors.replace_one(doc!{"vector_id":&vector.vector_id},document,
+                mongodb::options::ReplaceOptions::builder().upsert(true).build()).await{
+                tracing::warn!(error=%error,vector_id=%vector.vector_id,"could not restore latest causal market vector");
+            }
+        }
+    }
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,states,decisions,strategies,relationship_ledger,orders,trading_controls,
+        stream, database: db.clone(), events,states,market_vectors,decisions,strategies,relationship_ledger,orders,trading_controls,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
@@ -1536,7 +1773,9 @@ async fn main(){
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/market-vector",get(get_latest_market_vector))
         .route("/internal/vector/history",get(get_vector_history))
+        .route("/internal/market-vector/history",get(get_market_vector_history))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
