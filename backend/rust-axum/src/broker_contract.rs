@@ -304,10 +304,13 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
         || policy.max_open_positions == 0 || policy.max_market_data_age_ms < 0 {
         return Err(ContractError::InvalidOrder("portfolio risk policy is invalid".into()));
     }
+    let account_age_ms = input.now_ms.saturating_sub(account.observed_at_ms);
     let quote_age_ms = input.now_ms.saturating_sub(input.reference_price_observed_at_ms);
     let conversion_age_ms = input.now_ms.saturating_sub(instrument.conversion_rate_observed_at_ms);
     if input.now_ms <= 0 || input.reference_price_observed_at_ms <= 0
-        || input.reference_price_observed_at_ms > input.now_ms || instrument.conversion_rate_observed_at_ms > input.now_ms
+        || account.observed_at_ms > input.now_ms || input.reference_price_observed_at_ms > input.now_ms
+        || instrument.conversion_rate_observed_at_ms > input.now_ms
+        || account_age_ms < 0 || account_age_ms > policy.max_market_data_age_ms
         || !input.reference_price.is_finite() || input.reference_price <= 0.0
         || quote_age_ms < 0 || quote_age_ms > policy.max_market_data_age_ms
         || conversion_age_ms < 0 || conversion_age_ms > policy.max_market_data_age_ms
