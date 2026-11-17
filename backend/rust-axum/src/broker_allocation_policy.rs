@@ -28,8 +28,11 @@ pub struct BrokerExecutionQuote {
     pub available_margin_portfolio: Decimal,
     /// Estimated margin required per unit of allocated notional, in bps.
     pub margin_requirement_bps: Decimal,
-    /// Estimated all-in fee, including minimum commissions, in bps.
+    /// Variable fee estimate in basis points.
     pub fee_bps: Decimal,
+    /// Minimum commission/fee charged by this account for one child order,
+    /// already converted to portfolio currency.
+    pub minimum_fee_portfolio: Decimal,
     /// Expected spread/slippage estimate in bps.
     pub slippage_bps: Decimal,
     /// Currency conversion cost in bps, excluding the conversion rate itself.
@@ -113,6 +116,7 @@ fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
         ("available margin", quote.available_margin_portfolio),
         ("margin requirement", quote.margin_requirement_bps),
         ("fee", quote.fee_bps),
+        ("minimum fee", quote.minimum_fee_portfolio),
         ("slippage", quote.slippage_bps),
         ("conversion cost", quote.conversion_cost_bps),
     ];
@@ -128,25 +132,22 @@ fn cost_for(
     quote: &BrokerExecutionQuote,
     notional: Decimal,
 ) -> Result<BrokerCost, RoutingError> {
-    let bps = quote.fee_bps
-        .checked_add(quote.slippage_bps)
-        .and_then(|v| v.checked_add(quote.conversion_cost_bps))
-        .ok_or_else(|| RoutingError::Arithmetic("cost basis-point sum overflow".into()))?;
-    let total = notional.checked_mul(bps)
-        .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
-        .ok_or_else(|| RoutingError::Arithmetic("estimated execution cost overflow".into()))?;
     let margin = notional.checked_mul(quote.margin_requirement_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("margin estimate overflow".into()))?;
-    let fee = notional.checked_mul(quote.fee_bps)
+    let variable_fee = notional.checked_mul(quote.fee_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("fee estimate overflow".into()))?;
+    let fee = variable_fee.max(quote.minimum_fee_portfolio);
     let slippage = notional.checked_mul(quote.slippage_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("slippage estimate overflow".into()))?;
     let conversion = notional.checked_mul(quote.conversion_cost_bps)
         .and_then(|v| v.checked_div(Decimal::from(BASIS_POINTS)))
         .ok_or_else(|| RoutingError::Arithmetic("conversion cost overflow".into()))?;
+    let total = fee.checked_add(slippage)
+        .and_then(|v| v.checked_add(conversion))
+        .ok_or_else(|| RoutingError::Arithmetic("estimated execution cost overflow".into()))?;
     if margin > quote.available_margin_portfolio {
         return Err(RoutingError::NoFeasibleAccount);
     }
@@ -293,6 +294,7 @@ mod tests {
             available_margin_portfolio: d("100000"),
             margin_requirement_bps: d("1000"),
             fee_bps: d(fee),
+            minimum_fee_portfolio: Decimal::ZERO,
             slippage_bps: d(slippage),
             conversion_cost_bps: d("0"),
         }
@@ -333,6 +335,28 @@ mod tests {
         quotes[1].available_margin_portfolio = d("1");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
+    }
+
+    #[test]
+    fn minimum_commissions_are_counted_for_every_child_and_can_prevent_fanout() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[0].minimum_fee_portfolio = d("0.10");
+        quotes[1].minimum_fee_portfolio = d("5");
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
+    }
+
+    #[test]
+    fn fanout_cost_includes_each_account_minimum_commission() {
+        let mut quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", true)];
+        quotes[1].minimum_fee_portfolio = d("0.25");
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        match plan {
+            ExecutionPlan::EqualSplit { costs, .. } => {
+                assert_eq!(costs[1].estimated_fee_portfolio, d("0.25"));
+            }
+            _ => panic!("expected an equal split when its full estimated cost is lower"),
+        }
     }
 
     #[test]
