@@ -2136,7 +2136,20 @@ mod market_stream_tests {
 
 #[cfg(test)]
 mod execution_route_auth_tests {
-    use super::constant_time_token_match;
+    use super::*;
+
+    #[test]
+    fn persistent_variable_hub_round_trips_through_mongodb_bson() {
+        let mut hub=VariableHub::new("binance_usdm","BTCUSDT","5m").unwrap();
+        hub.observe_input(MarketFeature::LogReturn,0.001,0.95,
+            1_800_000_000_000,1_800_000_000_001,"trade-feed","log-return-v1").unwrap();
+        let document=mongodb::bson::to_document(&hub).unwrap();
+        let restored=mongodb::bson::from_document::<VariableHub>(document).unwrap();
+        assert_eq!(restored.identity.venue,"binance_usdm");
+        assert_eq!(restored.progress(MarketFeature::LogReturn).lifecycle,
+            qoin_market_space::hub::VariableLifecycle::Observed);
+        assert_eq!(restored.value(MarketFeature::LogReturn).unwrap().raw_value,Some(0.001));
+    }
 
     #[test]
     fn accepts_only_exact_execution_tokens() {
