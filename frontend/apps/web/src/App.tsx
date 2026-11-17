@@ -565,6 +565,7 @@ export default function App() {
       if (!current) return;
       if (result.decision_vector && result.features && result.attended_features) {
         setVector(result);
+        setLiveBySymbol((current) => ({ ...current, [selected.engineSymbol.toUpperCase()]: { ...current[selected.engineSymbol.toUpperCase()], decision: result } }));
       } else {
         setVectorError(result.reason || "No persisted engine vector exists for this instrument yet.");
       }
