@@ -1819,7 +1819,7 @@ async fn main(){
         .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/set-ledger",get(get_set_ledger))
         .route("/internal/set-ledger/reconstruct",get(reconstruct_set_ledger))
-        .route("/internal/set-ledger/backfill",get(backfill_set_ledger))
+        .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
