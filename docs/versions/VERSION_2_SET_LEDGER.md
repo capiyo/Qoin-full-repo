@@ -1,6 +1,6 @@
 # Version 2 — Set-theoretic attention and relational ledger
 
-**Status:** Research architecture. Version 1 remains the production-shaped research baseline and comparison control. Version 2 does not submit orders or promote itself automatically.
+**Status:** Research architecture. Version 1 remains the deterministic research baseline and comparison control. Version 2 does not submit orders or promote itself automatically.
 
 ## Objective
 
@@ -16,45 +16,45 @@ The point is not to expose mathematical machinery to end users. Qoin translates 
 
 ## Mathematical model
 
-For instrument (s) and decision time (t), define a causally bounded universe:
+For instrument \(s\) and decision time \(t\), define a causally bounded universe:
 
-[
-U_{s,t} = {x_i : operatorname{availableAt}(x_i) le t}
-]
+\[
+U_{s,t} = \{x_i : \operatorname{availableAt}(x_i) \le t\}
+\]
 
 Each element has a stable identity, source, timestamp, instrument, timeframe, schema version and quality state. Missing, stale, duplicated or invalid observations are represented explicitly; they are not silently converted to zero.
 
 A condition set is a subset of that universe:
 
-[
-C_k(t) subseteq U_{s,t}
-]
+\[
+C_k(t) \subseteq U_{s,t}
+\]
 
 Examples include trend conditions, volatility regimes, liquidity conditions, order-flow conditions, funding/carry conditions, gap/level interactions and event conditions. Membership is determined by versioned predicates with recorded parameters.
 
 Relations connect condition sets or individual evidence items:
 
-[
-R_j(t) subseteq C_a(t) 	imes C_b(t)
-]
+\[
+R_j(t) \subseteq C_a(t) \times C_b(t)
+\]
 
 The model may also represent higher-order relations (hyperedges) when a useful confluence requires three or more conditions. Relations must have typed semantics: supports, contradicts, precedes, overlaps, confirms, invalidates or depends-on. A recorded relation is evidence of a defined relationship, not proof of causation.
 
-The attention stage ranks/selects eligible relations under explicit constraints. For a candidate relation (r):
+The attention stage ranks/selects eligible relations under explicit constraints. For a candidate relation \(r\):
 
-[
-a_r(t) = operatorname{Attention}_{v}(r, U_{s,t}, mathcal{R}_{s,t})
-]
+\[
+a_r(t) = \operatorname{Attention}_{v}(r, U_{s,t}, \mathcal{R}_{s,t})
+\]
 
 The attention implementation, score components, thresholds, tie-breaking and selected relation set are versioned. It must be deterministic for a fixed input snapshot and version, or else record every stochastic seed and runtime detail needed for replay. Attention is not permitted to manufacture missing evidence or bypass risk constraints.
 
 The resulting evidence structure is:
 
-[
-mathcal{G}_{s,t} = (U_{s,t}, mathcal{C}_{s,t}, mathcal{R}_{s,t}, A_{s,t})
-]
+\[
+\mathcal{G}_{s,t} = (U_{s,t}, \mathcal{C}_{s,t}, \mathcal{R}_{s,t}, A_{s,t})
+\]
 
-where (A_{s,t}) is the selected/weighted relation set. A downstream research evaluator can compare this structure with Version 1's vector output and with realized outcomes.
+where \(A_{s,t}\) is the selected/weighted relation set. A downstream research evaluator can compare this structure with Version 1's vector output and with realized outcomes.
 
 ## Relational ledger
 
