@@ -294,7 +294,14 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
     }
     let recent_flow=state.recent_trade_flow.iter().sum::<f64>();let recent_size=state.recent_trade_sizes.iter().sum::<f64>();
     let trade_imbalance=if recent_size>0.0{Some((recent_flow/recent_size).clamp(-1.0,1.0))}else{None};
-    if let Some(value)=trade_imbalance{output.insert(VolumeDelta,value);}
+    let sizes=state.recent_trade_sizes.iter().copied().collect::<Vec<_>>();
+    if sizes.len()>=16{
+        let split=sizes.len()-8;
+        let prior_volume=sizes[split-8..split].iter().sum::<f64>();
+        let current_volume=sizes[split..].iter().sum::<f64>();
+        let total=prior_volume+current_volume;
+        if total>0.0{output.insert(VolumeDelta,(current_volume-prior_volume)/total);}
+    }
     let book_imbalance=mean(&state.recent_book_imbalance.iter().copied().collect::<Vec<_>>());
     if let Some(value)=match (trade_imbalance,book_imbalance){
         (Some(trade),Some(book))=>Some((trade+book)/2.0),(Some(trade),None)=>Some(trade),(None,Some(book))=>Some(book),_=>None
