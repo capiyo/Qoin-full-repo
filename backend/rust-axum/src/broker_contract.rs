@@ -60,6 +60,7 @@ pub struct InstrumentSpec {
     pub minimum_quantity: f64,
     pub minimum_notional: Option<f64>,
     pub price_currency_to_account_rate: f64,
+    pub conversion_rate_observed_at_ms: i64,
 }
 
 impl InstrumentSpec {
@@ -75,7 +76,7 @@ impl InstrumentSpec {
                 return Err(ContractError::InvalidInstrument(format!("{name} must be finite and positive")));
             }
         }
-        if self.instrument_id.trim().is_empty()
+        if self.conversion_rate_observed_at_ms <= 0 {\n            return Err(ContractError::InvalidInstrument("currency conversion observation time is required".into()));\n        }\n        if self.instrument_id.trim().is_empty()
             || self.broker_id.trim().is_empty()
             || self.venue_id.trim().is_empty()
             || self.broker_symbol.trim().is_empty()
@@ -273,6 +274,9 @@ pub struct RiskCheckInput {
     pub protective_stop_price: Option<f64>,
     pub market_data_age_ms: i64,
     pub protective_order_supported: bool,
+    pub conversion_rate_age_ms: i64,
+    /// Broker-calculated margin requirement, normalized to account currency.
+    pub required_margin_account_currency: f64,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskApproval {
@@ -312,7 +316,7 @@ pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAc
     if !projected_gross_exposure.is_finite() || !notional_cap.is_finite() || !leverage_cap.is_finite() {
         return Err(ContractError::InvalidOrder("portfolio exposure calculation overflow".into()));
     }
-    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }
+    if instrument.minimum_notional.is_some_and(|minimum| order.quantity * instrument.contract_multiplier * execution_price < minimum) {\n        return Err(ContractError::InvalidOrder("order is below instrument minimum notional".into()));\n    }\n    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }\n    if input.required_margin_account_currency > account.available_margin {\n        return Err(ContractError::InvalidOrder("insufficient available margin in broker account".into()));\n    }
     if projected_gross_exposure > leverage_cap { return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into())); }
     if account.open_positions >= policy.max_open_positions && !order.reduce_only {
         return Err(ContractError::InvalidOrder("open-position limit reached".into()));
@@ -372,7 +376,7 @@ mod tests {
             quantity_step: 0.01,
             minimum_quantity: 0.01,
             minimum_notional: None,
-            price_currency_to_account_rate: rate,
+            price_currency_to_account_rate: rate,\n            conversion_rate_observed_at_ms: 10_000,
         }
     }
 
@@ -420,7 +424,7 @@ mod tests {
             quantity:0.01, limit_price:None, stop_price:Some(1.09), time_in_force:None, reduce_only:false };
         let approved = validate_portfolio_order(&PortfolioRiskPolicy::default(), &account, &spec, &order,
             &RiskCheckInput { reference_price:1.1, protective_stop_price:Some(1.09),
-                market_data_age_ms:100, protective_order_supported:true }).unwrap();
+                market_data_age_ms:100, protective_order_supported:true, conversion_rate_age_ms:100, required_margin_account_currency:100.0 }).unwrap();
         assert!((approved.notional_account_currency-1_012.0).abs()<1e-8);
         assert!(approved.maximum_loss_account_currency>0.0);
     }
