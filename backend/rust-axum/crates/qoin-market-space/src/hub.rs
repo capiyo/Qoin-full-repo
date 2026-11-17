@@ -90,10 +90,12 @@ pub fn descriptor(feature: MarketFeature) -> VariableDescriptor {
         | OrderFlowImbalance | VolumeDelta | Correlation | Covariance | Beta
         | RelativeStrength | FundingPressure | OpenInterestChange
         | LiquidationPressure | GammaExposure | DeltaExposure | Basis
-        | EventIntensity | MacroSurprise | EventProximity
-        | PortfolioExposure | Concentration | Drawdown | RiskContribution
-        | TimeSinceStructuralBreak | TimeframeAgreement =>
+        | EventIntensity | MacroSurprise | EventProximity =>
             (VariableStage::Input, NONE),
+        PortfolioExposure | Concentration | Drawdown | RiskContribution =>
+            (VariableStage::Portfolio, NONE),
+        TimeSinceStructuralBreak | TimeframeAgreement =>
+            (VariableStage::Temporal, NONE),
 
         // Price and distribution-derived variables.
         PriceDisplacement => (VariableStage::Derived, LOG_RETURN),
@@ -307,7 +309,7 @@ impl VariableHub {
         producer: impl Into<String>,
         calculation_version: impl Into<String>,
     ) -> Result<u64, HubError> {
-        if descriptor(feature).stage != VariableStage::Input {
+        if !descriptor(feature).dependencies.is_empty() {
             return Err(HubError::WrongStage);
         }
         let producer = producer.into();
@@ -494,7 +496,7 @@ impl VariableHub {
                 && self.published_revisions.get(&feature) == Some(&value.revision) =>
                     VariableLifecycle::Published,
             Some(value) if value.normalized_value.is_some() => VariableLifecycle::Normalized,
-            Some(_) if definition.stage == VariableStage::Input => VariableLifecycle::Observed,
+            Some(value) if value.dependency_revisions.is_empty() => VariableLifecycle::Observed,
             Some(_) => VariableLifecycle::Derived,
             None if !blocked_by.is_empty() => VariableLifecycle::Blocked,
             None => VariableLifecycle::AwaitingInput,
@@ -677,7 +679,7 @@ mod tests {
         let progress = hub.progress(MarketFeature::RegimeVolatilityLevel);
         assert_eq!(progress.stage, VariableStage::Regime);
         assert_eq!(progress.lifecycle, VariableLifecycle::Blocked);
-        assert_eq!(progress.blocked_by.len(), 3);
+        assert_eq!(progress.blocked_by.len(), 4);
     }
 
 
