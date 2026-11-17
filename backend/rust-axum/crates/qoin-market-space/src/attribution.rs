@@ -96,6 +96,31 @@ pub enum AttributionError {
     MissingOrInvalidAtomMeasure,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SignedEffectInput {
+    pub key: String,
+    pub feature: Option<MarketFeature>,
+    pub signed_effect: f64,
+    pub quality: Option<f64>,
+}
+
+/// Attribute an already-computed variable or score using signed component effects.
+pub fn attribute_signed_effects(
+    method: AttributionMethod,
+    baseline: f64,
+    inputs: Vec<SignedEffectInput>,
+    coverage_pct: f64,
+) -> Result<AttributionReport, AttributionError> {
+    report_from_effects(
+        method,
+        baseline,
+        inputs.into_iter()
+            .map(|input| (input.key, input.feature, input.signed_effect, input.quality))
+            .collect(),
+        coverage_pct,
+    )
+}
+
 /// Build an additive attribution report from signed effects. Percentages use
 /// absolute effects so positive and negative contributors are both visible;
 /// direction and signed_effect preserve whether each raised or lowered score.

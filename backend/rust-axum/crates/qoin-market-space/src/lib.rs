@@ -518,4 +518,4 @@ pub mod hub;
 pub use hub::{NormalizationProfile, VariableHub, VariableHubIdentity, VariableLifecycle, VariableProgress, VariableStage, VariableDescriptor, HubError, validate_dependency_graph};
 
 pub mod attribution;
-pub use attribution::{attribute_exact_shapley, attribute_set_measure, attribute_vector_projection, AttributionError, AttributionMethod, AttributionReport, AtomMeasureAllocation, Contribution, ContributionDirection, SetMeasureContribution, SetMeasureInput, SetMeasureReport};
+pub use attribution::{attribute_exact_shapley, attribute_set_measure, attribute_signed_effects, attribute_vector_projection, AttributionError, AttributionMethod, AttributionReport, AtomMeasureAllocation, Contribution, ContributionDirection, SetMeasureContribution, SetMeasureInput, SetMeasureReport, SignedEffectInput};

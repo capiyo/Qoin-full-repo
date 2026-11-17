@@ -112,6 +112,7 @@ export type QoinVariableProgress = {
   quality: number | null;
   event_time_ms: number | null;
   available_at_ms: number | null;
+  attribution: QoinAttributionReport | null;
 };
 
 export type QoinMarketHubProgress = {
@@ -156,4 +157,11 @@ export type QoinSetMeasureReport = {
   union_mass: number;
   contributions: QoinSetMeasureContribution[];
   atom_allocations: QoinAtomMeasureAllocation[];
+};
+
+export type QoinSignedEffectInput = {
+  key: string;
+  feature: QoinMarketFeature | null;
+  signed_effect: number;
+  quality: number | null;
 };

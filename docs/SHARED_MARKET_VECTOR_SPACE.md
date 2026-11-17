@@ -181,3 +181,10 @@ When vector, set, regime and risk factors interact nonlinearly, fixed weights ar
 6. A final BUY/SELL/WAIT label is a thresholded decision. Attribute the underlying continuous score and risk-adjusted score, and show the threshold separately.
 
 The shared Rust crate now supplies vector-projection attribution, overlap-aware atomic set-measure attribution and exact Shapley attribution. The TypeScript package contains matching report contracts. These primitives still need to be wired into each live research response and the eventual UI; no existing decision endpoint should claim to return percentages until it actually invokes the attribution service.
+
+
+### Per-variable dependency attribution
+
+A derived variable can be recorded with a reconciled attribution report. Each contribution must name one of that variable's direct dependencies, include a signed effect and optional quality, and the effects must sum to the derived raw value relative to the stated baseline. Absolute-effect percentages must reconcile to 100% (or 0% when every effect is zero). The hub stores this breakdown beside the variable's revision and dependency revisions and exposes it through variable progress. If an upstream dependency changes, the variable and its attached attribution become stale together.
+
+Feature calculators must provide defensible dependency effects or coalition-based Shapley allocations. The hub does not invent percentages from equal weights. Raw input variables may have no dependency attribution; their own source/provenance and quality remain visible.

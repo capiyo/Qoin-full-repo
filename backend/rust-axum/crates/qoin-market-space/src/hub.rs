@@ -5,7 +5,7 @@
 //! dependency-checked derivation into immutable market-vector snapshots.
 //! Algorithm versions never own separate copies of these shared variables.
 
-use crate::{MarketFeature, MarketSpaceError, MarketVector};
+use crate::{AttributionReport, MarketFeature, MarketSpaceError, MarketVector};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -182,6 +182,8 @@ pub struct VariableValue {
     pub calculation_version: String,
     pub normalization_profile: Option<NormalizationProfile>,
     pub dependency_revisions: BTreeMap<MarketFeature, u64>,
+    #[serde(default)]
+    pub attribution: Option<AttributionReport>,
     pub revision: u64,
     pub not_applicable: bool,
 }
@@ -199,6 +201,8 @@ pub struct VariableProgress {
     pub quality: Option<f64>,
     pub event_time_ms: Option<i64>,
     pub available_at_ms: Option<i64>,
+    #[serde(default)]
+    pub attribution: Option<AttributionReport>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -217,6 +221,8 @@ pub enum HubError {
     StaleDependency(MarketFeature),
     #[error("derived event time or availability precedes an input dependency")]
     DerivedBeforeDependency,
+    #[error("variable attribution is invalid or does not reconcile to the derived value")]
+    InvalidAttribution,
     #[error("normalization profile is invalid or uses future calibration data")]
     InvalidNormalizationProfile,
     #[error("variable has no raw observation to normalize")]
@@ -330,6 +336,7 @@ impl VariableHub {
             calculation_version,
             normalization_profile: None,
             dependency_revisions: BTreeMap::new(),
+            attribution: None,
             revision,
             not_applicable: false,
         });
@@ -388,9 +395,82 @@ impl VariableHub {
             calculation_version,
             normalization_profile: None,
             dependency_revisions,
+            attribution: None,
             revision,
             not_applicable: false,
         });
+        Ok(revision)
+    }
+
+    /// Record a derived variable with a reconciled contribution breakdown.
+    /// Each contribution must name one direct dependency; signed effects must
+    /// add up to the raw derived value relative to the supplied baseline.
+    pub fn record_derived_with_attribution(
+        &mut self,
+        feature: MarketFeature,
+        raw_value: f64,
+        quality: f64,
+        event_time_ms: i64,
+        available_at_ms: i64,
+        producer: impl Into<String>,
+        calculation_version: impl Into<String>,
+        attribution: AttributionReport,
+    ) -> Result<u64, HubError> {
+        let definition = descriptor(feature);
+        if definition.stage == VariableStage::Input || definition.dependencies.is_empty() {
+            return Err(HubError::WrongStage);
+        }
+        let mut seen = BTreeSet::new();
+        let mut signed_total = 0.0;
+        let mut absolute_total = 0.0;
+        let mut percentage_total = 0.0;
+        for contribution in &attribution.contributions {
+            let dependency = contribution.feature.ok_or(HubError::InvalidAttribution)?;
+            if !definition.dependencies.contains(&dependency)
+                || !seen.insert(dependency)
+                || contribution.key != dependency.as_str()
+                || !contribution.signed_effect.is_finite()
+                || !contribution.contribution_pct.is_finite()
+                || !(0.0..=100.0).contains(&contribution.contribution_pct)
+                || contribution.quality.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+            {
+                return Err(HubError::InvalidAttribution);
+            }
+            signed_total += contribution.signed_effect;
+            absolute_total += contribution.signed_effect.abs();
+            percentage_total += contribution.contribution_pct;
+        }
+        let tolerance = 1e-8 * (1.0 + raw_value.abs());
+        let expected_percentage = if absolute_total > 0.0 { 100.0 } else { 0.0 };
+        let percentages_match_effects = attribution.contributions.iter().all(|contribution| {
+            let expected = if absolute_total > 0.0 {
+                contribution.signed_effect.abs() / absolute_total * 100.0
+            } else { 0.0 };
+            (contribution.contribution_pct - expected).abs() <= 1e-6
+        });
+        if attribution.contributions.is_empty()
+            || !attribution.baseline.is_finite()
+            || !attribution.outcome.is_finite()
+            || !attribution.net_effect.is_finite()
+            || !attribution.absolute_effect_total.is_finite()
+            || !attribution.coverage_pct.is_finite()
+            || !(0.0..=100.0).contains(&attribution.coverage_pct)
+            || (attribution.outcome - raw_value).abs() > tolerance
+            || (attribution.net_effect - signed_total).abs() > tolerance
+            || (attribution.outcome - attribution.baseline - attribution.net_effect).abs() > tolerance
+            || (attribution.absolute_effect_total - absolute_total).abs() > tolerance
+            || (percentage_total - expected_percentage).abs() > 1e-6
+            || !percentages_match_effects
+        {
+            return Err(HubError::InvalidAttribution);
+        }
+
+        let revision = self.record_derived(
+            feature, raw_value, quality, event_time_ms, available_at_ms, producer, calculation_version,
+        )?;
+        self.values.get_mut(&feature)
+            .expect("derived variable inserted by record_derived")
+            .attribution = Some(attribution);
         Ok(revision)
     }
 
@@ -453,6 +533,7 @@ impl VariableHub {
             calculation_version,
             normalization_profile: None,
             dependency_revisions: BTreeMap::new(),
+            attribution: None,
             revision,
             not_applicable: true,
         });
@@ -513,6 +594,7 @@ impl VariableHub {
             quality: value.map(|item| item.quality),
             event_time_ms: value.map(|item| item.event_time_ms),
             available_at_ms: value.map(|item| item.available_at_ms),
+            attribution: value.and_then(|item| item.attribution.clone()),
         }
     }
 
@@ -705,4 +787,35 @@ mod tests {
             1_800_000_000_000, 1_800_000_000_002).unwrap();
         assert_eq!(vector.coordinates[&MarketFeature::GammaExposure].status, FeatureAvailability::NotApplicable);
     }
+    #[test]
+    fn derived_variable_exposes_dependency_contribution_percentages() {
+        use crate::{attribute_signed_effects, AttributionMethod, SignedEffectInput};
+        let mut hub = VariableHub::new("venue", "BTCUSD", "5m").unwrap();
+        input(&mut hub, MarketFeature::LogReturn, 0.01);
+        let report = attribute_signed_effects(
+            AttributionMethod::VectorProjection,
+            0.0,
+            vec![SignedEffectInput {
+                key: MarketFeature::LogReturn.as_str().into(),
+                feature: Some(MarketFeature::LogReturn),
+                signed_effect: 0.012,
+                quality: Some(0.95),
+            }],
+            100.0,
+        ).unwrap();
+        hub.record_derived_with_attribution(
+            MarketFeature::RealizedVolatility, 0.012, 0.9,
+            1_800_000_000_000, 1_800_000_000_002,
+            "rolling-volatility", "ewma-attributed-v1", report,
+        ).unwrap();
+        let progress = hub.progress(MarketFeature::RealizedVolatility);
+        assert_eq!(progress.attribution.as_ref().unwrap().contributions[0].contribution_pct, 100.0);
+        assert_eq!(progress.attribution.as_ref().unwrap().contributions[0].feature, Some(MarketFeature::LogReturn));
+        hub.normalize(MarketFeature::RealizedVolatility, profile(1_799_999_999_999)).unwrap();
+        input(&mut hub, MarketFeature::LogReturn, 0.03);
+        assert_eq!(hub.progress(MarketFeature::RealizedVolatility).lifecycle, VariableLifecycle::Stale);
+        assert!(hub.progress(MarketFeature::RealizedVolatility).attribution.is_some());
+    }
+
+
 }
