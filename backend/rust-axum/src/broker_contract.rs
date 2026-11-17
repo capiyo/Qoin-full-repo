@@ -253,6 +253,92 @@ impl fmt::Display for ContractError {
 
 impl std::error::Error for ContractError {}
 
+#[derive(Debug, Clone)]
+pub struct PortfolioRiskPolicy {
+    pub max_risk_fraction: f64,
+    pub max_order_notional_fraction: f64,
+    pub max_gross_leverage: f64,
+    pub max_daily_loss_fraction: f64,
+    pub max_open_positions: usize,
+    pub max_market_data_age_ms: i64,
+}
+impl Default for PortfolioRiskPolicy {
+    fn default() -> Self { Self { max_risk_fraction: 0.0025, max_order_notional_fraction: 0.25,
+        max_gross_leverage: 2.0, max_daily_loss_fraction: 0.02, max_open_positions: 5,
+        max_market_data_age_ms: 5_000 } }
+}
+#[derive(Debug, Clone)]
+pub struct RiskCheckInput {
+    pub reference_price: f64,
+    pub protective_stop_price: Option<f64>,
+    pub market_data_age_ms: i64,
+    pub protective_order_supported: bool,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct RiskApproval {
+    pub notional_account_currency: f64,
+    pub maximum_loss_account_currency: f64,
+    pub remaining_daily_loss_budget: f64,
+    pub projected_gross_exposure: f64,
+}
+/// Shared pre-trade gate. All amounts are normalized to account currency;
+/// no USD/USDT assumption is made.
+pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAccountSnapshot,
+    instrument: &InstrumentSpec, order: &NormalizedOrder, input: &RiskCheckInput)
+    -> Result<RiskApproval, ContractError> {
+    account.validate()?;
+    order.validate(instrument)?;
+    if account.broker_id != instrument.broker_id || order.account_id != account.account_id {
+        return Err(ContractError::InvalidOrder("broker/account does not match selected instrument".into()));
+    }
+    let fractions = [policy.max_risk_fraction, policy.max_order_notional_fraction, policy.max_daily_loss_fraction];
+    if fractions.iter().any(|v| !v.is_finite() || *v <= 0.0 || *v > 1.0)
+        || !policy.max_gross_leverage.is_finite() || policy.max_gross_leverage <= 0.0
+        || policy.max_open_positions == 0 || policy.max_market_data_age_ms < 0 {
+        return Err(ContractError::InvalidOrder("portfolio risk policy is invalid".into()));
+    }
+    if !input.reference_price.is_finite() || input.reference_price <= 0.0
+        || input.market_data_age_ms < 0 || input.market_data_age_ms > policy.max_market_data_age_ms {
+        return Err(ContractError::InvalidOrder("market price is invalid or stale".into()));
+    }
+    if !input.protective_order_supported {
+        return Err(ContractError::Unsupported("selected broker/instrument cannot place a protective order".into()));
+    }
+    let execution_price = order.limit_price.unwrap_or(input.reference_price);
+    let notional = instrument.notional_in_account_currency(order.quantity, execution_price)?;
+    let projected_gross_exposure = account.gross_exposure + notional;
+    let notional_cap = account.equity * policy.max_order_notional_fraction;
+    let leverage_cap = account.equity * policy.max_gross_leverage;
+    if !projected_gross_exposure.is_finite() || !notional_cap.is_finite() || !leverage_cap.is_finite() {
+        return Err(ContractError::InvalidOrder("portfolio exposure calculation overflow".into()));
+    }
+    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }
+    if projected_gross_exposure > leverage_cap { return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into())); }
+    if account.open_positions >= policy.max_open_positions && !order.reduce_only {
+        return Err(ContractError::InvalidOrder("open-position limit reached".into()));
+    }
+    let daily_loss = account.current_daily_loss()?;
+    let daily_cap = account.equity * policy.max_daily_loss_fraction;
+    if daily_loss >= daily_cap { return Err(ContractError::InvalidOrder("daily loss limit reached".into())); }
+    let remaining_daily_loss_budget = (daily_cap - daily_loss).max(0.0);
+    let maximum_loss = if order.reduce_only { 0.0 } else {
+        let stop = input.protective_stop_price.ok_or_else(|| ContractError::Unsupported(
+            "opening orders require a broker-supported protective stop".into()))?;
+        let valid = match order.side {
+            OrderSide::Buy => stop.is_finite() && stop > 0.0 && stop < execution_price,
+            OrderSide::Sell => stop.is_finite() && stop > execution_price,
+        };
+        if !valid { return Err(ContractError::InvalidOrder("protective stop is invalid for order direction".into())); }
+        let loss = instrument.notional_in_account_currency(order.quantity, (execution_price-stop).abs())?;
+        if loss > account.equity * policy.max_risk_fraction {
+            return Err(ContractError::InvalidOrder("maximum loss at stop exceeds risk budget".into()));
+        }
+        loss
+    };
+    Ok(RiskApproval { notional_account_currency:notional, maximum_loss_account_currency:maximum_loss,
+        remaining_daily_loss_budget, projected_gross_exposure })
+}
+
 /// Every broker implements the same account/order surface. Credentials and
 /// broker-specific payload translation remain inside the concrete adapter.
 #[async_trait]
@@ -321,6 +407,40 @@ mod tests {
             open_positions: 2, observed_at_ms: 1,
         };
         assert_eq!(account.current_daily_loss().unwrap(), 1_500.0);
+    }
+
+    #[test]
+    fn portfolio_risk_is_account_currency_and_asset_class_agnostic() {
+        let spec = instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92);
+        let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
+            account_currency:"EUR".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
+            daily_realized_pnl:0.0, unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
+        let order = NormalizedOrder { client_order_id:"fx-order-1".into(), account_id:"acct".into(),
+            instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
+            quantity:0.01, limit_price:None, stop_price:Some(1.09), time_in_force:None, reduce_only:false };
+        let approved = validate_portfolio_order(&PortfolioRiskPolicy::default(), &account, &spec, &order,
+            &RiskCheckInput { reference_price:1.1, protective_stop_price:Some(1.09),
+                market_data_age_ms:100, protective_order_supported:true }).unwrap();
+        assert!((approved.notional_account_currency-1_012.0).abs()<1e-8);
+        assert!(approved.maximum_loss_account_currency>0.0);
+    }
+
+    #[test]
+    fn portfolio_risk_rejects_stale_quotes_and_missing_protection() {
+        let spec = instrument(AssetClass::Equity, "ABC", 1.0, 1.0);
+        let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
+            account_currency:"USD".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
+            daily_realized_pnl:0.0, unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
+        let order = NormalizedOrder { client_order_id:"equity-order-1".into(), account_id:"acct".into(),
+            instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
+            quantity:1.0, limit_price:None, stop_price:Some(95.0), time_in_force:None, reduce_only:false };
+        let policy = PortfolioRiskPolicy::default();
+        assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
+            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:6_000,
+            protective_order_supported:true }).is_err());
+        assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
+            reference_price:100.0, protective_stop_price:Some(95.0), market_data_age_ms:100,
+            protective_order_supported:false }).is_err());
     }
 
     #[test]
