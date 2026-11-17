@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -235,6 +235,49 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
   </section>;
 }
 
+function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
+  return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #2b4032", borderRadius: 16, background: "#14221a", color: "#e6f1e9" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#9cb2a2", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
+      <span style={{ color: "#70d99d", fontSize: 9, fontWeight: 800 }}>RESEARCH · READ ONLY</span>
+    </div>
+    {!ledger ? <p style={{ margin: 0, color: "#9cb2a2", fontSize: 11 }}>{status}</p> : <>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "#9cb2a2", fontSize: 10 }}>
+        <span>Universe <strong style={{ color: "#e6f1e9" }}>{ledger.universe_count}</strong></span>
+        <span>Sets <strong style={{ color: "#e6f1e9" }}>{ledger.sets.length}</strong></span>
+        <span>Relations <strong style={{ color: "#e6f1e9" }}>{ledger.relations.length}</strong></span>
+        <span>Invalid skipped <strong style={{ color: "#e6f1e9" }}>{ledger.skipped_invalid_events}</strong></span>
+      </div>
+      <div style={{ display: "grid", gap: 7 }}>
+        <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
+        {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
+          <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
+            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.measure.count} members</strong>
+          </summary>
+          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Counting measure · {item.measure.count} events · trade-size sum {item.measure.volume_total.toFixed(6)} · size observed {item.measure.volume_observed_count} / missing {item.measure.volume_missing_count}</p>
+          <p style={{ margin: 0, color: "#819989", fontSize: 8, overflowWrap: "anywhere" }}>Members: {item.member_event_ids.slice(0, 8).join(", ") || "∅"}{item.member_event_ids.length > 8 ? " … +" + (item.member_event_ids.length - 8) + " more" : ""}</p>
+        </details>)}
+      </div>
+      <div style={{ display: "grid", gap: 7 }}>
+        <strong style={{ fontSize: 11 }}>Temporal relations</strong>
+        {ledger.relations.map((item) => <details key={item.relation_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
+          <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
+            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.edge_count} edges</strong>
+          </summary>
+          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Window {item.window_ms} ms · mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"}</p>
+          <p style={{ margin: "0 0 6px", color: "#819989", fontSize: 8 }}>{item.interpretation}</p>
+          {item.edges.slice(0, 8).map((edge, index) => <p key={item.relation_id + index} style={{ margin: "3px 0", color: "#c4d8c9", fontSize: 8, overflowWrap: "anywhere" }}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</p>)}
+          {item.edges.length > 8 ? <small style={{ color: "#819989" }}>Showing 8 of {item.edges.length} edges</small> : null}
+        </details>)}
+      </div>
+      <div style={{ display: "grid", gap: 4 }}>
+        {ledger.limitations.map((item) => <p key={item} style={{ margin: 0, color: "#819989", fontSize: 8, lineHeight: 1.45 }}>• {item}</p>)}
+      </div>
+      <small style={{ color: "#819989", fontSize: 8 }}>Schema {ledger.schema_version} · {ledger.persistence}</small>
+    </>}
+  </section>;
+}
+
 function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
@@ -426,6 +469,8 @@ export default function App() {
   const [vectorError, setVectorError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
+  const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
+  const [setLedgerStatus, setSetLedgerStatus] = useState("Waiting for instrument selection…");
   const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
@@ -579,10 +624,13 @@ export default function App() {
 
 
   useEffect(() => {
-    if (!selected) { setVectorHistory([]); setRawEvents([]); setMarketState(null); setLastEvent(null); return; }
+    if (!selected) { setVectorHistory([]); setRawEvents([]); setSetLedger(null); setSetLedgerStatus("Waiting for instrument selection…"); setMarketState(null); setLastEvent(null); return; }
     let active = true;
     setVectorHistory([]);
     setRawEvents([]);
+    setSetLedger(null);
+    setSetLedgerStatus("Loading derived set memberships and temporal relations…");
+    getQoinSetLedger(selected.engineSymbol, 1000).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
     getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) setRawEvents(result.items.slice().reverse()); }).catch(() => undefined);
     return () => { active = false; };
@@ -912,6 +960,7 @@ export default function App() {
               </section>
               <DecisionTracePanel decision={vector} />
               <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+              <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
               <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
