@@ -490,6 +490,22 @@ mod tests {
     }
 
     #[test]
+    fn durable_relation_edge_fanout_is_bounded_and_auditable() {
+        let mut buy=event("bounded-buy","trade",10_000);
+        buy.side=Some("buy".into());
+        let mut neighbours=Vec::new();
+        for index in 0..150 {
+            neighbours.push(event(&format!("bounded-liq-{index}"),"liquidation",10_001+index));
+        }
+        let records=durable_records(&buy,&neighbours,mongodb::bson::DateTime::now()).unwrap();
+        let observation=records.iter().find(|record|record.get_str("record_type").ok()==Some("observation")).unwrap();
+        let edges=records.iter().filter(|record|record.get_str("record_type").ok()==Some("relation_edge")).count();
+        assert_eq!(edges,100);
+        assert_eq!(observation.get_bool("relation_edges_truncated").ok(),Some(true));
+        assert_eq!(observation.get_document("relation_edge_candidate_counts").unwrap().get_i64("buy_trades_before_liquidations").ok(),Some(150));
+        assert_eq!(observation.get_document("relation_edge_persisted_counts").unwrap().get_i64("buy_trades_before_liquidations").ok(),Some(100));
+    }
+    #[test]
     fn reports_empty_universe_without_inventing_members() {
         let ledger = build("BTCUSDT", &[], 2, 1000, false);
         assert_eq!(ledger.universe_count, 0);
