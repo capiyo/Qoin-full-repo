@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View, Pressable, Text, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getReactNativePersistence } from "firebase/auth";
+import { getReactNativePersistence, type User } from "firebase/auth";
 import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { ArchiveExploreScreen } from "./src/screens/ArchiveExploreScreen";
@@ -45,6 +45,7 @@ function MainTabs({ navigation }: MainTabsProps) {
 
 export default function App() {
   const [authReady, setAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState("");
   useEffect(() => {
     const config = {
@@ -62,7 +63,7 @@ export default function App() {
     }
     try {
       initializeQoinFirebase(config, getReactNativePersistence(AsyncStorage));
-      return subscribeQoinAuth(() => setAuthReady(true));
+      return subscribeQoinAuth((user) => { setFirebaseUser(user); setAuthReady(true); });
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Firebase initialization failed.");
       setAuthReady(true);
@@ -77,10 +78,13 @@ export default function App() {
           <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Dashboard" component={MainTabs} />
-              <Stack.Screen name="Login">
-                {(props) => <LoginScreen {...props} configurationError={authError} />}
-              </Stack.Screen>
+              {firebaseUser ? (
+                <Stack.Screen name="Dashboard" component={MainTabs} />
+              ) : (
+                <Stack.Screen name="Login">
+                  {(props) => <LoginScreen {...props} configurationError={authError} />}
+                </Stack.Screen>
+              )}
             </Stack.Navigator>
           ) : null}
         </NavigationContainer>
