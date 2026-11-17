@@ -973,7 +973,18 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     raw.insert("_qoin_pipeline_status",if late_event{"ignored_late"}else{"pending"});
     match s.events.insert_one(raw,None).await{
         Ok(_)=>{},Err(e) if e.to_string().contains("E11000")=>{
-            let existing=s.events.find_one(doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id},None).await.ok().flatten();
+            let existing=match s.events.find_one(
+                doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id},None
+            ).await{
+                Ok(value)=>value,
+                Err(error)=>{
+                    tracing::error!(error=%error,event_id=%event.event_id,
+                        "could not inspect duplicate event processing status");
+                    return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({
+                        "error":"duplicate event status unavailable","event_id":event.event_id
+                    })));
+                }
+            };
             let pending=existing.as_ref().is_some_and(pending_pipeline_event);
             return(
                 if pending{StatusCode::ACCEPTED}else{StatusCode::OK},
