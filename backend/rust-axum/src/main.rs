@@ -964,6 +964,10 @@ async fn propose_set_ledger_correction(
         Ok(None)=>return (StatusCode::NOT_FOUND,Json(serde_json::json!({"error":"canonical source event not found"}))),
         Err(error)=>{tracing::error!(error=%error,"canonical source event lookup failed for correction");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"canonical source lookup unavailable"})));}
     };
+    if let Err(error)=validate_event(&source) {
+        tracing::error!(error=%error,"canonical source event failed validation during correction");
+        return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"canonical source event is invalid"})));
+    }
     let current_hash=match set_ledger::source_hash(&source) {
         Ok(hash)=>hash,
         Err(error)=>{tracing::error!(error=%error,"source hash failed during correction");return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"source fingerprint unavailable"})));}
