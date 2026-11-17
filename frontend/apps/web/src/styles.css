@@ -395,3 +395,39 @@ body{background:var(--qoin-bg)}
 @media(max-width:900px){.explore-workspace{grid-template-columns:minmax(0,1fr)}.explore-market-sidebar{position:static}}
 @media(max-width:650px){.explore-market-sidebar{display:none}}
 @media(min-width:1100px){.explore-workspace{grid-template-columns:minmax(0,1fr) minmax(260px,310px)}}
+
+
+/* Broker collection and equal-allocation overview. */
+.broker-collection{display:grid;gap:18px}
+.broker-allocation-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.8fr);gap:18px;padding:22px;border:1px solid #31513b;border-radius:19px;background:linear-gradient(135deg,#1b3022,#14221a 70%);box-shadow:0 14px 34px #0002}
+.broker-allocation-copy h3{margin:0;color:#e6f1e9;font:800 22px/1.15 Manrope,sans-serif;letter-spacing:-.04em}
+.broker-allocation-copy>p:last-child{max-width:610px;margin:10px 0 0;color:#9cb2a2;font-size:11px;line-height:1.65}
+.broker-allocation-copy .eyebrow{color:#70d99d}
+.broker-allocation-examples{display:grid;grid-template-columns:1fr 1fr;gap:9px;align-self:center}
+.broker-allocation-examples>div{display:flex;flex-direction:column;gap:4px;padding:14px;border:1px solid #35533e;border-radius:13px;background:#0e1a12}
+.broker-allocation-examples strong{color:#e6f1e9;font:800 30px Manrope,sans-serif;letter-spacing:-.05em}
+.broker-allocation-examples span{color:#819989;font-size:9px;text-transform:uppercase;letter-spacing:.1em}
+.broker-allocation-examples b{margin-top:5px;color:#70d99d;font-size:12px}
+.broker-allocation-footnote{grid-column:1/-1;margin:0;padding-top:13px;border-top:1px solid #2b4032;color:#819989;font-size:9px;line-height:1.6}
+.broker-collection-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.broker-collection-stats>div{display:flex;align-items:center;gap:11px;padding:13px 15px;border:1px solid #2b4032;border-radius:13px;background:#14221a}
+.broker-collection-stats strong{color:#70d99d;font:800 22px Manrope,sans-serif}
+.broker-collection-stats span{color:#9cb2a2;font-size:9px;line-height:1.4}
+.broker-directory-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.broker-directory-card{display:flex;flex-direction:column;min-width:0;min-height:174px;padding:16px;border:1px solid #2b4032;border-radius:16px;background:linear-gradient(145deg,#192b20,#14221a);box-shadow:0 8px 22px #0002}
+.broker-directory-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.broker-logo-mark{display:grid;place-items:center;width:38px;height:38px;border:1px solid #35533e;border-radius:12px;background:#203629;color:#bde9ca;font:800 12px Manrope,sans-serif}
+.broker-status{padding:5px 7px;border-radius:999px;font-size:7px;font-weight:900;letter-spacing:.07em;white-space:nowrap}
+.broker-status.execution_adapter{background:#1d3d2a;color:#83e0a2}
+.broker-status.market_data_only{background:#2d3425;color:#d4c78c}
+.broker-status.adapter_pending{background:#2b3030;color:#9ba9a0}
+.broker-directory-card h3{margin:13px 0 4px;color:#e6f1e9;font:700 15px Manrope,sans-serif;letter-spacing:-.02em}
+.broker-market-label{margin:0;color:#70d99d;font-size:9px;font-weight:700}
+.broker-detail{margin:9px 0 13px;color:#91a596;font-size:9px;line-height:1.5}
+.broker-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px;border-top:1px solid #2b4032;color:#819989;font-size:8px}
+.broker-card-footer span:last-child{color:#70d99d;font-size:14px}
+.broker-connection-note{padding:15px 17px;border:1px solid #4b4730;border-radius:14px;background:#211f16}
+.broker-connection-note strong{color:#e8d99a;font-size:11px}
+.broker-connection-note p{margin:6px 0 0;color:#b4ad8d;font-size:9px;line-height:1.6}
+@media(max-width:900px){.broker-directory-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.broker-allocation-panel{grid-template-columns:minmax(0,1fr);padding:16px}.broker-allocation-copy h3{font-size:19px}.broker-allocation-examples{grid-template-columns:1fr 1fr}.broker-collection-stats{gap:6px}.broker-collection-stats>div{align-items:flex-start;flex-direction:column;gap:4px;padding:10px}.broker-collection-stats strong{font-size:19px}.broker-collection-stats span{font-size:8px}.broker-directory-grid{grid-template-columns:minmax(0,1fr)}.broker-directory-card{min-height:150px}}
