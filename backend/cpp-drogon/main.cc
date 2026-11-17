@@ -109,7 +109,7 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
-void proxyGet(const drogon::HttpRequestPtr&,
+void proxyGet(const drogon::HttpRequestPtr& incoming,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
     auto client = drogon::HttpClient::newHttpClient(upstream());
@@ -117,6 +117,8 @@ void proxyGet(const drogon::HttpRequestPtr&,
     request->setMethod(drogon::Get);
     request->setPath(path);
     request->addHeader("accept", "application/json");
+    const auto executionToken = incoming->getHeader("x-qoin-execution-token");
+    if (!executionToken.empty()) request->addHeader("x-qoin-execution-token", executionToken);
     client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
         const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
@@ -194,6 +196,20 @@ int main() {
             if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
             if (!symbol.empty() && !limit.empty()) path += "&";
             if (!limit.empty()) path += "limit=" + drogon::utils::urlEncode(limit);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/set-ledger/backfill", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto names = {"symbol", "after_ts_ms", "after_event_id", "after_venue", "batch_size"};
+        std::string path = "/internal/set-ledger/backfill";
+        bool first = true;
+        for (const auto* name : names) {
+            const auto value = req->getParameter(name);
+            if (value.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += std::string(name) + "=" + drogon::utils::urlEncode(value);
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
