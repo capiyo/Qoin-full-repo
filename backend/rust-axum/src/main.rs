@@ -52,6 +52,7 @@ struct MarketEvent {
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 struct SymbolState {
+    venue: String,
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
@@ -101,7 +102,7 @@ struct AppState {
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
 
 #[derive(Deserialize)]
-struct SymbolQuery { symbol: Option<String> }
+struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 #[derive(Deserialize)]
 struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 
@@ -141,6 +142,7 @@ fn push_bounded<T>(history: &mut VecDeque<T>, value: T) {
 }
 
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
+    state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
     push_bounded(&mut state.recent_event_ts_ms, event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
@@ -251,11 +253,12 @@ fn raw_feature_values(state:&SymbolState)->BTreeMap<MarketFeature,f64>{
             output.insert(JumpIntensity,return_window.iter().filter(|value|value.abs()>3.0*vol).count() as f64/return_window.len() as f64);
         }
         if let Some(avg)=average_return{output.insert(TrendStrength,avg/vol.max(1.0e-12)*(return_window.len() as f64).sqrt());}
+        if let Some(strength)=output.get(&TrendStrength).copied(){output.insert(RegimeTrendStrength,strength);}
     }
     if let Some(avg)=average_return{output.insert(Momentum,avg*return_window.len() as f64);}
     if let Some(value)=persistence{
         output.insert(TrendPersistence,value);output.insert(TrendExhaustion,1.0-value.abs());
-        output.insert(RegimeTrendStrength,value);output.insert(RegimePersistence,value);
+        output.insert(RegimePersistence,value);
     }
     if return_window.len()>=4{
         let left=&return_window[..return_window.len()-1];let right=&return_window[1..];
@@ -558,7 +561,8 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     // concurrent events could persist snapshots and decisions out of order.
     // A fixed set of lock stripes bounds memory even if malformed/internal
     // callers submit an unbounded number of distinct symbol strings.
-    let lock_stripe = event.symbol.bytes().fold(0usize, |hash, byte|
+    let state_key=format!("{}|{}",event.venue,event.symbol);
+    let lock_stripe = state_key.bytes().fold(0usize, |hash, byte|
         hash.wrapping_mul(31).wrapping_add(byte as usize)) % s.symbol_ingest_locks.len();
     let _symbol_guard = s.symbol_ingest_locks[lock_stripe].lock().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
@@ -569,7 +573,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let (snapshot,market_vector)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default();
+        let state=guard.entry(state_key.clone()).or_default();
         if state.last_event_ts_ms.is_some_and(|last|event.ts_ms<last){
             return(StatusCode::ACCEPTED,Json(serde_json::json!({"status":"late_event_persisted_not_applied","event_id":event.event_id,
                 "event_ts_ms":event.ts_ms,"latest_state_ts_ms":state.last_event_ts_ms})));
@@ -621,9 +625,15 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
-    match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
-        Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
+    let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
+    if let Ok(g)=s.memory.read(){
+        let value=if let Some(venue)=q.venue.as_deref(){g.get(&format!("{venue}|{symbol}"))}
+            else{g.values().filter(|value|value.symbol==symbol).max_by_key(|value|value.last_event_ts_ms.unwrap_or(0))};
+        if let Some(value)=value{return(StatusCode::OK,Json(serde_json::to_value(value).unwrap_or_default()));}
+    }
+    match s.states.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+        Ok(Some(mut document))=>{document.remove("_id");document.remove("stored_at");
+            (StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default()))},
         Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state storage unavailable"})))
     }
@@ -638,7 +648,8 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 }
 async fn get_latest_market_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    match s.market_vectors.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).build()).await{
+    let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
+    match s.market_vectors.find_one(filter,FindOneOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).build()).await{
         Ok(Some(mut document))=>{
             document.remove("_id");
             match mongodb::bson::from_document::<MarketVector>(document){
@@ -655,7 +666,7 @@ async fn get_latest_market_vector(State(s):State<AppState>,Query(q):Query<Symbol
 
 
 #[derive(Deserialize)]
-struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+struct HistoryQuery { symbol: Option<String>, venue: Option<String>, limit: Option<i64> }
 
 #[derive(Deserialize)]
 struct BacktestQuery {
@@ -1053,8 +1064,9 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
 async fn get_market_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
+    let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
     let options=FindOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).limit(limit).build();
-    let mut cursor=match s.market_vectors.find(doc!{"symbol":&symbol},Some(options)).await{
+    let mut cursor=match s.market_vectors.find(filter,Some(options)).await{
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,"market vector history query failed");
             return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market vector history unavailable","symbol":symbol}))); }
@@ -1725,10 +1737,11 @@ async fn main(){
         .expect("read immutable market event log during recovery") {
         match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok() => {
-                let state = restored_memory.entry(event.symbol.clone()).or_default();
+                let state_key=format!("{}|{}",event.venue,event.symbol);
+                let state = restored_memory.entry(state_key.clone()).or_default();
                 apply(state, &event);
                 if let Some(vector)=build_market_vector(state,&event,event.ts_ms){
-                    restored_vectors.insert(event.symbol.clone(),vector);
+                    restored_vectors.insert(state_key,vector);
                 }
                 replayed_events += 1;
             }
@@ -1953,6 +1966,33 @@ mod market_stream_tests {
 #[cfg(test)]
 mod execution_route_auth_tests {
     use super::constant_time_token_match;
+
+    #[test]
+    fn causal_normalization_requires_past_samples_and_rejects_constant_history(){
+        let mut history=VecDeque::new();
+        for value in 1..=7{assert!(causal_robust_normalize(value as f64,&history).is_none());push_bounded(&mut history,value as f64);}
+        push_bounded(&mut history,8.0);
+        assert!(causal_robust_normalize(100.0,&history).unwrap()>0.99);
+        assert!(causal_robust_normalize(2.0,&VecDeque::from(vec![2.0;12])).is_none());
+    }
+    #[test]
+    fn event_pipeline_publishes_only_causally_normalized_features(){
+        let mut state=SymbolState::default();let mut latest=None;
+        for index in 0..24{
+            let price=100.0+index as f64*0.15+(index%3) as f64*0.08;
+            let event=MarketEvent{
+                event_id:format!("pipeline-{index}"),venue:"test-venue".into(),symbol:"BTCUSDT".into(),
+                event_type:"trade".into(),ts_ms:1_800_000_000_000+index*1_000,price:Some(price),size:Some(1.0),
+                side:Some(if index%2==0{"buy"}else{"sell"}.into()),bid:None,ask:None,bid_size:None,ask_size:None,
+                funding_rate:None,open_interest:None,liquidation_side:None,
+            };
+            apply(&mut state,&event);latest=build_market_vector(&mut state,&event,event.ts_ms);
+        }
+        let vector=latest.expect("past samples should warm the vector");
+        assert!(vector.validate().is_ok());assert_eq!(vector.symbol,"BTCUSDT");assert_eq!(vector.venue,"test-venue");
+        assert!(vector.event_time_cutoff_ms<=vector.available_at_ms);
+        assert_eq!(vector.coordinates[&MarketFeature::RegimeCorrelationStress].status,qoin_market_space::FeatureAvailability::Missing);
+    }
 
     #[test]
     fn accepts_only_exact_execution_tokens() {
