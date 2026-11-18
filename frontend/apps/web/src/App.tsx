@@ -814,7 +814,7 @@ export default function App() {
   }
 
   return (
-    <main className="qoin-shell">
+    <div className="qoin-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
         <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
@@ -1099,6 +1099,6 @@ export default function App() {
         </div>
         <footer className="modal-footer"><button className="secondary-button" onClick={closeInstrument}>Back to Archive</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
       </section></div>}
-    </main>
+    </div>
   );
 }
