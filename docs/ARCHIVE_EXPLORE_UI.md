@@ -84,7 +84,9 @@ Notification history is currently in-memory and resets when the app process/page
 ## Forest-green workspace visual system (2026-11-17)
 
 - Applied the shared Qoin visual direction across web, desktop and React Native: deep forest background `#0e1612`, raised surfaces `#14221a` / `#19291f`, emerald accent `#70d99d`, warm off-white text `#e6f1e9`, muted sage text `#9cb2a2`, and restrained green borders `#2b4032`.
-- Web and desktop use a vertically stacked instrument-card list and a compact floating Archive / Explore pill; desktop retains a left-side floating navigation rail.
+- Web desktop mirrors Funspot's Home workspace structure: a full-width app header, a persistent profile sidebar, and Archive / Explore as two side-by-side independently scrollable content panes. Desktop workspace controls are icon-only beside the profile control; there are no visible Archive / Explore text labels in the header.
+- Mobile web uses one active page pane at a time, selected by a detached circular icon-only Archive / Explore floating pill. The profile rail is hidden, the app header remains, and the content pane scrolls independently. The responsive breakpoint is 650px, matching Funspot web.
+- Archive and Explore keep their Qoin-specific instrument cards, filters, provider-attributed news, macro calendar, and market research content; only the page composition and navigation behavior are ported from Funspot.
 - React Native uses the same palette and a floating rounded Archive / Explore navigation pill; status bar switches to light content for the dark workspace.
 - Vector chart grid, axes, trajectory and current-vector marker use the forest/emerald palette.
 - The two algorithm concepts remain distinct in product design: Version 1 is the implemented deterministic vector baseline; Version 2 Set & Ledger remains a future/preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
