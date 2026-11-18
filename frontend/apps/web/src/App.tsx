@@ -46,7 +46,7 @@ const brokerDirectory: BrokerDirectoryEntry[] = [
   { id: "binance_usdm", name: "Binance USD-M", market: "Crypto derivatives", status: "execution_adapter", detail: "Existing execution adapter; account-level connection and multi-broker fan-out are not yet exposed in this UI.", initials: "B" },
   { id: "coinbase_advanced", name: "Coinbase Advanced", market: "Crypto spot", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "C" },
   { id: "kraken_spot", name: "Kraken Spot", market: "Crypto spot", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "K" },
-  { id: "oanda", name: "OANDA", market: "Forex", status: "market_data_only", detail: "Market data integration only. Execution adapter not connected.", initials: "O" },
+  { id: "oanda", name: "OANDA symbols via Finnhub", market: "FX reference instruments", status: "market_data_only", detail: "Finnhub-delivered OANDA-namespaced symbols only; no direct OANDA account or execution connection.", initials: "O" },
   { id: "interactive_brokers", name: "Interactive Brokers", market: "Multi-asset", status: "adapter_pending", detail: "Execution adapter pending.", initials: "IB" },
   { id: "alpaca", name: "Alpaca", market: "Equities · ETFs · crypto", status: "adapter_pending", detail: "Execution adapter pending.", initials: "A" },
   { id: "saxo", name: "Saxo", market: "Multi-asset", status: "adapter_pending", detail: "Execution adapter pending.", initials: "S" },
