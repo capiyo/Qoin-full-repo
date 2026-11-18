@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import type { User } from "firebase/auth";
@@ -314,7 +315,28 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string, 0 | 1>>({});
   const [viewModeBySymbol, setViewModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
+  const [viewModesReady, setViewModesReady] = useState(false);
   const selectedMode = selected ? (viewModeBySymbol[selected.symbol] || "live") : "live";
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem("qoin:archive-card-modes").then((raw) => {
+      if (!active) return;
+      if (raw) {
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const valid = Object.fromEntries(Object.entries(parsed).filter((entry) => entry[1] === "live" || entry[1] === "backtest")) as Record<string, "live" | "backtest">;
+            setViewModeBySymbol(valid);
+          }
+        } catch { /* Ignore malformed local preference data and use live mode. */ }
+      }
+      setViewModesReady(true);
+    }).catch(() => { if (active) setViewModesReady(true); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (viewModesReady) void AsyncStorage.setItem("qoin:archive-card-modes", JSON.stringify(viewModeBySymbol)).catch(() => undefined);
+  }, [viewModeBySymbol, viewModesReady]);
   const cardTouchStart = useRef<Record<string, number>>({});
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
@@ -725,7 +747,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           <ScrollView contentContainerStyle={styles.notificationContent}>{notifications.length ? notifications.map((item) => <View key={item.id} style={[styles.notificationItem, item.read && styles.notificationRead]}><Text style={styles.notificationMeta}>{item.kind.toUpperCase()} · {item.symbol} · {new Date(item.createdAt).toLocaleTimeString()}</Text><Text style={styles.notificationTitle}>{item.title}</Text><Text style={styles.notificationBody}>{item.body}</Text><Text style={styles.notificationPayload}>{item.details}</Text></View>) : <Text style={styles.noteCopy}>No alerts yet. Signal transitions and liquidation events from the live stream will appear here.</Text>}</ScrollView>
         </View></View>
       </Modal>
-      <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
+      <Modal visible={!!selected} transparent={false} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelected(null)}>
         {selected ? <View style={styles.modalShade}><View style={styles.modalCard}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
@@ -1007,8 +1029,8 @@ const styles = StyleSheet.create({
   noteTitle: { color: "#4C5D75", fontSize: 11, fontWeight: "700" },
   noteCopy: { color: "#9cb2a2", fontSize: 10, lineHeight: 15, marginTop: 5 },
   footer: { color: "#829789", fontSize: 8, fontWeight: "700", letterSpacing: 1, textAlign: "center", marginTop: 25 },
-  modalShade: { flex: 1, justifyContent: "flex-end", backgroundColor: "#07110dcc" },
-  modalCard: { maxHeight: "94%", backgroundColor: "#14221a", borderTopLeftRadius: 21, borderTopRightRadius: 21, overflow: "hidden" },
+  modalShade: { flex: 1, justifyContent: "flex-start", backgroundColor: "#14221a" },
+  modalCard: { flex: 1, width: "100%", height: "100%", maxHeight: "100%", backgroundColor: "#14221a", borderRadius: 0, overflow: "hidden" },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 19, borderBottomWidth: 1, borderBottomColor: "#2b4032" },
   modalTitle: { color: "#e6f1e9", fontSize: 22, fontWeight: "800" },
   close: { width: 31, height: 31, borderRadius: 16, backgroundColor: "#203329", alignItems: "center", justifyContent: "center" },
