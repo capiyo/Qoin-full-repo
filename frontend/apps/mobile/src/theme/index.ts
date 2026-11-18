@@ -6,6 +6,7 @@ export const colors = {
   border: "#2b4032",
   accent: "#70d99d",
   accentCyan: "#70d99d",
+  warning: "#e0b45f",
   bullish: "#70d99d",
   bearish: "#e47a82",
   textPrimary: "#e6f1e9",

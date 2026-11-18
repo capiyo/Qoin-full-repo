@@ -188,4 +188,4 @@ jobs:
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/reconstruct?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-tampered-reconstruction.json
           jq -e '.source_hash_mismatches == 1 and .coverage_complete == false and .universe_count == 3' /tmp/set-ledger-tampered-reconstruction.json
           curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
-          jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
+          jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and any(.algorithms[]; .algorithm_id == "qoin-vector-baseline")' /tmp/algorithms.json

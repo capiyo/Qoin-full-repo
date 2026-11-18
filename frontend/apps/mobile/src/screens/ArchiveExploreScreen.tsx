@@ -662,7 +662,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                         <Text style={styles.cardMetaValue}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</Text>
                       </View>
                       <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>
-                        {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={{width:"31%",minWidth:78,padding:7,borderRadius:8,background:"#F1F5F9"}}>
+                        {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={{width:"31%",minWidth:78,padding:7,borderRadius:8,backgroundColor:"#F1F5F9"}}>
                           <Text style={[styles.cardMetaLabel,{fontSize:8}]}>{name.replaceAll("_"," ")}</Text>
                           <Text style={styles.cardMetaValue}>{decision.features?.[name]?.toFixed(3) ?? "—"}</Text>
                         </View>)}
@@ -1010,7 +1010,7 @@ const styles = StyleSheet.create({
   coverageLine: { color: "#b2c4b7", fontSize: 9, lineHeight: 14, marginTop: 4 },
   coverageNote: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 8 },
   coverageDisclaimer: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 5 },
-  card: { padding: 14, backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2b4032", borderRadius: 14, marginBottom: 9 },
+  card: { padding: 14, backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2b4032", borderRadius: 14, marginBottom: 9, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
   cardMain: { flexDirection: "row", alignItems: "center" },
   assetMark: { width: 37, height: 37, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   assetMarkText: { color: "#14221a", fontWeight: "800", fontSize: 15 },
@@ -1094,7 +1094,6 @@ const styles = StyleSheet.create({
   saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#70d99d" },
   saveActionText: { color: "#14221a", fontSize: 11, fontWeight: "700" },
 
-  card: { padding: 13, backgroundColor: "#17271e", borderWidth: 1, borderColor: "#2b4032", borderRadius: 17, marginBottom: 11, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
   cardMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginLeft: 48, marginTop: 9, marginBottom: 9 },
   cardMetaChip: { overflow: "hidden", color: "#9cb2a2", backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2e4937", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
   cardMetaLive: { color: "#9be8b5", borderColor: "#396b49", backgroundColor: "#1d3928" },

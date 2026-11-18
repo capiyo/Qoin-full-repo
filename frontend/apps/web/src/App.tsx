@@ -334,7 +334,7 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
         {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
           <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
-            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.measure.count} members</strong>
+            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.measure.counting_measure} members</strong>
           </summary>
           <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Counting measure · {item.measure.counting_measure} events · trade-size measure {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</p>
           <p style={{ margin: 0, color: "#819989", fontSize: 8, overflowWrap: "anywhere" }}>Members: {item.member_event_ids.slice(0, 8).join(", ") || "∅"}{item.member_event_ids.length > 8 ? " … +" + (item.member_event_ids.length - 8) + " more" : ""}</p>
