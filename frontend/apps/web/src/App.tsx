@@ -544,6 +544,7 @@ export default function App() {
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [routePath, setRoutePath] = useState(() => window.location.pathname);
   const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, InstrumentMode>>(loadCardModes);
+  const cardModesRef = useRef(cardModeBySymbol);
   const selectedMode: InstrumentMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
   const isInstrumentRoute = routePath.startsWith("/app/instrument/");
   const [query, setQuery] = useState("");
@@ -598,7 +599,7 @@ export default function App() {
           const pendingInstrument = pendingInstrumentRef.current;
           if (pendingInstrument) {
             pendingInstrumentRef.current = null;
-            navigateToInstrument({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) }, loadCardModes()[pendingInstrument.symbol] || "live");
+            navigateToInstrument({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) }, cardModesRef.current[pendingInstrument.symbol] || "live");
           }
           if (pendingAction && nextSymbols !== symbols) {
             void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
@@ -616,7 +617,8 @@ export default function App() {
   }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   function rememberCardMode(symbol: string, mode: InstrumentMode) {
-    const next = { ...loadCardModes(), [symbol]: mode };
+    const next = { ...cardModesRef.current, [symbol]: mode };
+    cardModesRef.current = next;
     setCardModeBySymbol(next);
     try { window.localStorage.setItem("qoin:archive-card-modes", JSON.stringify(next)); } catch { /* storage may be unavailable */ }
   }
