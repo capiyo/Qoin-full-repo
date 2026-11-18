@@ -484,7 +484,7 @@ mod tests {
         let liquidation = event("liq-same-time", "liquidation", 5_000);
         let ledger = build("BTCUSDT", &[buy.clone(), liquidation.clone()], 0, 100, false);
         assert_eq!(ledger.relations[0].edge_count, 0);
-        let records = durable_records(&liquidation, &[buy, liquidation], mongodb::bson::DateTime::now()).unwrap();
+        let records = durable_records(&liquidation, &[buy, liquidation.clone()], mongodb::bson::DateTime::now()).unwrap();
         assert_eq!(records.iter().filter(|record| record.get_str("record_type").ok() == Some("relation_edge")).count(), 0);
     }
 
