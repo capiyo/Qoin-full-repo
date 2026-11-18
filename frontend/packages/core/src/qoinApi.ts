@@ -318,6 +318,14 @@ export type QoinSetLedger = {
   sets: QoinEventSet[];
   relations: QoinEventRelation[];
   limitations: string[];
+  source_event_count?: number;
+  durable_record_count?: number;
+  durable_relation_count?: number;
+  durable_observation_count?: number;
+  truncated_relation_scans?: number;
+  relation_coverage_complete?: boolean;
+  durable_history_complete?: boolean;
+  durable_history_note?: string;
 };
 export function getQoinSetLedger(symbol: string, limit = 500): Promise<QoinSetLedger> {
   return request<QoinSetLedger>("/api/v1/set-ledger?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
