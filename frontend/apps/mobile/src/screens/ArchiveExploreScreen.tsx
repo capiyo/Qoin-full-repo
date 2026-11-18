@@ -136,7 +136,7 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
       <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
       <Text style={styles.metricValue}>{raw[index].toFixed(4)} → {attended[index].toFixed(4)}</Text>
     </View>)}
-    <Text style={styles.attentionTitle}>Strongest directed interactions</Text>
+    <Text style={styles.attentionTitle}>Top directed attention links</Text>
     {links.slice(0,6).map((link,index)=><View key={index} style={styles.metric}>
       <Text style={styles.metricLabel}>{names[link.from]} → {names[link.to]}</Text>
       <Text style={styles.metricValue}>{link.weight.toFixed(4)}</Text>
