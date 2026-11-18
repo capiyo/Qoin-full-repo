@@ -927,6 +927,7 @@ export default function App() {
           <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span aria-hidden="true">⌕</span>Explore</button>
         </nav>
         <div className="desktop-sidebar-bottom">
+          <button onClick={() => { setTab("Brokers"); closeInstrument(); }}><span aria-hidden="true">⇄</span>Broker collection</button>
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
           <button onClick={() => avatarInputRef.current?.click()}><span aria-hidden="true">◉</span>Change photo</button>
           <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
