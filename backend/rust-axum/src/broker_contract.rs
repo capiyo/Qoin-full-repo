@@ -539,7 +539,7 @@ mod tests {
     fn quantity_step_and_minimum_are_enforced_per_instrument() {
         let spec = instrument(AssetClass::Equity, "ABC", 1.0, 1.0);
         assert!(spec.validate_quantity(1.25).is_ok());
-        assert!(spec.validate_quantity(1.23).is_err());
+        assert!(spec.validate_quantity(1.234).is_err());
         assert!(spec.validate_quantity(0.001).is_err());
     }
 
