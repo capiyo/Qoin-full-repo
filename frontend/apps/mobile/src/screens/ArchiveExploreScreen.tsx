@@ -103,6 +103,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Version 2 · Set &amp; relation ledger</Text>
     <Text style={styles.attentionCaption}>Derived from persisted events · read-only · separate from V1 decisions</Text>
+    <Text accessibilityLiveRegion="polite" style={styles.attentionCaption}>{status}</Text>
     {!ledger ? <Text style={styles.disclaimer}>{status}</Text> : <>
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         <Text style={styles.engineValue}>Universe {ledger.universe_count}</Text>
@@ -376,7 +377,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           if (active && requestGeneration === generation) Alert.alert("Archive unavailable", error instanceof Error ? error.message : "Could not load your archive.");
         });
       });
-      return () => { active = false; unsubscribe(); };
+      return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
     } catch {
       return () => { active = false; };
     }
@@ -523,6 +524,32 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     const symbols = items.map((item) => item.engineSymbol);
     if (!symbols.length) return;
     let active = true;
+    let ledgerRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let ledgerRefreshInFlight = false;
+    let ledgerRefreshQueued = false;
+    const refreshSetLedger = async () => {
+      if (!active || !selected) return;
+      if (ledgerRefreshInFlight) { ledgerRefreshQueued = true; return; }
+      ledgerRefreshInFlight = true;
+      try {
+        const result = await getQoinSetLedger(selected.engineSymbol, 1000);
+        if (active) {
+          setSetLedger(result);
+          setSetLedgerStatus("Live · " + new Date().toLocaleTimeString());
+        }
+      } catch (error) {
+        if (active) setSetLedgerStatus(error instanceof Error ? "Refresh failed · " + error.message : "Set ledger refresh failed");
+      } finally {
+        ledgerRefreshInFlight = false;
+        if (ledgerRefreshQueued && active) { ledgerRefreshQueued = false; void refreshSetLedger(); }
+      }
+    };
+    const scheduleSetLedgerRefresh = () => {
+      if (!selected) return;
+      setSetLedgerStatus("New evidence · rebuilding V2 projection…");
+      if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer);
+      ledgerRefreshTimer = setTimeout(() => { ledgerRefreshTimer = null; void refreshSetLedger(); }, 450);
+    };
     const unsubscribe = subscribeQoinStream(symbols, (update) => {
       if (!active) return;
       if (update.type === "market.update" && update.symbol) {
@@ -555,6 +582,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now(),
             } as QoinMarketEvent, ...current].slice(0, 1000));
           }
+          if (update.event) scheduleSetLedgerRefresh();
           if (update.decision) {
             setVector(update.decision);
             setVectorHistory((current) => [...current.slice(-499), {
