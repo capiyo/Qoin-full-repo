@@ -156,11 +156,22 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
 }
 
 function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
+  const firstSet = ledger?.sets[0];
+  const secondSet = ledger?.sets[1];
+  const firstMembers = new Set(firstSet?.member_event_ids ?? []);
+  const secondMembers = new Set(secondSet?.member_event_ids ?? []);
+  const intersectionCount = [...firstMembers].filter((id) => secondMembers.has(id)).length;
+  const unionCount = new Set([...firstMembers, ...secondMembers]).size;
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Version 2 · Set &amp; relation ledger</Text>
     <Text style={styles.attentionCaption}>Derived from persisted events · read-only · separate from V1 decisions</Text>
     <Text accessibilityLiveRegion="polite" style={styles.attentionCaption}>{status}</Text>
     {!ledger ? <Text style={styles.disclaimer}>{status}</Text> : <>
+      {firstSet && secondSet ? <View style={styles.setOverlap}>
+        <View style={styles.setOverlapSide}><Text style={styles.attentionCaption}>{firstSet.label}</Text><Text style={styles.setOverlapCount}>{firstSet.measure.counting_measure}</Text><Text style={styles.attentionCaption}>members</Text></View>
+        <View style={styles.setOverlapMiddle}><Text style={styles.attentionCaption}>Intersection</Text><Text style={styles.setOverlapCount}>{intersectionCount}</Text><Text style={styles.attentionCaption}>union {unionCount}</Text></View>
+        <View style={styles.setOverlapSide}><Text style={styles.attentionCaption}>{secondSet.label}</Text><Text style={styles.setOverlapCount}>{secondSet.measure.counting_measure}</Text><Text style={styles.attentionCaption}>members</Text></View>
+      </View> : null}
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         <Text style={styles.engineValue}>Universe {ledger.universe_count}</Text>
         {ledger.source_event_count != null ? <Text style={styles.engineValue}>Source events {ledger.source_event_count}</Text> : null}
@@ -1054,6 +1065,10 @@ const styles = StyleSheet.create({
   mechanicsTabText: { color: "#8794A7", fontSize: 10, fontWeight: "700" },
   mechanicsTabTextActive: { color: "#2867DC" },
   mechanicsSetView: { gap: 13 },
+  setOverlap: { flexDirection: "row", alignItems: "center", gap: 7, padding: 12, borderRadius: 11, borderWidth: 1, borderColor: "#E1E8F1", backgroundColor: "#F7F9FC" },
+  setOverlapSide: { flex: 1, alignItems: "center", gap: 4 },
+  setOverlapMiddle: { flex: 1.1, alignItems: "center", gap: 4, paddingHorizontal: 6, borderLeftWidth: 1, borderRightWidth: 1, borderColor: "#E1E8F1" },
+  setOverlapCount: { color: "#2867DC", fontSize: 18, fontWeight: "800" },
   vectorOutputBridge: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 11, backgroundColor: "#F0F5F2", borderWidth: 1, borderColor: "#DCE8E0" },
   mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
   backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
