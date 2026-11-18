@@ -382,7 +382,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           if (active && requestGeneration === generation) Alert.alert("Archive unavailable", error instanceof Error ? error.message : "Could not load your archive.");
         });
       });
-      return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
+      return () => { active = false; unsubscribe(); };
     } catch {
       return () => { active = false; };
     }
@@ -621,7 +621,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         }
       }
     }, setStreamStatus);
-    return () => { active = false; unsubscribe(); };
+    return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
   }, [items, selected?.engineSymbol]);
 
   useEffect(() => {
