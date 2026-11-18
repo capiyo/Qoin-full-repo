@@ -348,6 +348,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
+  const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
@@ -470,6 +471,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   };
   const openInstrument = (item: Instrument) => {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
+    setMechanicsTab("vector");
     setSelected(item);
   };
   const toggle = (symbol: string) => {
@@ -859,6 +861,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         {selected ? <SafeAreaView style={styles.modalShade}><View style={styles.modalCard}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
+            {selectedMode === "live" ? <View style={styles.mechanicsTabs}>
+              <Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "vector" }} style={[styles.mechanicsTab, mechanicsTab === "vector" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("vector")}><Text style={[styles.mechanicsTabText, mechanicsTab === "vector" && styles.mechanicsTabTextActive]}>Vector space</Text></Pressable>
+              <Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "sets" }} style={[styles.mechanicsTab, mechanicsTab === "sets" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("sets")}><Text style={[styles.mechanicsTabText, mechanicsTab === "sets" && styles.mechanicsTabTextActive]}>Sets &amp; Ledger</Text></Pressable>
+            </View> : null}
             {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Backtest mechanics</Text><Text style={styles.attentionCaption}>Historical V1 replay · deterministic event order · no orders</Text></View>
               <View style={styles.tracePanel}>
@@ -889,7 +895,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
-            </View> : <>
+            </View> : mechanicsTab === "vector" ? <>
             <Text style={styles.mapTitle}>Force map</Text><Text style={styles.mapCopy}>Persisted Axum decision vector on bullish and bearish axes.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
@@ -925,10 +931,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>
               <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
             </View>
+            <MobileVectorSpaceMechanics decision={vector} />
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
-            <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <View style={styles.strategyPanel}>
               <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
               {decisionStrategy ? <>
@@ -1019,7 +1025,19 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>) : null}
             </View>
             <Text style={styles.disclaimer}>The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</Text>
-            </>}
+            </> : <View style={styles.mechanicsSetView}>
+              <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
+              <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+              <View style={styles.rawTape}>
+                <Pressable style={styles.rawTapeToggle} onPress={() => setShowRawEvents((value) => !value)}>
+                  <Text style={styles.attentionTitle}>Persisted source-event tape · {rawEvents.length} observations</Text><Text style={styles.attentionCaption}>{showRawEvents ? "Hide" : "Show"}</Text>
+                </Pressable>
+                {showRawEvents ? rawEvents.slice(0,1000).map((event) => <View key={event.event_id} style={styles.rawEvent}>
+                  <Text style={styles.newsMeta}>{event.event_type.toUpperCase()} · {new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</Text>
+                  <Text style={styles.newsHeadline}>{JSON.stringify(event)}</Text>
+                </View>) : null}
+              </View>
+            </View>}
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
         </View></SafeAreaView> : null}
@@ -1030,6 +1048,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 
 const styles = StyleSheet.create({
   tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
+  mechanicsTabs: { flexDirection: "row", gap: 6, padding: 6, marginBottom: 12, borderRadius: 13, borderWidth: 1, borderColor: "#E1E8F1", backgroundColor: "#FFFFFF" },
+  mechanicsTab: { flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 9 },
+  mechanicsTabActive: { backgroundColor: "#EAF1FF" },
+  mechanicsTabText: { color: "#8794A7", fontSize: 10, fontWeight: "700" },
+  mechanicsTabTextActive: { color: "#2867DC" },
+  mechanicsSetView: { gap: 13 },
+  vectorOutputBridge: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 11, backgroundColor: "#F0F5F2", borderWidth: 1, borderColor: "#DCE8E0" },
   mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
   backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   backtestInputWrap: { flexGrow: 1, flexBasis: "30%", minWidth: 85, gap: 5 },
