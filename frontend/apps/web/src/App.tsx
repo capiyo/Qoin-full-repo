@@ -28,6 +28,18 @@ const seed: Instrument[] = [
 ];
 
 type Tab = "Archive" | "Explore" | "Brokers";
+type InstrumentMode = "live" | "backtest";
+function instrumentSlug(symbol: string): string { return symbol.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase(); }
+function instrumentRoute(item: Instrument, mode: InstrumentMode): string { return `/app/instrument/${encodeURIComponent(instrumentSlug(item.symbol))}/${mode === "backtest" ? "backtest" : "vector"}`; }
+function loadCardModes(): Record<string, InstrumentMode> {
+  try {
+    const raw = window.localStorage.getItem("qoin:archive-card-modes");
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, InstrumentMode] => entry[1] === "live" || entry[1] === "backtest"));
+  } catch { return {}; }
+}
 
 type BrokerDirectoryEntry = { id: string; name: string; market: string; status: "execution_adapter" | "market_data_only" | "adapter_pending"; detail: string; initials: string };
 const brokerDirectory: BrokerDirectoryEntry[] = [
@@ -530,8 +542,10 @@ export default function App() {
   const pendingInstrumentRef = useRef<Instrument | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
-  const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
-  const selectedMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
+  const [routePath, setRoutePath] = useState(() => window.location.pathname);
+  const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, InstrumentMode>>(loadCardModes);
+  const selectedMode: InstrumentMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
+  const isInstrumentRoute = routePath.startsWith("/app/instrument/");
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
@@ -601,10 +615,59 @@ export default function App() {
     }
   }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
+  function rememberCardMode(symbol: string, mode: InstrumentMode) {
+    setCardModeBySymbol((current) => {
+      const next = { ...current, [symbol]: mode };
+      try { window.localStorage.setItem("qoin:archive-card-modes", JSON.stringify(next)); } catch { /* storage may be unavailable */ }
+      return next;
+    });
+  }
+  function navigateToInstrument(item: Instrument, mode: InstrumentMode) {
+    const path = instrumentRoute(item, mode);
+    window.history.pushState({ qoinInstrument: item.symbol, mode }, "", path);
+    setRoutePath(path);
+    setSelected(item);
+    rememberCardMode(item.symbol, mode);
+  }
+  function closeInstrument() {
+    if (window.location.pathname.startsWith("/app/instrument/")) {
+      window.history.pushState({}, "", "/app");
+      setRoutePath("/app");
+    }
+    setSelected(null);
+  }
+  function toggleCardMode(item: Instrument) {
+    rememberCardMode(item.symbol, (cardModeBySymbol[item.symbol] || "live") === "backtest" ? "live" : "backtest");
+  }
   function openInstrument(item: Instrument) {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
-    setSelected(item);
+    navigateToInstrument(item, cardModeBySymbol[item.symbol] || "live");
   }
+  function switchInstrumentMode(item: Instrument, mode: InstrumentMode) {
+    rememberCardMode(item.symbol, mode);
+    const path = instrumentRoute(item, mode);
+    window.history.pushState({ qoinInstrument: item.symbol, mode }, "", path);
+    setRoutePath(path);
+  }
+  useEffect(() => {
+    const onPopState = () => setRoutePath(window.location.pathname);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useEffect(() => {
+    const match = routePath.match(/^\/app\/instrument\/([^/]+)\/(vector|backtest)\/?$/);
+    if (!match) {
+      if (!routePath.startsWith("/app/instrument/")) setSelected(null);
+      return;
+    }
+    if (!firebaseUser) return;
+    const slug = decodeURIComponent(match[1]).toUpperCase();
+    const item = instruments.find((candidate) => instrumentSlug(candidate.symbol) === slug);
+    if (!item) return;
+    const mode: InstrumentMode = match[2] === "backtest" ? "backtest" : "live";
+    rememberCardMode(item.symbol, mode);
+    setSelected((current) => current?.symbol === item.symbol ? current : item);
+  }, [routePath, instruments, firebaseUser]);
   async function submitAuthentication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthError(""); setAuthBusy(true);
     try { if (authMode === "register") await registerQoinUser(authEmail, authPassword); else await signInQoinUser(authEmail, authPassword); setAuthPanelOpen(false); setAccountOpen(false); setAuthPassword(""); }
@@ -859,9 +922,9 @@ export default function App() {
         </div>
         <div className="desktop-sidebar-label">WORKSPACE</div>
         <nav className="desktop-sidebar-nav" aria-label="Main sections">
-          <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
-          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span aria-hidden="true">⌕</span>Explore</button>
-          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span aria-hidden="true">⇄</span>Brokers<small>15</small></button>
+          <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
+          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span aria-hidden="true">⌕</span>Explore</button>
+          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); closeInstrument(); }}><span aria-hidden="true">⇄</span>Brokers<small>15</small></button>
         </nav>
         <div className="desktop-sidebar-bottom">
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
@@ -880,7 +943,7 @@ export default function App() {
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
           {archived.length ? <div className="archive-workspace">
-            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => setCardModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
             <aside className="archive-market-sidebar" aria-label="Market pulse">
               <div className="market-pulse-panel">
                 <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
@@ -924,7 +987,7 @@ export default function App() {
             </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
             <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
           </section>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => setCardModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
           <section className="news-section">
             <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
             <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
@@ -963,15 +1026,15 @@ export default function App() {
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
       <nav className="floating-navigation" aria-label="Primary navigation">
-        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
-        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
-        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); setSelected(null); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
+        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
+        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
+        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
       </nav>
 
 
 
-      {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}><section className="vector-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
-        <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => setCardModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={() => setSelected(null)} aria-label="Close vector space">×</button></div></header>
+      {selected && <div className={isInstrumentRoute ? "modal-backdrop instrument-route-backdrop" : "modal-backdrop"} role="presentation" onMouseDown={(e) => { if (!isInstrumentRoute && e.target === e.currentTarget) closeInstrument(); }}><section className={isInstrumentRoute ? "vector-modal instrument-route-page" : "vector-modal"} role={isInstrumentRoute ? "main" : "dialog"} aria-modal={isInstrumentRoute ? undefined : "true"} aria-labelledby="vector-title">
+        <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close instrument workspace">×</button></div></header>
         <div className="modal-body">
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
             <div className="vector-intro"><div><strong>Market vector mechanics</strong><p>Inspect the persisted decision vector, six normalized inputs, source evidence and the exact V1 strategy before replaying history.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
@@ -1095,7 +1158,7 @@ export default function App() {
           <p className="disclaimer">The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</p>
           </>}
         </div>
-        <footer className="modal-footer"><button className="secondary-button" onClick={() => setSelected(null)}>Close</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
+        <footer className="modal-footer"><button className="secondary-button" onClick={closeInstrument}>Back to Archive</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
       </section></div>}
     </main>
   );
