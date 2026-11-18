@@ -1103,9 +1103,10 @@ export default function App() {
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : mechanicsTab === "vector" ? <>
-          <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
-          <VectorMap decision={vector} history={vectorHistory} />
+          <div className="vector-intro"><div><strong>Vector space</strong><p>Actual six-dimensional engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorSpaceMechanics decision={vector} />
+          <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
+          <VectorMap decision={vector} history={vectorHistory} />
           <FeatureSpace decision={vector} />
           <section className="live-state-panel">
             <div className="live-state-heading"><strong>Live market state</strong><span>{lastEvent?.event_type || "awaiting event"}</span></div>
