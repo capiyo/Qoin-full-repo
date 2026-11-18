@@ -462,3 +462,5 @@ body{background:var(--qoin-bg)}
 .vector-modal.instrument-route-page .modal-body{width:min(1180px,100%);margin:0 auto;flex:1}
 .vector-modal.instrument-route-page .modal-footer{position:sticky;bottom:0;z-index:3;background:var(--qoin-panel,#111e16)}
 @media(max-width:650px){.vector-modal.instrument-route-page .modal-header{padding:17px 16px 13px}.vector-modal.instrument-route-page .modal-header h2{font-size:20px}.vector-modal.instrument-route-page .modal-body{padding:16px}.vector-modal.instrument-route-page .modal-footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}}
+
+html[data-qoin-platform="desktop"] .vector-modal.instrument-route-page{width:100%;height:100dvh;max-height:none;min-height:100dvh;border-radius:0}
