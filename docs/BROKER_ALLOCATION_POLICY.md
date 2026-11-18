@@ -1,37 +1,35 @@
-# Qoin capital-aware broker allocation
+# Qoin equal multi-broker allocation policy
 
-## Routing objective
+## User-selected routing is authoritative
 
-Qoin supports a maximum of 15 selected broker-account targets for one parent order. The routing policy prefers a feasible consolidated order. It considers an equal split only when **every selected target** is execution-ready and healthy, each child meets that account's instrument quantity/notional minimums, each account has sufficient estimated margin, and the equal-split route has a lower estimated all-in cost after the configured multi-account overhead and minimum-saving hurdle.
+Qoin supports up to 15 broker-account targets per parent strategy order. The user selects the broker accounts in the frontend. If N accounts are selected, Qoin targets exactly 1/N of the parent order's portfolio-currency notional at each selected account. It must not silently consolidate the order into one broker, prefer a broker by cost, or omit a selected account.
 
-A broker being present in the directory or providing market data does not make it execution-ready. Only a real authenticated adapter/account with the required instrument and order-type capability can be considered.
+A broker directory entry or market-data connection is not an executable account. Each selected target must have a verified linked account, a healthy authenticated execution adapter, the instrument and order-type capability, a fresh quote and conversion path, and sufficient available margin. If any selected target is not execution-ready, the complete multi-account dispatch is rejected before any child order is submitted. The UI must identify the unavailable account and reason; it must not quietly route to the remaining accounts.
 
-## Cost comparison
+## Equal notional, broker-native quantities
 
-The caller supplies fresh estimates in the portfolio currency:
+Equal allocation means equal target notional in the common portfolio currency, not equal native quantity. For each account, convert its 1/N share into the broker's native quantity using the instrument price, contract multiplier, lot convention and a fresh, correctly directed FX/conversion chain into that account's quote or settlement currency.
 
-- variable commission in basis points and the broker's per-order minimum commission;
-- full-parent-order slippage and expected slippage for that account's smaller equal-split child;
-- currency-conversion cost;
-- margin requirement and available margin;
-- the operational/reconciliation overhead and minimum saving hurdle.
+Round each child quantity down to that broker's quantity step. Keep the resulting rounding remainder unallocated. Never redistribute it to another broker and never let aggregate child notional exceed the parent notional. Reject the whole plan if any child falls below that account's minimum quantity/notional or cannot satisfy margin and risk checks.
 
-The split slippage estimate must be derived for the child order size from a fresh market-depth/quote snapshot. The policy does not assume that splitting improves slippage. The consolidated and split cost estimates are normalized to the same parent notional before comparison, so a route cannot appear cheaper merely because quantity-step rounding leaves more capital unallocated.
+Example: a 100-unit parent notional selected across 15 eligible accounts has a target of 6.666… portfolio-currency units per account. The native quantities may differ because prices, multipliers, lot steps and account currencies differ. If any account cannot meet its minimum, the 15-way plan is infeasible and must be rejected; do not consolidate or silently drop that account.
 
-## Sizing and residuals
+## Pre-dispatch risk reservation
 
-Each selected target receives an equal **target notional**, not an equal native quantity. The caller converts one native quantity unit into portfolio-currency value using the instrument price, contract multiplier and currency-conversion chain. Qoin rounds each child quantity down to the broker's quantity step. The resulting remainder stays unallocated; it is never redistributed and the parent notional is never exceeded.
+Before dispatching any child, refresh all selected account and instrument snapshots and calculate aggregate portfolio exposure, correlated exposure, currency exposure, stop risk, margin, daily loss and position-count limits across the entire selected set. Reserve the aggregate risk budget atomically before any network submission. If reservation or any account check fails, submit zero child orders and release any reservation safely.
 
-If an equal share falls below even one selected account's minimum quantity or minimum notional, the equal-split plan is rejected. Qoin then selects the best feasible single account among the selected execution-ready accounts. If no single account can carry the parent order but every selected account can safely carry its equal child (including margin), Qoin may select the split as the only feasible route. If neither the consolidated nor the complete equal-split route is feasible, the policy fails closed; it never silently drops an account.
+## Parent/child order lifecycle
 
-## Example
+Persist one parent intent and N child intents before dispatch. Each child has a stable, unique idempotency key derived from the parent and broker-account identity. Dispatch all eligible child orders concurrently; do not wait for one broker's acknowledgement before beginning the others. Track acknowledgements, partial fills, final fills, rejects, cancellations, timeouts and unknown outcomes independently.
 
-With a portfolio notional of 100 and 15 selected accounts, the equal target is approximately 6.67 per account. If any account has a minimum order notional of 10, the 15-way split is infeasible. If one selected account can execute the full 100, the policy consolidates there.
+Multi-broker submission is not an atomic transaction. On partial failure, preserve the actual exposure and all child states, stop unsafe further actions, and reconcile every uncertain child against its broker before retrying. Never blindly retry an unknown outcome, increase another account's share, or claim that all brokers filled merely because requests were sent. A parent is complete only when every child reaches a reconciled terminal state and aggregate filled notional / residual is reported.
 
-With larger capital, all 15 child orders may become feasible. Qoin still splits only if the measured child-size slippage, per-order minimum commissions, variable fees and conversion costs beat the best consolidated route after overhead and the configured saving hurdle. If no single account has enough margin or order capacity, a complete feasible split can be chosen without pretending an infeasible consolidated comparator exists.
+## Currency and ledger rules
 
-## Execution safety boundary
+Keep each account's native cash, fees, margin, realized/unrealized P&L and settlement currency distinct. Convert reporting values into the user's portfolio currency only with timestamped, source-attributed FX rates and explicit conversion costs. Do not assume USD, KSh, USDT or any other currency is interchangeable. Missing, stale or ambiguous conversion data fails closed.
 
-A routing plan is **not** a submitted order. Before dispatch, the execution layer must refresh and validate every selected account, instrument, quote, adapter capability, aggregate portfolio risk and margin requirement; persist the parent and all child intents with idempotency keys; then dispatch and reconcile each child independently. After any child has been submitted, multi-broker execution is not an atomic transaction. Partial fills, rejects, timeouts and unknown outcomes must remain visible and be reconciled rather than blindly retried.
+## Current implementation boundary
 
-The current integration directory is not equivalent to live account connectivity. The branch currently reports one execution adapter (Binance USD-M), several market-data-only providers and pending adapters. The Decimal allocation and capital-aware plan selector are pure planning primitives; they are not yet wired into the live `/internal/orders` route. User account linking, a per-user credential vault, a multi-account adapter registry in Axum, durable parent/child fan-out records and concurrent child dispatch remain prerequisites. Do not infer that selecting directory entries enables live execution.
+The Decimal equal-notional allocator is a tested planning primitive. The provider-neutral broker contract and risk/lifecycle types are domain foundations. They do not yet establish that multiple live accounts can be linked or that multi-broker orders can be dispatched. The existing private Binance USD-M order route is a separate single-adapter path; the multi-broker parent/child lifecycle, account credential vault, adapter implementations, aggregate reservation, concurrent dispatch and automatic reconciliation worker remain unfinished. Keep live multi-broker execution disabled until those components and testnet end-to-end tests pass.
+
+Never request broker secrets in chat or commit them. Store credentials only in a server-side secret vault, use least-privilege keys with withdrawals disabled, and keep paper/testnet as the default.
