@@ -1037,7 +1037,19 @@ export default function App() {
         <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close instrument workspace">×</button></div></header>
         <div className="modal-body">
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
-            <div className="vector-intro"><div><strong>Market vector mechanics</strong><p>Inspect the persisted decision vector, six normalized inputs, source evidence and the exact V1 strategy before replaying history.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the pinned V1 strategy. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <section className="backtest-method-panel" aria-label="Historical replay mechanics">
+              <div className="attention-heading"><strong>How the replay progresses</strong><span>Deterministic · event-time ordered</span></div>
+              <ol>
+                <li><strong>Build the historical tape.</strong> Load persisted events for this instrument and selected venue, ordered by event timestamp and event ID.</li>
+                <li><strong>Reconstruct state.</strong> Feed each observation through the same V1 state and feature calculations used by the live research engine.</li>
+                <li><strong>Evaluate decisions.</strong> Apply the recorded strategy version and its gates; BUY, SELL and WAIT decisions are counted separately.</li>
+                <li><strong>Simulate execution.</strong> A signal can fill only on a strictly later eligible trade or book event. Book buys use ask and sells use bid; latency and liquidity participation constrain fills.</li>
+                <li><strong>Account for costs.</strong> Fees, slippage, market impact and recorded funding cashflows flow into equity, realized P/L and drawdown.</li>
+                <li><strong>Audit the result.</strong> Inspect fills, pending orders, raw-event gaps, assumptions and cost-stress scenarios. No broker order is submitted.</li>
+              </ol>
+              <p className="disclaimer">This is a replay of events already stored by Qoin, not a complete historical market-data download. Missing observations remain missing; the replay reports gaps rather than inventing candles or prices.</p>
+            </section>
             <VectorMap decision={vector} history={vectorHistory} />
             <FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the active Rust vector strategy."}</p>}
