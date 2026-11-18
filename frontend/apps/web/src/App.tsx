@@ -301,6 +301,12 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
 }
 
 function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
+  const firstSet = ledger?.sets[0];
+  const secondSet = ledger?.sets[1];
+  const firstMembers = new Set(firstSet?.member_event_ids ?? []);
+  const secondMembers = new Set(secondSet?.member_event_ids ?? []);
+  const intersectionCount = [...firstMembers].filter((id) => secondMembers.has(id)).length;
+  const unionCount = new Set([...firstMembers, ...secondMembers]).size;
   return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #E8EDF4", borderRadius: 16, background: "#FFFFFF", color: "#243750" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#8794A7", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
@@ -321,6 +327,11 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
         <span>Limit <strong style={{ color: "#243750" }}>{ledger.requested_limit}</strong></span>
       </div>
       {ledger.universe_truncated ? <p style={{ margin: 0, color: "#D99528", fontSize: 9 }}>Universe capped at {ledger.requested_limit} source documents. Measures and relations below apply only to this returned sample.</p> : null}
+      {firstSet && secondSet ? <div className="set-relationship-visual" aria-label="Observed overlap between the first two backend evidence sets">
+        <div><strong>{firstSet.label}</strong><b>{firstSet.measure.counting_measure}</b><span>members</span></div>
+        <div><strong>Intersection</strong><b>{intersectionCount}</b><span>shared event IDs · union {unionCount}</span></div>
+        <div><strong>{secondSet.label}</strong><b>{secondSet.measure.counting_measure}</b><span>members</span></div>
+      </div> : null}
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
         {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#FBFCFE", border: "1px solid #E8EDF4" }}>
