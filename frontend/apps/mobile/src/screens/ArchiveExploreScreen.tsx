@@ -114,10 +114,9 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
   const output = decision?.decision_vector ?? [0, 0];
-  const outputPoint = { x: 50 + Math.max(-1, Math.min(1, output[0])) * 34, y: 50 - Math.max(-1, Math.min(1, output[1])) * 34 };
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Vector space · six engine dimensions</Text>
-    <Text style={styles.attentionCaption}>2D projection of the actual R⁶ feature state · not a learned embedding</Text>
+    <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁶ feature state · decision output is a separate space</Text>
     <View style={styles.mapWrap}>
       <Svg viewBox="0 0 100 100" width="100%" height={260}>
         <Rect width="100" height="100" fill="#0E1612"/>
@@ -130,11 +129,6 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
           <Circle cx={point.x} cy={point.y} r="1.8" fill={colors[index]}/>
           <SvgText x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} fill="#D6E4DC" fontSize="3.8" textAnchor="middle">{names[index].slice(0,8)}</SvgText>
         </React.Fragment>)}
-        {decision?.decision_vector ? <React.Fragment>
-          <Line x1="50" y1="50" x2={outputPoint.x} y2={outputPoint.y} stroke="#FFFFFF" strokeWidth="2.1"/>
-          <Circle cx={outputPoint.x} cy={outputPoint.y} r="2.4" fill="#FFFFFF"/>
-          <SvgText x={Math.min(91,outputPoint.x+4)} y={Math.max(7,outputPoint.y-4)} fill="#FFFFFF" fontSize="4.5">Vout</SvgText>
-        </React.Fragment> : null}
         <Circle cx="50" cy="50" r="1.8" fill="#FFFFFF"/>
       </Svg>
     </View>
