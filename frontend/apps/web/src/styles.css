@@ -232,13 +232,11 @@ html[data-qoin-platform="desktop"] button{user-select:none}
   .desktop-profile-details span,.desktop-profile-details small { color:#8794A7; font-size:9px; }
   .desktop-profile-details strong { overflow-wrap:anywhere; color:#243750; font-size:10px; }
   .desktop-sidebar-label { margin:27px 10px 10px; color:#687A92; font-size:8px; font-weight:800; letter-spacing:.16em; }
-  .desktop-sidebar-nav,.desktop-sidebar-bottom { display:grid; gap:5px; }
-  .desktop-sidebar-nav button,.desktop-sidebar-bottom button { display:flex; align-items:center; gap:12px; width:100%; min-height:43px; padding:0 12px; border:0; border-radius:11px; background:transparent; color:#8794A7; text-align:left; font-size:11px; font-weight:600; }
-  .desktop-sidebar-nav button>span,.desktop-sidebar-bottom button>span { width:18px; color:#2867DC; text-align:center; font-size:16px; }
-  .desktop-sidebar-nav button.active { background:#F1F4F8; color:#243750; }
-  .desktop-sidebar-nav button small,.desktop-sidebar-bottom button small { margin-left:auto; color:#2867DC; font-size:9px; }
-  .desktop-sidebar-bottom { margin-top:auto; padding-top:14px; border-top:1px solid #E8EDF4; }
-  .desktop-sidebar-nav button:hover,.desktop-sidebar-bottom button:hover { background:#FBFCFE; color:#243750; }
+  .desktop-sidebar-bottom { display:grid; gap:5px; margin-top:auto; padding-top:14px; border-top:1px solid #E8EDF4; }
+  .desktop-sidebar-bottom button { display:flex; align-items:center; gap:12px; width:100%; min-height:43px; padding:0 12px; border:0; border-radius:11px; background:transparent; color:#8794A7; text-align:left; font-size:11px; font-weight:600; }
+  .desktop-sidebar-bottom button>span { width:18px; color:#2867DC; text-align:center; font-size:16px; }
+  .desktop-sidebar-bottom button small { margin-left:auto; color:#2867DC; font-size:9px; }
+  .desktop-sidebar-bottom button:hover { background:#FBFCFE; color:#243750; }
   .topbar { height:70px; }
   .topbar>.brand { display:none; }
   .welcome { min-height:150px; }
