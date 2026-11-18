@@ -110,7 +110,7 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
     y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
   }));
   const attention = decision?.attention ?? [];
-  const links = names.flatMap((name, from) => names.map((target, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
+  const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
   const output = decision?.decision_vector ?? [0, 0];
