@@ -456,7 +456,7 @@ body{background:var(--qoin-bg)}
 @media(max-width:650px){.broker-capital-preview{grid-template-columns:minmax(0,1fr);padding:13px}.broker-capital-result strong{font-size:22px}}
 
 /* Addressable instrument workspaces: these routes render as pages, not modal overlays. */
-.modal-backdrop.instrument-route-backdrop{position:fixed;z-index:40;inset:0;display:block;overflow:auto;padding:0;background:var(--qoin-bg,#0e1711);backdrop-filter:none}
+.modal-backdrop.instrument-route-backdrop{position:fixed;z-index:100;inset:0;display:block;overflow:auto;padding:0;background:var(--qoin-bg,#0e1711);backdrop-filter:none}
 .vector-modal.instrument-route-page{display:flex;width:100%;height:100dvh;max-height:none;min-height:100dvh;flex-direction:column;overflow:auto;border:0;border-radius:0;box-shadow:none}
 .vector-modal.instrument-route-page .modal-header{position:sticky;top:0;z-index:3;background:var(--qoin-panel,#111e16)}
 .vector-modal.instrument-route-page .modal-body{width:min(1180px,100%);margin:0 auto;flex:1}
