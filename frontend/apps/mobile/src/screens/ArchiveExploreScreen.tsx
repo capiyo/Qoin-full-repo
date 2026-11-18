@@ -114,6 +114,7 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
   const output = decision?.decision_vector ?? [0, 0];
+  const outputPoint = { x: 50 + Math.max(-1, Math.min(1, output[0])) * 34, y: 50 - Math.max(-1, Math.min(1, output[1])) * 34 };
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Vector space · six engine dimensions</Text>
     <Text style={styles.attentionCaption}>2D projection of the actual R⁶ feature state · not a learned embedding</Text>
@@ -129,6 +130,11 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
           <Circle cx={point.x} cy={point.y} r="1.8" fill={colors[index]}/>
           <SvgText x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} fill="#D6E4DC" fontSize="3.8" textAnchor="middle">{names[index].slice(0,8)}</SvgText>
         </React.Fragment>)}
+        {decision?.decision_vector ? <React.Fragment>
+          <Line x1="50" y1="50" x2={outputPoint.x} y2={outputPoint.y} stroke="#FFFFFF" strokeWidth="2.1"/>
+          <Circle cx={outputPoint.x} cy={outputPoint.y} r="2.4" fill="#FFFFFF"/>
+          <SvgText x={Math.min(91,outputPoint.x+4)} y={Math.max(7,outputPoint.y-4)} fill="#FFFFFF" fontSize="4.5">Vout</SvgText>
+        </React.Fragment> : null}
         <Circle cx="50" cy="50" r="1.8" fill="#FFFFFF"/>
       </Svg>
     </View>
@@ -167,10 +173,19 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
     <Text style={styles.attentionCaption}>Derived from persisted events · read-only · separate from V1 decisions</Text>
     <Text accessibilityLiveRegion="polite" style={styles.attentionCaption}>{status}</Text>
     {!ledger ? <Text style={styles.disclaimer}>{status}</Text> : <>
-      {firstSet && secondSet ? <View style={styles.setOverlap}>
-        <View style={styles.setOverlapSide}><Text style={styles.attentionCaption}>{firstSet.label}</Text><Text style={styles.setOverlapCount}>{firstSet.measure.counting_measure}</Text><Text style={styles.attentionCaption}>members</Text></View>
-        <View style={styles.setOverlapMiddle}><Text style={styles.attentionCaption}>Intersection</Text><Text style={styles.setOverlapCount}>{intersectionCount}</Text><Text style={styles.attentionCaption}>union {unionCount}</Text></View>
-        <View style={styles.setOverlapSide}><Text style={styles.attentionCaption}>{secondSet.label}</Text><Text style={styles.setOverlapCount}>{secondSet.measure.counting_measure}</Text><Text style={styles.attentionCaption}>members</Text></View>
+      {firstSet && secondSet ? <View style={styles.setVenn}>
+        <Svg viewBox="0 0 320 150" width="100%" height={150}>
+          <Circle cx="119" cy="72" r="54" fill="#3985D6" fillOpacity=".24" stroke="#3985D6" strokeWidth="1.5"/>
+          <Circle cx="201" cy="72" r="54" fill="#159B78" fillOpacity=".24" stroke="#159B78" strokeWidth="1.5"/>
+          <SvgText x="88" y="17" fill="#3985D6" fontSize="9" fontWeight="700" textAnchor="middle">{firstSet.label.slice(0,20)}</SvgText>
+          <SvgText x="232" y="17" fill="#159B78" fontSize="9" fontWeight="700" textAnchor="middle">{secondSet.label.slice(0,20)}</SvgText>
+          <SvgText x="91" y="76" fill="#30445F" fontSize="14" fontWeight="700" textAnchor="middle">{Math.max(0,firstSet.measure.counting_measure-intersectionCount)}</SvgText>
+          <SvgText x="160" y="76" fill="#30445F" fontSize="14" fontWeight="700" textAnchor="middle">{intersectionCount}</SvgText>
+          <SvgText x="229" y="76" fill="#30445F" fontSize="14" fontWeight="700" textAnchor="middle">{Math.max(0,secondSet.measure.counting_measure-intersectionCount)}</SvgText>
+          <SvgText x="160" y="139" fill="#8794A7" fontSize="8" textAnchor="middle">Exclusive · shared · exclusive</SvgText>
+        </Svg>
+        <View style={styles.setVennUnion}><Text style={styles.attentionCaption}>Union cardinality</Text><Text style={styles.setOverlapCount}>{unionCount}</Text></View>
+        <Text style={styles.attentionCaption}>Observed event-ID membership overlap. Circle areas are illustrative, not scaled to set size.</Text>
       </View> : null}
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         <Text style={styles.engineValue}>Universe {ledger.universe_count}</Text>
@@ -1067,6 +1082,8 @@ const styles = StyleSheet.create({
   mechanicsTabTextActive: { color: "#2867DC" },
   mechanicsSetView: { gap: 13 },
   setOverlap: { flexDirection: "row", alignItems: "center", gap: 7, padding: 12, borderRadius: 11, borderWidth: 1, borderColor: "#E1E8F1", backgroundColor: "#F7F9FC" },
+  setVenn: { alignItems: "center", gap: 5, padding: 10, borderRadius: 11, borderWidth: 1, borderColor: "#E1E8F1", backgroundColor: "#F7F9FC" },
+  setVennUnion: { flexDirection: "row", alignItems: "center", gap: 8 },
   setOverlapSide: { flex: 1, alignItems: "center", gap: 4 },
   setOverlapMiddle: { flex: 1.1, alignItems: "center", gap: 4, paddingHorizontal: 6, borderLeftWidth: 1, borderRightWidth: 1, borderColor: "#E1E8F1" },
   setOverlapCount: { color: "#2867DC", fontSize: 18, fontWeight: "800" },
