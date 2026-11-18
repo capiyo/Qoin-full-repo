@@ -548,7 +548,6 @@ export default function App() {
   const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, InstrumentMode>>(loadCardModes);
   const cardModesRef = useRef(cardModeBySymbol);
   const selectedMode: InstrumentMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
-  const isInstrumentRoute = routePath.startsWith("/app/instrument/");
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [health, setHealth] = useState<QoinHealth | null>(null);
