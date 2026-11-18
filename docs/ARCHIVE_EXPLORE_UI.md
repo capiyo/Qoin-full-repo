@@ -89,3 +89,13 @@ Notification history is currently in-memory and resets when the app process/page
 - Vector chart grid, axes, trajectory and current-vector marker use the forest/emerald palette.
 - The two algorithm concepts remain distinct in product design: Version 1 is the implemented deterministic vector baseline; Version 2 Set & Ledger remains a future/preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
 - No broker selection, order submission or live execution was added. Research/paper-only safety boundary is unchanged.
+
+
+## Instrument mechanics workspaces and Archive card modes (2026-11-18)
+
+- Each Archive card keeps a per-instrument view mode: Vector (default) or Backtest. Switching the card mode does not open the workspace; tapping the card opens the mechanics page for the selected mode.
+- Web routes are addressable and refresh-safe: `/app/instrument/{SYMBOL-SLUG}/vector` and `/app/instrument/{SYMBOL-SLUG}/backtest` (for example, `/app/instrument/BTC-USD/backtest`). Browser back/forward restores the selected instrument and mode. The mode preference is stored locally in browser storage.
+- The web build includes a Netlify SPA rewrite for `/app/*` so direct links and refreshes reach the Vite entry point. Other hosting providers must provide the equivalent history fallback.
+- React Native presents the selected instrument mechanics as a full-screen, safe-area-aware workspace. Its per-instrument mode preference is persisted with AsyncStorage; Android hardware back closes the workspace.
+- The Backtest workspace explains the replay pipeline before the controls/results: persisted event tape, deterministic ordering, V1 state reconstruction, strategy evaluation, strictly-later-event execution eligibility, bid/ask execution, latency/liquidity constraints, fees/slippage/impact/funding, and audit outputs.
+- Vector and Backtest are two views over the same instrument and existing V1 research strategy. Backtest remains a historical paper simulation only; no broker orders are submitted. V2 Set & Ledger remains a separate read-only research projection and cannot influence V1 decisions.
