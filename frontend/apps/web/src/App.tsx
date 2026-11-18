@@ -285,7 +285,7 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
       <div className="vector-space-readout">
         <div className="attention-heading"><strong>Coordinates</strong><span>Raw → attended</span></div>
         {names.map((name,index)=><div className="vector-coordinate-row" key={name}><span>{name.replaceAll("_"," ")}</span><strong>{raw[index].toFixed(4)} → {attended[index].toFixed(4)}</strong></div>)}
-        <div className="vector-interaction-summary"><strong>Strongest directed interactions</strong>
+        <div className="vector-interaction-summary"><strong>Top directed attention links</strong>
           {links.slice(0,5).map((link,index)=><div key={index}><span>{names[link.from]} → {names[link.to]}</span><b>{link.weight.toFixed(4)}</b></div>)}
           {!links.length && <small>No non-diagonal attention links above 0.18 were returned.</small>}
         </div>
