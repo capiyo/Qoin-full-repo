@@ -629,7 +629,7 @@ export default function App() {
   }
   function closeInstrument() {
     if (window.location.pathname.startsWith("/app/instrument/")) {
-      window.history.pushState({}, "", "/app");
+      window.history.replaceState({}, "", "/app");
       setRoutePath("/app");
     }
     setSelected(null);
