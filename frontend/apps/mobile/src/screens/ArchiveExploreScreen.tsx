@@ -107,6 +107,11 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
     {!ledger ? <Text style={styles.disclaimer}>{status}</Text> : <>
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         <Text style={styles.engineValue}>Universe {ledger.universe_count}</Text>
+        {ledger.source_event_count != null ? <Text style={styles.engineValue}>Source events {ledger.source_event_count}</Text> : null}
+        {ledger.durable_observation_count != null ? <Text style={styles.engineValue}>Stored observations {ledger.durable_observation_count}</Text> : null}
+        {ledger.durable_relation_count != null ? <Text style={styles.engineValue}>Stored relations {ledger.durable_relation_count}</Text> : null}
+        {ledger.durable_history_complete != null ? <Text style={[styles.engineValue,{color:ledger.durable_history_complete ? "#16845B" : "#B7791F"}]}>History {ledger.durable_history_complete ? "complete" : "incomplete"}</Text> : null}
+        {ledger.relation_coverage_complete != null ? <Text style={[styles.engineValue,{color:ledger.relation_coverage_complete ? "#16845B" : "#B7791F"}]}>Relation coverage {ledger.relation_coverage_complete ? "complete" : "bounded"}</Text> : null}
         <Text style={styles.engineValue}>Sets {ledger.sets.length}</Text>
         <Text style={styles.engineValue}>Relations {ledger.relations.length}</Text>
         <Text style={styles.engineValue}>Skipped {ledger.skipped_invalid_events}</Text>
