@@ -840,8 +840,13 @@ export default function App() {
         </section>}
       </header>
 
+
+
+
+
+
+      <div className="workspace qoin-workspace">
       <aside className="desktop-profile-sidebar" aria-label="Qoin workspace navigation">
-        <a className="desktop-sidebar-brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
         <div className="desktop-sidebar-profile">
           <button className="desktop-profile-avatar" onClick={() => avatarInputRef.current?.click()} aria-label="Change profile picture">
             {(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}
@@ -858,102 +863,99 @@ export default function App() {
           <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
         </div>
       </aside>
-      <section className="welcome">
-        <div><p className="eyebrow">YOUR MARKET WORKSPACE</p><h1>See the market<br /><span>as a system.</span></h1><p className="welcome-copy">Keep the instruments that matter close. Explore the forces shaping each one.</p></div>
-        <div className="welcome-orbit" aria-hidden="true"><span /><span /><span /><b>q</b></div>
-      </section>
-
-
-
-      {tab === "Archive" ? (
-        <section className="content-section">
-          <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
-          {archived.length ? <div className="archive-workspace">
-            <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
-            <aside className="archive-market-sidebar" aria-label="Market pulse">
-              <div className="market-pulse-panel">
-                <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
-                <p className="market-pulse-copy">Latest provider observations for instruments in your Archive.</p>
-                {archived.slice(0, 5).map((item) => {
-                  const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
-                  return <div className="market-pulse-row" key={item.symbol}>
-                    <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
-                    <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
-                  </div>;
-                })}
-                <p className="market-pulse-footnote">Unavailable or stale provider values remain blank; Qoin does not synthesize prices.</p>
-              </div>
-            </aside>
-          </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
-        </section>
-      ) : (
-        <section className="content-section">
-          <div className="explore-workspace">
-          <div className="explore-main-column">
-          <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
-          <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
-          <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
-          <section className="coverage-preview" aria-label="Market access tier preview">
-            <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
-            {catalogue?.market_access_tiers?.length ? <div className="coverage-grid">{catalogue.market_access_tiers.map((tier) => <article className="coverage-card" key={tier.tier_id}>
-              <div className="coverage-card-top"><strong>{tier.display_name}</strong><span>{tier.status}</span></div>
-              <div className="coverage-primary"><b>{tier.max_active_instruments}</b><span>active instruments</span></div>
-              <dl><div><dt>Markets</dt><dd>{tier.asset_classes.join(" · ")}</dd></div><div><dt>History</dt><dd>{tier.historical_depth_days} days</dd></div><div><dt>Timeframes</dt><dd>{tier.supported_timeframes.join(" · ")}</dd></div><div><dt>Data providers</dt><dd>{tier.market_data_providers.join(" · ") || "None listed"}</dd></div><div><dt>Execution brokers</dt><dd>{tier.execution_brokers.length ? tier.execution_brokers.join(" · ") : "None — research only"}</dd></div></dl>
-              <p>{tier.notes}</p>
-            </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading proposed market coverage…" : "Market coverage catalogue could not be loaded. Instrument availability remains provider-dependent."}</p>}
-            <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
+        <main className="home-columns qoin-home-columns" aria-label="Qoin workspace">
+          <section className={`home-column archive-column ${tab === "Archive" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Archive">
+            <section className="content-section">
+                      <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
+                      {archived.length ? <div className="archive-workspace">
+                        <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+                        <aside className="archive-market-sidebar" aria-label="Market pulse">
+                          <div className="market-pulse-panel">
+                            <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
+                            <p className="market-pulse-copy">Latest provider observations for instruments in your Archive.</p>
+                            {archived.slice(0, 5).map((item) => {
+                              const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
+                              return <div className="market-pulse-row" key={item.symbol}>
+                                <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
+                                <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
+                              </div>;
+                            })}
+                            <p className="market-pulse-footnote">Unavailable or stale provider values remain blank; Qoin does not synthesize prices.</p>
+                          </div>
+                        </aside>
+                      </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+                    </section>
           </section>
-          <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
-            <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
-            {catalogue?.algorithms?.length ? <div className="algorithm-grid">{catalogue.algorithms.map((algorithm) => <article className="algorithm-card" key={algorithm.algorithm_id}>
-              <div className="algorithm-card-top"><div><strong>{algorithm.display_name}</strong><small>{algorithm.algorithm_id} · {algorithm.version}</small></div><span className={"algorithm-status " + algorithm.status}>{algorithm.status}</span></div>
-              <p>{algorithm.description}</p>
-              <dl><div><dt>Markets</dt><dd>{algorithm.supported_asset_classes.join(" · ") || "Not declared"}</dd></div><div><dt>Venues</dt><dd>{algorithm.supported_venues.join(" · ") || "Not declared"}</dd></div><div><dt>Timeframes</dt><dd>{algorithm.supported_timeframes.join(" · ") || "Not declared"}</dd></div><div><dt>Data providers</dt><dd>{algorithm.supported_market_data_providers.join(" · ") || "Not declared"}</dd></div><div><dt>Required features</dt><dd>{algorithm.required_features.join(" · ") || "None declared"}</dd></div><div><dt>Risk profile</dt><dd>{algorithm.risk_profile}</dd></div></dl>
-              <div className="algorithm-card-footer"><span>Validation: {algorithm.evaluation_status.replaceAll("_", " ")}</span><span>{algorithm.execution_mode.replaceAll("_", " ")}</span></div>
-            </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
-            <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
+          <section className={`home-column explore-column ${tab === "Explore" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Explore">
+            <section className="content-section">
+                      <div className="explore-workspace">
+                      <div className="explore-main-column">
+                      <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
+                      <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
+                      <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
+                      <section className="coverage-preview" aria-label="Market access tier preview">
+                        <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
+                        {catalogue?.market_access_tiers?.length ? <div className="coverage-grid">{catalogue.market_access_tiers.map((tier) => <article className="coverage-card" key={tier.tier_id}>
+                          <div className="coverage-card-top"><strong>{tier.display_name}</strong><span>{tier.status}</span></div>
+                          <div className="coverage-primary"><b>{tier.max_active_instruments}</b><span>active instruments</span></div>
+                          <dl><div><dt>Markets</dt><dd>{tier.asset_classes.join(" · ")}</dd></div><div><dt>History</dt><dd>{tier.historical_depth_days} days</dd></div><div><dt>Timeframes</dt><dd>{tier.supported_timeframes.join(" · ")}</dd></div><div><dt>Data providers</dt><dd>{tier.market_data_providers.join(" · ") || "None listed"}</dd></div><div><dt>Execution brokers</dt><dd>{tier.execution_brokers.length ? tier.execution_brokers.join(" · ") : "None — research only"}</dd></div></dl>
+                          <p>{tier.notes}</p>
+                        </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading proposed market coverage…" : "Market coverage catalogue could not be loaded. Instrument availability remains provider-dependent."}</p>}
+                        <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
+                      </section>
+                      <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
+                        <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
+                        {catalogue?.algorithms?.length ? <div className="algorithm-grid">{catalogue.algorithms.map((algorithm) => <article className="algorithm-card" key={algorithm.algorithm_id}>
+                          <div className="algorithm-card-top"><div><strong>{algorithm.display_name}</strong><small>{algorithm.algorithm_id} · {algorithm.version}</small></div><span className={"algorithm-status " + algorithm.status}>{algorithm.status}</span></div>
+                          <p>{algorithm.description}</p>
+                          <dl><div><dt>Markets</dt><dd>{algorithm.supported_asset_classes.join(" · ") || "Not declared"}</dd></div><div><dt>Venues</dt><dd>{algorithm.supported_venues.join(" · ") || "Not declared"}</dd></div><div><dt>Timeframes</dt><dd>{algorithm.supported_timeframes.join(" · ") || "Not declared"}</dd></div><div><dt>Data providers</dt><dd>{algorithm.supported_market_data_providers.join(" · ") || "Not declared"}</dd></div><div><dt>Required features</dt><dd>{algorithm.required_features.join(" · ") || "None declared"}</dd></div><div><dt>Risk profile</dt><dd>{algorithm.risk_profile}</dd></div></dl>
+                          <div className="algorithm-card-footer"><span>Validation: {algorithm.evaluation_status.replaceAll("_", " ")}</span><span>{algorithm.execution_mode.replaceAll("_", " ")}</span></div>
+                        </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
+                        <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
+                      </section>
+                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+                      <section className="news-section">
+                        <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
+                        <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
+                        {news.length ? <div className="news-list">{news.map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
+                      </section>
+                      <section className="macro-section">
+                        <div className="news-heading"><div><p className="eyebrow">UPCOMING CATALYSTS</p><h3>Economic calendar</h3><p>Scheduled releases from the configured provider, with actual, estimate and previous values where published.</p></div><span className="news-status">{calendarStatus}</span></div>
+                        {macroEvents.length ? <div className="macro-list">{macroEvents.map((item,index) => <article className="macro-item" key={item.time + item.country + item.event + index}>
+                          <div><strong>{item.event}</strong><small>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</small></div>
+                          <div className="macro-values"><span>Actual <b>{item.actual ?? "—"}</b></span><span>Estimate <b>{item.estimate ?? "—"}</b></span><span>Previous <b>{item.previous ?? "—"}</b></span></div>
+                        </article>)}</div> : <p className="provider-empty">{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</p>}
+                      </section>
+                      </div>
+                      <aside className="explore-market-sidebar" aria-label="Your market watchlist">
+                        <div className="market-pulse-panel">
+                          <div className="market-pulse-heading"><strong>Your watchlist</strong><span>{archived.length} SAVED</span></div>
+                          <p className="market-pulse-copy">Live provider snapshots for instruments already in your Archive.</p>
+                          {archived.length ? archived.slice(0, 8).map((item) => {
+                            const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
+                            return <button className="market-pulse-row explore-watch-row" key={item.symbol} onClick={() => openInstrument(item)}>
+                              <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
+                              <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
+                            </button>;
+                          }) : <p className="market-pulse-footnote">Add an instrument to your Archive to build a watchlist.</p>}
+                          <p className="market-pulse-footnote">Unavailable or stale provider values remain blank. Qoin never fabricates a quote.</p>
+                        </div>
+                        <div className="market-pulse-panel explore-engine-panel">
+                          <div className="market-pulse-heading"><strong>Research engine</strong><span>{health ? "CONNECTED" : "CHECKING"}</span></div>
+                          <p className="market-pulse-copy">Research and historical replay only. No live order execution is available.</p>
+                        </div>
+                      </aside>
+                      </div>
+                    </section>
           </section>
-          {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
-          <section className="news-section">
-            <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
-            <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
-            {news.length ? <div className="news-list">{news.map((item) => <article className="news-item" key={String(item.id)}><div className="news-meta"><span>{item.source}</span><span>{item.published_at_ms ? new Date(item.published_at_ms).toLocaleString() : "Timestamp unavailable"}</span></div><a href={item.url} target="_blank" rel="noreferrer">{item.headline}</a><p>{item.summary}</p>{item.related && <small>Related: {item.related}</small>}</article>)}</div> : <p className="provider-empty">{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend to load live news. No placeholder headlines are generated."}</p>}
-          </section>
-          <section className="macro-section">
-            <div className="news-heading"><div><p className="eyebrow">UPCOMING CATALYSTS</p><h3>Economic calendar</h3><p>Scheduled releases from the configured provider, with actual, estimate and previous values where published.</p></div><span className="news-status">{calendarStatus}</span></div>
-            {macroEvents.length ? <div className="macro-list">{macroEvents.map((item,index) => <article className="macro-item" key={item.time + item.country + item.event + index}>
-              <div><strong>{item.event}</strong><small>{item.country} · {item.time} · {item.impact || "Impact not supplied"}</small></div>
-              <div className="macro-values"><span>Actual <b>{item.actual ?? "—"}</b></span><span>Estimate <b>{item.estimate ?? "—"}</b></span><span>Previous <b>{item.previous ?? "—"}</b></span></div>
-            </article>)}</div> : <p className="provider-empty">{calendarStatus === "loading" ? "Loading economic calendar…" : calendarStatus + ". Configure FINNHUB_API_KEY to load macro events. No event dates are fabricated."}</p>}
-          </section>
-          </div>
-          <aside className="explore-market-sidebar" aria-label="Your market watchlist">
-            <div className="market-pulse-panel">
-              <div className="market-pulse-heading"><strong>Your watchlist</strong><span>{archived.length} SAVED</span></div>
-              <p className="market-pulse-copy">Live provider snapshots for instruments already in your Archive.</p>
-              {archived.length ? archived.slice(0, 8).map((item) => {
-                const snapshot = liveBySymbol[item.engineSymbol.toUpperCase()];
-                return <button className="market-pulse-row explore-watch-row" key={item.symbol} onClick={() => openInstrument(item)}>
-                  <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
-                  <span><strong>{snapshot?.state?.last_price != null ? snapshot.state.last_price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong><small>{snapshot?.decision?.action?.toUpperCase() || "NO LIVE DATA"}</small></span>
-                </button>;
-              }) : <p className="market-pulse-footnote">Add an instrument to your Archive to build a watchlist.</p>}
-              <p className="market-pulse-footnote">Unavailable or stale provider values remain blank. Qoin never fabricates a quote.</p>
-            </div>
-            <div className="market-pulse-panel explore-engine-panel">
-              <div className="market-pulse-heading"><strong>Research engine</strong><span>{health ? "CONNECTED" : "CHECKING"}</span></div>
-              <p className="market-pulse-copy">Research and historical replay only. No live order execution is available.</p>
-            </div>
-          </aside>
-          </div>
-        </section>
-      )}
+        </main>
+      </div>
 
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
       <nav className="floating-navigation" aria-label="Primary navigation">
-        <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
-        <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
+        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">◈</span></button>
+        <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span></button>
       </nav>
 
 
