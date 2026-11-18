@@ -464,3 +464,12 @@ body{background:var(--qoin-bg)}
 @media(max-width:650px){.vector-modal.instrument-route-page .modal-header{padding:17px 16px 13px}.vector-modal.instrument-route-page .modal-header h2{font-size:20px}.vector-modal.instrument-route-page .modal-body{padding:16px}.vector-modal.instrument-route-page .modal-footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}}
 
 html[data-qoin-platform="desktop"] .vector-modal.instrument-route-page{width:100%;height:100dvh;max-height:none;min-height:100dvh;border-radius:0}
+
+.backtest-method-panel{display:grid;gap:12px;padding:17px;border:1px solid var(--qoin-line);border-radius:15px;background:var(--qoin-surface)}
+.backtest-method-panel .attention-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.backtest-method-panel .attention-heading strong{color:var(--qoin-text);font-size:12px}
+.backtest-method-panel .attention-heading span{color:var(--qoin-muted);font-size:9px}
+.backtest-method-panel ol{display:grid;gap:10px;margin:0;padding-left:22px;color:var(--qoin-muted);font-size:10px;line-height:1.6}
+.backtest-method-panel li{padding-left:3px}
+.backtest-method-panel li strong{color:var(--qoin-text)}
+.backtest-method-panel .disclaimer{margin:0;background:var(--qoin-bg)}
