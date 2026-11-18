@@ -27,7 +27,7 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
 ];
 
-type Tab = "Archive" | "Explore" | "Brokers";
+type Tab = "Archive" | "Explore";
 type InstrumentMode = "live" | "backtest";
 function instrumentSlug(symbol: string): string { return symbol.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase(); }
 function instrumentRoute(item: Instrument, mode: InstrumentMode): string { return `/app/instrument/${encodeURIComponent(instrumentSlug(item.symbol))}/${mode === "backtest" ? "backtest" : "vector"}`; }
@@ -888,7 +888,6 @@ export default function App() {
         <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
-          <button onClick={() => { setTab("Brokers"); setAccountOpen(false); closeInstrument(); }}>Broker collection</button>
           {firebaseUser ? <>
             <button onClick={() => { setAccountOpen(false); setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
             <button onClick={() => { setNotificationsOpen((value) => !value); setAccountOpen(false); }}>Notifications <span>{unreadNotifications ? unreadNotifications : ""}</span></button>
@@ -921,13 +920,7 @@ export default function App() {
           <button className="desktop-profile-link" onClick={() => setProfileOpen((value) => !value)}>View profile</button>
           {profileOpen && <div className="desktop-profile-details"><span>Account</span><strong>{firebaseUser?.email}</strong><small>Signed in securely with Firebase</small></div>}
         </div>
-        <div className="desktop-sidebar-label">WORKSPACE</div>
-        <nav className="desktop-sidebar-nav" aria-label="Main sections">
-          <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
-          <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span aria-hidden="true">⌕</span>Explore</button>
-        </nav>
         <div className="desktop-sidebar-bottom">
-          <button onClick={() => { setTab("Brokers"); closeInstrument(); }}><span aria-hidden="true">⇄</span>Broker collection</button>
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
           <button onClick={() => avatarInputRef.current?.click()}><span aria-hidden="true">◉</span>Change photo</button>
           <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
@@ -940,7 +933,7 @@ export default function App() {
 
 
 
-      {tab === "Brokers" ? <BrokerCollection selectedBrokerIds={selectedBrokerIds} onToggleBroker={(brokerId) => setSelectedBrokerIds((current) => current.includes(brokerId) ? current.filter((id) => id !== brokerId) : current.length < 15 ? [...current, brokerId] : current)} /> : tab === "Archive" ? (
+      {tab === "Archive" ? (
         <section className="content-section">
           <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
           {archived.length ? <div className="archive-workspace">
