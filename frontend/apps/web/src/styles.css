@@ -443,3 +443,14 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 .mechanics-modal .set-relationship-visual b{font-size:19px;color:var(--qoin-accent,#2867dc)}
 .mechanics-modal .set-relationship-visual span{font-size:8px;color:var(--qoin-muted,#8996a8)}
 @media(max-width:760px){.vector-modal.mechanics-modal{width:100%;max-height:94vh}.vector-space-layout{grid-template-columns:1fr}.vector-space-plot{max-width:430px;width:100%;margin:auto}.vector-output-bridge{grid-template-columns:1fr}.vector-output-arrow{transform:rotate(90deg);justify-self:center}}
+
+/* Mechanics workspace: centred desktop work surface with a full-height mobile presentation. */
+.vector-modal.mechanics-modal{width:min(1120px,calc(100vw - 56px));max-height:min(91vh,980px);display:flex;flex-direction:column}
+.vector-modal.mechanics-modal .modal-header{flex:0 0 auto}
+.vector-modal.mechanics-modal .modal-body{min-height:0;overflow:auto;overscroll-behavior:contain}
+.set-venn-wrap{display:grid;justify-items:center;gap:4px;min-width:0}
+.set-venn-wrap svg{display:block;width:min(100%,420px);height:auto;overflow:visible}
+.set-union-total{display:flex;align-items:center;gap:9px;color:var(--qoin-muted,#8794a7);font-size:9px}
+.set-union-total strong{color:var(--qoin-text,#243750);font-size:13px}
+.set-venn-note{grid-column:1/-1;margin:0;color:var(--qoin-muted,#8794a7);font-size:8px;text-align:center}
+@media(max-width:760px){.vector-modal.mechanics-modal{width:100%;max-height:94vh}}
