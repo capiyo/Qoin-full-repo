@@ -41,6 +41,9 @@ pub struct BrokerExecutionQuote {
     pub split_slippage_bps: Decimal,
     /// Currency conversion cost in bps, excluding the conversion rate itself.
     pub conversion_cost_bps: Decimal,
+    /// Age of the oldest account, instrument, market-depth, fee or FX input
+    /// used to build this quote. The caller computes this from source timestamps.
+    pub oldest_input_age_ms: i64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -51,6 +54,8 @@ pub struct AllocationPolicy {
     /// Require this additional estimated saving after overhead. Zero means
     /// any strictly positive saving is enough.
     pub minimum_saving_portfolio: Decimal,
+    /// All inputs to every selected account quote must be this fresh or fresher.
+    pub max_quote_age_ms: i64,
 }
 
 impl Default for AllocationPolicy {
@@ -58,6 +63,7 @@ impl Default for AllocationPolicy {
         Self {
             multi_broker_overhead_portfolio: Decimal::ZERO,
             minimum_saving_portfolio: Decimal::ZERO,
+            max_quote_age_ms: 5_000,
         }
     }
 }
@@ -101,6 +107,7 @@ pub enum RoutingError {
     Allocation(String),
     Arithmetic(String),
     AggregateRiskRejected(String),
+    StaleQuote(String),
 }
 
 impl std::fmt::Display for RoutingError {
@@ -112,6 +119,7 @@ impl std::fmt::Display for RoutingError {
             Self::Allocation(message) => write!(f, "allocation failed: {message}"),
             Self::Arithmetic(message) => write!(f, "routing arithmetic failed: {message}"),
             Self::AggregateRiskRejected(message) => write!(f, "aggregate portfolio risk rejected: {message}"),
+            Self::StaleQuote(message) => write!(f, "broker quote is stale: {message}"),
         }
     }
 }
@@ -261,7 +269,13 @@ pub fn validate_aggregate_portfolio_risk(
     })
 }
 
-fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
+fn validate_quote(quote: &BrokerExecutionQuote, max_quote_age_ms: i64) -> Result<(), RoutingError> {
+    if quote.oldest_input_age_ms < 0 || quote.oldest_input_age_ms > max_quote_age_ms {
+        return Err(RoutingError::StaleQuote(format!(
+            "{}/{} input age {}ms exceeds {}ms",
+            quote.target.broker_id, quote.target.account_id, quote.oldest_input_age_ms, max_quote_age_ms
+        )));
+    }
     let values = [
         ("available margin", quote.available_margin_portfolio),
         ("margin requirement", quote.margin_requirement_bps),
@@ -345,14 +359,15 @@ pub fn choose_execution_plan(
     }
     if policy.multi_broker_overhead_portfolio < Decimal::ZERO
         || policy.minimum_saving_portfolio < Decimal::ZERO
+        || policy.max_quote_age_ms <= 0
     {
-        return Err(RoutingError::InvalidPolicy("overhead and minimum saving must be non-negative".into()));
+        return Err(RoutingError::InvalidPolicy("overhead and minimum saving must be non-negative, and quote age must be positive".into()));
     }
     if selected.is_empty() || selected.len() > MAX_FANOUT_ACCOUNTS {
         return Err(RoutingError::InvalidPolicy("select between 1 and 15 broker accounts".into()));
     }
     for quote in selected {
-        validate_quote(quote)?;
+        validate_quote(quote, policy.max_quote_age_ms)?;
     }
 
     let mut best_single: Option<(BrokerCost, EqualAllocation, Decimal)> = None;
@@ -497,6 +512,7 @@ mod tests {
             slippage_bps: d(slippage),
             split_slippage_bps: d(slippage),
             conversion_cost_bps: d("0"),
+            oldest_input_age_ms: 100,
         }
     }
 
@@ -622,6 +638,16 @@ mod tests {
         quotes[1].available_margin_portfolio = d("1");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
+    }
+
+    #[test]
+    fn stale_account_market_depth_or_fx_inputs_fail_closed_before_routing() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[1].oldest_input_age_ms = 5_001;
+        assert!(matches!(
+            choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()),
+            Err(RoutingError::StaleQuote(_))
+        ));
     }
 
     #[test]
