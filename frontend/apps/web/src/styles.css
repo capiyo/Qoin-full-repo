@@ -83,9 +83,11 @@
 
 /* Desktop uses the open header space immediately before the profile control. */
 .desktop-header-navigation{display:flex;align-items:center;gap:5px;margin-left:auto;margin-right:7px}
-.desktop-header-nav-item{min-height:34px;padding:0 15px;border:0;border-radius:999px;background:transparent;color:#8794a7;font-size:11px;font-weight:700}
+.desktop-header-nav-item{display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:transparent;color:#8794a7;cursor:pointer;transition:background .16s,color .16s}
+.desktop-header-nav-item svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .desktop-header-nav-item:hover{background:#f1f5fb;color:#30445f}
 .desktop-header-nav-item.active{background:#eaf1ff;color:#2367d8}
+.desktop-header-nav-item:focus-visible{outline:2px solid #3475e8;outline-offset:3px}
 @media(max-width:800px){.desktop-header-navigation{display:none}}
 /* Compact floating primary navigation: only Archive and Explore. */
 .qoin-shell{padding-bottom:112px}
