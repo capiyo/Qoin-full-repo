@@ -167,6 +167,9 @@ pub struct AggregateRiskApproval {
     pub maximum_loss_at_stop_portfolio: Decimal,
     pub reduce_only: bool,
     pub projected_gross_exposure_portfolio: Decimal,
+    /// Current daily loss plus this order's maximum stop loss.
+    pub projected_daily_loss_portfolio: Decimal,
+    /// Daily-loss headroom remaining after reserving this order's stop loss.
     pub remaining_daily_loss_budget_portfolio: Decimal,
     pub snapshot_observed_at_ms: i64,
     pub market_data_observed_at_ms: i64,
@@ -232,8 +235,13 @@ pub fn validate_aggregate_portfolio_risk(
     if request.maximum_loss_at_stop_portfolio > risk_cap {
         return Err(RoutingError::AggregateRiskRejected("parent stop loss exceeds the portfolio risk budget".into()));
     }
-    if snapshot.daily_loss_portfolio >= daily_loss_cap {
-        return Err(RoutingError::AggregateRiskRejected("portfolio daily loss limit is already reached".into()));
+    let projected_daily_loss = snapshot.daily_loss_portfolio
+        .checked_add(request.maximum_loss_at_stop_portfolio)
+        .ok_or_else(|| RoutingError::Arithmetic("projected daily loss overflow".into()))?;
+    if projected_daily_loss >= daily_loss_cap {
+        return Err(RoutingError::AggregateRiskRejected(
+            "current daily loss plus this order's stop loss would reach or exceed the daily loss limit".into()
+        ));
     }
     if !request.reduce_only && snapshot.open_positions >= policy.max_open_positions {
         return Err(RoutingError::AggregateRiskRejected("portfolio open-position limit is reached".into()));
@@ -253,7 +261,7 @@ pub fn validate_aggregate_portfolio_risk(
         return Err(RoutingError::AggregateRiskRejected("projected gross exposure exceeds portfolio leverage limit".into()));
     }
     let remaining_daily = daily_loss_cap
-        .checked_sub(snapshot.daily_loss_portfolio)
+        .checked_sub(projected_daily_loss)
         .ok_or_else(|| RoutingError::Arithmetic("remaining daily loss budget underflow".into()))?;
 
     Ok(AggregateRiskApproval {
@@ -262,6 +270,7 @@ pub fn validate_aggregate_portfolio_risk(
         maximum_loss_at_stop_portfolio: request.maximum_loss_at_stop_portfolio,
         reduce_only: request.reduce_only,
         projected_gross_exposure_portfolio: projected_gross,
+        projected_daily_loss_portfolio: projected_daily_loss,
         remaining_daily_loss_budget_portfolio: remaining_daily,
         snapshot_observed_at_ms: snapshot.observed_at_ms,
         market_data_observed_at_ms: request.market_data_observed_at_ms,
@@ -557,7 +566,8 @@ mod tests {
         assert_eq!(approval.parent_notional_portfolio, d("1000"));
         assert_eq!(approval.maximum_loss_at_stop_portfolio, d("20"));
         assert_eq!(approval.projected_gross_exposure_portfolio, d("6000"));
-        assert_eq!(approval.remaining_daily_loss_budget_portfolio, d("100"));
+        assert_eq!(approval.projected_daily_loss_portfolio, d("120"));
+        assert_eq!(approval.remaining_daily_loss_budget_portfolio, d("80"));
     }
 
     #[test]
@@ -566,6 +576,16 @@ mod tests {
         request.maximum_loss_at_stop_portfolio = d("26");
         assert!(matches!(
             validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_risk_reserves_parent_stop_loss_against_daily_loss_budget() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.daily_loss_portfolio = d("190");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
             Err(RoutingError::AggregateRiskRejected(_))
         ));
     }
