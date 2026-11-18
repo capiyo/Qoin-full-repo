@@ -925,7 +925,6 @@ export default function App() {
         <nav className="desktop-sidebar-nav" aria-label="Main sections">
           <button className={tab === "Archive" ? "active" : ""} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span aria-hidden="true">◈</span>Archive<small>{archived.length}</small></button>
           <button className={tab === "Explore" ? "active" : ""} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span aria-hidden="true">⌕</span>Explore</button>
-          <button className={tab === "Brokers" ? "active" : ""} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); closeInstrument(); }}><span aria-hidden="true">⇄</span>Brokers<small>15</small></button>
         </nav>
         <div className="desktop-sidebar-bottom">
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
