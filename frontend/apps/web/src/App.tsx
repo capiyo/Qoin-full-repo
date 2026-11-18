@@ -532,6 +532,7 @@ export default function App() {
   const pendingInstrumentRef = useRef<Instrument | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
+  const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [routePath, setRoutePath] = useState(() => window.location.pathname);
   const [cardModeBySymbol, setCardModeBySymbol] = useState<Record<string, InstrumentMode>>(loadCardModes);
   const cardModesRef = useRef(cardModeBySymbol);
@@ -617,6 +618,7 @@ export default function App() {
     window.history.pushState({ qoinInstrument: item.symbol, mode }, "", path);
     setRoutePath(path);
     setSelected(item);
+    setMechanicsTab("vector");
     rememberCardMode(item.symbol, mode);
   }
   function closeInstrument() {
@@ -631,6 +633,7 @@ export default function App() {
   }
   function openInstrument(item: Instrument) {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
+    setMechanicsTab("vector");
     navigateToInstrument(item, cardModeBySymbol[item.symbol] || "live");
   }
   function switchInstrumentMode(item: Instrument, mode: InstrumentMode) {
@@ -1064,9 +1067,10 @@ export default function App() {
 
 
 
-      {selected && <div className={isInstrumentRoute ? "modal-backdrop instrument-route-backdrop" : "modal-backdrop"} role="presentation" onMouseDown={(e) => { if (!isInstrumentRoute && e.target === e.currentTarget) closeInstrument(); }}><section className={isInstrumentRoute ? "vector-modal instrument-route-page" : "vector-modal"} role={isInstrumentRoute ? "main" : "dialog"} aria-modal={isInstrumentRoute ? undefined : "true"} aria-labelledby="vector-title">
+      {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (!isInstrumentRoute && e.target === e.currentTarget) closeInstrument(); }}><section className="vector-modal mechanics-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close instrument workspace">×</button></div></header>
         <div className="modal-body">
+          {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics"><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>Vector space</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Sets &amp; Ledger</button></div>}
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
             <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the pinned V1 strategy. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
             <section className="backtest-method-panel" aria-label="Historical replay mechanics">
@@ -1087,9 +1091,10 @@ export default function App() {
             <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
-          </section> : <>
+          </section> : mechanicsTab === "vector" ? <>
           <div className="vector-intro"><div><strong>Force map</strong><p>Latest persisted Axum decision vector on bullish and bearish axes.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorMap decision={vector} history={vectorHistory} />
+          <VectorSpaceMechanics decision={vector} />
           <FeatureSpace decision={vector} />
           <section className="live-state-panel">
             <div className="live-state-heading"><strong>Live market state</strong><span>{lastEvent?.event_type || "awaiting event"}</span></div>
@@ -1150,8 +1155,7 @@ export default function App() {
                 <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
-              <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
-              <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
+
               <section className="attention-panel" aria-label="Six by six attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
@@ -1199,7 +1203,14 @@ export default function App() {
             </>
           ) : <p className="disclaimer">{vectorError || "No persisted engine vector is available for this symbol yet."}</p>}
           <p className="disclaimer">The plotted arrow is the persisted research decision vector. Feature inputs and attention links are shown above. This is not an order or a profitability claim.</p>
-          </>}
+          </> : <div className="mechanics-set-view">
+            <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
+            <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+            <section className="raw-tape">
+              <button className="raw-tape-toggle" onClick={() => setShowRawEvents((value) => !value)}>Persisted source-event tape · {rawEvents.length} observations <span>{showRawEvents ? "Hide" : "Show"}</span></button>
+              {showRawEvents && <div className="raw-event-list">{rawEvents.slice(0,1000).map((event) => <details key={event.event_id}><summary><span>{event.event_type.toUpperCase()}</span><b>{event.price ?? event.funding_rate ?? "—"}</b><small>{new Date(event.ts_ms).toLocaleTimeString()} · {event.venue}</small></summary><pre>{JSON.stringify(event,null,2)}</pre></details>)}</div>}
+            </section>
+          </div>}
         </div>
         <footer className="modal-footer"><button className="secondary-button" onClick={closeInstrument}>Back to Archive</button><button className="primary-button" onClick={() => toggleArchive(selected.symbol)}>{selected.archived ? "Remove from archive" : "Add to archive"}</button></footer>
       </section></div>}
