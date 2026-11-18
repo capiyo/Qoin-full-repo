@@ -248,6 +248,58 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
   </section>;
 }
 
+
+function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | null }) {
+  const names = QOIN_FEATURE_NAMES;
+  const raw = names.map((name) => decision?.features?.[name] ?? 0);
+  const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
+  const attention = decision?.attention ?? [];
+  const directions = names.map((_, index) => -Math.PI / 2 + index * (Math.PI * 2 / Math.max(names.length, 1)));
+  const endpoints = attended.map((value, index) => ({
+    x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
+    y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
+  }));
+  const links = names.flatMap((name, from) => names.map((target, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
+    .sort((a, b) => b.weight - a.weight).slice(0, 12);
+  const output = decision?.decision_vector ?? [0, 0];
+  return <section className="vector-space-mechanics" aria-label="Six-dimensional vector space and output">
+    <div className="attention-heading"><strong>Vector space · six engine dimensions</strong><span>2D projection of the actual R⁶ feature state</span></div>
+    <p className="disclaimer">Each radial axis is one real normalized engine feature. Arrow length and direction use its attended feature value. The projection is for visual inspection; calculations remain in six dimensions.</p>
+    <div className="vector-space-layout">
+      <div className="vector-space-plot">
+        <svg viewBox="0 0 100 100" role="img" aria-label="Six-dimensional feature vectors projected into two dimensions with attention links">
+          <defs><pattern id="qoin-vector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#263b33" strokeWidth=".35"/></pattern></defs>
+          <rect width="100" height="100" fill="url(#qoin-vector-grid)"/>
+          {[12,22,32].map((radius)=><circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#365247" strokeWidth=".35" strokeDasharray="1.5 2"/>)}
+          <path d="M5 50H95 M50 5V95" stroke="#668477" strokeWidth=".5"/>
+          {links.map((link,index)=><line key={index} x1={endpoints[link.from].x} y1={endpoints[link.from].y} x2={endpoints[link.to].x} y2={endpoints[link.to].y} stroke="#D6A85C" strokeWidth={0.35+link.weight*1.1} opacity={0.18+link.weight*.55}/>)}
+          {endpoints.map((point,index)=><g key={names[index]}>
+            <line x1="50" y1="50" x2={point.x} y2={point.y} stroke={["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"][index%6]} strokeWidth="1.15"/>
+            <circle cx={point.x} cy={point.y} r="1.8" fill={["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"][index%6]}/>
+            <text x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} textAnchor="middle" dominantBaseline="middle" fill="#c7d6ce" fontSize="4.1">{names[index].replaceAll("_"," ").slice(0,10)}</text>
+          </g>)}
+          <circle cx="50" cy="50" r="1.8" fill="#e6f0e9"/>
+        </svg>
+        <div className="vector-space-legend"><span><i/>Feature vectors</span><span><i/>Attention links</span></div>
+      </div>
+      <div className="vector-space-readout">
+        <div className="attention-heading"><strong>Coordinates</strong><span>Raw → attended</span></div>
+        {names.map((name,index)=><div className="vector-coordinate-row" key={name}><span>{name.replaceAll("_"," ")}</span><strong>{raw[index].toFixed(4)} → {attended[index].toFixed(4)}</strong></div>)}
+        <div className="vector-interaction-summary"><strong>Strongest directed interactions</strong>
+          {links.slice(0,5).map((link,index)=><div key={index}><span>{names[link.from]} → {names[link.to]}</span><b>{link.weight.toFixed(4)}</b></div>)}
+          {!links.length && <small>No non-diagonal attention links above 0.18 were returned.</small>}
+        </div>
+      </div>
+    </div>
+    <div className="vector-output-bridge">
+      <div><span>Resultant decision vector · backend output</span><strong>({output[0].toFixed(5)}, {output[1].toFixed(5)})</strong></div>
+      <span className="vector-output-arrow">→</span>
+      <div><span>Decision function result</span><strong>{decision?.action?.toUpperCase() || "WAIT"} · {decision?.reason || "No decision rationale available"}</strong></div>
+    </div>
+    <p className="disclaimer">Attention links represent the engine's deterministic attention weights, not causal proof. The output vector and action are read directly from the persisted decision; this screen does not recalculate or replace them.</p>
+  </section>;
+}
+
 function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
   return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #E8EDF4", borderRadius: 16, background: "#FFFFFF", color: "#243750" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
