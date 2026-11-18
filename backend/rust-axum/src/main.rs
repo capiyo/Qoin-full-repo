@@ -2453,6 +2453,7 @@ async fn append_relationship_event(
     }
 }
 
+// Keep the V2 append-only ledger read path explicit for integration verification.
 async fn list_relationship_events(
     State(state): State<AppState>,
     Query(query): Query<RelationshipLedgerQuery>,
