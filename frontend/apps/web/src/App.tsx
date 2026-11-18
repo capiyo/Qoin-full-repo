@@ -262,25 +262,34 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
   const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const output = decision?.decision_vector ?? [0, 0];
+  const outputPoint = { x: 50 + Math.max(-1, Math.min(1, output[0])) * 34, y: 50 - Math.max(-1, Math.min(1, output[1])) * 34 };
   return <section className="vector-space-mechanics" aria-label="Six-dimensional vector space and output">
     <div className="attention-heading"><strong>Vector space · six engine dimensions</strong><span>2D projection of the actual R⁶ feature state</span></div>
-    <p className="disclaimer">Each radial axis is one real normalized engine feature. Arrow length and direction use its attended feature value. The projection is for visual inspection; calculations remain in six dimensions.</p>
+    <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in six dimensions.</p>
     <div className="vector-space-layout">
       <div className="vector-space-plot">
-        <svg viewBox="0 0 100 100" role="img" aria-label="Six-dimensional feature vectors projected into two dimensions with attention links">
-          <defs><pattern id="qoin-vector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#263b33" strokeWidth=".35"/></pattern></defs>
+        <svg viewBox="0 0 100 100" role="img" aria-label="Six-dimensional feature vectors, directed attention links and resultant decision vector">
+          <defs>
+            <pattern id="qoin-vector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#263b33" strokeWidth=".35"/></pattern>
+            <marker id="qoin-attention-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#D6A85C"/></marker>
+            <marker id="qoin-resultant-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0L6 3L0 6Z" fill="#E6F0E9"/></marker>
+          </defs>
           <rect width="100" height="100" fill="url(#qoin-vector-grid)"/>
           {[12,22,32].map((radius)=><circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#365247" strokeWidth=".35" strokeDasharray="1.5 2"/>)}
           <path d="M5 50H95 M50 5V95" stroke="#668477" strokeWidth=".5"/>
-          {links.map((link,index)=><line key={index} x1={endpoints[link.from].x} y1={endpoints[link.from].y} x2={endpoints[link.to].x} y2={endpoints[link.to].y} stroke="#D6A85C" strokeWidth={0.35+link.weight*1.1} opacity={0.18+link.weight*.55}/>)}
+          {links.map((link,index)=><line key={index} x1={endpoints[link.from].x} y1={endpoints[link.from].y} x2={endpoints[link.to].x} y2={endpoints[link.to].y} stroke="#D6A85C" strokeWidth={0.35+link.weight*1.1} opacity={0.18+link.weight*.55} markerEnd="url(#qoin-attention-arrow)"/>)}
           {endpoints.map((point,index)=><g key={names[index]}>
             <line x1="50" y1="50" x2={point.x} y2={point.y} stroke={["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"][index%6]} strokeWidth="1.15"/>
             <circle cx={point.x} cy={point.y} r="1.8" fill={["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"][index%6]}/>
             <text x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} textAnchor="middle" dominantBaseline="middle" fill="#c7d6ce" fontSize="4.1">{names[index].replaceAll("_"," ").slice(0,10)}</text>
           </g>)}
+          {decision?.decision_vector ? <g>
+            <line x1="50" y1="50" x2={outputPoint.x} y2={outputPoint.y} stroke="#E6F0E9" strokeWidth="2.2" markerEnd="url(#qoin-resultant-arrow)"/>
+            <text x={Math.min(91, outputPoint.x + 3)} y={Math.max(7, outputPoint.y - 3)} fill="#E6F0E9" fontSize="4.6" fontWeight="700">Vout</text>
+          </g> : null}
           <circle cx="50" cy="50" r="1.8" fill="#e6f0e9"/>
         </svg>
-        <div className="vector-space-legend"><span><i/>Feature vectors</span><span><i/>Attention links</span></div>
+        <div className="vector-space-legend"><span><i/>Feature vectors</span><span><i/>Directed attention links</span><span><i/>Resultant output</span></div>
       </div>
       <div className="vector-space-readout">
         <div className="attention-heading"><strong>Coordinates</strong><span>Raw → attended</span></div>
@@ -296,10 +305,9 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
       <span className="vector-output-arrow">→</span>
       <div><span>Decision function result</span><strong>{decision?.action?.toUpperCase() || "WAIT"} · {decision?.reason || "No decision rationale available"}</strong></div>
     </div>
-    <p className="disclaimer">Attention links represent the engine's deterministic attention weights, not causal proof. The output vector and action are read directly from the persisted decision; this screen does not recalculate or replace them.</p>
+    <p className="disclaimer">Attention links are deterministic engine weights, not causal proof. The resultant vector and action are read directly from the persisted decision; the interface does not recalculate or replace them.</p>
   </section>;
 }
-
 function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
   const firstSet = ledger?.sets[0];
   const secondSet = ledger?.sets[1];
@@ -327,10 +335,21 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
         <span>Limit <strong style={{ color: "#243750" }}>{ledger.requested_limit}</strong></span>
       </div>
       {ledger.universe_truncated ? <p style={{ margin: 0, color: "#D99528", fontSize: 9 }}>Universe capped at {ledger.requested_limit} source documents. Measures and relations below apply only to this returned sample.</p> : null}
-      {firstSet && secondSet ? <div className="set-relationship-visual" aria-label="Observed overlap between the first two backend evidence sets">
-        <div><strong>{firstSet.label}</strong><b>{firstSet.measure.counting_measure}</b><span>members</span></div>
-        <div><strong>Intersection</strong><b>{intersectionCount}</b><span>shared event IDs · union {unionCount}</span></div>
-        <div><strong>{secondSet.label}</strong><b>{secondSet.measure.counting_measure}</b><span>members</span></div>
+      {firstSet && secondSet ? <div className="set-relationship-visual" aria-label="Observed membership overlap between the first two backend evidence sets">
+        <div className="set-venn-wrap">
+          <svg viewBox="0 0 320 150" role="img" aria-label={firstSet.label + " and " + secondSet.label + " observed set intersection"}>
+            <circle cx="119" cy="72" r="54" fill="#3985D6" fillOpacity=".24" stroke="#3985D6" strokeWidth="1.5"/>
+            <circle cx="201" cy="72" r="54" fill="#159B78" fillOpacity=".24" stroke="#159B78" strokeWidth="1.5"/>
+            <text x="88" y="17" textAnchor="middle" fill="#3985D6" fontSize="9" fontWeight="700">{firstSet.label.slice(0,20)}</text>
+            <text x="232" y="17" textAnchor="middle" fill="#159B78" fontSize="9" fontWeight="700">{secondSet.label.slice(0,20)}</text>
+            <text x="91" y="76" textAnchor="middle" fill="currentColor" fontSize="14" fontWeight="700">{Math.max(0, firstSet.measure.counting_measure - intersectionCount)}</text>
+            <text x="160" y="76" textAnchor="middle" fill="currentColor" fontSize="14" fontWeight="700">{intersectionCount}</text>
+            <text x="229" y="76" textAnchor="middle" fill="currentColor" fontSize="14" fontWeight="700">{Math.max(0, secondSet.measure.counting_measure - intersectionCount)}</text>
+            <text x="160" y="139" textAnchor="middle" fill="#8794A7" fontSize="8">Exclusive · shared · exclusive</text>
+          </svg>
+          <div className="set-union-total"><span>Union cardinality</span><strong>{unionCount}</strong></div>
+        </div>
+        <p className="set-venn-note">Observed event-ID membership overlap. Circle areas are illustrative and are not scaled to set size.</p>
       </div> : null}
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
