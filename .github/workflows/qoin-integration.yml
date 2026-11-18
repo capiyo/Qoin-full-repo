@@ -158,4 +158,7 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery-retry.json
           jq -e '.persisted == 0 and .already_present == 2' /tmp/v2-discovery-retry.json
           curl -fsS 'http://127.0.0.1:8081/internal/v2/relationships?limit=10' >/tmp/v2-ledger.json
+          echo 'V2 discovery response:'; cat /tmp/v2-discovery.json
+          echo 'V2 idempotent retry response:'; cat /tmp/v2-discovery-retry.json
+          echo 'V2 persisted ledger response:'; cat /tmp/v2-ledger.json
           jq -e 'length == 2 and all(.[]; .event_type == "discovered" and .relationship.model_version == "ci-v2.0.0")' /tmp/v2-ledger.json
