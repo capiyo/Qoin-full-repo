@@ -598,7 +598,7 @@ export default function App() {
           const pendingInstrument = pendingInstrumentRef.current;
           if (pendingInstrument) {
             pendingInstrumentRef.current = null;
-            setSelected({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) });
+            navigateToInstrument({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) }, loadCardModes()[pendingInstrument.symbol] || "live");
           }
           if (pendingAction && nextSymbols !== symbols) {
             void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
@@ -616,7 +616,7 @@ export default function App() {
   }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   function rememberCardMode(symbol: string, mode: InstrumentMode) {
-    const next = { ...cardModeBySymbol, [symbol]: mode };
+    const next = { ...loadCardModes(), [symbol]: mode };
     setCardModeBySymbol(next);
     try { window.localStorage.setItem("qoin:archive-card-modes", JSON.stringify(next)); } catch { /* storage may be unavailable */ }
   }
