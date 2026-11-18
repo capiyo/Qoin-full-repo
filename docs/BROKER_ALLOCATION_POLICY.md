@@ -32,7 +32,7 @@ With larger capital, all 15 child orders may become feasible. Qoin still splits 
 
 ## Aggregate portfolio risk
 
-A new Decimal-based aggregate gate requires a fresh portfolio-currency snapshot and fresh market-data timestamp before a parent plan can be converted into child intents. It checks the full parent notional, projected gross exposure, portfolio leverage, daily-loss budget, open-position cap and maximum loss at the protective stop. Each adapter must still repeat its own account/instrument/margin/capability checks for every child. Reduce-only requests are conservatively treated as not increasing gross exposure; the broker must independently enforce reduce-only semantics.
+A new Decimal-based aggregate gate requires a fresh portfolio-currency snapshot and fresh market-data timestamp before a parent plan can be converted into child intents. It checks the full parent notional, projected gross exposure, portfolio leverage, open-position cap and maximum loss at the protective stop. It also reserves that order's maximum stop loss against the remaining daily-loss budget: current daily loss plus the proposed stop loss must remain strictly below the configured daily cap. The approval exposes projected daily loss and the headroom remaining after this reservation. Each adapter must still repeat its own account/instrument/margin/capability checks for every child. Reduce-only requests are conservatively treated as not increasing gross exposure; the broker must independently enforce reduce-only semantics.
 
 ## Parent/child lifecycle foundation
 
