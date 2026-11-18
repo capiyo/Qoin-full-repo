@@ -774,7 +774,27 @@ export default function App() {
           }
         }
       }
-      if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
+      if (update.type === "stream.gap") {
+        setStreamStatus("gap — resynchronizing snapshots");
+        if (selected) {
+          setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
+          void Promise.all([
+            getInstrumentVector(selected.engineSymbol),
+            getInstrumentVectorHistory(selected.engineSymbol, 500),
+            getQoinEvents(selected.engineSymbol, 1000),
+            getQoinSetLedger(selected.engineSymbol, 1000),
+          ]).then(([decision, history, events, ledger]) => {
+            if (!active) return;
+            if (decision.decision_vector && decision.features && decision.attended_features) setVector(decision);
+            setVectorHistory(history.items);
+            setRawEvents(events.items.slice().reverse());
+            setSetLedger(ledger);
+            setSetLedgerStatus("Resynchronized · " + new Date().toLocaleTimeString());
+          }).catch((error: unknown) => {
+            if (active) setSetLedgerStatus(error instanceof Error ? "Resynchronization failed · " + error.message : "Resynchronization failed");
+          });
+        }
+      }
     }, setStreamStatus);
     return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
   }, [instruments, selected?.engineSymbol]);
