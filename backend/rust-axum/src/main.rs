@@ -29,6 +29,7 @@ mod trading;
 mod broker_contract;
 mod broker_allocation;
 mod broker_allocation_policy;
+mod broker_fanout;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 

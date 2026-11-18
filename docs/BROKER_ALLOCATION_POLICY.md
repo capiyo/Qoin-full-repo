@@ -30,6 +30,16 @@ With a portfolio notional of 100 and 15 selected accounts, the equal target is a
 
 With larger capital, all 15 child orders may become feasible. Qoin still splits only if the measured child-size slippage, per-order minimum commissions, variable fees and conversion costs beat the best consolidated route after overhead and the configured saving hurdle. If no single account has enough margin or order capacity, a complete feasible split can be chosen without pretending an infeasible consolidated comparator exists.
 
+## Aggregate portfolio risk
+
+A new Decimal-based aggregate gate requires a fresh portfolio-currency snapshot and fresh market-data timestamp before a parent plan can be converted into child intents. It checks the full parent notional, projected gross exposure, portfolio leverage, daily-loss budget, open-position cap and maximum loss at the protective stop. Each adapter must still repeat its own account/instrument/margin/capability checks for every child. Reduce-only requests are conservatively treated as not increasing gross exposure; the broker must independently enforce reduce-only semantics.
+
+## Parent/child lifecycle foundation
+
+The Rust fan-out domain now builds deterministic parent and child IDs from a server-verified owner scope plus the caller's idempotency key. Equal-split plans must include every selected account exactly once. Consolidated plans explicitly record which selected accounts receive no child order. Parent records preserve allocated notional and the unallocated rounding remainder. Child lifecycle states include submitting, accepted, partial fill, filled, cancel pending, cancelled, rejected, failed and unknown. Execution IDs are idempotent; an unknown submission outcome cannot be retried until reconciliation resolves it. The in-memory coordinator refuses to begin dispatch until the caller confirms that the parent and all children have been durably persisted.
+
+These are serializable, testable domain foundations only. MongoDB persistence, unique indexes, verified Firebase owner-scope extraction, adapter registration for authenticated user accounts, concurrent adapter dispatch and live reconciliation are not connected. Do not enable or infer live fan-out from these types.
+
 ## Execution safety boundary
 
 A routing plan is **not** a submitted order. Before dispatch, the execution layer must refresh and validate every selected account, instrument, quote, adapter capability, aggregate portfolio risk and margin requirement; persist the parent and all child intents with idempotency keys; then dispatch and reconcile each child independently. After any child has been submitted, multi-broker execution is not an atomic transaction. Partial fills, rejects, timeouts and unknown outcomes must remain visible and be reconciled rather than blindly retried.

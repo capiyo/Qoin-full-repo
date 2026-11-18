@@ -100,6 +100,7 @@ pub enum RoutingError {
     NoFeasibleMultiBrokerPlan,
     Allocation(String),
     Arithmetic(String),
+    AggregateRiskRejected(String),
 }
 
 impl std::fmt::Display for RoutingError {
@@ -110,10 +111,153 @@ impl std::fmt::Display for RoutingError {
             Self::NoFeasibleMultiBrokerPlan => write!(f, "selected accounts cannot all accept an equal allocation"),
             Self::Allocation(message) => write!(f, "allocation failed: {message}"),
             Self::Arithmetic(message) => write!(f, "routing arithmetic failed: {message}"),
+            Self::AggregateRiskRejected(message) => write!(f, "aggregate portfolio risk rejected: {message}"),
         }
     }
 }
 impl std::error::Error for RoutingError {}
+
+
+/// A single portfolio-level snapshot aggregated across every account and
+/// normalized into the portfolio currency. The caller must source it from
+/// fresh authenticated broker snapshots; this module never fabricates it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregatePortfolioSnapshot {
+    pub equity_portfolio: Decimal,
+    pub gross_exposure_portfolio: Decimal,
+    pub daily_loss_portfolio: Decimal,
+    pub open_positions: usize,
+    pub observed_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct AggregateRiskPolicy {
+    pub max_risk_fraction: Decimal,
+    pub max_order_notional_fraction: Decimal,
+    pub max_gross_leverage: Decimal,
+    pub max_daily_loss_fraction: Decimal,
+    pub max_open_positions: usize,
+    pub max_snapshot_age_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateRiskRequest {
+    pub instrument_id: String,
+    pub parent_notional_portfolio: Decimal,
+    /// Maximum loss at the protective stop, already converted to portfolio currency.
+    /// Set to zero only for a broker-enforced reduce-only order.
+    pub maximum_loss_at_stop_portfolio: Decimal,
+    pub market_data_observed_at_ms: i64,
+    pub now_ms: i64,
+    pub reduce_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AggregateRiskApproval {
+    pub instrument_id: String,
+    pub parent_notional_portfolio: Decimal,
+    pub maximum_loss_at_stop_portfolio: Decimal,
+    pub projected_gross_exposure_portfolio: Decimal,
+    pub remaining_daily_loss_budget_portfolio: Decimal,
+    pub snapshot_observed_at_ms: i64,
+    pub market_data_observed_at_ms: i64,
+    pub approved_at_ms: i64,
+}
+
+/// Validate total portfolio risk once, before any child is dispatched. Per-child
+/// adapter risk checks remain mandatory as a second independent gate.
+pub fn validate_aggregate_portfolio_risk(
+    snapshot: &AggregatePortfolioSnapshot,
+    policy: AggregateRiskPolicy,
+    request: &AggregateRiskRequest,
+) -> Result<AggregateRiskApproval, RoutingError> {
+    if snapshot.equity_portfolio <= Decimal::ZERO
+        || snapshot.gross_exposure_portfolio < Decimal::ZERO
+        || snapshot.daily_loss_portfolio < Decimal::ZERO
+        || snapshot.observed_at_ms <= 0
+    {
+        return Err(RoutingError::AggregateRiskRejected("portfolio snapshot contains invalid values".into()));
+    }
+    if policy.max_risk_fraction <= Decimal::ZERO
+        || policy.max_risk_fraction > Decimal::ONE
+        || policy.max_order_notional_fraction <= Decimal::ZERO
+        || policy.max_order_notional_fraction > Decimal::ONE
+        || policy.max_gross_leverage <= Decimal::ZERO
+        || policy.max_daily_loss_fraction <= Decimal::ZERO
+        || policy.max_daily_loss_fraction > Decimal::ONE
+        || policy.max_open_positions == 0
+        || policy.max_snapshot_age_ms < 0
+    {
+        return Err(RoutingError::InvalidPolicy("aggregate risk policy is invalid".into()));
+    }
+    if request.instrument_id.trim().is_empty()
+        || request.parent_notional_portfolio <= Decimal::ZERO
+        || request.maximum_loss_at_stop_portfolio < Decimal::ZERO
+        || (!request.reduce_only && request.maximum_loss_at_stop_portfolio <= Decimal::ZERO)
+        || request.now_ms <= 0
+        || request.market_data_observed_at_ms <= 0
+        || snapshot.observed_at_ms > request.now_ms
+        || request.market_data_observed_at_ms > request.now_ms
+        || request.now_ms - snapshot.observed_at_ms > policy.max_snapshot_age_ms
+        || request.now_ms - request.market_data_observed_at_ms > policy.max_snapshot_age_ms
+    {
+        return Err(RoutingError::AggregateRiskRejected("identity, order risk or snapshot freshness is invalid".into()));
+    }
+
+    let notional_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_order_notional_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate notional cap overflow".into()))?;
+    let leverage_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_gross_leverage)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate leverage cap overflow".into()))?;
+    let daily_loss_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_daily_loss_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate daily loss cap overflow".into()))?;
+    let risk_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_risk_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate risk cap overflow".into()))?;
+
+    if request.parent_notional_portfolio > notional_cap {
+        return Err(RoutingError::AggregateRiskRejected("parent notional exceeds the portfolio order budget".into()));
+    }
+    if request.maximum_loss_at_stop_portfolio > risk_cap {
+        return Err(RoutingError::AggregateRiskRejected("parent stop loss exceeds the portfolio risk budget".into()));
+    }
+    if snapshot.daily_loss_portfolio >= daily_loss_cap {
+        return Err(RoutingError::AggregateRiskRejected("portfolio daily loss limit is already reached".into()));
+    }
+    if !request.reduce_only && snapshot.open_positions >= policy.max_open_positions {
+        return Err(RoutingError::AggregateRiskRejected("portfolio open-position limit is reached".into()));
+    }
+
+    // A reduce-only flag must also be enforced by the broker. Without a
+    // position-level snapshot, do not assume that a closing order reduces
+    // exposure by a guessed amount; conservatively leave gross exposure flat.
+    let projected_gross = if request.reduce_only {
+        snapshot.gross_exposure_portfolio
+    } else {
+        snapshot.gross_exposure_portfolio
+            .checked_add(request.parent_notional_portfolio)
+            .ok_or_else(|| RoutingError::Arithmetic("aggregate gross exposure overflow".into()))?
+    };
+    if projected_gross > leverage_cap {
+        return Err(RoutingError::AggregateRiskRejected("projected gross exposure exceeds portfolio leverage limit".into()));
+    }
+    let remaining_daily = daily_loss_cap
+        .checked_sub(snapshot.daily_loss_portfolio)
+        .ok_or_else(|| RoutingError::Arithmetic("remaining daily loss budget underflow".into()))?;
+
+    Ok(AggregateRiskApproval {
+        instrument_id: request.instrument_id.trim().to_string(),
+        parent_notional_portfolio: request.parent_notional_portfolio,
+        maximum_loss_at_stop_portfolio: request.maximum_loss_at_stop_portfolio,
+        projected_gross_exposure_portfolio: projected_gross,
+        remaining_daily_loss_budget_portfolio: remaining_daily,
+        snapshot_observed_at_ms: snapshot.observed_at_ms,
+        market_data_observed_at_ms: request.market_data_observed_at_ms,
+        approved_at_ms: request.now_ms,
+    })
+}
 
 fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
     let values = [
@@ -352,6 +496,92 @@ mod tests {
             split_slippage_bps: d(slippage),
             conversion_cost_bps: d("0"),
         }
+    }
+
+
+    fn aggregate_snapshot() -> AggregatePortfolioSnapshot {
+        AggregatePortfolioSnapshot {
+            equity_portfolio: d("10000"),
+            gross_exposure_portfolio: d("5000"),
+            daily_loss_portfolio: d("100"),
+            open_positions: 2,
+            observed_at_ms: 9_900,
+        }
+    }
+
+    fn aggregate_policy() -> AggregateRiskPolicy {
+        AggregateRiskPolicy {
+            max_risk_fraction: d("0.0025"),
+            max_order_notional_fraction: d("0.25"),
+            max_gross_leverage: d("2"),
+            max_daily_loss_fraction: d("0.02"),
+            max_open_positions: 5,
+            max_snapshot_age_ms: 5_000,
+        }
+    }
+
+    fn aggregate_request() -> AggregateRiskRequest {
+        AggregateRiskRequest {
+            instrument_id: "EURUSD".into(),
+            parent_notional_portfolio: d("1000"),
+            maximum_loss_at_stop_portfolio: d("20"),
+            market_data_observed_at_ms: 9_950,
+            now_ms: 10_000,
+            reduce_only: false,
+        }
+    }
+
+    #[test]
+    fn aggregate_risk_approval_covers_parent_notional_and_stop_loss() {
+        let approval = validate_aggregate_portfolio_risk(
+            &aggregate_snapshot(), aggregate_policy(), &aggregate_request()
+        ).unwrap();
+        assert_eq!(approval.parent_notional_portfolio, d("1000"));
+        assert_eq!(approval.maximum_loss_at_stop_portfolio, d("20"));
+        assert_eq!(approval.projected_gross_exposure_portfolio, d("6000"));
+        assert_eq!(approval.remaining_daily_loss_budget_portfolio, d("100"));
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_parent_risk_even_if_each_child_margin_is_available() {
+        let mut request = aggregate_request();
+        request.maximum_loss_at_stop_portfolio = d("26");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_stale_portfolio_or_market_snapshots() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.observed_at_ms = 1;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+        let mut request = aggregate_request();
+        request.market_data_observed_at_ms = 1;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_leverage_and_daily_loss_overruns() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.gross_exposure_portfolio = d("19500");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+        snapshot = aggregate_snapshot();
+        snapshot.daily_loss_portfolio = d("200");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
     }
 
     #[test]

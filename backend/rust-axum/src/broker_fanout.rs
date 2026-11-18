@@ -1,0 +1,785 @@
+//! Durable parent/child order intent model for multi-account execution.
+//!
+//! This module does not submit orders or write to MongoDB. The coordinator must
+//! persist the parent and every child (with unique indexes) before calling
+//! confirm_durable_persistence and begin_dispatch. Unknown broker outcomes are
+//! reconciled, never blindly resubmitted.
+
+use crate::broker_allocation_policy::{AggregateRiskApproval, ExecutionPlan};
+use crate::broker_contract::{OrderSide, OrderType};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct BrokerAccountKey {
+    pub broker_id: String,
+    pub account_id: String,
+}
+
+impl BrokerAccountKey {
+    fn normalized(&self) -> Result<Self, FanoutError> {
+        let broker_id = self.broker_id.trim().to_ascii_lowercase();
+        let account_id = self.account_id.trim().to_string();
+        if broker_id.is_empty() || account_id.is_empty() {
+            return Err(FanoutError::InvalidSelection);
+        }
+        Ok(Self { broker_id, account_id })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParentOrderRequest {
+    /// Must be derived from a verified server-side user identity. This module
+    /// does not authenticate callers or trust a client-supplied UID.
+    pub owner_scope: String,
+    pub idempotency_key: String,
+    pub instrument_id: String,
+    pub portfolio_currency: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    pub parent_notional_portfolio: Decimal,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FanoutRouteMode {
+    Consolidated,
+    EqualSplit,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ParentOrderStatus {
+    Prepared,
+    Dispatching,
+    PartiallySubmitted,
+    ReconciliationRequired,
+    Completed,
+    PartiallyCompleted,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildOrderStatus {
+    Prepared,
+    Submitting,
+    Accepted,
+    PartiallyFilled,
+    Filled,
+    CancelPending,
+    Cancelled,
+    Rejected,
+    Failed,
+    Unknown,
+}
+
+impl ChildOrderStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Filled | Self::Cancelled | Self::Rejected | Self::Failed)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NotRoutedAccount {
+    pub account: BrokerAccountKey,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FeeCharge {
+    pub execution_id: String,
+    pub amount: Decimal,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParentOrderIntent {
+    pub parent_order_id: String,
+    pub owner_scope: String,
+    pub idempotency_key: String,
+    pub instrument_id: String,
+    pub portfolio_currency: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    pub parent_notional_portfolio: Decimal,
+    pub allocated_notional_portfolio: Decimal,
+    pub unallocated_remainder_portfolio: Decimal,
+    pub route_mode: FanoutRouteMode,
+    pub selected_accounts: Vec<BrokerAccountKey>,
+    pub routed_accounts: Vec<BrokerAccountKey>,
+    pub not_routed_accounts: Vec<NotRoutedAccount>,
+    pub aggregate_risk_approval: AggregateRiskApproval,
+    pub status: ParentOrderStatus,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChildOrderIntent {
+    pub child_order_id: String,
+    /// Stable broker client-order ID derived from parent idempotency + account.
+    pub client_order_id: String,
+    pub parent_order_id: String,
+    pub broker_id: String,
+    pub account_id: String,
+    pub instrument_id: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    /// Native broker quantity; the adapter maps this to its provider-specific unit.
+    pub quantity: Decimal,
+    pub target_notional_portfolio: Decimal,
+    pub allocated_notional_portfolio: Decimal,
+    pub status: ChildOrderStatus,
+    pub broker_order_id: Option<String>,
+    pub requested_quantity: Decimal,
+    pub filled_quantity: Decimal,
+    pub average_fill_price: Option<Decimal>,
+    pub fees: Vec<FeeCharge>,
+    pub execution_ids: Vec<String>,
+    pub last_reason: Option<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChildEvent {
+    Acknowledged { broker_order_id: String },
+    SubmissionRejected { reason: String },
+    SubmissionUnknown { reason: String },
+    ReconciliationAccepted { broker_order_id: String },
+    ReconciliationRejected { reason: String },
+    PartialFill { execution_id: String, quantity: Decimal, price: Decimal, fee: Option<FeeCharge> },
+    Filled { execution_id: String, quantity: Decimal, price: Decimal, fee: Option<FeeCharge> },
+    CancelRequested,
+    Cancelled,
+    FailureConfirmed { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FanoutError {
+    InvalidRequest,
+    InvalidSelection,
+    InvalidPlan(String),
+    RiskApprovalMismatch,
+    NotPersisted,
+    DispatchAlreadyStarted,
+    DispatchNotStarted,
+    ChildNotFound,
+    ChildAlreadySubmitted,
+    InvalidTransition,
+    InvalidAcknowledgement,
+    InvalidExecution,
+    Overfill,
+    Arithmetic,
+    MissingReason,
+}
+
+impl std::fmt::Display for FanoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for FanoutError {}
+
+fn stable_id(prefix: &str, parts: &[&str]) -> String {
+    let mut digest = Sha256::new();
+    for part in parts {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    let encoded = hex::encode(digest.finalize());
+    format!("{prefix}-{}", &encoded[..32])
+}
+
+/// Build parent and child records from a risk-approved route. A consolidated
+/// plan records every selected account not used by the single chosen route;
+/// an equal split must cover the complete selected account set exactly once.
+pub fn build_fanout_intents(
+    request: ParentOrderRequest,
+    selected_accounts: &[BrokerAccountKey],
+    plan: &ExecutionPlan,
+    risk_approval: AggregateRiskApproval,
+) -> Result<(ParentOrderIntent, Vec<ChildOrderIntent>), FanoutError> {
+    let owner_scope = request.owner_scope.trim().to_string();
+    let idempotency_key = request.idempotency_key.trim().to_string();
+    let instrument_id = request.instrument_id.trim().to_string();
+    let portfolio_currency = request.portfolio_currency.trim().to_ascii_uppercase();
+    if owner_scope.is_empty() || owner_scope.len() > 256
+        || idempotency_key.len() < 8 || idempotency_key.len() > 128
+        || instrument_id.is_empty() || instrument_id.len() > 96
+        || portfolio_currency.len() < 3 || portfolio_currency.len() > 12
+        || request.parent_notional_portfolio <= Decimal::ZERO
+        || request.created_at_ms <= 0
+    {
+        return Err(FanoutError::InvalidRequest);
+    }
+    if risk_approval.instrument_id != instrument_id
+        || risk_approval.parent_notional_portfolio != request.parent_notional_portfolio
+        || risk_approval.approved_at_ms < request.created_at_ms
+        || risk_approval.approved_at_ms <= 0
+    {
+        return Err(FanoutError::RiskApprovalMismatch);
+    }
+    if selected_accounts.is_empty() || selected_accounts.len() > 15 {
+        return Err(FanoutError::InvalidSelection);
+    }
+    let selected = selected_accounts.iter().map(BrokerAccountKey::normalized).collect::<Result<Vec<_>, _>>()?;
+    let mut selected_set = HashSet::with_capacity(selected.len());
+    for key in &selected {
+        if !selected_set.insert(key.clone()) {
+            return Err(FanoutError::InvalidSelection);
+        }
+    }
+
+    let (route_mode, allocation) = match plan {
+        ExecutionPlan::Consolidated { broker_id, account_id, allocation, .. } => {
+            if allocation.children.len() != 1
+                || allocation.children[0].broker_id.trim().to_ascii_lowercase() != broker_id.trim().to_ascii_lowercase()
+                || allocation.children[0].account_id.trim() != account_id.trim()
+            {
+                return Err(FanoutError::InvalidPlan("consolidated plan must contain exactly its selected account".into()));
+            }
+            (FanoutRouteMode::Consolidated, allocation)
+        }
+        ExecutionPlan::EqualSplit { allocation, costs, .. } => {
+            if allocation.children.len() != selected.len() || costs.len() != selected.len() {
+                return Err(FanoutError::InvalidPlan("equal split must include every selected account and its cost estimate".into()));
+            }
+            (FanoutRouteMode::EqualSplit, allocation)
+        }
+    };
+    if allocation.parent_notional_portfolio != request.parent_notional_portfolio
+        || allocation.children.is_empty()
+        || allocation.children.iter().any(|child| child.instrument_id.trim() != instrument_id
+            || child.quantity <= Decimal::ZERO
+            || child.allocated_notional_portfolio <= Decimal::ZERO)
+    {
+        return Err(FanoutError::InvalidPlan("allocation does not match the parent instrument or notional".into()));
+    }
+    let allocated_plus_remainder = allocation.allocated_notional_portfolio
+        .checked_add(allocation.unallocated_remainder_portfolio)
+        .ok_or(FanoutError::Arithmetic)?;
+    if allocation.unallocated_remainder_portfolio < Decimal::ZERO
+        || allocated_plus_remainder != request.parent_notional_portfolio
+        || allocation.allocated_notional_portfolio > request.parent_notional_portfolio
+    {
+        return Err(FanoutError::InvalidPlan("allocation exceeds the parent or loses its rounding remainder".into()));
+    }
+
+    let mut routed = Vec::with_capacity(allocation.children.len());
+    let mut routed_set = HashSet::with_capacity(allocation.children.len());
+    for child in &allocation.children {
+        let key = BrokerAccountKey {
+            broker_id: child.broker_id.trim().to_ascii_lowercase(),
+            account_id: child.account_id.trim().to_string(),
+        };
+        if !selected_set.contains(&key) || !routed_set.insert(key.clone()) {
+            return Err(FanoutError::InvalidPlan("plan routes an unselected or duplicate account".into()));
+        }
+        routed.push(key);
+    }
+    if route_mode == FanoutRouteMode::EqualSplit && routed_set != selected_set {
+        return Err(FanoutError::InvalidPlan("equal split silently omits a selected account".into()));
+    }
+
+    let not_routed_accounts = selected.iter().filter(|key| !routed_set.contains(*key))
+        .map(|key| NotRoutedAccount {
+            account: key.clone(),
+            reason: match route_mode {
+                FanoutRouteMode::Consolidated => format!(
+                    "Consolidated into {}/{}; this selected account receives no child order",
+                    routed[0].broker_id, routed[0].account_id
+                ),
+                FanoutRouteMode::EqualSplit => "Not routed".into(),
+            },
+        }).collect::<Vec<_>>();
+    let parent_order_id = stable_id("qop", &[&owner_scope, &idempotency_key]);
+    let mut children = Vec::with_capacity(allocation.children.len());
+    for child in &allocation.children {
+        let broker_id = child.broker_id.trim().to_ascii_lowercase();
+        let account_id = child.account_id.trim().to_string();
+        let child_order_id = stable_id("qoc", &[
+            &parent_order_id, &broker_id, &account_id, &instrument_id
+        ]);
+        children.push(ChildOrderIntent {
+            child_order_id: child_order_id.clone(),
+            client_order_id: child_order_id,
+            parent_order_id: parent_order_id.clone(),
+            broker_id,
+            account_id,
+            instrument_id: instrument_id.clone(),
+            side: request.side,
+            order_type: request.order_type,
+            quantity: child.quantity,
+            target_notional_portfolio: child.target_notional_portfolio,
+            allocated_notional_portfolio: child.allocated_notional_portfolio,
+            status: ChildOrderStatus::Prepared,
+            broker_order_id: None,
+            requested_quantity: child.quantity,
+            filled_quantity: Decimal::ZERO,
+            average_fill_price: None,
+            fees: Vec::new(),
+            execution_ids: Vec::new(),
+            last_reason: None,
+            created_at_ms: request.created_at_ms,
+            updated_at_ms: request.created_at_ms,
+        });
+    }
+    let parent = ParentOrderIntent {
+        parent_order_id,
+        owner_scope,
+        idempotency_key,
+        instrument_id,
+        portfolio_currency,
+        side: request.side,
+        order_type: request.order_type,
+        parent_notional_portfolio: request.parent_notional_portfolio,
+        allocated_notional_portfolio: allocation.allocated_notional_portfolio,
+        unallocated_remainder_portfolio: allocation.unallocated_remainder_portfolio,
+        route_mode,
+        selected_accounts: selected,
+        routed_accounts: routed,
+        not_routed_accounts,
+        aggregate_risk_approval: risk_approval,
+        status: ParentOrderStatus::Prepared,
+        created_at_ms: request.created_at_ms,
+        updated_at_ms: request.created_at_ms,
+    };
+    Ok((parent, children))
+}
+
+/// In-memory state transition guard for a coordinator that persists the
+/// returned records before calling confirm_durable_persistence. It is not a
+/// substitute for a database transaction or durable unique indexes.
+pub struct FanoutLifecycle {
+    pub parent: ParentOrderIntent,
+    pub children: Vec<ChildOrderIntent>,
+    persistence_confirmed: bool,
+    dispatch_started: bool,
+}
+
+impl FanoutLifecycle {
+    pub fn new(parent: ParentOrderIntent, children: Vec<ChildOrderIntent>) -> Result<Self, FanoutError> {
+        if children.is_empty()
+            || children.len() != parent.routed_accounts.len()
+            || children.iter().any(|child| child.parent_order_id != parent.parent_order_id)
+        {
+            return Err(FanoutError::InvalidPlan("parent and child records do not match".into()));
+        }
+        Ok(Self { parent, children, persistence_confirmed: false, dispatch_started: false })
+    }
+
+    /// Call only after the parent and every child intent have been durably
+    /// written with unique parent/client-order idempotency indexes.
+    pub fn confirm_durable_persistence(&mut self) {
+        self.persistence_confirmed = true;
+    }
+
+    pub fn begin_dispatch(&mut self, now_ms: i64) -> Result<(), FanoutError> {
+        if !self.persistence_confirmed {
+            return Err(FanoutError::NotPersisted);
+        }
+        if self.dispatch_started || now_ms < self.parent.created_at_ms {
+            return Err(FanoutError::DispatchAlreadyStarted);
+        }
+        self.dispatch_started = true;
+        self.parent.status = ParentOrderStatus::Dispatching;
+        self.parent.updated_at_ms = now_ms;
+        Ok(())
+    }
+
+    pub fn begin_child_submission(&mut self, child_order_id: &str, now_ms: i64) -> Result<(), FanoutError> {
+        if !self.dispatch_started {
+            return Err(FanoutError::DispatchNotStarted);
+        }
+        let child = self.children.iter_mut().find(|child| child.child_order_id == child_order_id)
+            .ok_or(FanoutError::ChildNotFound)?;
+        if child.status != ChildOrderStatus::Prepared || now_ms < child.created_at_ms {
+            return Err(FanoutError::ChildAlreadySubmitted);
+        }
+        child.status = ChildOrderStatus::Submitting;
+        child.updated_at_ms = now_ms;
+        self.parent.updated_at_ms = now_ms;
+        Ok(())
+    }
+
+    pub fn apply_child_event(
+        &mut self,
+        child_order_id: &str,
+        event: ChildEvent,
+        now_ms: i64,
+    ) -> Result<bool, FanoutError> {
+        let child = self.children.iter_mut().find(|child| child.child_order_id == child_order_id)
+            .ok_or(FanoutError::ChildNotFound)?;
+        if now_ms < child.updated_at_ms {
+            return Err(FanoutError::InvalidTransition);
+        }
+        let changed = child.apply(event, now_ms)?;
+        self.refresh_parent_status();
+        self.parent.updated_at_ms = now_ms;
+        Ok(changed)
+    }
+
+    fn refresh_parent_status(&mut self) {
+        if self.children.iter().any(|child| child.status == ChildOrderStatus::Unknown) {
+            self.parent.status = ParentOrderStatus::ReconciliationRequired;
+            return;
+        }
+        if self.children.iter().all(|child| child.status == ChildOrderStatus::Filled) {
+            self.parent.status = ParentOrderStatus::Completed;
+            return;
+        }
+        if self.children.iter().all(|child| child.status.is_terminal()) {
+            self.parent.status = if self.children.iter().all(|child| child.status == ChildOrderStatus::Cancelled) {
+                ParentOrderStatus::Cancelled
+            } else if self.children.iter().any(|child| child.filled_quantity > Decimal::ZERO) {
+                ParentOrderStatus::PartiallyCompleted
+            } else {
+                ParentOrderStatus::Failed
+            };
+            return;
+        }
+        let has_failure = self.children.iter().any(|child| matches!(
+            child.status, ChildOrderStatus::Rejected | ChildOrderStatus::Failed | ChildOrderStatus::Cancelled
+        ));
+        let has_execution = self.children.iter().any(|child| matches!(
+            child.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::Filled
+        ));
+        self.parent.status = if has_failure && has_execution {
+            ParentOrderStatus::PartiallySubmitted
+        } else if self.dispatch_started {
+            ParentOrderStatus::Dispatching
+        } else {
+            ParentOrderStatus::Prepared
+        };
+    }
+}
+
+impl ChildOrderIntent {
+    fn apply(&mut self, event: ChildEvent, now_ms: i64) -> Result<bool, FanoutError> {
+        if self.status.is_terminal() {
+            return Err(FanoutError::InvalidTransition);
+        }
+        match event {
+            ChildEvent::Acknowledged { broker_order_id } => {
+                if self.status != ChildOrderStatus::Submitting
+                    || broker_order_id.trim().is_empty()
+                    || broker_order_id.len() > 128
+                {
+                    return Err(FanoutError::InvalidAcknowledgement);
+                }
+                self.broker_order_id = Some(broker_order_id);
+                self.status = ChildOrderStatus::Accepted;
+            }
+            ChildEvent::SubmissionRejected { reason } => {
+                if self.status != ChildOrderStatus::Submitting { return Err(FanoutError::InvalidTransition); }
+                if reason.trim().is_empty() { return Err(FanoutError::MissingReason); }
+                self.last_reason = Some(reason);
+                self.status = ChildOrderStatus::Rejected;
+            }
+            ChildEvent::SubmissionUnknown { reason } => {
+                if self.status != ChildOrderStatus::Submitting { return Err(FanoutError::InvalidTransition); }
+                if reason.trim().is_empty() { return Err(FanoutError::MissingReason); }
+                self.last_reason = Some(reason);
+                self.status = ChildOrderStatus::Unknown;
+            }
+            ChildEvent::ReconciliationAccepted { broker_order_id } => {
+                if self.status != ChildOrderStatus::Unknown
+                    || broker_order_id.trim().is_empty()
+                    || broker_order_id.len() > 128
+                {
+                    return Err(FanoutError::InvalidAcknowledgement);
+                }
+                self.broker_order_id = Some(broker_order_id);
+                self.status = ChildOrderStatus::Accepted;
+            }
+            ChildEvent::ReconciliationRejected { reason } => {
+                if self.status != ChildOrderStatus::Unknown { return Err(FanoutError::InvalidTransition); }
+                if reason.trim().is_empty() { return Err(FanoutError::MissingReason); }
+                self.last_reason = Some(reason);
+                self.status = ChildOrderStatus::Rejected;
+            }
+            ChildEvent::PartialFill { execution_id, quantity, price, fee } => {
+                return self.apply_fill(execution_id, quantity, price, fee, false, now_ms);
+            }
+            ChildEvent::Filled { execution_id, quantity, price, fee } => {
+                return self.apply_fill(execution_id, quantity, price, fee, true, now_ms);
+            }
+            ChildEvent::CancelRequested => {
+                if !matches!(self.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled) {
+                    return Err(FanoutError::InvalidTransition);
+                }
+                self.status = ChildOrderStatus::CancelPending;
+            }
+            ChildEvent::Cancelled => {
+                if !matches!(self.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::CancelPending) {
+                    return Err(FanoutError::InvalidTransition);
+                }
+                self.status = ChildOrderStatus::Cancelled;
+            }
+            ChildEvent::FailureConfirmed { reason } => {
+                if self.status != ChildOrderStatus::Submitting { return Err(FanoutError::InvalidTransition); }
+                if reason.trim().is_empty() { return Err(FanoutError::MissingReason); }
+                self.last_reason = Some(reason);
+                self.status = ChildOrderStatus::Failed;
+            }
+        }
+        self.updated_at_ms = now_ms;
+        Ok(true)
+    }
+
+    fn apply_fill(
+        &mut self,
+        execution_id: String,
+        quantity: Decimal,
+        price: Decimal,
+        fee: Option<FeeCharge>,
+        final_fill: bool,
+        now_ms: i64,
+    ) -> Result<bool, FanoutError> {
+        if !matches!(self.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::CancelPending) {
+            return Err(FanoutError::InvalidTransition);
+        }
+        if execution_id.trim().is_empty() || execution_id.len() > 128
+            || quantity <= Decimal::ZERO || price <= Decimal::ZERO
+        {
+            return Err(FanoutError::InvalidExecution);
+        }
+        if self.execution_ids.iter().any(|seen| seen == &execution_id) {
+            return Ok(false);
+        }
+        if let Some(charge) = &fee {
+            if charge.execution_id != execution_id || charge.amount < Decimal::ZERO || charge.currency.trim().is_empty() {
+                return Err(FanoutError::InvalidExecution);
+            }
+        }
+        let next_filled = self.filled_quantity.checked_add(quantity).ok_or(FanoutError::Arithmetic)?;
+        if next_filled > self.requested_quantity { return Err(FanoutError::Overfill); }
+        if final_fill && next_filled != self.requested_quantity { return Err(FanoutError::InvalidExecution); }
+        let previous_value = self.average_fill_price.unwrap_or(Decimal::ZERO)
+            .checked_mul(self.filled_quantity).ok_or(FanoutError::Arithmetic)?;
+        let fill_value = price.checked_mul(quantity).ok_or(FanoutError::Arithmetic)?;
+        let average = previous_value.checked_add(fill_value)
+            .and_then(|value| value.checked_div(next_filled)).ok_or(FanoutError::Arithmetic)?;
+        self.filled_quantity = next_filled;
+        self.average_fill_price = Some(average);
+        self.execution_ids.push(execution_id);
+        if let Some(charge) = fee { self.fees.push(charge); }
+        self.status = if next_filled == self.requested_quantity {
+            ChildOrderStatus::Filled
+        } else if self.status == ChildOrderStatus::CancelPending {
+            ChildOrderStatus::CancelPending
+        } else {
+            ChildOrderStatus::PartiallyFilled
+        };
+        self.updated_at_ms = now_ms;
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::broker_allocation::{ChildAllocation, EqualAllocation};
+    use crate::broker_allocation_policy::{AggregateRiskApproval, BrokerCost};
+
+    fn d(value: &str) -> Decimal { value.parse().unwrap() }
+
+    fn request() -> ParentOrderRequest {
+        ParentOrderRequest {
+            owner_scope: "verified-user-scope".into(),
+            idempotency_key: "parent-key-0001".into(),
+            instrument_id: "EURUSD".into(),
+            portfolio_currency: "KES".into(),
+            side: OrderSide::Buy,
+            order_type: OrderType::Market,
+            parent_notional_portfolio: d("100"),
+            created_at_ms: 10_000,
+        }
+    }
+
+    fn risk() -> AggregateRiskApproval {
+        AggregateRiskApproval {
+            instrument_id: "EURUSD".into(),
+            parent_notional_portfolio: d("100"),
+            maximum_loss_at_stop_portfolio: d("1"),
+            projected_gross_exposure_portfolio: d("200"),
+            remaining_daily_loss_budget_portfolio: d("10"),
+            snapshot_observed_at_ms: 9_900,
+            market_data_observed_at_ms: 9_950,
+            approved_at_ms: 10_000,
+        }
+    }
+
+    fn selected() -> Vec<BrokerAccountKey> {
+        vec![
+            BrokerAccountKey { broker_id: "broker-a".into(), account_id: "account-a".into() },
+            BrokerAccountKey { broker_id: "broker-b".into(), account_id: "account-b".into() },
+        ]
+    }
+
+    fn child(broker: &str, account: &str, quantity: &str, allocated: &str) -> ChildAllocation {
+        ChildAllocation {
+            broker_id: broker.into(),
+            account_id: account.into(),
+            instrument_id: "EURUSD".into(),
+            target_notional_portfolio: d(allocated),
+            quantity: d(quantity),
+            allocated_notional_portfolio: d(allocated),
+        }
+    }
+
+    fn split_plan() -> ExecutionPlan {
+        let children = vec![
+            child("broker-a", "account-a", "50", "50"),
+            child("broker-b", "account-b", "50", "50"),
+        ];
+        ExecutionPlan::EqualSplit {
+            allocation: EqualAllocation {
+                parent_notional_portfolio: d("100"),
+                target_notional_per_account: d("50"),
+                children,
+                allocated_notional_portfolio: d("100"),
+                unallocated_remainder_portfolio: Decimal::ZERO,
+            },
+            costs: vec![
+                BrokerCost { broker_id:"broker-a".into(), account_id:"account-a".into(), allocated_notional_portfolio:d("50"), estimated_fee_portfolio:Decimal::ZERO, estimated_slippage_portfolio:Decimal::ZERO, estimated_conversion_cost_portfolio:Decimal::ZERO, estimated_margin_required_portfolio:Decimal::ZERO, total_estimated_execution_cost_portfolio:Decimal::ZERO },
+                BrokerCost { broker_id:"broker-b".into(), account_id:"account-b".into(), allocated_notional_portfolio:d("50"), estimated_fee_portfolio:Decimal::ZERO, estimated_slippage_portfolio:Decimal::ZERO, estimated_conversion_cost_portfolio:Decimal::ZERO, estimated_margin_required_portfolio:Decimal::ZERO, total_estimated_execution_cost_portfolio:Decimal::ZERO },
+            ],
+            estimated_total_cost_portfolio: Decimal::ZERO,
+            single_broker_comparator_cost_portfolio: None,
+            reason: "complete split".into(),
+        }
+    }
+
+    fn consolidated_plan() -> ExecutionPlan {
+        let child = child("broker-a", "account-a", "99", "99");
+        ExecutionPlan::Consolidated {
+            broker_id: "broker-a".into(),
+            account_id: "account-a".into(),
+            allocation: EqualAllocation {
+                parent_notional_portfolio: d("100"),
+                target_notional_per_account: d("100"),
+                children: vec![child],
+                allocated_notional_portfolio: d("99"),
+                unallocated_remainder_portfolio: d("1"),
+            },
+            cost: BrokerCost { broker_id:"broker-a".into(), account_id:"account-a".into(), allocated_notional_portfolio:d("99"), estimated_fee_portfolio:Decimal::ZERO, estimated_slippage_portfolio:Decimal::ZERO, estimated_conversion_cost_portfolio:Decimal::ZERO, estimated_margin_required_portfolio:Decimal::ZERO, total_estimated_execution_cost_portfolio:Decimal::ZERO },
+            reason: "consolidate".into(),
+        }
+    }
+
+    fn build(plan: &ExecutionPlan) -> FanoutLifecycle {
+        let (parent, children) = build_fanout_intents(request(), &selected(), plan, risk()).unwrap();
+        FanoutLifecycle::new(parent, children).unwrap()
+    }
+
+    #[test]
+    fn equal_split_requires_every_selected_account_and_preserves_remainder() {
+        let mut plan = split_plan();
+        if let ExecutionPlan::EqualSplit { allocation, .. } = &mut plan {
+            allocation.parent_notional_portfolio = d("101");
+            allocation.allocated_notional_portfolio = d("100");
+            allocation.unallocated_remainder_portfolio = d("1");
+        }
+        let mut req = request();
+        req.parent_notional_portfolio = d("101");
+        let (parent, children) = build_fanout_intents(req, &selected(), &plan, {
+            let mut value = risk(); value.parent_notional_portfolio = d("101"); value
+        }).unwrap();
+        assert_eq!(children.len(), 2);
+        assert_eq!(parent.unallocated_remainder_portfolio, d("1"));
+        assert_eq!(parent.allocated_notional_portfolio + parent.unallocated_remainder_portfolio, d("101"));
+    }
+
+    #[test]
+    fn equal_split_rejects_a_silently_omitted_selected_account() {
+        let mut plan = split_plan();
+        if let ExecutionPlan::EqualSplit { allocation, costs, .. } = &mut plan {
+            allocation.children.pop();
+            costs.pop();
+        }
+        assert!(matches!(
+            build_fanout_intents(request(), &selected(), &plan, risk()),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+    }
+
+    #[test]
+    fn consolidated_route_records_selected_accounts_that_receive_no_child() {
+        let (parent, children) = build_fanout_intents(request(), &selected(), &consolidated_plan(), risk()).unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(parent.not_routed_accounts.len(), 1);
+        assert!(parent.not_routed_accounts[0].reason.contains("receives no child order"));
+    }
+
+    #[test]
+    fn child_client_order_ids_are_deterministic_and_scoped_to_account() {
+        let (_, first) = build_fanout_intents(request(), &selected(), &split_plan(), risk()).unwrap();
+        let (_, second) = build_fanout_intents(request(), &selected(), &split_plan(), risk()).unwrap();
+        assert_eq!(first[0].client_order_id, second[0].client_order_id);
+        assert_ne!(first[0].client_order_id, first[1].client_order_id);
+        assert_eq!(first[0].client_order_id.len(), 36);
+    }
+
+    #[test]
+    fn dispatch_is_blocked_until_all_intents_are_persisted() {
+        let mut fanout = build(&split_plan());
+        assert_eq!(fanout.begin_dispatch(10_001), Err(FanoutError::NotPersisted));
+        fanout.confirm_durable_persistence();
+        assert!(fanout.begin_dispatch(10_001).is_ok());
+    }
+
+    #[test]
+    fn unknown_outcome_is_reconciled_and_never_blindly_resubmitted() {
+        let mut fanout = build(&split_plan());
+        fanout.confirm_durable_persistence();
+        fanout.begin_dispatch(10_001).unwrap();
+        let id = fanout.children[0].child_order_id.clone();
+        fanout.begin_child_submission(&id, 10_002).unwrap();
+        fanout.apply_child_event(&id, ChildEvent::SubmissionUnknown { reason: "timeout after request write".into() }, 10_003).unwrap();
+        assert_eq!(fanout.parent.status, ParentOrderStatus::ReconciliationRequired);
+        assert_eq!(fanout.begin_child_submission(&id, 10_004), Err(FanoutError::ChildAlreadySubmitted));
+        fanout.apply_child_event(&id, ChildEvent::ReconciliationAccepted { broker_order_id: "exchange-1".into() }, 10_005).unwrap();
+        assert_eq!(fanout.children[0].status, ChildOrderStatus::Accepted);
+    }
+
+    #[test]
+    fn fills_are_idempotent_weighted_and_cannot_overfill() {
+        let mut fanout = build(&split_plan());
+        fanout.confirm_durable_persistence();
+        fanout.begin_dispatch(10_001).unwrap();
+        let id = fanout.children[0].child_order_id.clone();
+        fanout.begin_child_submission(&id, 10_002).unwrap();
+        fanout.apply_child_event(&id, ChildEvent::Acknowledged { broker_order_id: "exchange-1".into() }, 10_003).unwrap();
+        let event = ChildEvent::PartialFill { execution_id: "fill-1".into(), quantity: d("20"), price: d("1.1"), fee: None };
+        assert!(fanout.apply_child_event(&id, event.clone(), 10_004).unwrap());
+        assert!(!fanout.apply_child_event(&id, event, 10_005).unwrap());
+        assert_eq!(fanout.children[0].filled_quantity, d("20"));
+        assert_eq!(fanout.children[0].average_fill_price, Some(d("1.1")));
+        assert_eq!(
+            fanout.apply_child_event(&id, ChildEvent::PartialFill { execution_id: "fill-2".into(), quantity: d("40"), price: d("1.2"), fee: None }, 10_006),
+            Err(FanoutError::Overfill)
+        );
+    }
+
+    #[test]
+    fn partial_success_and_rejection_remain_visible_on_parent() {
+        let mut fanout = build(&split_plan());
+        fanout.confirm_durable_persistence();
+        fanout.begin_dispatch(10_001).unwrap();
+        let first = fanout.children[0].child_order_id.clone();
+        let second = fanout.children[1].child_order_id.clone();
+        fanout.begin_child_submission(&first, 10_002).unwrap();
+        fanout.begin_child_submission(&second, 10_002).unwrap();
+        fanout.apply_child_event(&first, ChildEvent::Acknowledged { broker_order_id: "exchange-1".into() }, 10_003).unwrap();
+        fanout.apply_child_event(&second, ChildEvent::SubmissionRejected { reason: "minimum notional".into() }, 10_003).unwrap();
+        assert_eq!(fanout.parent.status, ParentOrderStatus::PartiallySubmitted);
+    }
+}
+
