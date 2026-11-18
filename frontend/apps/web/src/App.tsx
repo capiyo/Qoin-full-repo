@@ -616,11 +616,9 @@ export default function App() {
   }, []);
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   function rememberCardMode(symbol: string, mode: InstrumentMode) {
-    setCardModeBySymbol((current) => {
-      const next = { ...current, [symbol]: mode };
-      try { window.localStorage.setItem("qoin:archive-card-modes", JSON.stringify(next)); } catch { /* storage may be unavailable */ }
-      return next;
-    });
+    const next = { ...cardModeBySymbol, [symbol]: mode };
+    setCardModeBySymbol(next);
+    try { window.localStorage.setItem("qoin:archive-card-modes", JSON.stringify(next)); } catch { /* storage may be unavailable */ }
   }
   function navigateToInstrument(item: Instrument, mode: InstrumentMode) {
     const path = instrumentRoute(item, mode);
