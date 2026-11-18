@@ -254,6 +254,7 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
       <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#8794A7", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
       <span style={{ color: "#2867DC", fontSize: 9, fontWeight: 800 }}>RESEARCH · READ ONLY</span>
     </div>
+    <p aria-live="polite" style={{ margin: 0, color: "#8794A7", fontSize: 9 }}>{status}</p>
     {!ledger ? <p style={{ margin: 0, color: "#8794A7", fontSize: 11 }}>{status}</p> : <>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "#8794A7", fontSize: 10 }}>
         <span>Universe <strong style={{ color: "#243750" }}>{ledger.universe_count}</strong></span>
@@ -709,6 +710,32 @@ export default function App() {
     const symbols = instruments.map((item) => item.engineSymbol);
     if (!symbols.length) return;
     let active = true;
+    let ledgerRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let ledgerRefreshInFlight = false;
+    let ledgerRefreshQueued = false;
+    const refreshSetLedger = async () => {
+      if (!active || !selected) return;
+      if (ledgerRefreshInFlight) { ledgerRefreshQueued = true; return; }
+      ledgerRefreshInFlight = true;
+      try {
+        const result = await getQoinSetLedger(selected.engineSymbol, 1000);
+        if (active) {
+          setSetLedger(result);
+          setSetLedgerStatus("Live · " + new Date().toLocaleTimeString());
+        }
+      } catch (error) {
+        if (active) setSetLedgerStatus(error instanceof Error ? "Refresh failed · " + error.message : "Set ledger refresh failed");
+      } finally {
+        ledgerRefreshInFlight = false;
+        if (ledgerRefreshQueued && active) { ledgerRefreshQueued = false; void refreshSetLedger(); }
+      }
+    };
+    const scheduleSetLedgerRefresh = () => {
+      if (!selected) return;
+      setSetLedgerStatus("New evidence · rebuilding V2 projection…");
+      if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer);
+      ledgerRefreshTimer = setTimeout(() => { ledgerRefreshTimer = null; void refreshSetLedger(); }, 450);
+    };
     const unsubscribe = subscribeQoinStream(symbols, (update) => {
       if (!active) return;
       if (update.type === "market.update" && update.symbol) {
@@ -735,6 +762,7 @@ export default function App() {
             setLastEvent(update.event);
             setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 1000));
           }
+          if (update.event) scheduleSetLedgerRefresh();
           if (update.decision) {
             setVector(update.decision);
             setVectorHistory((current) => [...current.slice(-499), {
@@ -748,7 +776,7 @@ export default function App() {
       }
       if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
     }, setStreamStatus);
-    return () => { active = false; unsubscribe(); };
+    return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
   }, [instruments, selected?.engineSymbol]);
 
   useEffect(() => {
