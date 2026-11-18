@@ -454,3 +454,11 @@ body{background:var(--qoin-bg)}
 .broker-capital-result small{grid-column:1;grid-row:2}
 .broker-capital-preview>p{grid-column:1/-1;margin:0;color:#819989;font-size:9px;line-height:1.6}
 @media(max-width:650px){.broker-capital-preview{grid-template-columns:minmax(0,1fr);padding:13px}.broker-capital-result strong{font-size:22px}}
+
+/* Addressable instrument workspaces: these routes render as pages, not modal overlays. */
+.modal-backdrop.instrument-route-backdrop{position:fixed;z-index:40;inset:0;display:block;overflow:auto;padding:0;background:var(--qoin-bg,#0e1711);backdrop-filter:none}
+.vector-modal.instrument-route-page{display:flex;width:100%;height:100dvh;max-height:none;min-height:100dvh;flex-direction:column;overflow:auto;border:0;border-radius:0;box-shadow:none}
+.vector-modal.instrument-route-page .modal-header{position:sticky;top:0;z-index:3;background:var(--qoin-panel,#111e16)}
+.vector-modal.instrument-route-page .modal-body{width:min(1180px,100%);margin:0 auto;flex:1}
+.vector-modal.instrument-route-page .modal-footer{position:sticky;bottom:0;z-index:3;background:var(--qoin-panel,#111e16)}
+@media(max-width:650px){.vector-modal.instrument-route-page .modal-header{padding:17px 16px 13px}.vector-modal.instrument-route-page .modal-header h2{font-size:20px}.vector-modal.instrument-route-page .modal-body{padding:16px}.vector-modal.instrument-route-page .modal-footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}}
