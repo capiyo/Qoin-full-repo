@@ -752,7 +752,19 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
             {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
-              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Market vector mechanics</Text><Text style={styles.attentionCaption}>Persisted V1 vector · raw event replay · no orders</Text></View>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Backtest mechanics</Text><Text style={styles.attentionCaption}>Historical V1 replay · deterministic event order · no orders</Text></View>
+              <View style={styles.tracePanel}>
+                <Text style={styles.attentionTitle}>How the replay progresses</Text>
+                {[
+                  ["01 · Historical tape", "Load stored observations for this instrument and venue, ordered by event timestamp and event ID."],
+                  ["02 · State reconstruction", "Rebuild the same V1 state and normalized feature calculations used by the live research engine."],
+                  ["03 · Decision evaluation", "Apply the pinned strategy version and gates; record BUY, SELL and WAIT decisions."],
+                  ["04 · Simulated execution", "Fill only on a strictly later eligible trade or book event. Buys use ask, sells use bid; latency and liquidity participation constrain fills."],
+                  ["05 · Cost accounting", "Apply fees, slippage, market impact and recorded funding cashflows to equity and realized P/L."],
+                  ["06 · Audit", "Inspect fills, pending orders, event gaps, assumptions and cost-stress scenarios. Nothing is sent to a broker."],
+                ].map(([title, description]) => <View key={title} style={{gap:3}}><Text style={styles.engineValue}>{title}</Text><Text style={styles.attentionCaption}>{description}</Text></View>)}
+                <Text style={styles.disclaimer}>Only persisted observations are replayed. Missing history remains missing; Qoin reports data gaps rather than fabricating candles or prices.</Text>
+              </View>
               <View style={styles.mapWrap}>
                 <Svg viewBox="0 0 100 100" width="100%" height={220}>
                   <Rect x="0" y="0" width="100" height="100" fill="#ffffff" />
