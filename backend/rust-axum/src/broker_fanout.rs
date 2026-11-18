@@ -5,7 +5,7 @@
 //! confirm_durable_persistence and begin_dispatch. Unknown broker outcomes are
 //! reconciled, never blindly resubmitted.
 
-use crate::broker_allocation_policy::{AggregateRiskApproval, ExecutionPlan};
+use crate::broker_allocation_policy::{AggregateRiskApproval, BrokerCost, ExecutionPlan};
 use crate::broker_contract::{OrderSide, OrderType};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -339,6 +339,27 @@ pub async fn persist_fanout_intents(
     }
 }
 
+fn validate_cost_for_child(cost: &BrokerCost, child: &crate::broker_allocation::ChildAllocation) -> Result<(), FanoutError> {
+    let component_total = cost.estimated_fee_portfolio
+        .checked_add(cost.estimated_slippage_portfolio)
+        .and_then(|value| value.checked_add(cost.estimated_conversion_cost_portfolio))
+        .ok_or(FanoutError::Arithmetic)?;
+    if cost.broker_id.trim().to_ascii_lowercase() != child.broker_id.trim().to_ascii_lowercase()
+        || cost.account_id.trim() != child.account_id.trim()
+        || cost.allocated_notional_portfolio != child.allocated_notional_portfolio
+        || cost.estimated_fee_portfolio < Decimal::ZERO
+        || cost.estimated_slippage_portfolio < Decimal::ZERO
+        || cost.estimated_conversion_cost_portfolio < Decimal::ZERO
+        || cost.estimated_margin_required_portfolio < Decimal::ZERO
+        || cost.total_estimated_execution_cost_portfolio != component_total
+    {
+        return Err(FanoutError::InvalidPlan(
+            "broker cost estimate does not match its child allocation or component totals".into()
+        ));
+    }
+    Ok(())
+}
+
 /// Build parent and child records from a risk-approved route. A consolidated
 /// plan records every selected account not used by the single chosen route;
 /// an equal split must cover the complete selected account set exactly once.
@@ -381,18 +402,37 @@ pub fn build_fanout_intents(
     }
 
     let (route_mode, allocation) = match plan {
-        ExecutionPlan::Consolidated { broker_id, account_id, allocation, .. } => {
+        ExecutionPlan::Consolidated { broker_id, account_id, allocation, cost, .. } => {
             if allocation.children.len() != 1
                 || allocation.children[0].broker_id.trim().to_ascii_lowercase() != broker_id.trim().to_ascii_lowercase()
                 || allocation.children[0].account_id.trim() != account_id.trim()
             {
                 return Err(FanoutError::InvalidPlan("consolidated plan must contain exactly its selected account".into()));
             }
+            validate_cost_for_child(cost, &allocation.children[0])?;
             (FanoutRouteMode::Consolidated, allocation)
         }
-        ExecutionPlan::EqualSplit { allocation, costs, .. } => {
+        ExecutionPlan::EqualSplit { allocation, costs, single_broker_comparator_cost_portfolio, .. } => {
             if allocation.children.len() != selected.len() || costs.len() != selected.len() {
                 return Err(FanoutError::InvalidPlan("equal split must include every selected account and its cost estimate".into()));
+            }
+            if single_broker_comparator_cost_portfolio.is_some_and(|value| value < Decimal::ZERO) {
+                return Err(FanoutError::InvalidPlan("single-broker comparator cost cannot be negative".into()));
+            }
+            let mut cost_accounts = HashSet::with_capacity(costs.len());
+            for cost in costs {
+                let child = allocation.children.iter().find(|child|
+                    child.broker_id.trim().eq_ignore_ascii_case(cost.broker_id.trim())
+                        && child.account_id.trim() == cost.account_id.trim()
+                ).ok_or_else(|| FanoutError::InvalidPlan("cost estimate references an account outside the split".into()))?;
+                validate_cost_for_child(cost, child)?;
+                let key = BrokerAccountKey {
+                    broker_id: cost.broker_id.trim().to_ascii_lowercase(),
+                    account_id: cost.account_id.trim().to_string(),
+                };
+                if !cost_accounts.insert(key) {
+                    return Err(FanoutError::InvalidPlan("split contains duplicate account cost estimates".into()));
+                }
             }
             (FanoutRouteMode::EqualSplit, allocation)
         }
@@ -993,6 +1033,31 @@ mod tests {
         if let ExecutionPlan::EqualSplit { allocation, costs, .. } = &mut plan {
             allocation.children.pop();
             costs.pop();
+        }
+        assert!(matches!(
+            build_fanout_intents(request(), &selected(), &plan, risk()),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+    }
+
+    #[test]
+    fn equal_split_rejects_cost_estimate_for_the_wrong_account() {
+        let mut plan = split_plan();
+        if let ExecutionPlan::EqualSplit { costs, .. } = &mut plan {
+            costs[0].broker_id = "unselected-broker".into();
+        }
+        assert!(matches!(
+            build_fanout_intents(request(), &selected(), &plan, risk()),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+    }
+
+    #[test]
+    fn equal_split_rejects_underreported_cost_components() {
+        let mut plan = split_plan();
+        if let ExecutionPlan::EqualSplit { costs, .. } = &mut plan {
+            costs[0].estimated_fee_portfolio = d("5");
+            costs[0].total_estimated_execution_cost_portfolio = Decimal::ZERO;
         }
         assert!(matches!(
             build_fanout_intents(request(), &selected(), &plan, risk()),
