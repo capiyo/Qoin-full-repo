@@ -4,6 +4,7 @@ export const qoinColors = {
   bgSecondary: "#FFFFFF",
   border: "#E6EBF2",
   accentCyan: "#2867DC",
+  accent: "#2867DC",
   bullish: "#2867DC",
   bearish: "#E05A67",
   warning: "#D99528",
