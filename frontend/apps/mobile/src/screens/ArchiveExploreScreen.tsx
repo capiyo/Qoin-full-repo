@@ -99,6 +99,62 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </View>;
 }
 
+
+function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | null }) {
+  const names = QOIN_FEATURE_NAMES;
+  const raw = names.map((name) => decision?.features?.[name] ?? 0);
+  const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
+  const directions = names.map((_, index) => -Math.PI / 2 + index * Math.PI / 3);
+  const endpoints = attended.map((value, index) => ({
+    x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
+    y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
+  }));
+  const attention = decision?.attention ?? [];
+  const links = names.flatMap((name, from) => names.map((target, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
+    .sort((a, b) => b.weight - a.weight).slice(0, 12);
+  const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
+  const output = decision?.decision_vector ?? [0, 0];
+  return <View style={styles.tracePanel}>
+    <Text style={styles.attentionTitle}>Vector space · six engine dimensions</Text>
+    <Text style={styles.attentionCaption}>2D projection of the actual R⁶ feature state · not a learned embedding</Text>
+    <View style={styles.mapWrap}>
+      <Svg viewBox="0 0 100 100" width="100%" height={260}>
+        <Rect width="100" height="100" fill="#0E1612"/>
+        {[12,22,32].map((radius)=><Circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#365247" strokeWidth=".35" strokeDasharray="1.5 2"/>)}
+        <Line x1="5" y1="50" x2="95" y2="50" stroke="#668477" strokeWidth=".5"/>
+        <Line x1="50" y1="5" x2="50" y2="95" stroke="#668477" strokeWidth=".5"/>
+        {links.map((link,index)=><Line key={index} x1={endpoints[link.from].x} y1={endpoints[link.from].y} x2={endpoints[link.to].x} y2={endpoints[link.to].y} stroke="#D6A85C" strokeWidth={0.35+link.weight*1.1} opacity={0.18+link.weight*.55}/>)}
+        {endpoints.map((point,index)=><React.Fragment key={names[index]}>
+          <Line x1="50" y1="50" x2={point.x} y2={point.y} stroke={colors[index]} strokeWidth="1.2"/>
+          <Circle cx={point.x} cy={point.y} r="1.8" fill={colors[index]}/>
+          <SvgText x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} fill="#D6E4DC" fontSize="3.8" textAnchor="middle">{names[index].slice(0,8)}</SvgText>
+        </React.Fragment>)}
+        <Circle cx="50" cy="50" r="1.8" fill="#FFFFFF"/>
+      </Svg>
+    </View>
+    {names.map((name,index)=><View key={name} style={styles.metric}>
+      <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
+      <Text style={styles.metricValue}>{raw[index].toFixed(4)} → {attended[index].toFixed(4)}</Text>
+    </View>)}
+    <Text style={styles.attentionTitle}>Strongest directed interactions</Text>
+    {links.slice(0,6).map((link,index)=><View key={index} style={styles.metric}>
+      <Text style={styles.metricLabel}>{names[link.from]} → {names[link.to]}</Text>
+      <Text style={styles.metricValue}>{link.weight.toFixed(4)}</Text>
+    </View>)}
+    <View style={styles.vectorOutputBridge}>
+      <View style={{flex:1}}>
+        <Text style={styles.engineLabel}>Resultant decision vector</Text>
+        <Text style={styles.engineValue}>({output[0].toFixed(5)}, {output[1].toFixed(5)})</Text>
+      </View>
+      <View style={{flex:1}}>
+        <Text style={styles.engineLabel}>Engine output</Text>
+        <Text style={styles.engineValue}>{decision?.action?.toUpperCase() || "WAIT"}</Text>
+      </View>
+    </View>
+    <Text style={styles.disclaimer}>Attention links are the engine's deterministic weights, not causal proof. The resultant vector and action are read from the backend decision and are not recalculated by this screen.</Text>
+  </View>;
+}
+
 function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Version 2 · Set &amp; relation ledger</Text>
