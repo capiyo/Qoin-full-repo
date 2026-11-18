@@ -259,7 +259,7 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
     x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
     y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
   }));
-  const links = names.flatMap((name, from) => names.map((target, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
+  const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const output = decision?.decision_vector ?? [0, 0];
   return <section className="vector-space-mechanics" aria-label="Six-dimensional vector space and output">
