@@ -76,5 +76,5 @@ const styles = StyleSheet.create({
   chipPct: { fontSize: 12, marginTop: 2, fontWeight: "600" },
   card: { backgroundColor: colors.bgSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16 },
   symbol: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  price: { color: colors.white, fontSize: 28, fontWeight: "700" },
+  price: { color: colors.textPrimary, fontSize: 28, fontWeight: "700" },
 });

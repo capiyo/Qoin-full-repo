@@ -188,13 +188,13 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
   return (
     <div className="vector-map">
       <svg viewBox="0 0 100 100" role="img" aria-label="Qoin engine bullish and bearish vector space with native Rust motion on desktop">
-        <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#294232" strokeWidth=".45" /></pattern></defs>
+        <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#EDF3FF" strokeWidth=".45" /></pattern></defs>
         <rect width="100" height="100" fill="url(#grid)" />
-        <path d="M10 8V90H94" fill="none" stroke="#6caa80" strokeWidth=".8" />
-        <path d="M10 90L94 90 M10 90L10 8" stroke="#6caa80" strokeWidth=".5" strokeDasharray="2 2" />
-        {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#70d99d" strokeWidth="1.1" strokeLinejoin="round" />}
-        {nativeMotion.length ? nativeMotion.map((item) => <circle key={item.id} cx={10 + (item.x + 1) * 40} cy={90 - (item.y + 1) * 40} r="1.25" fill="#70d99d" opacity=".78" style={{ transition: "cx 420ms ease, cy 420ms ease" }} />) : history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#70d99d" />; })}
-        {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#70d99d" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#70d99d" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
+        <path d="M10 8V90H94" fill="none" stroke="#3475E8" strokeWidth=".8" />
+        <path d="M10 90L94 90 M10 90L10 8" stroke="#3475E8" strokeWidth=".5" strokeDasharray="2 2" />
+        {points.length > 1 && <polyline points={trajectory} fill="none" stroke="#2867DC" strokeWidth="1.1" strokeLinejoin="round" />}
+        {nativeMotion.length ? nativeMotion.map((item) => <circle key={item.id} cx={10 + (item.x + 1) * 40} cy={90 - (item.y + 1) * 40} r="1.25" fill="#2867DC" opacity=".78" style={{ transition: "cx 420ms ease, cy 420ms ease" }} />) : history.map((item, index) => { const [px, py] = project(item); return <circle key={item.stored_at || index} cx={px} cy={py} r="1.5" fill="#2867DC" />; })}
+        {decision?.decision_vector ? <><line x1="10" y1="90" x2={x} y2={y} stroke="#2867DC" strokeWidth="1.8" /><circle cx={x} cy={y} r="3.8" fill="#2867DC" stroke="white" strokeWidth="1.2" /><circle cx="10" cy="90" r="2" fill="#94a3b8" /></> : <text x="50" y="48" textAnchor="middle" fill="#94a3b8" fontSize="5">NO VECTOR YET</text>}
       </svg>
       <div className="axis-label axis-top">BEARISH COMPONENT ↑</div>
       <div className="axis-label axis-bottom">BULLISH COMPONENT →</div>
@@ -222,7 +222,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
         const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
         return <g key={label}><line x1="50" y1="50" x2={50 + Math.cos(angle) * 35} y2={50 + Math.sin(angle) * 35} stroke="#e5ebf4" strokeWidth=".5" /><text x={50 + Math.cos(angle) * 43} y={50 + Math.sin(angle) * 43} textAnchor="middle" dominantBaseline="middle" fill="#7f8da1" fontSize="4.5">{label}</text></g>;
       })}
-      {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#70d99d" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#70d99d" />)}</>}
+      {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#2867DC" />)}</>}
       {!decision && <text x="50" y="52" textAnchor="middle" fill="#94a3b8" fontSize="5">NO FEATURE VECTOR</text>}
     </svg>
     <div className="feature-space-values">{labels.map((label,index) => <span key={label}>{label} <strong>{values[index].toFixed(3)}</strong></span>)}</div>
@@ -298,12 +298,12 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
   return <section aria-label="Research decision and evidence ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #e4eaf3", borderRadius: 16, background: "#fff" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <div><strong style={{ color: "#243750", fontSize: 14 }}>Decision &amp; evidence ledger</strong><p style={{ margin: "4px 0 0", color: "#8794a7", fontSize: 10 }}>A readable history of engine evaluations and their recorded market evidence.</p></div>
-      <span style={{ color: "#70d99d", fontSize: 10, fontWeight: 800 }}>{records.length} RECORDS</span>
+      <span style={{ color: "#2867DC", fontSize: 10, fontWeight: 800 }}>{records.length} RECORDS</span>
     </div>
     {records.length ? <div style={{ display: "grid", gap: 8 }}>
       {records.map((record) => <details key={record.id} style={{ padding: "11px 12px", border: "1px solid #edf1f6", borderRadius: 11, background: record.kind === "decision" ? "#f5f8ff" : "#fff" }}>
         <summary style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", listStyle: "none", flexWrap: "wrap" }}>
-          <span style={{ minWidth: 76, color: record.kind === "decision" ? "#70d99d" : "#8190a4", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{record.kind}</span>
+          <span style={{ minWidth: 76, color: record.kind === "decision" ? "#2867DC" : "#8190a4", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{record.kind}</span>
           <strong style={{ flex: "1 1 180px", color: "#34465f", fontSize: 11, textTransform: "capitalize" }}>{record.title}</strong>
           <small style={{ color: "#9aa6b5", fontSize: 9 }}>{formatTime(record.timestamp)}</small>
         </summary>
@@ -316,46 +316,46 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
 }
 
 function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
-  return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #2b4032", borderRadius: 16, background: "#14221a", color: "#e6f1e9" }}>
+  return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #E8EDF4", borderRadius: 16, background: "#FFFFFF", color: "#243750" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#9cb2a2", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
-      <span style={{ color: "#70d99d", fontSize: 9, fontWeight: 800 }}>RESEARCH · READ ONLY</span>
+      <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#8794A7", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
+      <span style={{ color: "#2867DC", fontSize: 9, fontWeight: 800 }}>RESEARCH · READ ONLY</span>
     </div>
-    {!ledger ? <p style={{ margin: 0, color: "#9cb2a2", fontSize: 11 }}>{status}</p> : <>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "#9cb2a2", fontSize: 10 }}>
-        <span>Universe <strong style={{ color: "#e6f1e9" }}>{ledger.universe_count}</strong></span>
-        <span>Sets <strong style={{ color: "#e6f1e9" }}>{ledger.sets.length}</strong></span>
-        <span>Relations <strong style={{ color: "#e6f1e9" }}>{ledger.relations.length}</strong></span>
-        <span>Invalid skipped <strong style={{ color: "#e6f1e9" }}>{ledger.skipped_invalid_events}</strong></span>
-        <span>Limit <strong style={{ color: "#e6f1e9" }}>{ledger.requested_limit}</strong></span>
+    {!ledger ? <p style={{ margin: 0, color: "#8794A7", fontSize: 11 }}>{status}</p> : <>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "#8794A7", fontSize: 10 }}>
+        <span>Universe <strong style={{ color: "#243750" }}>{ledger.universe_count}</strong></span>
+        <span>Sets <strong style={{ color: "#243750" }}>{ledger.sets.length}</strong></span>
+        <span>Relations <strong style={{ color: "#243750" }}>{ledger.relations.length}</strong></span>
+        <span>Invalid skipped <strong style={{ color: "#243750" }}>{ledger.skipped_invalid_events}</strong></span>
+        <span>Limit <strong style={{ color: "#243750" }}>{ledger.requested_limit}</strong></span>
       </div>
-      {ledger.universe_truncated ? <p style={{ margin: 0, color: "#e0b45f", fontSize: 9 }}>Universe capped at {ledger.requested_limit} source documents. Measures and relations below apply only to this returned sample.</p> : null}
+      {ledger.universe_truncated ? <p style={{ margin: 0, color: "#D99528", fontSize: 9 }}>Universe capped at {ledger.requested_limit} source documents. Measures and relations below apply only to this returned sample.</p> : null}
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
-        {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
+        {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#FBFCFE", border: "1px solid #E8EDF4" }}>
           <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
-            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.measure.counting_measure} members</strong>
+            <span>{item.label}</span><strong style={{ color: "#2867DC" }}>{item.measure.counting_measure} members</strong>
           </summary>
-          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Counting measure · {item.measure.counting_measure} events · trade-size measure {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</p>
-          <p style={{ margin: 0, color: "#819989", fontSize: 8, overflowWrap: "anywhere" }}>Members: {item.member_event_ids.slice(0, 8).join(", ") || "∅"}{item.member_event_ids.length > 8 ? " … +" + (item.member_event_ids.length - 8) + " more" : ""}</p>
+          <p style={{ margin: "7px 0 4px", color: "#8794A7", fontSize: 9 }}>Counting measure · {item.measure.counting_measure} events · trade-size measure {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</p>
+          <p style={{ margin: 0, color: "#8996A8", fontSize: 8, overflowWrap: "anywhere" }}>Members: {item.member_event_ids.slice(0, 8).join(", ") || "∅"}{item.member_event_ids.length > 8 ? " … +" + (item.member_event_ids.length - 8) + " more" : ""}</p>
         </details>)}
       </div>
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Temporal relations</strong>
-        {ledger.relations.map((item) => <details key={item.relation_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#19291f", border: "1px solid #2b4032" }}>
+        {ledger.relations.map((item) => <details key={item.relation_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#FBFCFE", border: "1px solid #E8EDF4" }}>
           <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", fontSize: 10 }}>
-            <span>{item.label}</span><strong style={{ color: "#70d99d" }}>{item.edge_count} edges</strong>
+            <span>{item.label}</span><strong style={{ color: "#2867DC" }}>{item.edge_count} edges</strong>
           </summary>
-          <p style={{ margin: "7px 0 4px", color: "#9cb2a2", fontSize: 9 }}>Window {item.window_ms} ms · mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"}</p>
-          <p style={{ margin: "0 0 6px", color: "#819989", fontSize: 8 }}>{item.interpretation}</p>
-          {item.edges.slice(0, 8).map((edge, index) => <p key={item.relation_id + index} style={{ margin: "3px 0", color: "#c4d8c9", fontSize: 8, overflowWrap: "anywhere" }}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</p>)}
-          {item.edge_count > 8 ? <small style={{ color: "#819989" }}>Showing 8 of {item.edge_count} relation edges{item.edges_truncated ? " (sample capped at 100)" : ""}</small> : null}
+          <p style={{ margin: "7px 0 4px", color: "#8794A7", fontSize: 9 }}>Window {item.window_ms} ms · mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"}</p>
+          <p style={{ margin: "0 0 6px", color: "#8996A8", fontSize: 8 }}>{item.interpretation}</p>
+          {item.edges.slice(0, 8).map((edge, index) => <p key={item.relation_id + index} style={{ margin: "3px 0", color: "#52637A", fontSize: 8, overflowWrap: "anywhere" }}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</p>)}
+          {item.edge_count > 8 ? <small style={{ color: "#8996A8" }}>Showing 8 of {item.edge_count} relation edges{item.edges_truncated ? " (sample capped at 100)" : ""}</small> : null}
         </details>)}
       </div>
       <div style={{ display: "grid", gap: 4 }}>
-        {ledger.limitations.map((item) => <p key={item} style={{ margin: 0, color: "#819989", fontSize: 8, lineHeight: 1.45 }}>• {item}</p>)}
+        {ledger.limitations.map((item) => <p key={item} style={{ margin: 0, color: "#8996A8", fontSize: 8, lineHeight: 1.45 }}>• {item}</p>)}
       </div>
-      <small style={{ color: "#819989", fontSize: 8 }}>Schema {ledger.schema_version} · {ledger.persistence}</small>
+      <small style={{ color: "#8996A8", fontSize: 8 }}>Schema {ledger.schema_version} · {ledger.persistence}</small>
     </>}
   </section>;
 }
@@ -497,7 +497,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
               <small>Feature contribution · bullish / bearish</small>
               {(decision.feature_trace || []).slice(0, 6).map((feature) => <div key={feature.name} style={{ display: "grid", gridTemplateColumns: "minmax(65px,1fr) 1fr 1fr", gap: 7, alignItems: "center", fontSize: 9 }}>
                 <span style={{ color: "#52637a" }}>{feature.name.replaceAll("_"," ")}</span>
-                <strong style={{ color: "#24865a", textAlign: "right" }}>{feature.bullish_weighted_term.toFixed(3)}</strong>
+                <strong style={{ color: "#2867DC", textAlign: "right" }}>{feature.bullish_weighted_term.toFixed(3)}</strong>
                 <strong style={{ color: "#c15c65", textAlign: "right" }}>{feature.bearish_weighted_term.toFixed(3)}</strong>
               </div>)}
             </div>

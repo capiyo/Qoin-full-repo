@@ -50,7 +50,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
     <Svg viewBox="0 0 100 100" width="100%" height={190}>
       {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF4" strokeWidth=".5" />)}
       {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF4" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
-      {decision ? <Polygon points={coordinates} fill="#8be0ad" fillOpacity=".16" stroke="#70d99d" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#94A3B8" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
+      {decision ? <Polygon points={coordinates} fill="#3475E8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#94A3B8" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
     </Svg>
     <View style={styles.featureValues}>{QOIN_FEATURE_NAMES.map((name,index) => <View key={name} style={styles.featureValue}><Text style={styles.metricLabel}>{labels[index]}</Text><Text style={styles.metricValue}>{values[index].toFixed(3)}</Text></View>)}</View>
   </View>;
@@ -111,19 +111,19 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         <Text style={styles.engineValue}>Skipped {ledger.skipped_invalid_events}</Text>
         <Text style={styles.engineValue}>Limit {ledger.requested_limit}</Text>
       </View>
-      {ledger.universe_truncated ? <Text style={[styles.disclaimer,{color:"#e0b45f"}]}>Universe capped at {ledger.requested_limit} source documents. Measures below apply only to this returned sample.</Text> : null}
+      {ledger.universe_truncated ? <Text style={[styles.disclaimer,{color:"#D99528"}]}>Universe capped at {ledger.requested_limit} source documents. Measures below apply only to this returned sample.</Text> : null}
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
-      {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
+      {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.measure.counting_measure}</Text>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#2867DC"}]}>{item.measure.counting_measure}</Text>
         </View>
         <Text style={styles.attentionCaption}>Counting measure · trade-size {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</Text>
         <Text style={styles.attentionCaption} numberOfLines={2}>Members: {item.member_event_ids.slice(0,5).join(", ") || "∅"}{item.member_event_ids.length>5 ? " … +" + (item.member_event_ids.length-5) : ""}</Text>
       </View>)}
       <Text style={styles.engineLabel}>TEMPORAL RELATIONS · 60 SECOND WINDOW</Text>
-      {ledger.relations.map((item) => <View key={item.relation_id} style={{padding:9,borderRadius:9,backgroundColor:"#19291f",gap:4}}>
+      {ledger.relations.map((item) => <View key={item.relation_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#70d99d"}]}>{item.edge_count} edges</Text>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#2867DC"}]}>{item.edge_count} edges</Text>
         </View>
         <Text style={styles.attentionCaption}>Mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"} · {item.interpretation}</Text>
         {item.edges.slice(0,4).map((edge,index) => <Text key={item.relation_id+index} style={styles.attentionCaption}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</Text>)}
@@ -260,24 +260,24 @@ function MobileResearchLedger({ decision, history, events }: { decision: QoinVec
       reference: decision.input_event?.event_id || "Source event reference unavailable",
     }] : []),
   ].sort((left, right) => (right.timestamp ?? -1) - (left.timestamp ?? -1)).slice(0, 40);
-  return <View style={{ gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#2b4032", backgroundColor: "#14221a" }}>
+  return <View style={{ gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" }}>
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
       <View style={{ flex: 1 }}>
-        <Text style={{ color: "#e6f1e9", fontSize: 14, fontWeight: "800" }}>Decision &amp; evidence ledger</Text>
-        <Text style={{ marginTop: 4, color: "#9cb2a2", fontSize: 10 }}>Readable history of engine evaluations and recorded market evidence.</Text>
+        <Text style={{ color: "#243750", fontSize: 14, fontWeight: "800" }}>Decision &amp; evidence ledger</Text>
+        <Text style={{ marginTop: 4, color: "#8794A7", fontSize: 10 }}>Readable history of engine evaluations and recorded market evidence.</Text>
       </View>
-      <Text style={{ color: "#70d99d", fontSize: 10, fontWeight: "800" }}>{records.length} RECORDS</Text>
+      <Text style={{ color: "#2867DC", fontSize: 10, fontWeight: "800" }}>{records.length} RECORDS</Text>
     </View>
-    {records.length ? records.map((record) => <View key={record.id} style={{ padding: 11, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: record.kind === "decision" ? "#F5F8FF" : "#14221a", gap: 6 }}>
+    {records.length ? records.map((record) => <View key={record.id} style={{ padding: 11, borderWidth: 1, borderColor: "#EDF1F6", borderRadius: 11, backgroundColor: record.kind === "decision" ? "#F5F8FF" : "#FFFFFF", gap: 6 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-        <Text style={{ color: record.kind === "decision" ? "#70d99d" : "#8190A4", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{record.kind}</Text>
-        <Text style={{ color: "#829789", fontSize: 9 }}>{record.timestamp != null && Number.isFinite(record.timestamp) ? new Date(record.timestamp).toLocaleString() : "Timestamp unavailable"}</Text>
+        <Text style={{ color: record.kind === "decision" ? "#2867DC" : "#8190A4", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{record.kind}</Text>
+        <Text style={{ color: "#9AA6B5", fontSize: 9 }}>{record.timestamp != null && Number.isFinite(record.timestamp) ? new Date(record.timestamp).toLocaleString() : "Timestamp unavailable"}</Text>
       </View>
-      <Text style={{ color: "#d3e4d8", fontSize: 11, fontWeight: "800", textTransform: "capitalize" }}>{record.title}</Text>
-      <Text style={{ color: "#b2c4b7", fontSize: 10, lineHeight: 15 }}>{record.summary}</Text>
-      <Text selectable style={{ color: "#9cb2a2", fontSize: 9 }}>Source reference · {record.reference}</Text>
-    </View>) : <View style={{ padding: 14, borderRadius: 11, backgroundColor: "#0e1612" }}><Text style={{ color: "#9cb2a2", fontSize: 11 }}>No persisted evidence or decision records are available for this instrument yet.</Text></View>}
-    <Text style={{ color: "#829789", fontSize: 9, lineHeight: 14 }}>Read-only research history. This view reflects records returned by the API; it does not claim immutable audit storage or persisted set relationships.</Text>
+      <Text style={{ color: "#34465F", fontSize: 11, fontWeight: "800", textTransform: "capitalize" }}>{record.title}</Text>
+      <Text style={{ color: "#52637A", fontSize: 10, lineHeight: 15 }}>{record.summary}</Text>
+      <Text selectable style={{ color: "#8996A8", fontSize: 9 }}>Source reference · {record.reference}</Text>
+    </View>) : <View style={{ padding: 14, borderRadius: 11, backgroundColor: "#F7F9FC" }}><Text style={{ color: "#8794A7", fontSize: 11 }}>No persisted evidence or decision records are available for this instrument yet.</Text></View>}
+    <Text style={{ color: "#9AA6B5", fontSize: 9, lineHeight: 14 }}>Read-only research history. This view reflects records returned by the API; it does not claim immutable audit storage or persisted set relationships.</Text>
   </View>;
 }
 
@@ -786,11 +786,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
-                {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#294232" strokeWidth=".4" />)}
-                {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#294232" strokeWidth=".4" />)}
-                <Line x1="10" y1="8" x2="10" y2="90" stroke="#6caa80" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#6caa80" strokeWidth=".7" />
-                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#70d99d" strokeWidth="1.1" /> : null}
-                {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#70d99d" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#70d99d" stroke="#14221a" strokeWidth="1.2" /></> : null}
+                {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#EDF3FF" strokeWidth=".4" />)}
+                {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#EDF3FF" strokeWidth=".4" />)}
+                <Line x1="10" y1="8" x2="10" y2="90" stroke="#3475E8" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#3475E8" strokeWidth=".7" />
+                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#2867DC" strokeWidth="1.1" /> : null}
+                {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#2867DC" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#2867DC" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
                 <Circle cx="10" cy="90" r="2" fill="#94A3B8" />
               </Svg>
             </View>
@@ -892,7 +892,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                       {QOIN_FEATURE_NAMES.map((columnName, columnIndex) => {
                         const weight = vector.attention?.[rowIndex]?.[columnIndex] ?? 0;
                         return <View key={columnName} style={[styles.attentionCell, { backgroundColor: `rgba(112,217,157,${0.08 + weight * 0.82})` }]}>
-                          <Text style={[styles.attentionValue, { color: weight > 0.55 ? "#14221a" : "#d3e4d8" }]}>{weight.toFixed(2)}</Text>
+                          <Text style={[styles.attentionValue, { color: weight > 0.55 ? "#FFFFFF" : "#2B4160" }]}>{weight.toFixed(2)}</Text>
                         </View>;
                       })}
                     </View>
@@ -921,197 +921,197 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 }
 
 const styles = StyleSheet.create({
-  tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#2b4032", backgroundColor: "#14221a" },
-  mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#2b4032", backgroundColor: "#14221a" },
+  tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
+  mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E4EAF3", backgroundColor: "#FFFFFF" },
   backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   backtestInputWrap: { flexGrow: 1, flexBasis: "30%", minWidth: 85, gap: 5 },
-  backtestInput: { borderWidth: 1, borderColor: "#2b4032", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, color: "#e6f1e9", fontSize: 12 },
-  backtestRun: { alignItems: "center", paddingVertical: 11, borderRadius: 22, backgroundColor: "#70d99d" },
+  backtestInput: { borderWidth: 1, borderColor: "#E1E8F1", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, color: "#24344D", fontSize: 12 },
+  backtestRun: { alignItems: "center", paddingVertical: 11, borderRadius: 22, backgroundColor: "#2867DC" },
   backtestDisabled: { opacity: 0.55 },
-  backtestRunText: { color: "#14221a", fontWeight: "800", fontSize: 11 },
+  backtestRunText: { color: "#FFFFFF", fontWeight: "800", fontSize: 11 },
   backtestMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  backtestMetric: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#19291f" },
-  backtestFill: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#2b4032", gap: 4 },
-  traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#19291f" },
-  traceValue: { color: "#d3e4d8", fontSize: 10, fontWeight: "700" },
-  traceTableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#2b4032" },
-  traceCell: { width: 104, paddingHorizontal: 7, paddingVertical: 8, color: "#b2c4b7", fontSize: 8 },
-  traceHead: { color: "#d3e4d8", fontWeight: "800", backgroundColor: "#19291f" },
+  backtestMetric: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#F5F8FD" },
+  backtestFill: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#E8EDF5", gap: 4 },
+  traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#F5F8FD" },
+  traceValue: { color: "#30445F", fontSize: 10, fontWeight: "700" },
+  traceTableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E8EDF5" },
+  traceCell: { width: 104, paddingHorizontal: 7, paddingVertical: 8, color: "#52647C", fontSize: 8 },
+  traceHead: { color: "#30445F", fontWeight: "800", backgroundColor: "#F5F8FD" },
   traceGateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  traceGate: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#19291f" },
-  traceSubhead: { color: "#d3e4d8", fontSize: 10, fontWeight: "800", marginTop: 5 },
-  traceJson: { color: "#b2c4b7", backgroundColor: "#19291f", padding: 9, borderRadius: 9, fontSize: 8, lineHeight: 12 },
+  traceGate: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#F5F8FD" },
+  traceSubhead: { color: "#30445F", fontSize: 10, fontWeight: "800", marginTop: 5 },
+  traceJson: { color: "#52647C", backgroundColor: "#F5F7FB", padding: 9, borderRadius: 9, fontSize: 8, lineHeight: 12 },
 
-  screen: { flex: 1, backgroundColor: "#0e1612" },
+  screen: { flex: 1, backgroundColor: "#F7F9FC" },
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
-  notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#203b2b", alignItems: "center", justifyContent: "center" },
-  notificationGlyph: { color: "#70d99d", fontSize: 18 },
-  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#70d99d", alignItems: "center", justifyContent: "center" },
-  notificationBadgeText: { color: "#14221a", fontSize: 7, fontWeight: "800" },
-  notificationModal: { maxHeight: "88%", backgroundColor: "#14221a", borderTopLeftRadius: 21, borderTopRightRadius: 21, overflow: "hidden" },
-  notificationActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#2b4032" },
-  notificationActionText: { color: "#70d99d", fontSize: 10, fontWeight: "700" },
+  notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EDF3FF", alignItems: "center", justifyContent: "center" },
+  notificationGlyph: { color: "#2867DC", fontSize: 18 },
+  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#2867DC", alignItems: "center", justifyContent: "center" },
+  notificationBadgeText: { color: "#FFFFFF", fontSize: 7, fontWeight: "800" },
+  notificationModal: { maxHeight: "88%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 21, borderTopRightRadius: 21, overflow: "hidden" },
+  notificationActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
+  notificationActionText: { color: "#2867DC", fontSize: 10, fontWeight: "700" },
   notificationContent: { padding: 14 },
-  notificationItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#2b4032" },
+  notificationItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
   notificationRead: { opacity: 0.6 },
-  notificationMeta: { color: "#9cb2a2", fontSize: 8, fontWeight: "800" },
-  notificationTitle: { color: "#d3e4d8", fontSize: 11, fontWeight: "800", marginTop: 6 },
-  notificationBody: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 4 },
-  notificationPayload: { color: "#9cb2a2", fontSize: 7, lineHeight: 11, marginTop: 7 },
+  notificationMeta: { color: "#8996A8", fontSize: 8, fontWeight: "800" },
+  notificationTitle: { color: "#30445F", fontSize: 11, fontWeight: "800", marginTop: 6 },
+  notificationBody: { color: "#8391A4", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  notificationPayload: { color: "#8A97A9", fontSize: 7, lineHeight: 11, marginTop: 7 },
 
   content: { paddingHorizontal: 17, paddingBottom: 100 },
   topline: { height: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  brand: { color: "#e6f1e9", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
-  avatar: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#203b2b", alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#70d99d", fontWeight: "800" },
+  brand: { color: "#1B2C45", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
+  avatar: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#2867DC", fontWeight: "800" },
   avatarImage: { width: 29, height: 29, borderRadius: 15 },
-  accountShade: { flex: 1, justifyContent: "flex-start", alignItems: "flex-end", paddingTop: 58, paddingHorizontal: 16, backgroundColor: "#07110dcc" },
-  accountSheet: { width: 270, padding: 12, borderRadius: 19, backgroundColor: "#14221a" },
+  accountShade: { flex: 1, justifyContent: "flex-start", alignItems: "flex-end", paddingTop: 58, paddingHorizontal: 16, backgroundColor: "#17294344" },
+  accountSheet: { width: 270, padding: 12, borderRadius: 19, backgroundColor: "#FFFFFF" },
   accountIdentity: { flexDirection: "row", alignItems: "center", gap: 10, padding: 9, marginBottom: 4 },
-  accountAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#203b2b", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  accountAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   accountAvatarImage: { width: 38, height: 38, borderRadius: 19 },
-  accountName: { color: "#e6f1e9", fontSize: 12, fontWeight: "800" },
-  accountEmail: { color: "#9cb2a2", fontSize: 9, marginTop: 3 },
+  accountName: { color: "#24344D", fontSize: 12, fontWeight: "800" },
+  accountEmail: { color: "#8794A7", fontSize: 9, marginTop: 3 },
   accountAction: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 11 },
-  accountActionText: { color: "#c4d8c9", fontSize: 11, fontWeight: "600" },
-  profileModal: { width: "100%", paddingBottom: 20, borderTopLeftRadius: 21, borderTopRightRadius: 21, backgroundColor: "#14221a", overflow: "hidden" },
+  accountActionText: { color: "#43546C", fontSize: 11, fontWeight: "600" },
+  profileModal: { width: "100%", paddingBottom: 20, borderTopLeftRadius: 21, borderTopRightRadius: 21, backgroundColor: "#FFFFFF", overflow: "hidden" },
   profileIdentity: { flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 18, paddingVertical: 16 },
-  profileAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#203b2b", alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  profileUidLabel: { color: "#9cb2a2", fontSize: 8, fontWeight: "800", letterSpacing: 1, paddingHorizontal: 18, marginTop: 8 },
-  profileUid: { color: "#b2c4b7", fontSize: 9, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 15 },
+  profileAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E8EFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  profileUidLabel: { color: "#8996A8", fontSize: 8, fontWeight: "800", letterSpacing: 1, paddingHorizontal: 18, marginTop: 8 },
+  profileUid: { color: "#52637A", fontSize: 9, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 15 },
   hero: { paddingTop: 24, paddingBottom: 25 },
-  kicker: { color: "#70d99d", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
-  heroTitle: { color: "#e6f1e9", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
-  blue: { color: "#8be0ad" },
-  heroCopy: { color: "#9cb2a2", fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 300 },
+  kicker: { color: "#2867DC", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
+  heroTitle: { color: "#1B2C45", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
+  blue: { color: "#3475E8" },
+  heroCopy: { color: "#8794A7", fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 300 },
   headingRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 16 },
-  heading: { color: "#e6f1e9", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
-  subheading: { color: "#9cb2a2", fontSize: 10, marginTop: 4 },
-  count: { color: "#829789", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
-  search: { height: 42, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#14221a", paddingHorizontal: 12, marginBottom: 12 },
+  heading: { color: "#1D2E47", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
+  subheading: { color: "#8995A7", fontSize: 10, marginTop: 4 },
+  count: { color: "#9AA5B4", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
+  search: { height: 42, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#E5EAF2", borderRadius: 11, backgroundColor: "#FFFFFF", paddingHorizontal: 12, marginBottom: 12 },
   searchIcon: { color: "#8E9BAD", fontSize: 21, marginRight: 8 },
-  searchInput: { flex: 1, color: "#e6f1e9", fontSize: 12, paddingVertical: 0 },
+  searchInput: { flex: 1, color: "#24354D", fontSize: 12, paddingVertical: 0 },
   filters: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 14 },
-  filter: { borderWidth: 1, borderColor: "#2b4032", borderRadius: 18, paddingVertical: 6, paddingHorizontal: 11, backgroundColor: "#14221a" },
-  filterActive: { borderColor: "#D7E4FF", backgroundColor: "#203b2b" },
-  filterText: { color: "#9cb2a2", fontSize: 10, fontWeight: "600" },
-  filterTextActive: { color: "#70d99d" },
-  coverageSection: { marginTop: 8, marginBottom: 18, paddingTop: 15, borderTopWidth: 1, borderTopColor: "#2b4032", borderBottomWidth: 1, borderBottomColor: "#2b4032", paddingBottom: 14 },
+  filter: { borderWidth: 1, borderColor: "#E7ECF3", borderRadius: 18, paddingVertical: 6, paddingHorizontal: 11, backgroundColor: "#FFFFFF" },
+  filterActive: { borderColor: "#D7E4FF", backgroundColor: "#EDF3FF" },
+  filterText: { color: "#8290A3", fontSize: 10, fontWeight: "600" },
+  filterTextActive: { color: "#2867D8" },
+  coverageSection: { marginTop: 8, marginBottom: 18, paddingTop: 15, borderTopWidth: 1, borderTopColor: "#E8EDF4", borderBottomWidth: 1, borderBottomColor: "#E8EDF4", paddingBottom: 14 },
   coverageHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11 },
   coverageHeadingCopy: { flex: 1 },
-  coverageSubheading: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 3 },
-  coverageStatus: { color: "#70d99d", backgroundColor: "#203b2b", borderRadius: 14, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5, fontSize: 8, fontWeight: "800" },
-  coverageCard: { padding: 12, backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2b4032", borderRadius: 12, marginBottom: 8 },
+  coverageSubheading: { color: "#8794A7", fontSize: 9, lineHeight: 14, marginTop: 3 },
+  coverageStatus: { color: "#2867D8", backgroundColor: "#EDF3FF", borderRadius: 14, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5, fontSize: 8, fontWeight: "800" },
+  coverageCard: { padding: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7EDF5", borderRadius: 12, marginBottom: 8 },
   coverageCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  coverageName: { color: "#e6f1e9", fontSize: 12, fontWeight: "800" },
-  coverageTag: { color: "#9cb2a2", fontSize: 8, textTransform: "uppercase" },
-  coveragePrimary: { color: "#70d99d", fontSize: 23, fontWeight: "800", marginVertical: 8 },
-  coverageUnit: { color: "#9cb2a2", fontSize: 9, fontWeight: "500" },
-  coverageLine: { color: "#b2c4b7", fontSize: 9, lineHeight: 14, marginTop: 4 },
-  coverageNote: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 8 },
-  coverageDisclaimer: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, marginTop: 5 },
-  card: { padding: 14, backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2b4032", borderRadius: 14, marginBottom: 9, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  coverageName: { color: "#243750", fontSize: 12, fontWeight: "800" },
+  coverageTag: { color: "#8794A7", fontSize: 8, textTransform: "uppercase" },
+  coveragePrimary: { color: "#2867DC", fontSize: 23, fontWeight: "800", marginVertical: 8 },
+  coverageUnit: { color: "#8794A7", fontSize: 9, fontWeight: "500" },
+  coverageLine: { color: "#52637A", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  coverageNote: { color: "#8794A7", fontSize: 9, lineHeight: 14, marginTop: 8 },
+  coverageDisclaimer: { color: "#8794A7", fontSize: 9, lineHeight: 14, marginTop: 5 },
+  card: { padding: 14, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF4", borderRadius: 14, marginBottom: 9, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
   cardMain: { flexDirection: "row", alignItems: "center" },
   assetMark: { width: 37, height: 37, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  assetMarkText: { color: "#14221a", fontWeight: "800", fontSize: 15 },
+  assetMarkText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15 },
   assetCopy: { flex: 1, marginLeft: 11 },
-  assetName: { color: "#e6f1e9", fontSize: 13, fontWeight: "700" },
-  assetMeta: { color: "#9cb2a2", fontSize: 10, marginTop: 4 },
+  assetName: { color: "#20324B", fontSize: 13, fontWeight: "700" },
+  assetMeta: { color: "#929EAF", fontSize: 10, marginTop: 4 },
   arrow: { color: "#A5B1C1", fontSize: 17 },
-  detail: { color: "#9cb2a2", fontSize: 10, marginTop: 12 },
-  providerLine: { color: "#829789", fontSize: 8, marginTop: 4 },
+  detail: { color: "#8B98AA", fontSize: 10, marginTop: 12 },
+  providerLine: { color: "#A0AABA", fontSize: 8, marginTop: 4 },
   cardLiveRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
-  cardLivePrice: { color: "#d3e4d8", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  cardLiveDecision: { color: "#70d99d", fontSize: 8, fontWeight: "800" },
+  cardLivePrice: { color: "#2B4160", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  cardLiveDecision: { color: "#2867D8", fontSize: 8, fontWeight: "800" },
   addButton: { marginTop: 12, alignSelf: "flex-start", paddingVertical: 5 },
-  addText: { color: "#70d99d", fontSize: 10, fontWeight: "700" },
-  empty: { padding: 28, borderWidth: 1, borderStyle: "dashed", borderColor: "#3a5142", borderRadius: 14, alignItems: "center" },
-  emptyTitle: { color: "#d3e4d8", fontSize: 13, fontWeight: "700" },
-  emptyCopy: { color: "#9cb2a2", fontSize: 10, textAlign: "center", marginTop: 6 },
-  note: { marginTop: 15, padding: 14, borderWidth: 1, borderColor: "#2b4032", borderRadius: 12, backgroundColor: "#17251d" },
-  newsSection: { marginTop: 23, paddingTop: 18, borderTopWidth: 1, borderTopColor: "#2b4032" },
-  macroSection: { marginTop: 20, paddingTop: 17, borderTopWidth: 1, borderTopColor: "#2b4032" },
-  macroItem: { padding: 11, borderWidth: 1, borderColor: "#2b4032", borderRadius: 10, backgroundColor: "#14221a", marginBottom: 7 },
+  addText: { color: "#2867D8", fontSize: 10, fontWeight: "700" },
+  empty: { padding: 28, borderWidth: 1, borderStyle: "dashed", borderColor: "#DCE4EF", borderRadius: 14, alignItems: "center" },
+  emptyTitle: { color: "#34465F", fontSize: 13, fontWeight: "700" },
+  emptyCopy: { color: "#8996A8", fontSize: 10, textAlign: "center", marginTop: 6 },
+  note: { marginTop: 15, padding: 14, borderWidth: 1, borderColor: "#E8EDF4", borderRadius: 12, backgroundColor: "#FBFCFE" },
+  newsSection: { marginTop: 23, paddingTop: 18, borderTopWidth: 1, borderTopColor: "#E9EDF4" },
+  macroSection: { marginTop: 20, paddingTop: 17, borderTopWidth: 1, borderTopColor: "#E9EDF4" },
+  macroItem: { padding: 11, borderWidth: 1, borderColor: "#E8EDF4", borderRadius: 10, backgroundColor: "#FFFFFF", marginBottom: 7 },
   macroValues: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8, marginTop: 7 },
-  newsTitle: { color: "#e6f1e9", fontSize: 19, fontWeight: "800", marginBottom: 5 },
-  newsItem: { padding: 12, backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, marginBottom: 8 },
-  newsMeta: { color: "#829789", fontSize: 8 },
-  newsHeadline: { color: "#d3e4d8", fontSize: 12, fontWeight: "700", lineHeight: 17, marginTop: 7 },
-  newsSummary: { color: "#9cb2a2", fontSize: 10, lineHeight: 15, marginTop: 5 },
+  newsTitle: { color: "#1A2A42", fontSize: 19, fontWeight: "800", marginBottom: 5 },
+  newsItem: { padding: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF4", borderRadius: 11, marginBottom: 8 },
+  newsMeta: { color: "#9AA6B5", fontSize: 8 },
+  newsHeadline: { color: "#2A4161", fontSize: 12, fontWeight: "700", lineHeight: 17, marginTop: 7 },
+  newsSummary: { color: "#8290A3", fontSize: 10, lineHeight: 15, marginTop: 5 },
   noteTitle: { color: "#4C5D75", fontSize: 11, fontWeight: "700" },
-  noteCopy: { color: "#9cb2a2", fontSize: 10, lineHeight: 15, marginTop: 5 },
-  footer: { color: "#829789", fontSize: 8, fontWeight: "700", letterSpacing: 1, textAlign: "center", marginTop: 25 },
-  modalShade: { flex: 1, justifyContent: "flex-start", backgroundColor: "#14221a" },
-  modalCard: { flex: 1, width: "100%", height: "100%", maxHeight: "100%", backgroundColor: "#14221a", borderRadius: 0, overflow: "hidden" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 19, borderBottomWidth: 1, borderBottomColor: "#2b4032" },
-  modalTitle: { color: "#e6f1e9", fontSize: 22, fontWeight: "800" },
-  close: { width: 31, height: 31, borderRadius: 16, backgroundColor: "#203329", alignItems: "center", justifyContent: "center" },
+  noteCopy: { color: "#8794A7", fontSize: 10, lineHeight: 15, marginTop: 5 },
+  footer: { color: "#8996A8", fontSize: 8, fontWeight: "700", letterSpacing: 1, textAlign: "center", marginTop: 25 },
+  modalShade: { flex: 1, justifyContent: "flex-start", backgroundColor: "#FFFFFF" },
+  modalCard: { flex: 1, width: "100%", height: "100%", maxHeight: "100%", backgroundColor: "#FFFFFF", borderRadius: 0, overflow: "hidden" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 19, borderBottomWidth: 1, borderBottomColor: "#E8EDF4" },
+  modalTitle: { color: "#243750", fontSize: 22, fontWeight: "800" },
+  close: { width: 31, height: 31, borderRadius: 16, backgroundColor: "#F1F4F8", alignItems: "center", justifyContent: "center" },
   closeText: { color: "#65758B", fontSize: 20 },
   modalContent: { paddingHorizontal: 18, paddingTop: 15, paddingBottom: 18 },
   mapTitle: { color: "#34465E", fontSize: 12, fontWeight: "700" },
-  mapCopy: { color: "#9cb2a2", fontSize: 10, marginTop: 4 },
-  mapWrap: { width: "100%", marginTop: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 12, overflow: "hidden" },
+  mapCopy: { color: "#8B98A9", fontSize: 10, marginTop: 4 },
+  mapWrap: { width: "100%", marginTop: 10, borderWidth: 1, borderColor: "#EDF1F6", borderRadius: 12, overflow: "hidden" },
   legend: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, marginVertical: 14 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
   legendText: { color: "#7D8A9C", fontSize: 9 },
-  metric: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#2b4032" },
-  metricLabel: { color: "#9cb2a2", fontSize: 10, textTransform: "capitalize" },
-  metricValue: { color: "#d3e4d8", fontSize: 10, fontWeight: "700" },
+  metric: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" },
+  metricLabel: { color: "#8290A3", fontSize: 10, textTransform: "capitalize" },
+  metricValue: { color: "#40536E", fontSize: 10, fontWeight: "700" },
   engineMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginVertical: 12 },
-  engineLabel: { color: "#9cb2a2", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
-  engineValue: { color: "#d3e4d8", fontSize: 12, fontWeight: "700", marginTop: 4 },
-  attentionHint: { color: "#829789", fontSize: 8, marginTop: 5 },
-  attentionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#17251d" },
-  livePanel: { marginTop: 12, padding: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#17251d" },
+  engineLabel: { color: "#8996A8", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
+  engineValue: { color: "#2B4160", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  attentionHint: { color: "#9AA6B5", fontSize: 8, marginTop: 5 },
+  attentionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  livePanel: { marginTop: 12, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
   liveHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 9 },
   liveGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   liveMetric: { width: "47%", gap: 4 },
-  featureSpacePanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#17251d" },
-  strategyPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#17251d" },
-  contributionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, backgroundColor: "#17251d" },
-  contributionRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#2b4032" },
+  featureSpacePanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  strategyPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  contributionPanel: { marginTop: 14, padding: 10, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, backgroundColor: "#FBFCFE" },
+  contributionRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   strategyGates: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginVertical: 10 },
-  strategyWeightRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#2b4032" },
+  strategyWeightRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   strategyWeightValues: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginTop: 5 },
-  rawTape: { marginTop: 14, borderWidth: 1, borderColor: "#2b4032", borderRadius: 11, overflow: "hidden" },
-  rawTapeToggle: { padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#17251d" },
-  rawEvent: { padding: 9, borderTopWidth: 1, borderTopColor: "#2b4032" },
+  rawTape: { marginTop: 14, borderWidth: 1, borderColor: "#E9EEF5", borderRadius: 11, overflow: "hidden" },
+  rawTapeToggle: { padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FBFCFE" },
+  rawEvent: { padding: 9, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
   featureValues: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 7 },
   featureValue: { width: "30%", flexDirection: "row", justifyContent: "space-between" },
   attentionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 9 },
-  attentionTitle: { color: "#d3e4d8", fontSize: 10, fontWeight: "700" },
-  attentionCaption: { color: "#829789", fontSize: 8 },
+  attentionTitle: { color: "#40536E", fontSize: 10, fontWeight: "700" },
+  attentionCaption: { color: "#9AA6B5", fontSize: 8 },
   attentionRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 3 },
-  attentionRowLabel: { width: 36, color: "#9cb2a2", fontSize: 8, fontWeight: "700" },
-  attentionAxis: { flex: 1, color: "#9cb2a2", fontSize: 7, fontWeight: "700", textAlign: "center" },
+  attentionRowLabel: { width: 36, color: "#8794A7", fontSize: 8, fontWeight: "700" },
+  attentionAxis: { flex: 1, color: "#8794A7", fontSize: 7, fontWeight: "700", textAlign: "center" },
   attentionCell: { flex: 1, minWidth: 0, height: 25, borderRadius: 4, alignItems: "center", justifyContent: "center" },
   attentionValue: { fontSize: 8, fontVariant: ["tabular-nums"] },
-  disclaimer: { color: "#9cb2a2", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#0e1612", borderRadius: 9, marginTop: 15 },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, padding: 14, borderTopWidth: 1, borderTopColor: "#2b4032" },
-  closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#203329" },
+  disclaimer: { color: "#8996A7", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#F7F9FC", borderRadius: 9, marginTop: 15 },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, padding: 14, borderTopWidth: 1, borderTopColor: "#EDF1F6" },
+  closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#F0F3F8" },
   closeActionText: { color: "#64748B", fontSize: 11, fontWeight: "700" },
-  saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#70d99d" },
-  saveActionText: { color: "#14221a", fontSize: 11, fontWeight: "700" },
+  saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#2867DC" },
+  saveActionText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
 
   cardMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginLeft: 48, marginTop: 9, marginBottom: 9 },
-  cardMetaChip: { overflow: "hidden", color: "#9cb2a2", backgroundColor: "#14221a", borderWidth: 1, borderColor: "#2e4937", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
-  cardMetaLive: { color: "#9be8b5", borderColor: "#396b49", backgroundColor: "#1d3928" },
-  cardPager: { flexDirection: "row", minHeight: 90, gap: 10, padding: 10, borderRadius: 13, borderWidth: 1, borderColor: "#2b4032", backgroundColor: "#101c15" },
+  cardMetaChip: { overflow: "hidden", color: "#8794A7", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DCE4EF", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
+  cardMetaLive: { color: "#2867DC", borderColor: "#D7E4FF", backgroundColor: "#EAF6EF" },
+  cardPager: { flexDirection: "row", minHeight: 90, gap: 10, padding: 10, borderRadius: 13, borderWidth: 1, borderColor: "#E8EDF4", backgroundColor: "#F5F8FD" },
   cardPagerPrimary: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0 },
-  cardKicker: { color: "#819989", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
-  cardPagerValue: { color: "#e6f1e9", fontSize: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
-  cardPagerStatus: { color: "#70d99d", fontSize: 7, fontWeight: "900", letterSpacing: 0.8 },
+  cardKicker: { color: "#8996A8", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
+  cardPagerValue: { color: "#243750", fontSize: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  cardPagerStatus: { color: "#2867DC", fontSize: 7, fontWeight: "900", letterSpacing: 0.8 },
   cardPagerNegative: { color: "#e47a82" },
-  cardPagerSecondary: { width: "39%", justifyContent: "center", gap: 4, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#2b4032" },
-  cardMetaLabel: { color: "#819989", fontSize: 7, fontWeight: "800" },
-  cardMetaValue: { color: "#d3e4d8", fontSize: 9, fontWeight: "700" },
-  cardPagerReason: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#2b4032" },
-  cardReasonText: { color: "#c4d8c9", fontSize: 8, lineHeight: 12 },
+  cardPagerSecondary: { width: "39%", justifyContent: "center", gap: 4, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#E8EDF4" },
+  cardMetaLabel: { color: "#8996A8", fontSize: 7, fontWeight: "800" },
+  cardMetaValue: { color: "#52637A", fontSize: 9, fontWeight: "700" },
+  cardPagerReason: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0, paddingLeft: 9, borderLeftWidth: 1, borderLeftColor: "#E8EDF4" },
+  cardReasonText: { color: "#52637A", fontSize: 8, lineHeight: 12 },
   cardPagerFooter: { flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 48, marginTop: 8 },
   cardPagerDots: { flexDirection: "row", alignItems: "center", gap: 5 },
-  cardPagerDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#45604d" },
-  cardPagerDotActive: { width: 18, backgroundColor: "#70d99d" },
-  cardSwipeHint: { color: "#718b79", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
+  cardPagerDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#DCE4EF" },
+  cardPagerDotActive: { width: 18, backgroundColor: "#2867DC" },
+  cardSwipeHint: { color: "#687A92", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
 
 });

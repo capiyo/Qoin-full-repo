@@ -1,18 +1,15 @@
-// Shared Qoin forest-workspace brand tokens for web, native and desktop clients.
+// Shared Qoin brand tokens for web and native clients.
 export const qoinColors = {
-  bgPrimary: "#0e1612",
-  bgSecondary: "#14221a",
-  bgRaised: "#19291f",
-  bgSoft: "#203329",
-  border: "#2b4032",
-  accent: "#70d99d",
-  accentStrong: "#43bd7a",
-  bullish: "#70d99d",
-  bearish: "#e47a82",
-  warning: "#e0b45f",
-  textPrimary: "#e6f1e9",
-  textMuted: "#9cb2a2",
-  white: "#ffffff",
+  bgPrimary: "#F7F9FC",
+  bgSecondary: "#FFFFFF",
+  border: "#E6EBF2",
+  accentCyan: "#2867DC",
+  bullish: "#2867DC",
+  bearish: "#E05A67",
+  warning: "#D99528",
+  textPrimary: "#24344D",
+  textMuted: "#8794A7",
+  white: "#FFFFFF",
 } as const;
 
 export type QoinColorToken = keyof typeof qoinColors;
