@@ -931,6 +931,7 @@ mod tests {
             maximum_loss_at_stop_portfolio: d("1"),
             reduce_only: false,
             projected_gross_exposure_portfolio: d("200"),
+            projected_daily_loss_portfolio: d("120"),
             remaining_daily_loss_budget_portfolio: d("10"),
             snapshot_observed_at_ms: 9_900,
             market_data_observed_at_ms: 9_950,
