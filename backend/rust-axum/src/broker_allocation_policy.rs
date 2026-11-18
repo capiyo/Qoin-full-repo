@@ -9,6 +9,7 @@
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::broker_allocation::{
     allocate_equal_notional, AllocationError, AllocationTarget, EqualAllocation,
@@ -375,7 +376,17 @@ pub fn choose_execution_plan(
     if selected.is_empty() || selected.len() > MAX_FANOUT_ACCOUNTS {
         return Err(RoutingError::InvalidPolicy("select between 1 and 15 broker accounts".into()));
     }
+    let mut selected_accounts = HashSet::with_capacity(selected.len());
     for quote in selected {
+        let broker_id = quote.target.broker_id.trim().to_ascii_lowercase();
+        let account_id = quote.target.account_id.trim().to_string();
+        if broker_id.is_empty() || account_id.is_empty()
+            || !selected_accounts.insert((broker_id, account_id))
+        {
+            return Err(RoutingError::InvalidPolicy(
+                "selected broker/account targets must be non-empty and unique".into()
+            ));
+        }
         validate_quote(quote, policy.max_quote_age_ms)?;
     }
 
@@ -619,6 +630,17 @@ mod tests {
         assert!(matches!(
             validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
             Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn duplicate_selected_account_is_rejected_instead_of_silently_consolidated() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[1].target.broker_id = quotes[0].target.broker_id.clone();
+        quotes[1].target.account_id = quotes[0].target.account_id.clone();
+        assert!(matches!(
+            choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()),
+            Err(RoutingError::InvalidPolicy(_))
         ));
     }
 
