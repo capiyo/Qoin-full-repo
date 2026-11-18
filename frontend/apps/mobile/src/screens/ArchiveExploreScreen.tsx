@@ -748,7 +748,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         </View></View>
       </Modal>
       <Modal visible={!!selected} transparent={false} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelected(null)}>
-        {selected ? <View style={styles.modalShade}><View style={styles.modalCard}>
+        {selected ? <SafeAreaView style={styles.modalShade}><View style={styles.modalCard}>
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
             {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
@@ -902,7 +902,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             </>}
           </ScrollView>
           <View style={styles.modalActions}><Pressable style={styles.closeAction} onPress={() => setSelected(null)}><Text style={styles.closeActionText}>Close</Text></Pressable><Pressable style={styles.saveAction} onPress={() => toggle(selected.symbol)}><Text style={styles.saveActionText}>{selected.archived ? "Remove from archive" : "Add to archive"}</Text></Pressable></View>
-        </View></View> : null}
+        </View></SafeAreaView> : null}
       </Modal>
     </SafeAreaView>
   );
