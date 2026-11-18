@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn operational_overhead_can_make_single_account_better() {
         let quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", true)];
-        let policy = AllocationPolicy { multi_broker_overhead_portfolio: d("3"), minimum_saving_portfolio: d("0") };
+        let policy = AllocationPolicy { multi_broker_overhead_portfolio: d("3"), minimum_saving_portfolio: d("0"), max_quote_age_ms: 5_000 };
         let plan = choose_execution_plan(d("1000"), &quotes, policy).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { .. }));
     }
