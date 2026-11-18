@@ -11,6 +11,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use mongodb::{
+    bson::{doc, Document},
+    options::IndexOptions,
+    Collection, IndexModel,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BrokerAccountKey {
@@ -39,6 +44,7 @@ pub struct ParentOrderRequest {
     pub portfolio_currency: String,
     pub side: OrderSide,
     pub order_type: OrderType,
+    pub reduce_only: bool,
     pub parent_notional_portfolio: Decimal,
     pub created_at_ms: i64,
 }
@@ -102,10 +108,12 @@ pub struct ParentOrderIntent {
     pub parent_order_id: String,
     pub owner_scope: String,
     pub idempotency_key: String,
+    pub request_fingerprint: String,
     pub instrument_id: String,
     pub portfolio_currency: String,
     pub side: OrderSide,
     pub order_type: OrderType,
+    pub reduce_only: bool,
     pub parent_notional_portfolio: Decimal,
     pub allocated_notional_portfolio: Decimal,
     pub unallocated_remainder_portfolio: Decimal,
@@ -130,6 +138,7 @@ pub struct ChildOrderIntent {
     pub instrument_id: String,
     pub side: OrderSide,
     pub order_type: OrderType,
+    pub reduce_only: bool,
     /// Native broker quantity; the adapter maps this to its provider-specific unit.
     pub quantity: Decimal,
     pub target_notional_portfolio: Decimal,
@@ -196,6 +205,141 @@ fn stable_id(prefix: &str, parts: &[&str]) -> String {
     format!("{prefix}-{}", &encoded[..32])
 }
 
+
+fn request_fingerprint(
+    owner_scope: &str,
+    idempotency_key: &str,
+    instrument_id: &str,
+    portfolio_currency: &str,
+    side: OrderSide,
+    order_type: OrderType,
+    reduce_only: bool,
+    parent_notional: Decimal,
+    selected: &[BrokerAccountKey],
+    route_mode: FanoutRouteMode,
+    allocation: &crate::broker_allocation::EqualAllocation,
+) -> String {
+    let mut parts = vec![
+        owner_scope.to_string(),
+        idempotency_key.to_string(),
+        instrument_id.to_string(),
+        portfolio_currency.to_string(),
+        format!("{side:?}"),
+        format!("{order_type:?}"),
+        reduce_only.to_string(),
+        parent_notional.to_string(),
+        format!("{route_mode:?}"),
+        allocation.unallocated_remainder_portfolio.to_string(),
+    ];
+    let mut accounts = selected.to_vec();
+    accounts.sort_by(|left, right| (&left.broker_id, &left.account_id).cmp(&(&right.broker_id, &right.account_id)));
+    for account in accounts {
+        parts.push(account.broker_id);
+        parts.push(account.account_id);
+    }
+    let mut children = allocation.children.clone();
+    children.sort_by(|left, right| (&left.broker_id, &left.account_id).cmp(&(&right.broker_id, &right.account_id)));
+    for child in children {
+        parts.push(child.broker_id);
+        parts.push(child.account_id);
+        parts.push(child.instrument_id);
+        parts.push(child.quantity.to_string());
+        parts.push(child.target_notional_portfolio.to_string());
+        parts.push(child.allocated_notional_portfolio.to_string());
+    }
+    let references = parts.iter().map(String::as_str).collect::<Vec<_>>();
+    stable_id("qof", &references)
+}
+
+#[derive(Debug)]
+pub struct NewlyPersistedFanout {
+    parent_order_id: String,
+    request_fingerprint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FanoutPersistOutcome {
+    Created,
+    ExistingSameRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FanoutPersistenceError {
+    InvalidRecords,
+    Database(String),
+    IdempotencyConflict,
+    DuplicateChildIdentity,
+}
+
+impl std::fmt::Display for FanoutPersistenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for FanoutPersistenceError {}
+
+/// Store the complete parent and every child as one MongoDB document. Initial
+/// creation is atomic even on a standalone MongoDB deployment. Existing
+/// idempotent records are never treated as permission to dispatch again.
+pub async fn persist_fanout_intents(
+    collection: &Collection<Document>,
+    parent: &ParentOrderIntent,
+    children: &[ChildOrderIntent],
+) -> Result<(FanoutPersistOutcome, Option<NewlyPersistedFanout>), FanoutPersistenceError> {
+    if children.is_empty()
+        || parent.request_fingerprint.is_empty()
+        || children.len() != parent.routed_accounts.len()
+        || children.iter().any(|child| child.parent_order_id != parent.parent_order_id)
+    {
+        return Err(FanoutPersistenceError::InvalidRecords);
+    }
+
+    for (keys, name) in [
+        (doc! { "parent_order_id": 1 }, "uq_fanout_parent"),
+        (doc! { "owner_scope": 1, "idempotency_key": 1 }, "uq_fanout_idempotency"),
+        (doc! { "children.client_order_id": 1 }, "uq_fanout_child_client_id"),
+    ] {
+        let model = IndexModel::builder()
+            .keys(keys)
+            .options(IndexOptions::builder().unique(true).name(name.to_string()).build())
+            .build();
+        collection.create_index(model, None).await
+            .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    }
+
+    let mut document = mongodb::bson::to_document(parent)
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    let child_array = mongodb::bson::to_bson(children)
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    document.insert("children", child_array);
+
+    match collection.insert_one(document, None).await {
+        Ok(_) => Ok((
+            FanoutPersistOutcome::Created,
+            Some(NewlyPersistedFanout {
+                parent_order_id: parent.parent_order_id.clone(),
+                request_fingerprint: parent.request_fingerprint.clone(),
+            }),
+        )),
+        Err(error) if error.to_string().contains("E11000") => {
+            let existing = collection.find_one(doc! {
+                "owner_scope": &parent.owner_scope,
+                "idempotency_key": &parent.idempotency_key,
+            }, None).await
+                .map_err(|lookup| FanoutPersistenceError::Database(lookup.to_string()))?;
+            let Some(existing) = existing else {
+                return Err(FanoutPersistenceError::DuplicateChildIdentity);
+            };
+            if existing.get_str("request_fingerprint").ok() == Some(parent.request_fingerprint.as_str()) {
+                Ok((FanoutPersistOutcome::ExistingSameRequest, None))
+            } else {
+                Err(FanoutPersistenceError::IdempotencyConflict)
+            }
+        }
+        Err(error) => Err(FanoutPersistenceError::Database(error.to_string())),
+    }
+}
+
 /// Build parent and child records from a risk-approved route. A consolidated
 /// plan records every selected account not used by the single chosen route;
 /// an equal split must cover the complete selected account set exactly once.
@@ -220,6 +364,7 @@ pub fn build_fanout_intents(
     }
     if risk_approval.instrument_id != instrument_id
         || risk_approval.parent_notional_portfolio != request.parent_notional_portfolio
+        || risk_approval.reduce_only != request.reduce_only
         || risk_approval.approved_at_ms < request.created_at_ms
         || risk_approval.approved_at_ms <= 0
     {
@@ -315,6 +460,7 @@ pub fn build_fanout_intents(
             instrument_id: instrument_id.clone(),
             side: request.side,
             order_type: request.order_type,
+            reduce_only: request.reduce_only,
             quantity: child.quantity,
             target_notional_portfolio: child.target_notional_portfolio,
             allocated_notional_portfolio: child.allocated_notional_portfolio,
@@ -330,14 +476,29 @@ pub fn build_fanout_intents(
             updated_at_ms: request.created_at_ms,
         });
     }
+    let request_fingerprint = request_fingerprint(
+        &owner_scope,
+        &idempotency_key,
+        &instrument_id,
+        &portfolio_currency,
+        request.side,
+        request.order_type,
+        request.reduce_only,
+        request.parent_notional_portfolio,
+        &selected,
+        route_mode,
+        allocation,
+    );
     let parent = ParentOrderIntent {
         parent_order_id,
         owner_scope,
         idempotency_key,
+        request_fingerprint,
         instrument_id,
         portfolio_currency,
         side: request.side,
         order_type: request.order_type,
+        reduce_only: request.reduce_only,
         parent_notional_portfolio: request.parent_notional_portfolio,
         allocated_notional_portfolio: allocation.allocated_notional_portfolio,
         unallocated_remainder_portfolio: allocation.unallocated_remainder_portfolio,
@@ -367,25 +528,55 @@ impl FanoutLifecycle {
     pub fn new(parent: ParentOrderIntent, children: Vec<ChildOrderIntent>) -> Result<Self, FanoutError> {
         if children.is_empty()
             || children.len() != parent.routed_accounts.len()
-            || children.iter().any(|child| child.parent_order_id != parent.parent_order_id)
+            || parent.request_fingerprint.is_empty()
         {
             return Err(FanoutError::InvalidPlan("parent and child records do not match".into()));
+        }
+        let mut child_keys = HashSet::with_capacity(children.len());
+        let mut child_ids = HashSet::with_capacity(children.len());
+        for child in &children {
+            let key = BrokerAccountKey {
+                broker_id: child.broker_id.trim().to_ascii_lowercase(),
+                account_id: child.account_id.trim().to_string(),
+            };
+            if child.parent_order_id != parent.parent_order_id
+                || child.status != ChildOrderStatus::Prepared
+                || child.quantity <= Decimal::ZERO
+                || child.requested_quantity != child.quantity
+                || !child_keys.insert(key)
+                || !child_ids.insert(child.client_order_id.clone())
+            {
+                return Err(FanoutError::InvalidPlan("child identity, quantity or initial state is invalid".into()));
+            }
+        }
+        let routed = parent.routed_accounts.iter().cloned().collect::<HashSet<_>>();
+        if child_keys != routed {
+            return Err(FanoutError::InvalidPlan("child records do not cover the routed accounts exactly".into()));
         }
         Ok(Self { parent, children, persistence_confirmed: false, dispatch_started: false })
     }
 
-    /// Call only after the parent and every child intent have been durably
-    /// written with unique parent/client-order idempotency indexes.
-    pub fn confirm_durable_persistence(&mut self) {
+    /// Accept only a receipt returned after a successful atomic Mongo insert.
+    /// An existing idempotent record cannot authorize a second dispatch.
+    pub fn confirm_durable_persistence(&mut self, receipt: NewlyPersistedFanout) -> Result<(), FanoutError> {
+        if receipt.parent_order_id != self.parent.parent_order_id
+            || receipt.request_fingerprint != self.parent.request_fingerprint
+        {
+            return Err(FanoutError::NotPersisted);
+        }
         self.persistence_confirmed = true;
+        Ok(())
     }
 
     pub fn begin_dispatch(&mut self, now_ms: i64) -> Result<(), FanoutError> {
         if !self.persistence_confirmed {
             return Err(FanoutError::NotPersisted);
         }
-        if self.dispatch_started || now_ms < self.parent.created_at_ms {
+        if self.dispatch_started {
             return Err(FanoutError::DispatchAlreadyStarted);
+        }
+        if now_ms < self.parent.created_at_ms {
+            return Err(FanoutError::InvalidTransition);
         }
         self.dispatch_started = true;
         self.parent.status = ParentOrderStatus::Dispatching;
@@ -399,8 +590,11 @@ impl FanoutLifecycle {
         }
         let child = self.children.iter_mut().find(|child| child.child_order_id == child_order_id)
             .ok_or(FanoutError::ChildNotFound)?;
-        if child.status != ChildOrderStatus::Prepared || now_ms < child.created_at_ms {
+        if child.status != ChildOrderStatus::Prepared {
             return Err(FanoutError::ChildAlreadySubmitted);
+        }
+        if now_ms < child.created_at_ms {
+            return Err(FanoutError::InvalidTransition);
         }
         child.status = ChildOrderStatus::Submitting;
         child.updated_at_ms = now_ms;
@@ -598,6 +792,7 @@ mod tests {
             portfolio_currency: "KES".into(),
             side: OrderSide::Buy,
             order_type: OrderType::Market,
+            reduce_only: false,
             parent_notional_portfolio: d("100"),
             created_at_ms: 10_000,
         }
@@ -608,6 +803,7 @@ mod tests {
             instrument_id: "EURUSD".into(),
             parent_notional_portfolio: d("100"),
             maximum_loss_at_stop_portfolio: d("1"),
+            reduce_only: false,
             projected_gross_exposure_portfolio: d("200"),
             remaining_daily_loss_budget_portfolio: d("10"),
             snapshot_observed_at_ms: 9_900,
@@ -679,6 +875,14 @@ mod tests {
         FanoutLifecycle::new(parent, children).unwrap()
     }
 
+    fn confirm_persisted(fanout: &mut FanoutLifecycle) {
+        let receipt = NewlyPersistedFanout {
+            parent_order_id: fanout.parent.parent_order_id.clone(),
+            request_fingerprint: fanout.parent.request_fingerprint.clone(),
+        };
+        fanout.confirm_durable_persistence(receipt).unwrap();
+    }
+
     #[test]
     fn equal_split_requires_every_selected_account_and_preserves_remainder() {
         let mut plan = split_plan();
@@ -731,14 +935,14 @@ mod tests {
     fn dispatch_is_blocked_until_all_intents_are_persisted() {
         let mut fanout = build(&split_plan());
         assert_eq!(fanout.begin_dispatch(10_001), Err(FanoutError::NotPersisted));
-        fanout.confirm_durable_persistence();
+        confirm_persisted(&mut fanout);
         assert!(fanout.begin_dispatch(10_001).is_ok());
     }
 
     #[test]
     fn unknown_outcome_is_reconciled_and_never_blindly_resubmitted() {
         let mut fanout = build(&split_plan());
-        fanout.confirm_durable_persistence();
+        confirm_persisted(&mut fanout);
         fanout.begin_dispatch(10_001).unwrap();
         let id = fanout.children[0].child_order_id.clone();
         fanout.begin_child_submission(&id, 10_002).unwrap();
@@ -752,7 +956,7 @@ mod tests {
     #[test]
     fn fills_are_idempotent_weighted_and_cannot_overfill() {
         let mut fanout = build(&split_plan());
-        fanout.confirm_durable_persistence();
+        confirm_persisted(&mut fanout);
         fanout.begin_dispatch(10_001).unwrap();
         let id = fanout.children[0].child_order_id.clone();
         fanout.begin_child_submission(&id, 10_002).unwrap();
@@ -771,7 +975,7 @@ mod tests {
     #[test]
     fn partial_success_and_rejection_remain_visible_on_parent() {
         let mut fanout = build(&split_plan());
-        fanout.confirm_durable_persistence();
+        confirm_persisted(&mut fanout);
         fanout.begin_dispatch(10_001).unwrap();
         let first = fanout.children[0].child_order_id.clone();
         let second = fanout.children[1].child_order_id.clone();
