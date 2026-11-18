@@ -907,7 +907,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : mechanicsTab === "vector" ? <>
-            <Text style={styles.mapTitle}>Force map</Text><Text style={styles.mapCopy}>Persisted Axum decision vector on bullish and bearish axes.</Text>
+            <Text style={styles.mapTitle}>Vector space · six engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁶ feature state with attention interactions.</Text>
+            <MobileVectorSpaceMechanics decision={vector} />
+            <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
@@ -942,8 +944,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>
               <Text style={styles.disclaimer}>Last raw event: {lastEvent ? JSON.stringify(lastEvent) : "none received"}. Missing values mean the provider has not supplied that field.</Text>
             </View>
-            <MobileVectorSpaceMechanics decision={vector} />
-            <FeatureSpace decision={vector} />
+<FeatureSpace decision={vector} />
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <View style={styles.strategyPanel}>
