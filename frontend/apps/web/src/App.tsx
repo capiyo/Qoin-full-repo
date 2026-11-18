@@ -736,9 +736,8 @@ export default function App() {
       }
     };
     const scheduleSetLedgerRefresh = () => {
-      if (!selected) return;
+      if (!selected || ledgerRefreshTimer) return;
       setSetLedgerStatus("New evidence · rebuilding V2 projection…");
-      if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer);
       ledgerRefreshTimer = setTimeout(() => { ledgerRefreshTimer = null; void refreshSetLedger(); }, 450);
     };
     const unsubscribe = subscribeQoinStream(symbols, (update) => {
