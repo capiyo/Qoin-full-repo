@@ -888,6 +888,7 @@ export default function App() {
         <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
+          <button onClick={() => { setTab("Brokers"); setAccountOpen(false); closeInstrument(); }}>Broker collection</button>
           {firebaseUser ? <>
             <button onClick={() => { setAccountOpen(false); setProfileOpen((value) => !value); setAuthPanelOpen(false); }}>Profile</button>
             <button onClick={() => { setNotificationsOpen((value) => !value); setAccountOpen(false); }}>Notifications <span>{unreadNotifications ? unreadNotifications : ""}</span></button>
@@ -1028,7 +1029,6 @@ export default function App() {
       <nav className="floating-navigation" aria-label="Primary navigation">
         <button className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">◈</span><span>Archive</span></button>
         <button className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span><span>Explore</span></button>
-        <button className={tab === "Brokers" ? "floating-nav-item active" : "floating-nav-item"} aria-current={tab === "Brokers" ? "page" : undefined} onClick={() => { setTab("Brokers"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⇄</span><span>Brokers</span></button>
       </nav>
 
 
