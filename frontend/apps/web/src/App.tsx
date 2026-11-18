@@ -258,6 +258,11 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
     {!ledger ? <p style={{ margin: 0, color: "#8794A7", fontSize: 11 }}>{status}</p> : <>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "#8794A7", fontSize: 10 }}>
         <span>Universe <strong style={{ color: "#243750" }}>{ledger.universe_count}</strong></span>
+        {ledger.source_event_count != null ? <span>Source events <strong style={{ color: "#243750" }}>{ledger.source_event_count}</strong></span> : null}
+        {ledger.durable_observation_count != null ? <span>Durable observations <strong style={{ color: "#243750" }}>{ledger.durable_observation_count}</strong></span> : null}
+        {ledger.durable_relation_count != null ? <span>Stored relation records <strong style={{ color: "#243750" }}>{ledger.durable_relation_count}</strong></span> : null}
+        {ledger.durable_history_complete != null ? <span>History <strong style={{ color: ledger.durable_history_complete ? "#16845B" : "#B7791F" }}>{ledger.durable_history_complete ? "complete" : "incomplete"}</strong></span> : null}
+        {ledger.relation_coverage_complete != null ? <span>Relation coverage <strong style={{ color: ledger.relation_coverage_complete ? "#16845B" : "#B7791F" }}>{ledger.relation_coverage_complete ? "complete" : "bounded"}</strong></span> : null}
         <span>Sets <strong style={{ color: "#243750" }}>{ledger.sets.length}</strong></span>
         <span>Relations <strong style={{ color: "#243750" }}>{ledger.relations.length}</strong></span>
         <span>Invalid skipped <strong style={{ color: "#243750" }}>{ledger.skipped_invalid_events}</strong></span>
