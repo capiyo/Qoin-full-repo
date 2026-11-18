@@ -125,6 +125,7 @@ pub struct ParentOrderIntent {
     pub status: ParentOrderStatus,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    pub revision: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,6 +154,7 @@ pub struct ChildOrderIntent {
     pub last_reason: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    pub revision: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -269,6 +271,7 @@ pub enum FanoutPersistenceError {
     Database(String),
     IdempotencyConflict,
     DuplicateChildIdentity,
+    ConcurrentModification,
 }
 
 impl std::fmt::Display for FanoutPersistenceError {
@@ -286,11 +289,7 @@ pub async fn persist_fanout_intents(
     parent: &ParentOrderIntent,
     children: &[ChildOrderIntent],
 ) -> Result<(FanoutPersistOutcome, Option<NewlyPersistedFanout>), FanoutPersistenceError> {
-    if children.is_empty()
-        || parent.request_fingerprint.is_empty()
-        || children.len() != parent.routed_accounts.len()
-        || children.iter().any(|child| child.parent_order_id != parent.parent_order_id)
-    {
+    if FanoutLifecycle::new(parent.clone(), children.to_vec()).is_err() {
         return Err(FanoutPersistenceError::InvalidRecords);
     }
 
@@ -474,6 +473,7 @@ pub fn build_fanout_intents(
             last_reason: None,
             created_at_ms: request.created_at_ms,
             updated_at_ms: request.created_at_ms,
+            revision: 0,
         });
     }
     let request_fingerprint = request_fingerprint(
@@ -510,8 +510,81 @@ pub fn build_fanout_intents(
         status: ParentOrderStatus::Prepared,
         created_at_ms: request.created_at_ms,
         updated_at_ms: request.created_at_ms,
+        revision: 0,
     };
     Ok((parent, children))
+}
+
+
+/// Persist a parent-only transition (for example, dispatch-started) with
+/// optimistic concurrency. A zero match means another worker changed it;
+/// callers must reload the parent and reconcile rather than overwrite state.
+pub async fn persist_parent_lifecycle_update(
+    collection: &Collection<Document>,
+    parent: &ParentOrderIntent,
+    expected_revision: i64,
+) -> Result<(), FanoutPersistenceError> {
+    if parent.revision != expected_revision.checked_add(1).ok_or(FanoutPersistenceError::InvalidRecords)? {
+        return Err(FanoutPersistenceError::InvalidRecords);
+    }
+    let status = mongodb::bson::to_bson(&parent.status)
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    let result = collection.update_one(
+        doc! { "parent_order_id": &parent.parent_order_id, "revision": expected_revision },
+        doc! { "$set": {
+            "status": status,
+            "updated_at_ms": parent.updated_at_ms,
+            "revision": parent.revision,
+        }},
+        None,
+    ).await.map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    if result.matched_count != 1 {
+        return Err(FanoutPersistenceError::ConcurrentModification);
+    }
+    Ok(())
+}
+
+/// Persist a child transition and its derived parent status in one atomic
+/// Mongo document update. Expected revisions prevent stale workers overwriting
+/// newer fills, acknowledgements or reconciliation results.
+pub async fn persist_child_lifecycle_update(
+    collection: &Collection<Document>,
+    parent: &ParentOrderIntent,
+    child: &ChildOrderIntent,
+    expected_parent_revision: i64,
+    expected_child_revision: i64,
+) -> Result<(), FanoutPersistenceError> {
+    if parent.revision != expected_parent_revision.checked_add(1).ok_or(FanoutPersistenceError::InvalidRecords)?
+        || child.revision != expected_child_revision.checked_add(1).ok_or(FanoutPersistenceError::InvalidRecords)?
+        || child.parent_order_id != parent.parent_order_id
+    {
+        return Err(FanoutPersistenceError::InvalidRecords);
+    }
+    let child_document = mongodb::bson::to_document(child)
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    let status = mongodb::bson::to_bson(&parent.status)
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    let result = collection.update_one(
+        doc! {
+            "parent_order_id": &parent.parent_order_id,
+            "revision": expected_parent_revision,
+            "children": { "$elemMatch": {
+                "client_order_id": &child.client_order_id,
+                "revision": expected_child_revision,
+            }},
+        },
+        doc! { "$set": {
+            "children.$": child_document,
+            "status": status,
+            "updated_at_ms": parent.updated_at_ms,
+            "revision": parent.revision,
+        }},
+        None,
+    ).await.map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
+    if result.matched_count != 1 {
+        return Err(FanoutPersistenceError::ConcurrentModification);
+    }
+    Ok(())
 }
 
 /// In-memory state transition guard for a coordinator that persists the
@@ -529,6 +602,8 @@ impl FanoutLifecycle {
         if children.is_empty()
             || children.len() != parent.routed_accounts.len()
             || parent.request_fingerprint.is_empty()
+            || parent.status != ParentOrderStatus::Prepared
+            || parent.revision != 0
         {
             return Err(FanoutError::InvalidPlan("parent and child records do not match".into()));
         }
@@ -543,6 +618,9 @@ impl FanoutLifecycle {
                 || child.status != ChildOrderStatus::Prepared
                 || child.quantity <= Decimal::ZERO
                 || child.requested_quantity != child.quantity
+                || child.instrument_id != parent.instrument_id
+                || child.reduce_only != parent.reduce_only
+                || child.revision != 0
                 || !child_keys.insert(key)
                 || !child_ids.insert(child.client_order_id.clone())
             {
@@ -581,6 +659,7 @@ impl FanoutLifecycle {
         self.dispatch_started = true;
         self.parent.status = ParentOrderStatus::Dispatching;
         self.parent.updated_at_ms = now_ms;
+        self.parent.revision = self.parent.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         Ok(())
     }
 
@@ -598,7 +677,9 @@ impl FanoutLifecycle {
         }
         child.status = ChildOrderStatus::Submitting;
         child.updated_at_ms = now_ms;
+        child.revision = child.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         self.parent.updated_at_ms = now_ms;
+        self.parent.revision = self.parent.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         Ok(())
     }
 
@@ -614,8 +695,11 @@ impl FanoutLifecycle {
             return Err(FanoutError::InvalidTransition);
         }
         let changed = child.apply(event, now_ms)?;
-        self.refresh_parent_status();
-        self.parent.updated_at_ms = now_ms;
+        if changed {
+            self.refresh_parent_status();
+            self.parent.updated_at_ms = now_ms;
+            self.parent.revision = self.parent.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
+        }
         Ok(changed)
     }
 
@@ -724,6 +808,7 @@ impl ChildOrderIntent {
             }
         }
         self.updated_at_ms = now_ms;
+        self.revision = self.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         Ok(true)
     }
 
@@ -772,6 +857,7 @@ impl ChildOrderIntent {
             ChildOrderStatus::PartiallyFilled
         };
         self.updated_at_ms = now_ms;
+        self.revision = self.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         Ok(true)
     }
 }
