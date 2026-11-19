@@ -716,9 +716,9 @@ async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl I
 }
 async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    match s.decisions.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"action":"wait","reason":"no decision available"}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"strategy_key":"qoin-vector-baseline","model_version":"qoin-seven-force-vector-v1","action":"wait","reason":"no seven-force engine decision available yet"}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
@@ -1736,7 +1736,7 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
     let options=FindOptions::builder().sort(doc!{"stored_at":-1}).limit(limit).build();
-    let mut cursor=match s.decisions.find(doc!{"symbol":&symbol},Some(options)).await {
+    let mut cursor=match s.decisions.find(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,"vector history query failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"vector history unavailable","symbol":symbol}))); }
