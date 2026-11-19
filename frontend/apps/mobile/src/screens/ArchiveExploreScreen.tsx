@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -448,6 +448,7 @@ function MobileBrokerCollectionPanel() {
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
   const [preferencesReady,setPreferencesReady]=useState(false);
+  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
     void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,kind:broker.provider_kind==="exchange"?"Exchange API":"Broker API",status:broker.execution_status==="execution_adapter_exists_not_connected"?"Existing Binance executor · account link pending":"API listed · Qoin execution adapter pending",selectable:broker.selectable})));}).catch(()=>undefined);
@@ -458,17 +459,22 @@ function MobileBrokerCollectionPanel() {
     return()=>{active=false;};
   },[]);
   useEffect(()=>{if(preferencesReady){void AsyncStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected)).catch(()=>undefined);void saveQoinBrokerSelections(selected).catch(()=>undefined);}},[selected,preferencesReady]);
+  useEffect(()=>{
+    let active=true;
+    void getQoinBrokerReadiness(selected).then((result)=>{if(active)setReadiness(result);}).catch(()=>{if(active)setReadiness(null);});
+    return()=>{active=false;};
+  },[selected]);
   const amount=Number(capital),valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <View style={{gap:11,padding:14,borderWidth:1,borderColor:"#E4EAF3",borderRadius:15,backgroundColor:"#FFFFFF"}}>
-    <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,alignItems:"center"}}><View style={{flex:1,gap:4}}><Text style={styles.kicker}>EXECUTION VENUES</Text><Text style={styles.newsTitle}>Broker collection</Text><Text style={styles.noteCopy}>Choose providers to connect later. Selection saves a preference only; it does not connect an account or enable orders.</Text></View><Text style={styles.coverageStatus}>{selected.length}/20</Text></View>
+    <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,alignItems:"center"}}><View style={{flex:1,gap:4}}><Text style={styles.kicker}>EXECUTION VENUES</Text><Text style={styles.newsTitle}>Broker collection</Text><Text style={styles.noteCopy}>Choose providers for Qoin’s execution-readiness check. Account authorization is separate; trades remain blocked until every selected account is verified.</Text></View><Text style={styles.coverageStatus}>{selected.length}/20</Text></View>
     {directory.map((broker)=><View key={broker.id} style={{gap:6,paddingVertical:10,borderTopWidth:1,borderTopColor:"#EDF1F6"}}>
       <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8}}><View style={{flex:1,gap:3}}><Text style={{color:"#243750",fontSize:12,fontWeight:"800"}}>{broker.name}</Text><Text style={{color:"#8794A7",fontSize:8}}>{broker.kind}</Text></View>
         {broker.selectable?<Pressable accessibilityRole="button" accessibilityState={{selected:selected.includes(broker.id)}} onPress={()=>setSelected((current)=>current.includes(broker.id)?current.filter((id)=>id!==broker.id):current.length<20?[...current,broker.id]:current)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:20,backgroundColor:selected.includes(broker.id)?"#EAF6EF":"#EDF3FF"}}><Text style={{color:selected.includes(broker.id)?"#16845B":"#2867DC",fontSize:9,fontWeight:"800"}}>{selected.includes(broker.id)?"Selected":"Select"}</Text></Pressable>:<Text style={{color:"#A36B12",fontSize:8,fontWeight:"800"}}>DATA ONLY</Text>}
       </View>
       <Text style={{color:"#8794A7",fontSize:9,lineHeight:14}}>{broker.status}</Text>
     </View>)}
-    <View style={{gap:7,padding:11,borderRadius:11,backgroundColor:"#F5F8FD"}}>
+    <View accessibilityLiveRegion="polite" style={{gap:5,padding:11,borderRadius:11,backgroundColor:"#FFF7E8"}}><Text style={styles.engineLabel}>TRADE CONNECTION STATUS</Text><Text style={styles.engineValue}>{readiness?`${readiness.connected_account_count} connected · ${readiness.execution_ready_count}/${readiness.selected_count} ready · ${readiness.dispatch_enabled?"Dispatch enabled":"Dispatch blocked"}`:"Checking selected providers…"}</Text><Text style={styles.coverageDisclaimer}>{readiness?.message||"Waiting for broker readiness API."}</Text>{readiness?.blockers?.map((item)=><Text key={item} style={styles.coverageDisclaimer}>{item}</Text>)}</View>\n    <View style={{gap:7,padding:11,borderRadius:11,backgroundColor:"#F5F8FD"}}>
       <Text style={styles.engineLabel}>PORTFOLIO BASE CURRENCY</Text>
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>{["USD","EUR","GBP","KES","USDT"].map((value)=><Pressable key={value} onPress={()=>setCurrency(value)} style={{paddingVertical:6,paddingHorizontal:10,borderRadius:18,backgroundColor:currency===value?"#EAF1FF":"#FFFFFF",borderWidth:1,borderColor:currency===value?"#9AB8F1":"#E1E8F1"}}><Text style={{color:currency===value?"#2867DC":"#8794A7",fontSize:8,fontWeight:"800"}}>{value}</Text></Pressable>)}</View>
       <Text style={styles.engineLabel}>EQUAL TARGET NOTIONAL · {currency} · PREVIEW</Text>
@@ -476,7 +482,7 @@ function MobileBrokerCollectionPanel() {
       <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Selected venue preferences</Text><Text style={styles.engineValue}>{selected.length}</Text></View>
       <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Illustrative target per selected venue · {currency}</Text><Text style={styles.engineValue}>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</Text></View>
     </View>
-    <Text style={styles.coverageDisclaimer}>{selected.length?"Preference is saved on this device only. Account linking and server-side eligibility checks remain required.":"No execution account is connected. Select a listed adapter to save a local preference."} Equal split is a target notional, not a guaranteed fill. Backend must validate minimums, margin, risk, costs and every selected account before routing.</Text>
+    <Text style={styles.coverageDisclaimer}>{selected.length?"Signed-in preferences are saved to the user profile and checked by the backend readiness API. Account linking and server-side eligibility checks remain required.":"No execution account is connected. Select a listed adapter to save a local preference."} Equal split is a target notional, not a guaranteed fill. Backend must validate minimums, margin, risk, costs and every selected account before routing.</Text>
   </View>;
 }
 
