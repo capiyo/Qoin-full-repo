@@ -12,9 +12,10 @@ pub struct ReplayEvent {
 }
 #[derive(Debug, Clone, Default)]
 struct ReplayState {
-    last_price: Option<f64>, last_mark_price: Option<f64>, basis_bps: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>, signed_flow: f64, total_trade_size: f64,
+    last_price: Option<f64>, last_mark_price: Option<f64>, basis_bps: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>,
+    last_event_ts_ms: Option<i64>, liquidity_imbalance: f64, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
-    open_interest: Option<f64>, open_interest_change: f64,
+    open_interest: Option<f64>, open_interest_change: f64, liquidation_pressure: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -153,12 +154,11 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
         |_symbol, state, _event| {
             let observation = ForceObservation {
                 ofi: state.ofi,
-                liquidity: state.spread_bps.map(|spread| -spread / 25.0).unwrap_or(0.0),
+                liquidity: state.liquidity_imbalance,
                 volatility: state.ewma_abs_return / 0.01,
                 funding: state.funding_rate.unwrap_or(0.0) * 100.0,
                 open_interest_change: state.open_interest_change * 100.0,
-                liquidation_pressure: (state.liquidation_events as f64 / 10.0)
-                    * match state.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+                liquidation_pressure: state.liquidation_pressure / 10.0,
                 basis: state.basis_bps.map(|basis| basis / 25.0).unwrap_or(0.0),
                 spread_bps: state.spread_bps,
                 spread_age_ms: state.last_book_ts_ms.map(|book_ts| _event.ts_ms.saturating_sub(book_ts)),
@@ -206,6 +206,13 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
     let mut pending_order: Option<ReplayPendingOrder> = None;
     for event in &events {
+        if let Some(previous_ts) = state.last_event_ts_ms {
+            let elapsed_ms = event.ts_ms.saturating_sub(previous_ts) as f64;
+            let decay = (-std::f64::consts::LN_2 * elapsed_ms / 60_000.0).exp();
+            state.signed_flow *= decay;
+            state.total_trade_size *= decay;
+            state.liquidation_pressure *= decay;
+        }
         let current_mark_price = event_mark_price(event);
         if let Some(price) = current_mark_price { state.last_mark_price = Some(price); }
 
@@ -342,7 +349,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             let mid=(bid+ask)/2.0;
             state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
             state.last_book_ts_ms=Some(event.ts_ms);
-            if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
+            if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.liquidity_imbalance=(bs-as_)/(bs+as_);} }
         }
         if event.event_type == "funding" && position > 0.0 {
             if let (Some(rate), Some(mark_price)) = (event.funding_rate, event.price.filter(|price| price.is_finite() && *price > 0.0)) {
@@ -358,8 +365,8 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 state.total_trade_size+=size; state.event_intensity+=1.0; }
             "liquidation" => {state.liquidation_events+=1;state.event_intensity+=2.0;
                 state.last_liquidation_side=event.liquidation_side.clone();
-                if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
-                if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);}}
+                match event.liquidation_side.as_deref() {Some("long")=>state.liquidation_pressure-=1.0,
+                    Some("short")=>state.liquidation_pressure+=1.0,_=>{}}}
             "funding" | "mark_price"=>if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
             "open_interest"=>if let Some(current)=event.open_interest {
                 if let Some(previous)=state.open_interest.filter(|value| *value>0.0) {
@@ -370,6 +377,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             _=>{}
         }
         if state.total_trade_size>0.0 {state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
+        state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
         let decision=decide(&symbol,&state,event)?;
         match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
         let mark = state.last_mark_price.or(state.last_price);
