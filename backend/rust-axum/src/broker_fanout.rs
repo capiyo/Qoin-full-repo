@@ -562,12 +562,16 @@ pub fn build_fanout_intents(
 /// one-shot dispatch guard or authorize a duplicate submission.
 pub async fn load_fanout_lifecycle(
     collection: &Collection<Document>,
+    owner_scope: &str,
     parent_order_id: &str,
 ) -> Result<Option<FanoutLifecycle>, FanoutPersistenceError> {
-    if parent_order_id.trim().is_empty() {
+    if owner_scope.trim().is_empty() || parent_order_id.trim().is_empty() {
         return Err(FanoutPersistenceError::InvalidRecords);
     }
-    let Some(mut document) = collection.find_one(doc! { "parent_order_id": parent_order_id }, None).await
+    let Some(mut document) = collection.find_one(doc! {
+        "owner_scope": owner_scope,
+        "parent_order_id": parent_order_id,
+    }, None).await
         .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?
     else {
         return Ok(None);
@@ -597,7 +601,11 @@ pub async fn persist_parent_lifecycle_update(
     let status = mongodb::bson::to_bson(&parent.status)
         .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
     let result = collection.update_one(
-        doc! { "parent_order_id": &parent.parent_order_id, "revision": expected_revision },
+        doc! {
+            "owner_scope": &parent.owner_scope,
+            "parent_order_id": &parent.parent_order_id,
+            "revision": expected_revision,
+        },
         doc! { "$set": {
             "status": status,
             "updated_at_ms": parent.updated_at_ms,
@@ -633,6 +641,7 @@ pub async fn persist_child_lifecycle_update(
         .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?;
     let result = collection.update_one(
         doc! {
+            "owner_scope": &parent.owner_scope,
             "parent_order_id": &parent.parent_order_id,
             "revision": expected_parent_revision,
             "children": { "$elemMatch": {
