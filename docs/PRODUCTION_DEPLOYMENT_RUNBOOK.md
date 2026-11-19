@@ -7,7 +7,9 @@ This runbook is the release gate for the Qoin application. A successful containe
 - Vector V1 is the only decision-authority track. V2 Sets & Ledger is research, relationship discovery and provenance only; it must not route orders.
 - The equal-share broker allocation endpoint produces a plan only. It does not connect accounts, check buying power, or submit orders.
 - The live order adapter is currently Binance USD-M only. Other broker identifiers must remain unavailable until a real adapter, account lifecycle and reconciliation implementation is complete.
-- Keep `QOIN_TRADING_MODE=disabled` and `QOIN_TRADING_ENABLED=false` for the initial production deployment. Do not put exchange credentials in a frontend build or mobile app.
+- The persisted operator kill switch initializes disabled and is never re-armed from an environment variable after a restart. Do not use `QOIN_TRADING_ENABLED` as an activation mechanism.
+- Live Binance execution additionally requires `QOIN_TRADING_MODE=live`, the explicit real-money confirmation phrase, and all four independently verified attestations: `QOIN_LIVE_ACCOUNT_VERIFIED=true`, `QOIN_LIVE_WITHDRAWALS_DISABLED=true`, `QOIN_LIVE_RECONCILIATION_APPROVED=true`, and `QOIN_LIVE_RISK_CONTROLS_APPROVED=true`. These attestations are operator release controls, not substitutes for actual account checks.
+- Health now reports degraded while any order remains in `submitting` or `reconciliation_required`; clear these only after exchange-side reconciliation. Do not put exchange credentials in a frontend build or mobile app.
 - Do not describe a strategy as profitable or validated without preregistered out-of-sample results, realistic costs and independent review.
 
 ## Required deployment configuration
@@ -37,7 +39,8 @@ Use unique, strong database credentials. If credentials contain URI-reserved cha
 5. Verify `/health` returns HTTP 200 with MongoDB, Firebase server authentication and market recovery healthy. Verify the gateway health endpoint independently.
 6. From a real web and mobile build, sign in with Firebase and verify authenticated reads, backtests and broker allocation planning. Confirm missing, malformed and expired tokens are rejected.
 7. Verify provider timestamps, symbol/venue identity, stale-feed handling, reconnect behavior and event recovery. Confirm no duplicate events after a provider restart.
-8. Verify that order entry remains disabled. Do not add exchange API credentials to production until paper-trading, risk and reconciliation gates have been signed off.
+8. Verify that order entry remains disabled after a fresh database initialization and after an Axum restart. Verify unresolved order counts force degraded health.
+9. For a live release, verify broker account ownership, disable withdrawals on the API key/account, validate reconciliation and independently review risk controls before setting the four live attestations. Then perform a controlled operator enable/disable drill with minimum permitted exposure and monitor broker state against the durable ledger.
 
 ## Security and access controls
 
@@ -69,7 +72,7 @@ Trading remains disabled until all of these are independently demonstrated:
 7. Paper trading and walk-forward/out-of-sample tests cover normal, stressed, disconnected and degraded market conditions with realistic fees, slippage and latency.
 8. A human operator has tested the kill switch and documented rollback and incident procedures.
 
-Never turn on live execution by changing an environment variable alone. Require a reviewed release, operator approval and a verified broker-specific runbook.
+Never turn on live execution by changing an environment variable alone. The persisted kill switch must be enabled separately by an authorized operator. Require a reviewed release, verified broker account controls, operator approval and a broker-specific reconciliation runbook.
 
 ## Release evidence to attach
 
