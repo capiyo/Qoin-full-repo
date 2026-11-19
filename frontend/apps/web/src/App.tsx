@@ -1023,7 +1023,7 @@ export default function App() {
   }, [selected?.engineSymbol, liveBySymbol]);
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
-  const decisionStrategy = vector?.strategy_parameters || strategy;
+  const decisionStrategy = strategy;
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function toggleArchive(symbol: string) {
