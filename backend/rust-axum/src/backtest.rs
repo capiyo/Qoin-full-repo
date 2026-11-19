@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use crate::edge_strategy::{EdgeDecision, EdgeStrategy};
+use crate::edge_strategy::EdgeStrategy;
+use qoin_vector_engine::{decide as decide_vector, EngineConfig, ForceObservation};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReplayEvent {
@@ -12,6 +13,7 @@ pub struct ReplayEvent {
 struct ReplayState {
     last_price: Option<f64>, last_mark_price: Option<f64>, spread_bps: Option<f64>, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
+    open_interest: Option<f64>, open_interest_change: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -59,6 +61,8 @@ pub struct ExecutionStressScenario {
     pub fills_recomputed: bool,
 }
 #[derive(Debug, Clone, Serialize)]
+pub struct ReplayDecision { pub action: String, pub reason: String }
+#[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
     pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
     pub from_ts_ms: i64, pub to_ts_ms: i64, pub events_replayed: usize,
@@ -69,7 +73,7 @@ pub struct ReplayResult {
     pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
     pub fee_bps: f64, pub slippage_bps: f64, pub latency_ms: i64,
     pub max_participation_rate: f64, pub market_impact_bps: f64, pub market_impact_paid: f64,
-    pub fills: Vec<ReplayFill>, pub last_decision: Option<EdgeDecision>,
+    pub fills: Vec<ReplayFill>, pub last_decision: Option<ReplayDecision>,
     pub unfilled_pending_order: Option<ReplayPendingOrder>,
     pub execution_stress_scenarios: Vec<ExecutionStressScenario>,
     pub assumptions: Vec<String>,
@@ -122,10 +126,48 @@ pub fn replay_with_latency(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, in
     replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, latency_ms, 0.10, 5.0)
 }
 
-pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
+pub fn replay_with_execution(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64,
               max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String> {
     strategy.validate()?;
+    replay_with_decider(events, strategy.strategy_key.clone(), strategy.version.clone(),
+        |symbol, state, _event| {
+            let decision = strategy.decide(symbol, state.ofi, state.funding_rate, state.spread_bps,
+                state.ewma_abs_return, state.event_intensity, state.liquidation_events,
+                state.last_liquidation_side.as_deref())?;
+            Ok(ReplayDecision { action: decision.action.to_owned(), reason: decision.reason })
+        }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
+}
+
+/// Run the identical execution simulator with the authoritative seven-force
+/// engine used by live event ingestion. This keeps research replay and live
+/// signal calculations on one versioned decision implementation.
+pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig, config_version: &str,
+              initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
+              max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String> {
+    replay_with_decider(events, "qoin-vector-baseline".to_owned(), config_version.to_owned(),
+        |_symbol, state, _event| {
+            let observation = ForceObservation {
+                ofi: state.ofi,
+                liquidity: state.spread_bps.map(|spread| -spread / 25.0).unwrap_or(0.0),
+                volatility: state.ewma_abs_return / 0.01,
+                funding: state.funding_rate.unwrap_or(0.0) * 100.0,
+                open_interest_change: state.open_interest_change * 100.0,
+                liquidation_pressure: (state.liquidation_events as f64 / 10.0)
+                    * match state.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+                basis: 0.0,
+                spread_bps: state.spread_bps,
+            };
+            let signal = decide_vector(observation, config, config_version, false)
+                .map_err(|error| error.to_string())?;
+            Ok(ReplayDecision { action: signal.action, reason: signal.rationale })
+        }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
+}
+
+fn replay_with_decider<F>(mut events: Vec<ReplayEvent>, strategy_key: String, strategy_version: String,
+              mut decide: F, initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
+              max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String>
+where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, String> {
     if !initial_capital.is_finite() || initial_capital <= 0.0 || !fee_bps.is_finite()
         || fee_bps < 0.0 || !slippage_bps.is_finite() || !(0.0..10_000.0).contains(&slippage_bps)
         || !(0..=60_000).contains(&latency_ms) || !max_participation_rate.is_finite()
@@ -303,12 +345,17 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
                 if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
                 if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);}}
             "funding"=>if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
+            "open_interest"=>if let Some(current)=event.open_interest {
+                if let Some(previous)=state.open_interest.filter(|value| *value>0.0) {
+                    state.open_interest_change=((current-previous)/previous).clamp(-3.0,3.0);
+                }
+                state.open_interest=Some(current);
+            },
             _=>{}
         }
         if state.total_trade_size>0.0 {state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
-        let decision=strategy.decide(&symbol,state.ofi,state.funding_rate,state.spread_bps,state.ewma_abs_return,
-            state.event_intensity,state.liquidation_events,state.last_liquidation_side.as_deref())?;
-        match decision.action { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
+        let decision=decide(&symbol,&state,event)?;
+        match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
         let mark = state.last_mark_price.or(state.last_price);
         if let Some(price)=mark {
             let equity=cash+position*price; peak=peak.max(equity);
@@ -365,7 +412,7 @@ pub fn replay_with_execution(mut events: Vec<ReplayEvent>, strategy: &EdgeStrate
             fills_recomputed: false,
         }
     }).collect();
-    Ok(ReplayResult{symbol,venue,strategy_key:strategy.strategy_key.clone(),strategy_version:strategy.version.clone(),
+    Ok(ReplayResult{symbol,venue,strategy_key,strategy_version,
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         max_event_gap_ms:events.windows(2).map(|pair|pair[1].ts_ms-pair[0].ts_ms).max().unwrap_or(0),
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
