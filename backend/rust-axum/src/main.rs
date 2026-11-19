@@ -2044,6 +2044,7 @@ async fn main(){
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
+        .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
         .transpose()
         .expect("configure a valid Firebase project ID for authenticated trading routes");
