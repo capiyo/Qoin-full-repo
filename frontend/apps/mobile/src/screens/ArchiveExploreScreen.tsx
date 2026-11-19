@@ -69,7 +69,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   const gates = decision.diagnostics;
   const rows = decision.feature_trace || [];
   const gateRows: [string, boolean | undefined][] = [
-    ["Spread supplied", gates?.spread_present], ["Spread within limit", gates?.spread_within_limit],
+    ["Spread supplied", gates?.spread_present], ["Spread within limit", gates?.spread_within_limit], ["Quote fresh", gates?.spread_fresh],
     ["Alignment threshold", gates?.alignment_passed], ["Magnitude threshold", gates?.magnitude_passed],
     ["Angular threshold", gates?.angle_passed],
   ];
