@@ -26,6 +26,7 @@ mod set_ledger;
 mod order_safety;
 mod execution_lifecycle;
 mod broker_contract;
+mod broker_adapter_skeleton;
 mod broker_catalogue;
 mod firebase_identity;
 mod broker_allocation;
