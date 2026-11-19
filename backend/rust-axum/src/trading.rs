@@ -51,6 +51,19 @@ impl BinanceExecutor {
                 if env::var("QOIN_LIVE_TRADING_CONFIRM").unwrap_or_default() != "I_UNDERSTAND_REAL_MONEY_RISK" {
                     return Err("live execution requires explicit confirmation".into());
                 }
+                // Live credentials alone are insufficient. Require explicit,
+                // independently configured operational attestations before
+                // constructing an executor capable of sending real orders.
+                for (name, description) in [
+                    ("QOIN_LIVE_ACCOUNT_VERIFIED", "broker account ownership verification"),
+                    ("QOIN_LIVE_WITHDRAWALS_DISABLED", "withdrawals-disabled account configuration"),
+                    ("QOIN_LIVE_RECONCILIATION_APPROVED", "verified order/position reconciliation"),
+                    ("QOIN_LIVE_RISK_CONTROLS_APPROVED", "independent risk-control review"),
+                ] {
+                    if env::var(name).map(|value| value.eq_ignore_ascii_case("true")).unwrap_or(false) == false {
+                        return Err(format!("live execution requires {description} ({name}=true)"));
+                    }
+                }
                 "live"
             }
             "testnet" => {
