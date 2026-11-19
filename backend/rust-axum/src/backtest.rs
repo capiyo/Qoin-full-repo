@@ -328,6 +328,8 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 state.ewma_abs_return=0.94*state.ewma_abs_return+0.06*(price/previous).ln().abs();
             }
             state.last_price=Some(price);
+            state.basis_bps=state.last_mark_price.filter(|mark| *mark > 0.0)
+                .map(|mark| (mark-price)/price*10_000.0);
         }
         }
         if event.event_type == "mark_price" {
