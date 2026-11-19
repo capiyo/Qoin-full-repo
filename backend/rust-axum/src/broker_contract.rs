@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use futures_util::future::join_all;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
+use std::{collections::{HashMap, HashSet}, fmt, sync::{Arc, RwLock}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
