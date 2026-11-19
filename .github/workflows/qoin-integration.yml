@@ -1,7 +1,7 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui, version-2-set-theoretic-attention]
+    branches: [main, feat/mongodb-edge-strategy-map, feat/qoin-auth-engine-card-display, qoin-archive-explore-vector-ui, version-2-set-theoretic-attention]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
