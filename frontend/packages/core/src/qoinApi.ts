@@ -250,18 +250,7 @@ export type QoinBrokerOrderReceipt = {
     raw_status?: string | null;
   };
 };
-/** Generic order entry. It fails closed when the selected broker has no registered adapter. */
-export function submitQoinOrder(submission: QoinOrderSubmission): Promise<QoinBrokerOrderReceipt> {
-  return request<QoinBrokerOrderReceipt>("/api/v1/orders", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(submission),
-  });
-}
-/** Reconcile by Qoin client order ID using the same broker adapter as the original intent. */
-export function reconcileQoinOrder(clientOrderId: string): Promise<QoinBrokerOrderReceipt> {
-  return request<QoinBrokerOrderReceipt>("/api/v1/orders/" + encodeURIComponent(clientOrderId) + "/reconcile");
-}
+/** Order submission is server-orchestrated; browser/mobile clients never receive the operator execution token. */
 
 export type QoinInstrument = {
   symbol: string; engine_symbol: string; name: string;
