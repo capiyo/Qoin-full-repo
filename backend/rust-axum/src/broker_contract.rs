@@ -112,6 +112,19 @@ impl InstrumentSpec {
         Ok(notional)
     }
 
+    pub fn validate_price(&self, price: Decimal) -> Result<(), ContractError> {
+        self.validate()?;
+        if price <= Decimal::ZERO {
+            return Err(ContractError::InvalidOrder("price must be positive".into()));
+        }
+        let remainder = price.checked_rem(self.tick_size)
+            .ok_or_else(|| ContractError::InvalidOrder("price tick calculation overflow".into()))?;
+        if remainder != Decimal::ZERO {
+            return Err(ContractError::InvalidOrder("price does not conform to instrument tick size".into()));
+        }
+        Ok(())
+    }
+
     pub fn validate_quantity(&self, quantity: Decimal) -> Result<(), ContractError> {
         self.validate()?;
         if quantity < self.minimum_quantity {
@@ -192,14 +205,21 @@ impl NormalizedOrder {
         }
         instrument.validate_quantity(self.quantity)?;
         match self.order_type {
-            OrderType::Limit if !self.limit_price.is_some_and(|value| value > Decimal::ZERO) =>
-                return Err(ContractError::InvalidOrder("limit orders require a positive limit price".into())),
-            OrderType::Stop if !self.stop_price.is_some_and(|value| value > Decimal::ZERO) =>
-                return Err(ContractError::InvalidOrder("stop orders require a positive stop price".into())),
-            OrderType::StopLimit if !self.stop_price.is_some_and(|value| value > Decimal::ZERO)
-                || !self.limit_price.is_some_and(|value| value > Decimal::ZERO) =>
-                return Err(ContractError::InvalidOrder("stop-limit orders require positive stop and limit prices".into())),
-            _ => {}
+            OrderType::Limit => {
+                let price = self.limit_price.ok_or_else(|| ContractError::InvalidOrder("limit orders require a limit price".into()))?;
+                instrument.validate_price(price)?;
+            }
+            OrderType::Stop => {
+                let price = self.stop_price.ok_or_else(|| ContractError::InvalidOrder("stop orders require a stop price".into()))?;
+                instrument.validate_price(price)?;
+            }
+            OrderType::StopLimit => {
+                let stop = self.stop_price.ok_or_else(|| ContractError::InvalidOrder("stop-limit orders require a stop price".into()))?;
+                let limit = self.limit_price.ok_or_else(|| ContractError::InvalidOrder("stop-limit orders require a limit price".into()))?;
+                instrument.validate_price(stop)?;
+                instrument.validate_price(limit)?;
+            }
+            OrderType::Market => {}
         }
         Ok(())
     }
@@ -383,7 +403,7 @@ pub fn validate_portfolio_order(
     if input.required_margin_account_currency > account.available_margin {
         return Err(ContractError::InvalidOrder("insufficient available margin in broker account".into()));
     }
-    if projected_gross_exposure > leverage_cap {
+    if !order.reduce_only && projected_gross_exposure > leverage_cap {
         return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into()));
     }
     if account.open_positions >= policy.max_open_positions && !order.reduce_only {
@@ -403,11 +423,15 @@ pub fn validate_portfolio_order(
     let daily_loss = account.current_daily_loss()?;
     let daily_cap = account.equity.checked_mul(policy.max_daily_loss_fraction)
         .ok_or_else(|| ContractError::InvalidOrder("daily-loss budget arithmetic overflow".into()))?;
-    if daily_loss >= daily_cap {
+    if !order.reduce_only && daily_loss >= daily_cap {
         return Err(ContractError::InvalidOrder("daily loss limit reached".into()));
     }
-    let remaining_daily_loss_budget = daily_cap.checked_sub(daily_loss)
-        .ok_or_else(|| ContractError::InvalidOrder("remaining daily-loss budget arithmetic overflow".into()))?;
+    let remaining_daily_loss_budget = if daily_loss >= daily_cap {
+        Decimal::ZERO
+    } else {
+        daily_cap.checked_sub(daily_loss)
+            .ok_or_else(|| ContractError::InvalidOrder("remaining daily-loss budget arithmetic overflow".into()))?
+    };
 
     let maximum_loss = if order.reduce_only {
         Decimal::ZERO
@@ -767,6 +791,21 @@ mod tests {
         let mut no_protection = capabilities;
         no_protection.native_protective_orders = false;
         assert!(validate_capabilities(&order, &no_protection).is_err());
+    }
+
+    #[test]
+    fn limit_and_stop_prices_must_follow_the_instrument_tick() {
+        let mut spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        spec.tick_size = d("0.05");
+        let mut order = NormalizedOrder {
+            client_order_id: "tick-order-1".into(), account_id: "acct".into(),
+            instrument_id: spec.instrument_id.clone(), side: OrderSide::Buy,
+            order_type: OrderType::Limit, quantity: d("1"), limit_price: Some(d("100.05")),
+            stop_price: None, time_in_force: None, reduce_only: false,
+        };
+        assert!(order.validate(&spec).is_ok());
+        order.limit_price = Some(d("100.03"));
+        assert!(order.validate(&spec).is_err());
     }
 
     #[test]
