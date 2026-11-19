@@ -193,7 +193,7 @@ jobs:
           docker exec "$MONGO_CONTAINER" mongosh "mongodb://127.0.0.1:27017/$QOIN_MONGODB_DATABASE" --quiet --eval 'db.set_relation_ledger.updateOne({record_type:"relation_edge",symbol:"BTCUSDT"},{$set:{lag_ms:123456}})'
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/integrity?symbol=BTCUSDT&limit=100' -H 'x-qoin-ledger-maintenance-token: ci-ledger-maintenance-token' >/tmp/set-ledger-malformed-relation.json
           jq -e '.malformed_relations == 1 and .integrity_passed == false' /tmp/set-ledger-malformed-relation.json
-          tamper_result=$(docker exec "$MONGO_CONTAINER" mongosh "mongodb://127.0.0.1:27017/$QOIN_MONGODB_DATABASE" --quiet --eval 'JSON.stringify(db.set_relation_ledger.updateOne({record_type:"observation",symbol:"BTCUSDT",venue:"ci",source_event_id:"ci-trade-1"},{$set:{"source_event.price":999.99}}).toJSON())')
+          tamper_result=$(docker exec "$MONGO_CONTAINER" mongosh "mongodb://127.0.0.1:27017/$QOIN_MONGODB_DATABASE" --quiet --eval 'print(EJSON.stringify(db.set_relation_ledger.updateOne({record_type:"observation",symbol:"BTCUSDT",venue:"ci",source_event_id:"ci-trade-1"},{$set:{"source_event.price":999.99}}).toJSON()))')
           echo "Tamper fixture update: $tamper_result"
           echo "$tamper_result" | jq -e '.matchedCount == 1 and .modifiedCount == 1'
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger/reconstruct?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-tampered-reconstruction.json
