@@ -36,4 +36,10 @@ The current account menu exposes profile details, notifications, avatar selectio
 
 ## Current scope
 
-This is Firebase client authentication and user-profile persistence. It does not yet create a separate Qoin backend JWT or authorize arbitrary future server-side write endpoints. Any future personalized or mutating Axum/Drogon route must verify Firebase ID tokens server-side and enforce UID ownership independently; never trust a UID sent in JSON or a query parameter.
+The public Axum/Drogon gateway now verifies Firebase ID tokens server-side for persisted research data and actions that must be tied to an authenticated session. The shared web/mobile API client obtains the current user's ID token and sends it as a Bearer token. Axum validates the token with Firebase Identity Toolkit using the project's Web API key; it rejects missing, invalid, expired, or disabled-account tokens and fails closed when server verification is not configured.
+
+Set `FIREBASE_WEB_API_KEY` in the backend runtime environment (the Firebase project's Web API key; it is a public project identifier, not a service-account private key). In Docker Compose, add it to the root `.env`. Do not use a service-account JSON file or place server credentials in frontend bundles.
+
+The authenticated research endpoints include persisted raw events, market state, V1 decisions and vector history, shared market-vector history, variable-hub progress, historical backtests, V2 relationship ledger/evaluation, and broker allocation planning. Public market catalogue, sourced news/calendar, health and the public market WebSocket remain public. The broker allocation endpoint only calculates an equal-share plan; it does not submit orders.
+
+Any future personalized or mutating Axum/Drogon route must verify Firebase ID tokens server-side and enforce UID ownership independently; never trust a UID sent in JSON or a query parameter.
