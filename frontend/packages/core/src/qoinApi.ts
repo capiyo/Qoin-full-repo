@@ -41,6 +41,7 @@ export type QoinFeatureTrace = {
   attended_value?: number;
   directional_weight?: number;
   directional_contribution?: number;
+  interaction_contribution?: number;
 };
 export type QoinDecisionDiagnostics = {
   spread_present: boolean;
@@ -96,6 +97,7 @@ export type QoinVectorDecision = {
   attended_features?: number[];
   decision_vector?: [number, number];
   magnitude?: number;
+  interaction_contribution?: number;
   angle_radians?: number;
   angle_degrees?: number;
   angular_threshold_radians?: number;
