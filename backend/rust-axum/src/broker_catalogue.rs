@@ -5,26 +5,26 @@ use serde_json::{json, Value};
 pub fn catalogue() -> Value {
     // Deliberately balanced: ten crypto venues and ten FX/CFD brokers.
     let providers = [
-        ("binance_usdm","Binance USD-M","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("coinbase_advanced_trade","Coinbase Advanced Trade","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("kraken_spot","Kraken Spot","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("bybit","Bybit","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("okx","OKX","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("bitget","Bitget","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("gate_io","Gate.io","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("kucoin","KuCoin","exchange","crypto","REST + WebSocket","adapter_pending",true),
-        ("deribit","Deribit","exchange","crypto_derivatives","REST + WebSocket","adapter_pending",true),
-        ("hyperliquid","Hyperliquid","exchange","crypto_perpetuals","JSON-RPC + WebSocket","adapter_pending",true),
-        ("oanda","OANDA","forex_broker","forex_cfds","REST v20 + streaming","adapter_pending",true),
-        ("ig","IG","forex_broker","forex_cfds","REST + streaming","adapter_pending",true),
-        ("fxcm","FXCM","forex_broker","forex_cfds","REST/streaming SDK; account eligibility required","adapter_pending",true),
-        ("capital_com","Capital.com","forex_broker","forex_cfds","REST + WebSocket","adapter_pending",true),
-        ("deriv","Deriv","forex_broker","forex_synthetics_options","WebSocket + REST","adapter_pending",true),
-        ("xtb","XTB","forex_broker","forex_cfds","xAPI socket/WebSocket","adapter_pending",true),
-        ("pepperstone","Pepperstone","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_pending",true),
-        ("ic_markets","IC Markets","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_pending",true),
-        ("forex_com","FOREX.com","forex_broker","forex_cfds","REST API; regional eligibility required","adapter_pending",true),
-        ("cmc_markets","CMC Markets","forex_broker","forex_cfds","REST API; account eligibility required","adapter_pending",true),
+        ("binance_usdm","Binance USD-M","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("coinbase_advanced_trade","Coinbase Advanced Trade","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("kraken_spot","Kraken Spot","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("bybit","Bybit","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("okx","OKX","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("bitget","Bitget","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("gate_io","Gate.io","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("kucoin","KuCoin","exchange","crypto","REST + WebSocket","adapter_scaffolded",true),
+        ("deribit","Deribit","exchange","crypto_derivatives","REST + WebSocket","adapter_scaffolded",true),
+        ("hyperliquid","Hyperliquid","exchange","crypto_perpetuals","JSON-RPC + WebSocket","adapter_scaffolded",true),
+        ("oanda","OANDA","forex_broker","forex_cfds","REST v20 + streaming","adapter_scaffolded",true),
+        ("ig","IG","forex_broker","forex_cfds","REST + streaming","adapter_scaffolded",true),
+        ("fxcm","FXCM","forex_broker","forex_cfds","REST/streaming SDK; account eligibility required","adapter_scaffolded",true),
+        ("capital_com","Capital.com","forex_broker","forex_cfds","REST + WebSocket","adapter_scaffolded",true),
+        ("deriv","Deriv","forex_broker","forex_synthetics_options","WebSocket + REST","adapter_scaffolded",true),
+        ("xtb","XTB","forex_broker","forex_cfds","xAPI socket/WebSocket","adapter_scaffolded",true),
+        ("pepperstone","Pepperstone","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_scaffolded",true),
+        ("ic_markets","IC Markets","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_scaffolded",true),
+        ("forex_com","FOREX.com","forex_broker","forex_cfds","REST API; regional eligibility required","adapter_scaffolded",true),
+        ("cmc_markets","CMC Markets","forex_broker","forex_cfds","REST API; account eligibility required","adapter_scaffolded",true),
     ];
     let items: Vec<Value> = providers.iter().map(|(id,name,kind,assets,api,status,selectable)| json!({
         "id": id, "name": name, "provider_kind": kind, "asset_classes": assets,
@@ -55,7 +55,7 @@ pub fn catalogue() -> Value {
         "note": if *id == "binance_usdm" {
             "Qoin exposes a broker-neutral execution contract and runtime adapter registry. No provider adapter is currently registered or execution-ready."
         } else {
-            "Provider API route is listed for discovery; Qoin has not implemented or verified this provider's execution adapter or account connection."
+            "A fail-closed Rust adapter scaffold exists; provider API calls, credentials, account mapping and conformance tests are not implemented or verified."
         }
     })).collect();
     json!({
