@@ -158,6 +158,11 @@ export function getQoinHealth(): Promise<QoinHealth> {
   return request<QoinHealth>("/health");
 }
 
+/** Fetches the authoritative REST state after a WebSocket gap or reconnect. */
+export function getQoinState(symbol: string): Promise<QoinMarketState> {
+  return request<QoinMarketState>("/api/v1/state?symbol=" + encodeURIComponent(symbol));
+}
+
 /** Returns a research signal only. This client never submits exchange orders. */
 export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal> {
   return request<QoinSignal>("/v1/signal", {
