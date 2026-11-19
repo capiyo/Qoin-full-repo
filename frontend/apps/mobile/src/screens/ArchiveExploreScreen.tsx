@@ -113,8 +113,8 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
   const directions = names.map((_, index) => -Math.PI / 2 + index * Math.PI * 2 / names.length);
   const endpoints = attended.map((value, index) => ({
-    x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
-    y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
+    x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value / 3)) * 34,
+    y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value / 3)) * 34,
   }));
   const attention = decision?.attention ?? [];
   const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
