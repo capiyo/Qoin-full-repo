@@ -391,7 +391,7 @@ pub fn build_fanout_intents(
     {
         return Err(FanoutError::RiskApprovalMismatch);
     }
-    if selected_accounts.is_empty() || selected_accounts.len() > 15 {
+    if selected_accounts.is_empty() || selected_accounts.len() > 20 {
         return Err(FanoutError::InvalidSelection);
     }
     let selected = selected_accounts.iter().map(BrokerAccountKey::normalized).collect::<Result<Vec<_>, _>>()?;
@@ -770,7 +770,7 @@ impl FanoutLifecycle {
         if children.is_empty()
             || children.len() != parent.routed_accounts.len()
             || parent.selected_accounts.is_empty()
-            || parent.selected_accounts.len() > 15
+            || parent.selected_accounts.len() > 20
             || parent.parent_order_id.trim().is_empty()
             || parent.owner_scope.trim().is_empty()
             || parent.idempotency_key.trim().is_empty()
