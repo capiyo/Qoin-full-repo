@@ -342,12 +342,12 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             }
         }
         if event.event_type == "trade" {
+            state.last_trade_ts_ms=Some(event.ts_ms);
         if let Some(price)=event.price.filter(|v|*v>0.0) {
             if let Some(previous)=state.last_price.filter(|v|*v>0.0) {
                 state.ewma_abs_return=0.94*state.ewma_abs_return+0.06*(price/previous).ln().abs();
             }
             state.last_price=Some(price);
-            state.last_trade_ts_ms=Some(event.ts_ms);
             state.basis_bps=state.last_mark_price.filter(|mark| *mark > 0.0)
                 .map(|mark| (mark-price)/price*10_000.0);
         }
