@@ -527,3 +527,15 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 .qoin-model-set-bars i b{display:block;height:100%;border-radius:8px;background:#3985D6}
 .qoin-model-set-bars>div>strong{color:#243750;font-size:9px;text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:650px){.qoin-model-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.qoin-model-primary strong{font-size:22px}}
+
+.broker-allocation-controls{display:grid;align-content:center;gap:7px;min-width:0}
+.broker-allocation-controls label{color:#687A92;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.broker-allocation-controls input{width:100%;min-width:0;padding:10px 12px;border:1px solid #DCE4EF;border-radius:10px;background:#FFFFFF;color:#243750;font-size:13px;font-variant-numeric:tabular-nums}
+.broker-allocation-controls input[aria-invalid="true"]{border-color:#C15C65}
+.broker-allocation-result{display:grid;grid-template-columns:1fr auto;gap:7px 12px;padding-top:8px;border-top:1px solid #E8EDF4}
+.broker-allocation-result span{color:#8794A7;font-size:8px}
+.broker-allocation-result strong{color:#243750;font-size:12px;font-variant-numeric:tabular-nums}
+.broker-allocation-footnote{grid-column:1/-1;margin:0;padding-top:12px;border-top:1px solid #E8EDF4;color:#8794A7;font-size:8px;line-height:1.6}
+.broker-select{padding:6px 11px;border:1px solid #DCE4EF;border-radius:999px;background:#F5F8FD;color:#52637A;font-size:8px;font-weight:800}
+.broker-select.selected{border-color:#B8E0CA;background:#EAF6EF;color:#16845B}
+@media(max-width:650px){.broker-allocation-controls{grid-column:1/-1}.broker-allocation-result{grid-template-columns:1fr auto}}
