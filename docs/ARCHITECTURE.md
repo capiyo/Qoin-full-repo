@@ -27,7 +27,7 @@ The engine returns a research signal only. It does not size a position or submit
 
 ## Live event and decision flow
 1. A market-data adapter submits an event to `POST /api/v1/events` on the local Drogon gateway.
-2. Axum validates and deduplicates the event by venue + symbol + event_id.
+2. Axum validates and deduplicates the event by venue + symbol + event_id, and rejects new events that do not follow the deterministic (timestamp, event ID, venue) order for that symbol.
 3. The immutable source event is persisted to `market_events`; the per-symbol rolling state is updated.
 4. Trade prices update the trade reference and EWMA volatility. Mark-price events update mark price, funding and mark-to-trade basis without overwriting the last trade. Consecutive open-interest observations produce a relative OI change. Book events update spread and quote timestamp.
 5. Axum maps that causal state into the seven-force `ForceObservation`, calls `qoin_vector_engine::decide`, persists the exact engine output in `trade_decisions`, and broadcasts the same decision to web/mobile clients.
