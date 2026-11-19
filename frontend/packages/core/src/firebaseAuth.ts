@@ -124,3 +124,26 @@ export async function saveQoinArchivedSymbols(symbols: string[]): Promise<void> 
     updatedAt: serverTimestamp(),
   }, { merge: true });
 }
+
+const QOIN_BROKER_IDS = new Set([
+  "binance_usdm","coinbase_advanced_trade","kraken_spot","bybit","okx","bitget","gate_io","kucoin",
+  "deribit","hyperliquid","interactive_brokers","alpaca","oanda","saxo","ig","fxcm","capital_com","deriv","trading_212","xtb",
+]);
+
+export async function getQoinBrokerSelections(): Promise<string[]> {
+  const { user } = requireQoinFirebase();
+  const snapshot = await getDoc(doc(getFirestore(authInstance!.app), "users", user.uid));
+  const value = snapshot.data()?.brokerSelections;
+  return Array.isArray(value)
+    ? [...new Set(value.filter((id): id is string => typeof id === "string" && QOIN_BROKER_IDS.has(id)))].slice(0, 20)
+    : [];
+}
+
+export async function saveQoinBrokerSelections(selections: string[]): Promise<void> {
+  const { user } = requireQoinFirebase();
+  const brokerSelections = [...new Set(selections.filter((id) => QOIN_BROKER_IDS.has(id)))].slice(0, 20);
+  await setDoc(doc(getFirestore(authInstance!.app), "users", user.uid), {
+    brokerSelections,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
