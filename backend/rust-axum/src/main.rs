@@ -150,12 +150,12 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     }
     state.symbol = event.symbol.clone();
     if event.event_type == "trade" {
+        state.last_trade_ts_ms = Some(event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
             state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
         }
         state.last_price = Some(price);
-        state.last_trade_ts_ms = Some(event.ts_ms);
         state.basis_bps = state.mark_price.filter(|mark| *mark > 0.0)
             .map(|mark| (mark - price) / price * 10_000.0);
     }
