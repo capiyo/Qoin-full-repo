@@ -103,7 +103,7 @@ pub fn allocate_equal_notional(
         }
         if target.native_unit_value_portfolio <= Decimal::ZERO
             || target.quantity_step <= Decimal::ZERO
-            || target.minimum_quantity < Decimal::ZERO
+            || target.minimum_quantity <= Decimal::ZERO
             || target.minimum_notional_portfolio.is_some_and(|value| value < Decimal::ZERO)
         {
             return Err(AllocationError::InvalidTarget(target.account_id.clone()));
@@ -230,6 +230,16 @@ mod tests {
         recipients[1].broker_id = " BROKER-0 ".into();
         recipients[1].account_id = " account-0 ".into();
         assert_eq!(allocate_equal_notional(d("100"), &recipients), Err(AllocationError::DuplicateAccount));
+    }
+
+    #[test]
+    fn rejects_zero_minimum_quantity_as_invalid_instrument_metadata() {
+        let mut recipients = targets(1, "10", "1");
+        recipients[0].minimum_quantity = Decimal::ZERO;
+        assert!(matches!(
+            allocate_equal_notional(d("100"), &recipients),
+            Err(AllocationError::InvalidTarget(_))
+        ));
     }
 
     #[test]

@@ -383,7 +383,13 @@ pub fn validate_portfolio_order(
         return Err(ContractError::InvalidInstrument("same-currency conversion rate must equal one".into()));
     }
 
-    let execution_price = order.limit_price.unwrap_or(input.reference_price);
+    let execution_price = match order.order_type {
+        OrderType::Market => input.reference_price,
+        OrderType::Limit | OrderType::StopLimit => order.limit_price
+            .ok_or_else(|| ContractError::InvalidOrder("limit execution price is required".into()))?,
+        OrderType::Stop => order.stop_price
+            .ok_or_else(|| ContractError::InvalidOrder("stop trigger price is required".into()))?,
+    };
     if execution_price <= Decimal::ZERO {
         return Err(ContractError::InvalidOrder("execution price must be positive".into()));
     }
@@ -681,8 +687,49 @@ pub trait BrokerAdapter: Send + Sync {
     /// Broker-native initial margin for this exact order, normalized to account currency.
     async fn required_margin_account_currency(&self, order: &NormalizedOrder, reference_price: Decimal) -> Result<Decimal, ContractError>;
     async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError>;
+    /// Find an order by the stable client ID supplied before submission.
+    /// A missing result is authoritative only if the adapter searched the
+    /// venue's complete relevant order history, including closed/rejected orders.
+    /// Adapters without that guarantee must return Unsupported, never None.
+    async fn find_order_by_client_order_id(
+        &self,
+        _account_id: &str,
+        _client_order_id: &str,
+    ) -> Result<Option<BrokerOrderReceipt>, ContractError> {
+        Err(ContractError::Unsupported(
+            "adapter does not support authoritative client-order-id lookup".into()
+        ))
+    }
     async fn order_status(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
     async fn cancel_order(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
+}
+
+/// Look up an ambiguous submission and reject receipts that do not match the
+/// exact persisted child identity. A missing result is authoritative only
+/// under the BrokerAdapter contract.
+pub async fn lookup_order_by_client_order_id(
+    adapter: &dyn BrokerAdapter,
+    account_id: &str,
+    client_order_id: &str,
+) -> Result<Option<BrokerOrderReceipt>, ContractError> {
+    if account_id.trim().is_empty() || client_order_id.trim().is_empty() {
+        return Err(ContractError::InvalidOrder("account and client-order IDs are required for reconciliation".into()));
+    }
+    let result = adapter.find_order_by_client_order_id(account_id, client_order_id).await?;
+    if let Some(receipt) = &result {
+        if !receipt.broker_id.eq_ignore_ascii_case(adapter.broker_id())
+            || receipt.account_id != account_id
+            || receipt.client_order_id != client_order_id
+            || receipt.broker_order_id.trim().is_empty()
+            || receipt.accepted_at_ms <= 0
+            || receipt.status.trim().is_empty()
+        {
+            return Err(ContractError::Broker(
+                "client-order lookup returned a mismatched or incomplete receipt".into()
+            ));
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -845,6 +892,31 @@ mod tests {
         assert_eq!(approval.maximum_loss_account_currency, Decimal::ZERO);
     }
 
+    #[test]
+    fn stop_order_notional_uses_trigger_price_for_pretrade_budget() {
+        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let account = BrokerAccountSnapshot {
+            broker_id: "selected-broker".into(), account_id: "acct".into(),
+            account_currency: "USD".into(), account_healthy: true, trading_enabled: true,
+            equity: d("10000"), available_margin: d("5000"), gross_exposure: Decimal::ZERO,
+            daily_realized_pnl: Decimal::ZERO, daily_unrealized_pnl: Decimal::ZERO,
+            open_positions: 0, observed_at_ms: 10_000,
+        };
+        let order = NormalizedOrder {
+            client_order_id: "stop-budget-order".into(), account_id: "acct".into(),
+            instrument_id: spec.instrument_id.clone(), side: OrderSide::Buy,
+            order_type: OrderType::Stop, quantity: d("10"), limit_price: None,
+            stop_price: Some(d("300")), time_in_force: None, reduce_only: false,
+        };
+        let result = validate_portfolio_order(&PortfolioRiskPolicy::default(), &account, &spec, &order,
+            &RiskCheckInput {
+                reference_price: d("100"), protective_stop_price: Some(d("95")),
+                now_ms: 10_100, reference_price_observed_at_ms: 10_000,
+                protective_order_supported: true, required_margin_account_currency: d("100"),
+            });
+        assert!(matches!(result, Err(ContractError::InvalidOrder(_))));
+    }
+
     struct MockAdapter {
         submit_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     }
@@ -900,6 +972,15 @@ mod tests {
         async fn cancel_order(&self, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
             Err(ContractError::Unsupported("mock cancellation is not used in preflight tests".into()))
         }
+    }
+
+    #[tokio::test]
+    async fn adapter_without_authoritative_client_id_lookup_fails_closed() {
+        let adapter = MockAdapter {
+            submit_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let result = lookup_order_by_client_order_id(&adapter, "account-a", "client-order-0001").await;
+        assert!(matches!(result, Err(ContractError::Unsupported(_))));
     }
 
     fn selected_order(account_id: &str) -> SelectedBrokerOrder {

@@ -438,6 +438,10 @@ pub fn build_fanout_intents(
             (FanoutRouteMode::EqualSplit, allocation)
         }
     };
+    let expected_additional_positions = if request.reduce_only { 0 } else { allocation.children.len() };
+    if risk_approval.additional_open_positions != expected_additional_positions {
+        return Err(FanoutError::RiskApprovalMismatch);
+    }
     if allocation.parent_notional_portfolio != request.parent_notional_portfolio
         || allocation.children.is_empty()
         || allocation.children.iter().any(|child| child.instrument_id.trim() != instrument_id
@@ -663,6 +667,52 @@ pub async fn persist_child_lifecycle_update(
     Ok(())
 }
 
+/// Reload a persisted lifecycle and durably mark every in-flight Submitting
+/// child as Unknown after a process restart. Returned client IDs must be
+/// reconciled through BrokerAdapter::find_order_by_client_order_id before any
+/// further action; this function never resubmits an order.
+pub async fn recover_interrupted_submissions(
+    collection: &Collection<Document>,
+    owner_scope: &str,
+    parent_order_id: &str,
+    now_ms: i64,
+) -> Result<Vec<String>, FanoutPersistenceError> {
+    let Some(mut lifecycle) = load_fanout_lifecycle(collection, owner_scope, parent_order_id).await? else {
+        return Ok(Vec::new());
+    };
+    let interrupted = lifecycle.children.iter()
+        .filter(|child| child.status == ChildOrderStatus::Submitting)
+        .map(|child| (child.child_order_id.clone(), child.client_order_id.clone()))
+        .collect::<Vec<_>>();
+    let mut client_order_ids = Vec::with_capacity(interrupted.len());
+    for (child_order_id, client_order_id) in interrupted {
+        let expected_parent_revision = lifecycle.parent.revision;
+        let expected_child_revision = lifecycle.children.iter()
+            .find(|child| child.child_order_id == child_order_id)
+            .map(|child| child.revision)
+            .ok_or(FanoutPersistenceError::InvalidStoredRecords)?;
+        lifecycle.apply_child_event(
+            &child_order_id,
+            ChildEvent::SubmissionUnknown {
+                reason: "process restarted while broker submission was in flight; reconcile by client order ID before any retry".into(),
+            },
+            now_ms,
+        ).map_err(|_| FanoutPersistenceError::InvalidStoredRecords)?;
+        let child = lifecycle.children.iter()
+            .find(|child| child.child_order_id == child_order_id)
+            .ok_or(FanoutPersistenceError::InvalidStoredRecords)?;
+        persist_child_lifecycle_update(
+            collection,
+            &lifecycle.parent,
+            child,
+            expected_parent_revision,
+            expected_child_revision,
+        ).await?;
+        client_order_ids.push(client_order_id);
+    }
+    Ok(client_order_ids)
+}
+
 /// In-memory state transition guard for a coordinator that persists the
 /// returned records before calling confirm_durable_persistence. It is not a
 /// substitute for a database transaction or durable unique indexes.
@@ -735,6 +785,10 @@ impl FanoutLifecycle {
             || parent.aggregate_risk_approval.instrument_id != parent.instrument_id
             || parent.aggregate_risk_approval.parent_notional_portfolio != parent.parent_notional_portfolio
             || parent.aggregate_risk_approval.reduce_only != parent.reduce_only
+            || parent.aggregate_risk_approval.additional_open_positions
+                != if parent.reduce_only { 0 } else { children.len() }
+            || parent.aggregate_risk_approval.projected_open_positions
+                < parent.aggregate_risk_approval.additional_open_positions
         {
             return Err(FanoutError::InvalidPlan("persisted parent record is inconsistent".into()));
         }
@@ -865,6 +919,32 @@ impl FanoutLifecycle {
         self.parent.updated_at_ms = now_ms;
         self.parent.revision = self.parent.revision.checked_add(1).ok_or(FanoutError::Arithmetic)?;
         Ok(())
+    }
+
+    /// After a process restart, any child left in Submitting has an ambiguous
+    /// outcome: the request may have reached the broker before the process
+    /// stopped. Convert those children to Unknown so they can only proceed
+    /// through authoritative client-order-ID reconciliation, never resubmit.
+    pub fn mark_interrupted_submissions_unknown(&mut self, now_ms: i64) -> Result<Vec<String>, FanoutError> {
+        if !self.dispatch_started || now_ms < self.parent.updated_at_ms {
+            return Err(FanoutError::InvalidTransition);
+        }
+        let interrupted = self.children.iter()
+            .filter(|child| child.status == ChildOrderStatus::Submitting)
+            .map(|child| (child.child_order_id.clone(), child.client_order_id.clone()))
+            .collect::<Vec<_>>();
+        let mut client_order_ids = Vec::with_capacity(interrupted.len());
+        for (child_order_id, client_order_id) in interrupted {
+            self.apply_child_event(
+                &child_order_id,
+                ChildEvent::SubmissionUnknown {
+                    reason: "process restarted while broker submission was in flight; reconcile by client order ID before any retry".into(),
+                },
+                now_ms,
+            )?;
+            client_order_ids.push(client_order_id);
+        }
+        Ok(client_order_ids)
     }
 
     pub fn begin_child_submission(&mut self, child_order_id: &str, now_ms: i64) -> Result<(), FanoutError> {
@@ -1096,6 +1176,8 @@ mod tests {
             reduce_only: false,
             projected_gross_exposure_portfolio: d("200"),
             projected_daily_loss_portfolio: d("120"),
+            additional_open_positions: 2,
+            projected_open_positions: 4,
             remaining_daily_loss_budget_portfolio: d("10"),
             snapshot_observed_at_ms: 9_900,
             market_data_observed_at_ms: 9_950,
@@ -1232,7 +1314,10 @@ mod tests {
 
     #[test]
     fn consolidated_route_records_selected_accounts_that_receive_no_child() {
-        let (parent, children) = build_fanout_intents(request(), &selected(), &consolidated_plan(), risk()).unwrap();
+        let mut approval = risk();
+        approval.additional_open_positions = 1;
+        approval.projected_open_positions = 3;
+        let (parent, children) = build_fanout_intents(request(), &selected(), &consolidated_plan(), approval).unwrap();
         assert_eq!(children.len(), 1);
         assert_eq!(parent.not_routed_accounts.len(), 1);
         assert!(parent.not_routed_accounts[0].reason.contains("receives no child order"));
@@ -1262,6 +1347,34 @@ mod tests {
         assert_eq!(restored.parent.status, ParentOrderStatus::ReconciliationRequired);
         assert_eq!(restored.begin_dispatch(10_004), Err(FanoutError::DispatchAlreadyStarted));
         assert_eq!(restored.begin_child_submission(&child_id, 10_004), Err(FanoutError::ChildAlreadySubmitted));
+    }
+
+    #[test]
+    fn restored_inflight_submissions_become_unknown_after_restart() {
+        let mut fanout = build(&split_plan());
+        confirm_persisted(&mut fanout);
+        fanout.begin_dispatch(10_001).unwrap();
+        let child_id = fanout.children[0].child_order_id.clone();
+        let client_order_id = fanout.children[0].client_order_id.clone();
+        fanout.begin_child_submission(&child_id, 10_002).unwrap();
+
+        let mut restored = FanoutLifecycle::restore(fanout.parent.clone(), fanout.children.clone()).unwrap();
+        let unresolved = restored.mark_interrupted_submissions_unknown(10_003).unwrap();
+        assert_eq!(unresolved, vec![client_order_id]);
+        assert_eq!(restored.children[0].status, ChildOrderStatus::Unknown);
+        assert_eq!(restored.parent.status, ParentOrderStatus::ReconciliationRequired);
+        assert_eq!(restored.begin_child_submission(&child_id, 10_004), Err(FanoutError::ChildAlreadySubmitted));
+    }
+
+    #[test]
+    fn fanout_rejects_aggregate_approval_for_wrong_child_count() {
+        let mut approval = risk();
+        approval.additional_open_positions = 1;
+        approval.projected_open_positions = 3;
+        assert_eq!(
+            build_fanout_intents(request(), &selected(), &split_plan(), approval).unwrap_err(),
+            FanoutError::RiskApprovalMismatch
+        );
     }
 
     #[test]

@@ -159,6 +159,9 @@ pub struct AggregateRiskRequest {
     pub market_data_observed_at_ms: i64,
     pub now_ms: i64,
     pub reduce_only: bool,
+    /// Number of new broker-account positions this parent can open. Must be
+    /// zero for reduce-only and equal the routed child count otherwise.
+    pub additional_open_positions: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -170,6 +173,8 @@ pub struct AggregateRiskApproval {
     pub projected_gross_exposure_portfolio: Decimal,
     /// Current daily loss plus this order's maximum stop loss.
     pub projected_daily_loss_portfolio: Decimal,
+    pub additional_open_positions: usize,
+    pub projected_open_positions: usize,
     /// Daily-loss headroom remaining after reserving this order's stop loss.
     pub remaining_daily_loss_budget_portfolio: Decimal,
     pub snapshot_observed_at_ms: i64,
@@ -208,6 +213,9 @@ pub fn validate_aggregate_portfolio_risk(
         || request.maximum_loss_at_stop_portfolio < Decimal::ZERO
         || (!request.reduce_only && request.maximum_loss_at_stop_portfolio <= Decimal::ZERO)
         || (request.reduce_only && request.maximum_loss_at_stop_portfolio != Decimal::ZERO)
+        || (request.reduce_only && request.additional_open_positions != 0)
+        || (!request.reduce_only && request.additional_open_positions == 0)
+        || request.additional_open_positions > MAX_FANOUT_ACCOUNTS
         || request.now_ms <= 0
         || request.market_data_observed_at_ms <= 0
         || snapshot.observed_at_ms > request.now_ms
@@ -245,8 +253,13 @@ pub fn validate_aggregate_portfolio_risk(
             "current daily loss plus this order's stop loss would reach or exceed the daily loss limit".into()
         ));
     }
-    if !request.reduce_only && snapshot.open_positions >= policy.max_open_positions {
-        return Err(RoutingError::AggregateRiskRejected("portfolio open-position limit is reached".into()));
+    let projected_open_positions = snapshot.open_positions
+        .checked_add(request.additional_open_positions)
+        .ok_or_else(|| RoutingError::Arithmetic("projected open-position count overflow".into()))?;
+    if !request.reduce_only && projected_open_positions > policy.max_open_positions {
+        return Err(RoutingError::AggregateRiskRejected(
+            "parent order would exceed the portfolio open-position limit across its routed children".into()
+        ));
     }
 
     // A reduce-only flag must also be enforced by the broker. Without a
@@ -276,6 +289,8 @@ pub fn validate_aggregate_portfolio_risk(
         reduce_only: request.reduce_only,
         projected_gross_exposure_portfolio: projected_gross,
         projected_daily_loss_portfolio: projected_daily_loss,
+        additional_open_positions: request.additional_open_positions,
+        projected_open_positions,
         remaining_daily_loss_budget_portfolio: remaining_daily,
         snapshot_observed_at_ms: snapshot.observed_at_ms,
         market_data_observed_at_ms: request.market_data_observed_at_ms,
@@ -570,6 +585,7 @@ mod tests {
             market_data_observed_at_ms: 9_950,
             now_ms: 10_000,
             reduce_only: false,
+            additional_open_positions: 1,
         }
     }
 
@@ -582,6 +598,8 @@ mod tests {
         assert_eq!(approval.maximum_loss_at_stop_portfolio, d("20"));
         assert_eq!(approval.projected_gross_exposure_portfolio, d("6000"));
         assert_eq!(approval.projected_daily_loss_portfolio, d("120"));
+        assert_eq!(approval.additional_open_positions, 1);
+        assert_eq!(approval.projected_open_positions, 3);
         assert_eq!(approval.remaining_daily_loss_budget_portfolio, d("80"));
     }
 
@@ -625,6 +643,7 @@ mod tests {
     fn reduce_only_request_cannot_claim_a_nonzero_stop_loss() {
         let mut request = aggregate_request();
         request.reduce_only = true;
+        request.additional_open_positions = 0;
         assert!(matches!(
             validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
             Err(RoutingError::AggregateRiskRejected(_))
@@ -640,9 +659,11 @@ mod tests {
         request.parent_notional_portfolio = d("5000");
         request.maximum_loss_at_stop_portfolio = Decimal::ZERO;
         request.reduce_only = true;
+        request.additional_open_positions = 0;
         let approval = validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request).unwrap();
         assert_eq!(approval.projected_gross_exposure_portfolio, d("30000"));
         assert_eq!(approval.projected_daily_loss_portfolio, d("250"));
+        assert_eq!(approval.projected_open_positions, 2);
         assert_eq!(approval.remaining_daily_loss_budget_portfolio, Decimal::ZERO);
     }
 
@@ -658,6 +679,28 @@ mod tests {
         snapshot.daily_loss_portfolio = d("200");
         assert!(matches!(
             validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_open_position_limit_counts_each_routed_child() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.open_positions = 4;
+        let mut request = aggregate_request();
+        request.additional_open_positions = 2;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+
+        request.additional_open_positions = 1;
+        let approval = validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request).unwrap();
+        assert_eq!(approval.projected_open_positions, 5);
+
+        snapshot.open_positions = 5;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request),
             Err(RoutingError::AggregateRiskRejected(_))
         ));
     }
