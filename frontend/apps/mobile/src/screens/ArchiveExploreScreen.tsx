@@ -108,7 +108,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
 }
 
 
-function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | null }) {
+function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null }) {
   const names = QOIN_FEATURE_NAMES;
   const raw = names.map((name) => decision?.features?.[name] ?? 0);
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
@@ -125,6 +125,24 @@ function MobileVectorSpaceMechanics({ decision }: { decision: QoinVectorDecision
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Vector space · six engine dimensions</Text>
     <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁶ feature state · decision output is a separate space</Text>
+    <View style={{padding:11,borderRadius:12,backgroundColor:"#13231C",gap:8}}>
+      <Text style={{color:"#7DD6A5",fontSize:9,fontWeight:"800"}}>LIVE PROVIDER INPUT · {lastEvent?.venue || "WAITING"}</Text>
+      <Text style={{color:"#E1EEE6",fontSize:11,fontWeight:"700"}}>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"} · {lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "timestamp unavailable"}</Text>
+      <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
+        {[
+          ["Price",marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8})],
+          ["Flow imbalance",marketState?.order_flow_imbalance?.toFixed(5)],
+          ["Event intensity",marketState?.event_intensity?.toFixed(5)],
+          ["Spread bps",marketState?.spread_bps?.toFixed(3)],
+          ["Open interest",marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4})],
+          ["Funding",marketState?.funding_rate?.toFixed(7)],
+        ].map(([label,value])=><View key={label} style={{minWidth:"28%"}}>
+          <Text style={{color:"#91A99B",fontSize:8}}>{label}</Text>
+          <Text style={{color:"#F1F7F3",fontSize:11,fontWeight:"800"}}>{value ?? "—"}</Text>
+        </View>)}
+      </View>
+    </View>
+
     <View style={styles.mapWrap}>
       <Svg viewBox="0 0 100 100" width="100%" height={260}>
         <Rect width="100" height="100" fill="#0E1612"/>
@@ -1012,7 +1030,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : mechanicsTab === "vector" ? <>
             <Text style={styles.mapTitle}>Vector space · six engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁶ feature state with attention interactions.</Text>
-            <MobileVectorSpaceMechanics decision={vector} />
+            <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
             <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
