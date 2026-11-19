@@ -2,7 +2,7 @@
 
 ## Routing objective
 
-Qoin supports a maximum of 15 selected broker-account targets for one parent order. The routing policy prefers a feasible consolidated order. It considers an equal split only when **every selected target** is execution-ready and healthy, each child meets that account's instrument quantity/notional minimums, each account has sufficient estimated margin, and the equal-split route has a lower estimated all-in cost after the configured multi-account overhead and minimum-saving hurdle.
+Qoin supports a maximum of 20 selected broker-account targets for one parent order. The routing policy prefers a feasible consolidated order. It considers an equal split only when **every selected target** is execution-ready and healthy, each child meets that account's instrument quantity/notional minimums, each account has sufficient estimated margin, and the equal-split route has a lower estimated all-in cost after the configured multi-account overhead and minimum-saving hurdle.
 
 A broker being present in the directory or providing market data does not make it execution-ready. Only a real authenticated adapter/account with the required instrument and order-type capability can be considered.
 
@@ -45,3 +45,12 @@ These are serializable, testable domain foundations only. Initial parent/child i
 A routing plan is **not** a submitted order. The generic broker contract uses Decimal for quantities, prices, currency conversions, account values, fees and risk limits; it validates instrument quantity steps and price ticks using checked arithmetic. Each adapter must report account health, trading permission and broker-native margin for the exact child order. A concurrent all-selected-account preflight helper gathers every account, instrument, capability and margin snapshot and applies the account risk gate without submitting anything. A failed child preflight invalidates the entire selected set. Before dispatch, the execution layer must persist the parent and all child intents with idempotency keys and persist the dispatch-started transition; only then may it dispatch and reconcile each child independently. After any child has been submitted, multi-broker execution is not an atomic transaction. Partial fills, rejects, timeouts and unknown outcomes must remain visible and be reconciled rather than blindly retried.
 
 The current integration directory is not equivalent to live account connectivity. The branch currently reports one execution adapter (Binance USD-M), several market-data-only providers and pending adapters. The Decimal allocation and capital-aware plan selector are pure planning primitives; they are not yet wired into the live `/internal/orders` route. User account linking, a per-user credential vault, a multi-account adapter registry in Axum, durable parent/child fan-out records and concurrent child dispatch remain prerequisites. Do not infer that selecting directory entries enables live execution.
+
+
+## Provider directory and selection limit
+
+Qoin exposes a 20-entry broker/exchange directory through `GET /api/v1/brokers` (Axum `GET /internal/brokers`). Web and React Native load this same API catalogue. Selection preferences are capped at 20 and stored under the signed-in user's own Firebase `users/{uid}.brokerSelections` profile field, protected by the existing owner-only Firestore rules. Guest preferences remain device-local.
+
+The 20 directory entries are Binance USD-M, Coinbase Advanced Trade, Kraken Spot, Bybit, OKX, Bitget, Gate.io, KuCoin, Deribit, Hyperliquid, Interactive Brokers, Alpaca, OANDA, Saxo, IG, FXCM, Capital.com, Deriv, Trading 212 and XTB.
+
+Directory selection is not account linking or execution eligibility. The current Binance USD-M executor is not registered as a generic multi-account adapter and has no verified per-user account connection. All entries are returned with `execution_ready=false`; other provider adapters remain pending. No market-data provider or pending provider can receive an order. Qoin remains research-only until each adapter, user authorization, credential vault, account snapshot, instrument metadata, order lifecycle and reconciliation path is implemented and tested.
