@@ -8,6 +8,16 @@ use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use url::{form_urlencoded, Url};
 type HmacSha256 = Hmac<Sha256>;
 
+/// The live-mode release attestations required by both the executor and health reporting.
+pub fn live_release_gates_satisfied(
+    account_verified: bool,
+    withdrawals_disabled: bool,
+    reconciliation_approved: bool,
+    risk_controls_approved: bool,
+) -> bool {
+    account_verified && withdrawals_disabled && reconciliation_approved && risk_controls_approved
+}
+
 pub fn protective_stop_client_order_id(client_order_id: &str) -> String {
     let digest = Sha256::digest(client_order_id.as_bytes());
     format!("qsl-{}", hex::encode(&digest[..8]))
@@ -203,6 +213,15 @@ impl BinanceExecutor {
 #[cfg(test)]
 mod tests {
     use super::{emergency_close_client_order_id, protective_stop_client_order_id};
+
+    #[test]
+    fn live_release_requires_every_independent_attestation() {
+        assert!(!super::live_release_gates_satisfied(false, true, true, true));
+        assert!(!super::live_release_gates_satisfied(true, false, true, true));
+        assert!(!super::live_release_gates_satisfied(true, true, false, true));
+        assert!(!super::live_release_gates_satisfied(true, true, true, false));
+        assert!(super::live_release_gates_satisfied(true, true, true, true));
+    }
 
     #[test]
     fn child_order_ids_are_stable_bounded_and_distinct() {
