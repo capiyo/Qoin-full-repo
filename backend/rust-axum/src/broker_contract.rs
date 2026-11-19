@@ -827,7 +827,7 @@ mod tests {
             minimum_quantity: d("0.01"),
             minimum_notional: None,
             price_currency_to_account_rate: d(rate),
-            conversion_rate_observed_at_ms: current_time_ms().expect("test clock"),
+            conversion_rate_observed_at_ms: 10_000,
         }
     }
 

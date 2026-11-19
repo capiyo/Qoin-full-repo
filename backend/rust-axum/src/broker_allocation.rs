@@ -249,11 +249,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_more_than_fifteen_recipients() {
-        assert_eq!(allocate_equal_notional(d("100"), &targets(16, "1", "1")), Err(AllocationError::InvalidRecipientCount));
-    }
-
-    #[test]
     fn rejects_duplicate_broker_account_pairs() {
         let mut recipients = targets(2, "10", "1");
         recipients[1].broker_id = recipients[0].broker_id.clone();

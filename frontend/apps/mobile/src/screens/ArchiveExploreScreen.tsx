@@ -438,7 +438,7 @@ function MobileResearchLedger({ decision, history, events }: { decision: QoinVec
 
 
 const MOBILE_BROKER_DIRECTORY = [
-  {id:"binance_usdm",name:"Binance USD-M",kind:"Crypto exchange",status:"Executor exists · account link pending",selectable:true},
+  {id:"binance_usdm",name:"Binance USD-M",kind:"Crypto exchange",status:"Qoin execution adapter pending",selectable:true},
   {id:"coinbase_advanced_trade",name:"Coinbase Advanced Trade",kind:"Crypto exchange",status:"API listed · Qoin adapter pending",selectable:true},
   {id:"kraken_spot",name:"Kraken Spot",kind:"Crypto exchange",status:"API listed · Qoin adapter pending",selectable:true},
   {id:"bybit",name:"Bybit",kind:"Crypto exchange",status:"API listed · Qoin adapter pending",selectable:true},
@@ -461,7 +461,7 @@ const MOBILE_BROKER_DIRECTORY = [
 ] as const;
 
 function MobileBrokerCollectionPanel() {
-  const [directory,setDirectory]=useState<Array<{id:string;name:string;kind:string;status:string;selectable:boolean}>>(MOBILE_BROKER_DIRECTORY);
+  const [directory,setDirectory]=useState<Array<{id:string;name:string;kind:string;status:string;selectable:boolean}>>([...MOBILE_BROKER_DIRECTORY]);
   const [selected,setSelected]=useState<string[]>([]);
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
@@ -469,7 +469,7 @@ function MobileBrokerCollectionPanel() {
   const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
-    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,kind:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:broker.execution_status==="execution_adapter_exists_not_connected"?"Existing Binance executor · account link pending":"API listed · Qoin execution adapter pending",selectable:broker.selectable})));}).catch(()=>undefined);
+    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,kind:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:"Qoin "+broker.execution_status.replaceAll("_"," "),selectable:broker.selectable})));}).catch(()=>undefined);
     void AsyncStorage.getItem("qoin:broker-routing-preferences").then((raw)=>{
       if(!active||!raw)return;
       try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}catch{/* Ignore invalid local preference data. */}
