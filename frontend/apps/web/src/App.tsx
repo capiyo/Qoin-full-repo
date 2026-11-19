@@ -392,13 +392,13 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
           <div className="set-overlap-grid" style={{gridTemplateColumns: `104px repeat(${ledger.sets.length}, minmax(24px, 1fr))`}}>
             <span className="set-overlap-corner">A ∩ B</span>
             {ledger.sets.map((item) => <span className="set-overlap-heading" key={"col-"+item.set_id} title={item.label}>{item.set_id.split("_").map((part)=>part[0]).join("").toUpperCase()}</span>)}
-            {ledger.sets.map((item,rowIndex) => <React.Fragment key={"row-"+item.set_id}>
+            {ledger.sets.map((item,rowIndex) => <Fragment key={"row-"+item.set_id}>
               <span className="set-overlap-row-label" title={item.label}>{item.label}</span>
               {ledger.sets.map((other,columnIndex) => {
                 const cell=overlapMatrix[rowIndex][columnIndex];
                 return <span key={other.set_id} className="set-overlap-cell" title={item.label+" ∩ "+other.label+" = "+cell.count} style={{backgroundColor: `rgba(40,103,220,${0.06+cell.intensity*0.42})`}}>{cell.count}</span>;
               })}
-            </React.Fragment>)}
+            </Fragment>)}
           </div>
         </div>
         <p className="set-venn-note">Intersection counts are computed from shared event IDs, not inferred from the visual layout. Stronger cells mean a larger share of the smaller set is shared.</p>
