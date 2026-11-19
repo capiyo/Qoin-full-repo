@@ -230,16 +230,16 @@ pub fn validate_aggregate_portfolio_risk(
         .checked_mul(policy.max_risk_fraction)
         .ok_or_else(|| RoutingError::Arithmetic("aggregate risk cap overflow".into()))?;
 
-    if request.parent_notional_portfolio > notional_cap {
+    if !request.reduce_only && request.parent_notional_portfolio > notional_cap {
         return Err(RoutingError::AggregateRiskRejected("parent notional exceeds the portfolio order budget".into()));
     }
-    if request.maximum_loss_at_stop_portfolio > risk_cap {
+    if !request.reduce_only && request.maximum_loss_at_stop_portfolio > risk_cap {
         return Err(RoutingError::AggregateRiskRejected("parent stop loss exceeds the portfolio risk budget".into()));
     }
     let projected_daily_loss = snapshot.daily_loss_portfolio
         .checked_add(request.maximum_loss_at_stop_portfolio)
         .ok_or_else(|| RoutingError::Arithmetic("projected daily loss overflow".into()))?;
-    if projected_daily_loss >= daily_loss_cap {
+    if !request.reduce_only && projected_daily_loss >= daily_loss_cap {
         return Err(RoutingError::AggregateRiskRejected(
             "current daily loss plus this order's stop loss would reach or exceed the daily loss limit".into()
         ));
@@ -258,12 +258,15 @@ pub fn validate_aggregate_portfolio_risk(
             .checked_add(request.parent_notional_portfolio)
             .ok_or_else(|| RoutingError::Arithmetic("aggregate gross exposure overflow".into()))?
     };
-    if projected_gross > leverage_cap {
+    if !request.reduce_only && projected_gross > leverage_cap {
         return Err(RoutingError::AggregateRiskRejected("projected gross exposure exceeds portfolio leverage limit".into()));
     }
-    let remaining_daily = daily_loss_cap
-        .checked_sub(projected_daily_loss)
-        .ok_or_else(|| RoutingError::Arithmetic("remaining daily loss budget underflow".into()))?;
+    let remaining_daily = if projected_daily_loss >= daily_loss_cap {
+        Decimal::ZERO
+    } else {
+        daily_loss_cap.checked_sub(projected_daily_loss)
+            .ok_or_else(|| RoutingError::Arithmetic("remaining daily loss budget underflow".into()))?
+    };
 
     Ok(AggregateRiskApproval {
         instrument_id: request.instrument_id.trim().to_string(),
@@ -615,6 +618,21 @@ mod tests {
             validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
             Err(RoutingError::AggregateRiskRejected(_))
         ));
+    }
+
+    #[test]
+    fn reduce_only_orders_remain_available_when_portfolio_limits_are_already_breached() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.gross_exposure_portfolio = d("30000");
+        snapshot.daily_loss_portfolio = d("250");
+        let mut request = aggregate_request();
+        request.parent_notional_portfolio = d("5000");
+        request.maximum_loss_at_stop_portfolio = Decimal::ZERO;
+        request.reduce_only = true;
+        let approval = validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request).unwrap();
+        assert_eq!(approval.projected_gross_exposure_portfolio, d("30000"));
+        assert_eq!(approval.projected_daily_loss_portfolio, d("250"));
+        assert_eq!(approval.remaining_daily_loss_budget_portfolio, Decimal::ZERO);
     }
 
     #[test]
