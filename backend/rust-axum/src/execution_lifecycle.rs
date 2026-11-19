@@ -226,7 +226,7 @@ mod tests {
             Err(LifecycleError::Overfill)
         );
         assert_eq!(
-            order.apply(BrokerEvent::PartialFill { execution_id: "exec-2".into(), quantity: Decimal::MAX, price: d("100") }),
+            order.apply(BrokerEvent::PartialFill { execution_id: "exec-2".into(), quantity: Decimal::ZERO, price: d("100") }),
             Err(LifecycleError::InvalidExecution)
         );
     }
@@ -259,6 +259,22 @@ mod tests {
             order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("1"), price: d("1") }),
             Err(LifecycleError::MissingBrokerOrderId)
         );
+    }
+
+    #[test]
+    fn arithmetic_overflow_does_not_mutate_lifecycle() {
+        let mut order = accepted();
+        assert_eq!(
+            order.apply(BrokerEvent::PartialFill {
+                execution_id: "exec-overflow".into(),
+                quantity: d("2"),
+                price: Decimal::MAX,
+            }),
+            Err(LifecycleError::Arithmetic)
+        );
+        assert_eq!(order.filled_quantity, Decimal::ZERO);
+        assert_eq!(order.average_fill_price, None);
+        assert_eq!(order.status, OrderStatus::Accepted);
     }
 
     #[test]
