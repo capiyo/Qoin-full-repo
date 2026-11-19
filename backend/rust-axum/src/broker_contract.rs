@@ -145,6 +145,8 @@ pub struct BrokerAccountSnapshot {
     pub broker_id: String,
     pub account_id: String,
     pub account_currency: String,
+    pub account_healthy: bool,
+    pub trading_enabled: bool,
     pub equity: Decimal,
     pub available_margin: Decimal,
     pub gross_exposure: Decimal,
@@ -158,6 +160,7 @@ impl BrokerAccountSnapshot {
     pub fn validate(&self) -> Result<(), ContractError> {
         if self.broker_id.trim().is_empty() || self.account_id.trim().is_empty()
             || self.account_currency.trim().is_empty() || self.observed_at_ms <= 0
+            || !self.account_healthy || !self.trading_enabled
         {
             return Err(ContractError::InvalidAccount("account identity, currency and observation time are required".into()));
         }
@@ -478,9 +481,6 @@ pub struct ExecutionPreflight {
     pub reference_price_observed_at_ms: i64,
     pub protective_stop_price: Option<Decimal>,
     pub now_ms: i64,
-    /// The selected broker calculates margin using its own account mode,
-    /// instrument rules and current portfolio state.
-    pub required_margin_account_currency: Decimal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -569,13 +569,14 @@ pub async fn preflight_selected_orders(
             }
             let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
             validate_capabilities(&order, &capabilities)?;
+            let required_margin = adapter.required_margin_account_currency(&order, input.reference_price).await?;
             let risk = validate_portfolio_order(&policy, &account, &instrument, &order, &RiskCheckInput {
                 reference_price: input.reference_price,
                 protective_stop_price: input.protective_stop_price,
                 now_ms: input.now_ms,
                 reference_price_observed_at_ms: input.reference_price_observed_at_ms,
                 protective_order_supported: capabilities.native_protective_orders,
-                required_margin_account_currency: input.required_margin_account_currency,
+                required_margin_account_currency: required_margin,
             })?;
             Ok(PreparedBrokerOrder { broker_id, order, risk })
         }
@@ -605,13 +606,14 @@ pub async fn submit_risk_checked(
     }
     let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
     validate_capabilities(&order, &capabilities)?;
+    let required_margin = adapter.required_margin_account_currency(&order, preflight.reference_price).await?;
     let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
         reference_price: preflight.reference_price,
         protective_stop_price: preflight.protective_stop_price,
         now_ms: preflight.now_ms,
         reference_price_observed_at_ms: preflight.reference_price_observed_at_ms,
         protective_order_supported: capabilities.native_protective_orders,
-        required_margin_account_currency: preflight.required_margin_account_currency,
+        required_margin_account_currency: required_margin,
     })?;
     let broker_receipt = adapter.submit_order(order.clone()).await?;
     if broker_receipt.broker_id != adapter.broker_id()
@@ -676,6 +678,8 @@ pub trait BrokerAdapter: Send + Sync {
     async fn capabilities(&self, account_id: &str, instrument_id: &str) -> Result<BrokerCapabilities, ContractError>;
     async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError>;
     async fn instrument_spec(&self, account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError>;
+    /// Broker-native initial margin for this exact order, normalized to account currency.
+    async fn required_margin_account_currency(&self, order: &NormalizedOrder, reference_price: Decimal) -> Result<Decimal, ContractError>;
     async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError>;
     async fn order_status(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
     async fn cancel_order(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
@@ -734,7 +738,7 @@ mod tests {
     fn account_loss_uses_realized_and_unrealized_pnl() {
         let account = BrokerAccountSnapshot {
             broker_id: "broker".into(), account_id: "account".into(),
-            account_currency: "KES".into(), equity: d("100000"),
+            account_currency: "KES".into(), account_healthy: true, trading_enabled: true, equity: d("100000"),
             available_margin: d("50000"), gross_exposure: d("20000"),
             daily_realized_pnl: d("-1000"), daily_unrealized_pnl: d("-500"),
             open_positions: 2, observed_at_ms: 1,
@@ -748,7 +752,7 @@ mod tests {
         spec.quote_currency = "USD".into();
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(),
-            account_currency:"EUR".into(), equity:d("10000"), available_margin:d("5000"),
+            account_currency:"EUR".into(), account_healthy:true, trading_enabled:true, equity:d("10000"), available_margin:d("5000"),
             gross_exposure:Decimal::ZERO, daily_realized_pnl:Decimal::ZERO,
             daily_unrealized_pnl:Decimal::ZERO, open_positions:0, observed_at_ms:10_000
         };
@@ -773,7 +777,7 @@ mod tests {
         let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(),
-            account_currency:"USD".into(), equity:d("10000"), available_margin:d("5000"),
+            account_currency:"USD".into(), account_healthy:true, trading_enabled:true, equity:d("10000"), available_margin:d("5000"),
             gross_exposure:Decimal::ZERO, daily_realized_pnl:Decimal::ZERO,
             daily_unrealized_pnl:Decimal::ZERO, open_positions:0, observed_at_ms:10_000
         };
@@ -860,7 +864,7 @@ mod tests {
         async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError> {
             Ok(BrokerAccountSnapshot {
                 broker_id: "mock".into(), account_id: account_id.into(), account_currency: "USD".into(),
-                equity: if account_id == "unhealthy" { Decimal::ZERO } else { d("10000") },
+                account_healthy: account_id != "unhealthy", trading_enabled: true, equity: d("10000"),
                 available_margin: d("5000"), gross_exposure: Decimal::ZERO,
                 daily_realized_pnl: Decimal::ZERO, daily_unrealized_pnl: Decimal::ZERO,
                 open_positions: 0, observed_at_ms: 10_000,
@@ -874,6 +878,10 @@ mod tests {
             spec.quote_currency = "USD".into();
             spec.settlement_currency = "USD".into();
             Ok(spec)
+        }
+
+        async fn required_margin_account_currency(&self, _order: &NormalizedOrder, _reference_price: Decimal) -> Result<Decimal, ContractError> {
+            Ok(d("100"))
         }
 
         async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError> {
@@ -914,7 +922,6 @@ mod tests {
                 reference_price_observed_at_ms: 10_000,
                 protective_stop_price: Some(d("95")),
                 now_ms: 10_100,
-                required_margin_account_currency: d("100"),
             },
         }
     }
