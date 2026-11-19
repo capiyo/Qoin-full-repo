@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
-import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
+import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, setQoinAuthTokenProvider } from "@qoin/core";
 import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinHealth, getQoinState, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, getQoinV2Relationships, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinBacktestResult, type QoinV2RelationshipEvent } from "@qoin/core";
 
 type Instrument = {
@@ -394,6 +394,7 @@ export default function App() {
       return subscribeQoinAuth((user) => {
         const requestGeneration = ++generation;
         setFirebaseUser(user);
+        setQoinAuthTokenProvider(user ? () => user.getIdToken() : null);
         setAuthReady(true);
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
