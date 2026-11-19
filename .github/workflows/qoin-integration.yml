@@ -77,7 +77,7 @@ jobs:
           FIREBASE_MOCK_PID=$!
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
-          cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" 2>/dev/null || true; }
+          cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" "${FIREBASE_MOCK_PID:-}" 2>/dev/null || true; }
           trap cleanup EXIT
           # The gateway proxies its first /health request to Axum. Wait for the
           # upstream to be ready before starting Drogon so CI does not race its
