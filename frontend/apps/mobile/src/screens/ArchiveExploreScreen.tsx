@@ -133,7 +133,7 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
           ["Mark price",marketState?.mark_price?.toLocaleString(undefined,{maximumFractionDigits:8})],
           ["Basis bps",marketState?.basis_bps?.toFixed(3)],
           ["Flow imbalance",marketState?.order_flow_imbalance?.toFixed(5)],
-          ["Book imbalance",marketState?.liquidity_imbalance?.toFixed(5)],
+          ["Book imbalance",marketState?.liquidity_available ? marketState.liquidity_imbalance?.toFixed(5) : "—"],
           ["OI change",marketState?.open_interest_change?.toFixed(5)],
           ["Liquidation pressure",marketState?.liquidation_pressure?.toFixed(4)],
           ["Event intensity",marketState?.event_intensity?.toFixed(5)],
