@@ -11,7 +11,7 @@ pub struct ReplayEvent {
 }
 #[derive(Debug, Clone, Default)]
 struct ReplayState {
-    last_price: Option<f64>, last_mark_price: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>, signed_flow: f64, total_trade_size: f64,
+    last_price: Option<f64>, last_mark_price: Option<f64>, basis_bps: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     open_interest: Option<f64>, open_interest_change: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
@@ -85,7 +85,7 @@ fn funding_cashflow(position: f64, mark_price: f64, funding_rate: f64) -> f64 {
 
 fn event_mark_price(event: &ReplayEvent) -> Option<f64> {
     match event.event_type.as_str() {
-        "trade" => event.price.filter(|price| price.is_finite() && *price > 0.0),
+        "trade" | "mark_price" => event.price.filter(|price| price.is_finite() && *price > 0.0),
         "book" => match (event.bid, event.ask) {
             (Some(bid), Some(ask)) if bid.is_finite() && ask.is_finite() && bid > 0.0 && ask >= bid => {
                 let mid = (bid + ask) / 2.0;
@@ -155,7 +155,7 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
                 open_interest_change: state.open_interest_change * 100.0,
                 liquidation_pressure: (state.liquidation_events as f64 / 10.0)
                     * match state.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
-                basis: 0.0,
+                basis: state.basis_bps.map(|basis| basis / 25.0).unwrap_or(0.0),
                 spread_bps: state.spread_bps,
                 spread_age_ms: state.last_book_ts_ms.map(|book_ts| _event.ts_ms.saturating_sub(book_ts)),
             };
@@ -318,11 +318,19 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 pending_order = Some(pending);
             }
         }
+        if event.event_type == "trade" {
         if let Some(price)=event.price.filter(|v|*v>0.0) {
             if let Some(previous)=state.last_price.filter(|v|*v>0.0) {
                 state.ewma_abs_return=0.94*state.ewma_abs_return+0.06*(price/previous).ln().abs();
             }
             state.last_price=Some(price);
+        }
+        }
+        if event.event_type == "mark_price" {
+            if let Some(mark)=event.price.filter(|value| *value > 0.0) {
+                state.basis_bps=state.last_price.filter(|last| *last > 0.0)
+                    .map(|last| (mark-last)/last*10_000.0);
+            }
         }
         if let (Some(bid),Some(ask))=(event.bid,event.ask) {
             let mid=(bid+ask)/2.0;
@@ -330,7 +338,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             state.last_book_ts_ms=Some(event.ts_ms);
             if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
         }
-        if event.event_type == "funding" && position > 0.0 {
+        if matches!(event.event_type.as_str(), "funding" | "mark_price") && position > 0.0 {
             if let (Some(rate), Some(mark_price)) = (event.funding_rate, event.price.filter(|price| price.is_finite() && *price > 0.0)) {
                 let cashflow = funding_cashflow(position, mark_price, rate);
                 cash += cashflow;
@@ -346,7 +354,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 state.last_liquidation_side=event.liquidation_side.clone();
                 if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
                 if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);}}
-            "funding"=>if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
+            "funding" | "mark_price"=>if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
             "open_interest"=>if let Some(current)=event.open_interest {
                 if let Some(previous)=state.open_interest.filter(|value| *value>0.0) {
                     state.open_interest_change=((current-previous)/previous).clamp(-3.0,3.0);
