@@ -451,7 +451,7 @@ function MobileBrokerCollectionPanel() {
   const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
-    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,kind:broker.provider_kind==="exchange"?"Exchange API":"Broker API",status:broker.execution_status==="execution_adapter_exists_not_connected"?"Existing Binance executor · account link pending":"API listed · Qoin execution adapter pending",selectable:broker.selectable})));}).catch(()=>undefined);
+    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,kind:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:broker.execution_status==="execution_adapter_exists_not_connected"?"Existing Binance executor · account link pending":"API listed · Qoin execution adapter pending",selectable:broker.selectable})));}).catch(()=>undefined);
     void AsyncStorage.getItem("qoin:broker-routing-preferences").then((raw)=>{
       if(!active||!raw)return;
       try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}catch{/* Ignore invalid local preference data. */}
