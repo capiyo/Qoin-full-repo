@@ -563,9 +563,13 @@ pub struct PreparedBrokerOrder {
 /// begins any child submission.
 pub async fn preflight_selected_orders(
     registry: &BrokerRegistry,
+    owner_uid: &str,
     policy: &PortfolioRiskPolicy,
     selected: Vec<SelectedBrokerOrder>,
 ) -> Result<Vec<PreparedBrokerOrder>, ContractError> {
+    if owner_uid.trim().is_empty() {
+        return Err(ContractError::InvalidAccount("verified owner identity is required".into()));
+    }
     if selected.is_empty() || selected.len() > 20 {
         return Err(ContractError::InvalidOrder("select between 1 and 20 broker accounts".into()));
     }
@@ -594,9 +598,9 @@ pub async fn preflight_selected_orders(
         // Copy the shared reference into each future; the policy value is not Copy.
         let policy = policy;
         async move {
-            let account = adapter.account_snapshot(&order.account_id).await?;
-            let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
-            let quote = adapter.latest_quote(&order.account_id, &order.instrument_id).await?;
+            let account = adapter.account_snapshot(owner_uid, &order.account_id).await?;
+            let instrument = adapter.instrument_spec(owner_uid, &order.account_id, &order.instrument_id).await?;
+            let quote = adapter.latest_quote(owner_uid, &order.account_id, &order.instrument_id).await?;
             let now_ms = current_time_ms()?;
             if account.broker_id != adapter.broker_id()
                 || account.account_id != order.account_id
@@ -608,10 +612,10 @@ pub async fn preflight_selected_orders(
             {
                 return Err(ContractError::InvalidAccount("adapter returned an account or instrument that does not match the selected order".into()));
             }
-            let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
+            let capabilities = adapter.capabilities(owner_uid, &order.account_id, &order.instrument_id).await?;
             validate_capabilities(&order, &capabilities)?;
             let reference_price = quote.execution_price(order.side)?;
-            let required_margin = adapter.required_margin_account_currency(&order, reference_price).await?;
+            let required_margin = adapter.required_margin_account_currency(owner_uid, &order, reference_price).await?;
             let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
                 reference_price,
                 protective_stop_price: input.protective_stop_price,
@@ -634,16 +638,20 @@ pub async fn preflight_selected_orders(
 /// never blind resubmission.
 pub async fn submit_risk_checked(
     adapter: &dyn BrokerAdapter,
+    owner_uid: &str,
     policy: &PortfolioRiskPolicy,
     order: NormalizedOrder,
     preflight: ExecutionPreflight,
 ) -> Result<RiskCheckedReceipt, ContractError> {
+    if owner_uid.trim().is_empty() {
+        return Err(ContractError::InvalidAccount("verified owner identity is required".into()));
+    }
     if adapter.broker_id().trim().is_empty() {
         return Err(ContractError::Broker("adapter has no broker identity".into()));
     }
-    let account = adapter.account_snapshot(&order.account_id).await?;
-    let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
-    let quote = adapter.latest_quote(&order.account_id, &order.instrument_id).await?;
+    let account = adapter.account_snapshot(owner_uid, &order.account_id).await?;
+    let instrument = adapter.instrument_spec(owner_uid, &order.account_id, &order.instrument_id).await?;
+    let quote = adapter.latest_quote(owner_uid, &order.account_id, &order.instrument_id).await?;
     let now_ms = current_time_ms()?;
     if account.broker_id != adapter.broker_id() || account.account_id != order.account_id
         || instrument.broker_id != adapter.broker_id() || instrument.instrument_id != order.instrument_id
@@ -651,10 +659,10 @@ pub async fn submit_risk_checked(
         || quote.instrument_id != order.instrument_id {
         return Err(ContractError::InvalidAccount("adapter returned account, instrument or quote for another broker/account".into()));
     }
-    let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
+    let capabilities = adapter.capabilities(owner_uid, &order.account_id, &order.instrument_id).await?;
     validate_capabilities(&order, &capabilities)?;
     let reference_price = quote.execution_price(order.side)?;
-    let required_margin = adapter.required_margin_account_currency(&order, reference_price).await?;
+    let required_margin = adapter.required_margin_account_currency(owner_uid, &order, reference_price).await?;
     let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
         reference_price,
         protective_stop_price: preflight.protective_stop_price,
@@ -663,7 +671,7 @@ pub async fn submit_risk_checked(
         protective_order_supported: capabilities.native_protective_orders,
         required_margin_account_currency: required_margin,
     })?;
-    let broker_receipt = adapter.submit_order(order.clone(), preflight.protective_stop_price).await?;
+    let broker_receipt = adapter.submit_order(owner_uid, order.clone(), preflight.protective_stop_price).await?;
     if broker_receipt.broker_id != adapter.broker_id()
         || broker_receipt.account_id != order.account_id
         || broker_receipt.client_order_id != order.client_order_id
@@ -723,21 +731,23 @@ impl BrokerRegistry {
 #[async_trait]
 pub trait BrokerAdapter: Send + Sync {
     fn broker_id(&self) -> &'static str;
-    async fn capabilities(&self, account_id: &str, instrument_id: &str) -> Result<BrokerCapabilities, ContractError>;
-    async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError>;
-    async fn instrument_spec(&self, account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError>;
+    async fn capabilities(&self, owner_uid: &str, account_id: &str, instrument_id: &str) -> Result<BrokerCapabilities, ContractError>;
+    async fn account_snapshot(&self, owner_uid: &str, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError>;
+    async fn instrument_spec(&self, owner_uid: &str, account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError>;
+    /// Fresh provider quote for the authenticated user's connected account.
+    async fn latest_quote(&self, owner_uid: &str, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError>;
     /// Broker-native initial margin for this exact order, normalized to account currency.
-    async fn latest_quote(&self, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError>;
-    async fn required_margin_account_currency(&self, order: &NormalizedOrder, reference_price: Decimal) -> Result<Decimal, ContractError>;
+    async fn required_margin_account_currency(&self, owner_uid: &str, order: &NormalizedOrder, reference_price: Decimal) -> Result<Decimal, ContractError>;
     /// Submit entry and protective stop as one native/bracket transaction.
     /// Opening orders without native attached protection are rejected upstream.
-    async fn submit_order(&self, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError>;
+    async fn submit_order(&self, owner_uid: &str, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError>;
     /// Find an order by the stable client ID supplied before submission.
     /// A missing result is authoritative only if the adapter searched the
     /// venue's complete relevant order history, including closed/rejected orders.
     /// Adapters without that guarantee must return Unsupported, never None.
     async fn find_order_by_client_order_id(
         &self,
+        _owner_uid: &str,
         _account_id: &str,
         _client_order_id: &str,
     ) -> Result<Option<BrokerOrderReceipt>, ContractError> {
@@ -745,8 +755,8 @@ pub trait BrokerAdapter: Send + Sync {
             "adapter does not support authoritative client-order-id lookup".into()
         ))
     }
-    async fn order_status(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
-    async fn cancel_order(&self, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
+    async fn order_status(&self, owner_uid: &str, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
+    async fn cancel_order(&self, owner_uid: &str, account_id: &str, broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError>;
 }
 
 /// Look up an ambiguous submission and reject receipts that do not match the
@@ -754,13 +764,14 @@ pub trait BrokerAdapter: Send + Sync {
 /// under the BrokerAdapter contract.
 pub async fn lookup_order_by_client_order_id(
     adapter: &dyn BrokerAdapter,
+    owner_uid: &str,
     account_id: &str,
     client_order_id: &str,
 ) -> Result<Option<BrokerOrderReceipt>, ContractError> {
-    if account_id.trim().is_empty() || client_order_id.trim().is_empty() {
+    if owner_uid.trim().is_empty() || account_id.trim().is_empty() || client_order_id.trim().is_empty() {
         return Err(ContractError::InvalidOrder("account and client-order IDs are required for reconciliation".into()));
     }
-    let result = adapter.find_order_by_client_order_id(account_id, client_order_id).await?;
+    let result = adapter.find_order_by_client_order_id(owner_uid, account_id, client_order_id).await?;
     if let Some(receipt) = &result {
         if !receipt.broker_id.eq_ignore_ascii_case(adapter.broker_id())
             || receipt.account_id != account_id
@@ -994,14 +1005,14 @@ mod tests {
     impl BrokerAdapter for MockAdapter {
         fn broker_id(&self) -> &'static str { "mock" }
 
-        async fn latest_quote(&self, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError> {
+        async fn latest_quote(&self, _owner_uid: &str, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError> {
             Ok(BrokerQuote {
                 broker_id: "mock".into(), account_id: account_id.into(), instrument_id: instrument_id.into(),
                 bid: d("99.99"), ask: d("100.01"), observed_at_ms: current_time_ms()?,
             })
         }
 
-        async fn capabilities(&self, _account_id: &str, _instrument_id: &str) -> Result<BrokerCapabilities, ContractError> {
+        async fn capabilities(&self, _owner_uid: &str, _account_id: &str, _instrument_id: &str) -> Result<BrokerCapabilities, ContractError> {
             Ok(BrokerCapabilities {
                 market_orders: true, limit_orders: true, stop_orders: true, stop_limit_orders: true,
                 native_protective_orders: true, amend_orders: true, cancel_orders: true,
@@ -1009,7 +1020,7 @@ mod tests {
             })
         }
 
-        async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError> {
+        async fn account_snapshot(&self, _owner_uid: &str, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError> {
             Ok(BrokerAccountSnapshot {
                 broker_id: "mock".into(), account_id: account_id.into(), account_currency: "USD".into(),
                 account_healthy: account_id != "unhealthy", trading_enabled: account_id != "disabled", equity: d("10000"),
@@ -1019,7 +1030,7 @@ mod tests {
             })
         }
 
-        async fn instrument_spec(&self, _account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError> {
+        async fn instrument_spec(&self, _owner_uid: &str, _account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError> {
             let mut spec = instrument(AssetClass::Equity, "MOCK", "1", "1");
             spec.instrument_id = instrument_id.into();
             spec.broker_id = "mock".into();
@@ -1028,11 +1039,11 @@ mod tests {
             Ok(spec)
         }
 
-        async fn required_margin_account_currency(&self, order: &NormalizedOrder, _reference_price: Decimal) -> Result<Decimal, ContractError> {
+        async fn required_margin_account_currency(&self, _owner_uid: &str, order: &NormalizedOrder, _reference_price: Decimal) -> Result<Decimal, ContractError> {
             Ok(if order.account_id == "margin-short" { d("6000") } else { d("100") })
         }
 
-        async fn submit_order(&self, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError> {
+        async fn submit_order(&self, _owner_uid: &str, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError> {
             if !order.reduce_only && protective_stop_price.is_none() {
                 return Err(ContractError::Unsupported("mock requires attached native protection".into()));
             }
@@ -1044,11 +1055,11 @@ mod tests {
             })
         }
 
-        async fn order_status(&self, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
+        async fn order_status(&self, _owner_uid: &str, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
             Err(ContractError::Unsupported("mock status is not used in preflight tests".into()))
         }
 
-        async fn cancel_order(&self, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
+        async fn cancel_order(&self, _owner_uid: &str, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
             Err(ContractError::Unsupported("mock cancellation is not used in preflight tests".into()))
         }
     }
@@ -1058,7 +1069,7 @@ mod tests {
         let adapter = MockAdapter {
             submit_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
-        let result = lookup_order_by_client_order_id(&adapter, "account-a", "client-order-0001").await;
+        let result = lookup_order_by_client_order_id(&adapter, "verified-user", "account-a", "client-order-0001").await;
         assert!(matches!(result, Err(ContractError::Unsupported(_))));
     }
 
@@ -1090,6 +1101,7 @@ mod tests {
         registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
         let prepared = preflight_selected_orders(
             &registry,
+            "verified-user",
             &PortfolioRiskPolicy::default(),
             vec![selected_order("account-a"), selected_order("account-b")],
         ).await.unwrap();
@@ -1104,6 +1116,7 @@ mod tests {
         registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
         let result = preflight_selected_orders(
             &registry,
+            "verified-user",
             &PortfolioRiskPolicy::default(),
             vec![selected_order("account-a"), selected_order("margin-short")],
         ).await;
@@ -1118,6 +1131,7 @@ mod tests {
         registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
         let result = preflight_selected_orders(
             &registry,
+            "verified-user",
             &PortfolioRiskPolicy::default(),
             vec![selected_order("account-a"), selected_order("unhealthy"), selected_order("disabled")],
         ).await;
