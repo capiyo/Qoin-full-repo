@@ -109,7 +109,7 @@ export type QoinVectorDecision = {
 
 export const QOIN_FEATURE_NAMES = [
   "order_flow_imbalance",
-  "liquidity_stress",
+  "liquidity_imbalance",
   "volatility",
   "funding_pressure",
   "open_interest_change",
