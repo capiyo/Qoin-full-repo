@@ -65,6 +65,28 @@ pub struct InstrumentSpec {
     pub conversion_rate_observed_at_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerQuote {
+    pub broker_id: String,
+    pub account_id: String,
+    pub instrument_id: String,
+    pub bid: Decimal,
+    pub ask: Decimal,
+    pub observed_at_ms: i64,
+}
+
+impl BrokerQuote {
+    pub fn execution_price(&self, side: OrderSide) -> Result<Decimal, ContractError> {
+        if self.broker_id.trim().is_empty() || self.account_id.trim().is_empty()
+            || self.instrument_id.trim().is_empty() || self.bid <= Decimal::ZERO
+            || self.ask < self.bid || self.observed_at_ms <= 0
+        {
+            return Err(ContractError::InvalidInstrument("broker quote identity, bid/ask or timestamp is invalid".into()));
+        }
+        Ok(match side { OrderSide::Buy => self.ask, OrderSide::Sell => self.bid })
+    }
+}
+
 impl InstrumentSpec {
     pub fn validate(&self) -> Result<(), ContractError> {
         for (name, value) in [
@@ -328,6 +350,13 @@ pub struct RiskApproval {
     pub remaining_daily_loss_budget: Decimal,
     pub projected_gross_exposure: Decimal,
 }
+fn current_time_ms() -> Result<i64, ContractError> {
+    let duration = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| ContractError::InvalidOrder("system clock is before Unix epoch".into()))?;
+    i64::try_from(duration.as_millis())
+        .map_err(|_| ContractError::InvalidOrder("system clock timestamp overflow".into()))
+}
+
 /// Shared pre-trade gate. All amounts are normalized to account currency;
 /// no USD/USDT assumption is made.
 pub fn validate_portfolio_order(
@@ -483,10 +512,9 @@ pub fn validate_portfolio_order(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionPreflight {
-    pub reference_price: Decimal,
-    pub reference_price_observed_at_ms: i64,
+    /// Requested native protective stop. The adapter must submit it atomically
+    /// with the entry order or reject the request; it is never a post-fill best effort.
     pub protective_stop_price: Option<Decimal>,
-    pub now_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -567,21 +595,27 @@ pub async fn preflight_selected_orders(
         async move {
             let account = adapter.account_snapshot(&order.account_id).await?;
             let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
+            let quote = adapter.latest_quote(&order.account_id, &order.instrument_id).await?;
+            let now_ms = current_time_ms()?;
             if account.broker_id != adapter.broker_id()
                 || account.account_id != order.account_id
                 || instrument.broker_id != adapter.broker_id()
                 || instrument.instrument_id != order.instrument_id
+                || quote.broker_id != adapter.broker_id()
+                || quote.account_id != order.account_id
+                || quote.instrument_id != order.instrument_id
             {
                 return Err(ContractError::InvalidAccount("adapter returned an account or instrument that does not match the selected order".into()));
             }
             let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
             validate_capabilities(&order, &capabilities)?;
-            let required_margin = adapter.required_margin_account_currency(&order, input.reference_price).await?;
+            let reference_price = quote.execution_price(order.side)?;
+            let required_margin = adapter.required_margin_account_currency(&order, reference_price).await?;
             let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
-                reference_price: input.reference_price,
+                reference_price,
                 protective_stop_price: input.protective_stop_price,
-                now_ms: input.now_ms,
-                reference_price_observed_at_ms: input.reference_price_observed_at_ms,
+                now_ms,
+                reference_price_observed_at_ms: quote.observed_at_ms,
                 protective_order_supported: capabilities.native_protective_orders,
                 required_margin_account_currency: required_margin,
             })?;
@@ -608,21 +642,27 @@ pub async fn submit_risk_checked(
     }
     let account = adapter.account_snapshot(&order.account_id).await?;
     let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
-    if account.broker_id != adapter.broker_id() || instrument.broker_id != adapter.broker_id() {
-        return Err(ContractError::InvalidAccount("adapter returned account or instrument for another broker".into()));
+    let quote = adapter.latest_quote(&order.account_id, &order.instrument_id).await?;
+    let now_ms = current_time_ms()?;
+    if account.broker_id != adapter.broker_id() || account.account_id != order.account_id
+        || instrument.broker_id != adapter.broker_id() || instrument.instrument_id != order.instrument_id
+        || quote.broker_id != adapter.broker_id() || quote.account_id != order.account_id
+        || quote.instrument_id != order.instrument_id {
+        return Err(ContractError::InvalidAccount("adapter returned account, instrument or quote for another broker/account".into()));
     }
     let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
     validate_capabilities(&order, &capabilities)?;
-    let required_margin = adapter.required_margin_account_currency(&order, preflight.reference_price).await?;
+    let reference_price = quote.execution_price(order.side)?;
+    let required_margin = adapter.required_margin_account_currency(&order, reference_price).await?;
     let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
-        reference_price: preflight.reference_price,
+        reference_price,
         protective_stop_price: preflight.protective_stop_price,
-        now_ms: preflight.now_ms,
-        reference_price_observed_at_ms: preflight.reference_price_observed_at_ms,
+        now_ms,
+        reference_price_observed_at_ms: quote.observed_at_ms,
         protective_order_supported: capabilities.native_protective_orders,
         required_margin_account_currency: required_margin,
     })?;
-    let broker_receipt = adapter.submit_order(order.clone()).await?;
+    let broker_receipt = adapter.submit_order(order.clone(), preflight.protective_stop_price).await?;
     if broker_receipt.broker_id != adapter.broker_id()
         || broker_receipt.account_id != order.account_id
         || broker_receipt.client_order_id != order.client_order_id
@@ -686,8 +726,11 @@ pub trait BrokerAdapter: Send + Sync {
     async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError>;
     async fn instrument_spec(&self, account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError>;
     /// Broker-native initial margin for this exact order, normalized to account currency.
+    async fn latest_quote(&self, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError>;
     async fn required_margin_account_currency(&self, order: &NormalizedOrder, reference_price: Decimal) -> Result<Decimal, ContractError>;
-    async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError>;
+    /// Submit entry and protective stop as one native/bracket transaction.
+    /// Opening orders without native attached protection are rejected upstream.
+    async fn submit_order(&self, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError>;
     /// Find an order by the stable client ID supplied before submission.
     /// A missing result is authoritative only if the adapter searched the
     /// venue's complete relevant order history, including closed/rejected orders.
@@ -756,7 +799,7 @@ mod tests {
             minimum_quantity: d("0.01"),
             minimum_notional: None,
             price_currency_to_account_rate: d(rate),
-            conversion_rate_observed_at_ms: 10_000,
+            conversion_rate_observed_at_ms: current_time_ms().expect("test clock"),
         }
     }
 
@@ -926,6 +969,13 @@ mod tests {
     impl BrokerAdapter for MockAdapter {
         fn broker_id(&self) -> &'static str { "mock" }
 
+        async fn latest_quote(&self, account_id: &str, instrument_id: &str) -> Result<BrokerQuote, ContractError> {
+            Ok(BrokerQuote {
+                broker_id: "mock".into(), account_id: account_id.into(), instrument_id: instrument_id.into(),
+                bid: d("99.99"), ask: d("100.01"), observed_at_ms: current_time_ms()?,
+            })
+        }
+
         async fn capabilities(&self, _account_id: &str, _instrument_id: &str) -> Result<BrokerCapabilities, ContractError> {
             Ok(BrokerCapabilities {
                 market_orders: true, limit_orders: true, stop_orders: true, stop_limit_orders: true,
@@ -957,7 +1007,10 @@ mod tests {
             Ok(if order.account_id == "margin-short" { d("6000") } else { d("100") })
         }
 
-        async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError> {
+        async fn submit_order(&self, order: NormalizedOrder, protective_stop_price: Option<Decimal>) -> Result<BrokerOrderReceipt, ContractError> {
+            if !order.reduce_only && protective_stop_price.is_none() {
+                return Err(ContractError::Unsupported("mock requires attached native protection".into()));
+            }
             self.submit_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(BrokerOrderReceipt {
                 broker_id: "mock".into(), account_id: order.account_id,
@@ -1000,10 +1053,7 @@ mod tests {
                 reduce_only: false,
             },
             preflight: ExecutionPreflight {
-                reference_price: d("100"),
-                reference_price_observed_at_ms: 10_000,
                 protective_stop_price: Some(d("95")),
-                now_ms: 10_100,
             },
         }
     }
