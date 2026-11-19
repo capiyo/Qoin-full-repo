@@ -30,7 +30,7 @@ impl OrderStatus {
 pub enum BrokerEvent {
     Accepted { broker_order_id: String },
     PartialFill { execution_id: String, quantity: Decimal, price: Decimal },
-    Filled { execution_id: String, quantity: f64, price: f64 },
+    Filled { execution_id: String, quantity: Decimal, price: Decimal },
     CancelRequested,
     Cancelled,
     Rejected { reason_code: String },
@@ -139,8 +139,8 @@ impl OrderLifecycle {
     fn apply_fill(
         &mut self,
         execution_id: String,
-        quantity: f64,
-        price: f64,
+        quantity: Decimal,
+        price: Decimal,
         final_fill: bool,
     ) -> Result<bool, LifecycleError> {
         if !matches!(self.status, OrderStatus::Accepted | OrderStatus::PartiallyFilled | OrderStatus::CancelPending) {
@@ -191,6 +191,8 @@ impl OrderLifecycle {
 mod tests {
     use super::*;
 
+    fn d(value: &str) -> Decimal { value.parse().expect("valid test decimal") }
+
     fn accepted() -> OrderLifecycle {
         let mut order = OrderLifecycle::new("qoin-001".into(), d("10")).unwrap();
         order.apply(BrokerEvent::Accepted { broker_order_id: "broker-001".into() }).unwrap();
@@ -210,10 +212,10 @@ mod tests {
     #[test]
     fn duplicate_execution_id_is_a_noop() {
         let mut order = accepted();
-        let event = BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 4.0, price: 100.0 };
+        let event = BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("4"), price: d("100") };
         assert!(order.apply(event.clone()).unwrap());
         assert!(!order.apply(event).unwrap());
-        assert_eq!(order.filled_quantity, 4.0);
+        assert_eq!(order.filled_quantity, d("4"));
     }
 
     #[test]
@@ -236,7 +238,7 @@ mod tests {
         order.apply(BrokerEvent::CancelRequested).unwrap();
         order.apply(BrokerEvent::Cancelled).unwrap();
         assert_eq!(order.status, OrderStatus::Cancelled);
-        assert_eq!(order.filled_quantity, 3.0);
+        assert_eq!(order.filled_quantity, d("3"));
         assert_eq!(order.apply(BrokerEvent::Failed { reason_code: "late".into() }), Err(LifecycleError::TerminalOrder));
     }
 
@@ -244,7 +246,7 @@ mod tests {
     fn late_fill_during_cancel_keeps_cancel_pending_unless_fully_filled() {
         let mut order = accepted();
         order.apply(BrokerEvent::CancelRequested).unwrap();
-        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 3.0, price: 100.0 }).unwrap();
+        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("3"), price: d("100") }).unwrap();
         assert_eq!(order.status, OrderStatus::CancelPending);
         order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: d("7"), price: d("101") }).unwrap();
         assert_eq!(order.status, OrderStatus::Filled);
