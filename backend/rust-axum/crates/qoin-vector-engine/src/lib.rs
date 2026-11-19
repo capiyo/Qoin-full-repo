@@ -90,6 +90,10 @@ pub struct FeatureTrace {
     pub clamped_value: f64,
     pub selected: bool,
     pub attended_value: f64,
+    pub bullish_weight: f64,
+    pub bearish_weight: f64,
+    pub bullish_weighted_term: f64,
+    pub bearish_weighted_term: f64,
     pub directional_weight: f64,
     pub directional_contribution: f64,
 }
@@ -301,6 +305,10 @@ pub fn decide(
             clamped_value: clipped[index],
             selected: selected[index],
             attended_value: attended[index],
+            bullish_weight: DIRECTIONAL_WEIGHTS[index],
+            bearish_weight: -DIRECTIONAL_WEIGHTS[index],
+            bullish_weighted_term: attended[index] * DIRECTIONAL_WEIGHTS[index],
+            bearish_weighted_term: attended[index] * -DIRECTIONAL_WEIGHTS[index],
             directional_weight: DIRECTIONAL_WEIGHTS[index],
             directional_contribution: attended[index] * DIRECTIONAL_WEIGHTS[index],
         }
