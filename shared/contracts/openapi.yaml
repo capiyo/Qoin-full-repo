@@ -99,6 +99,54 @@ paths:
         '400': { description: Invalid replay parameters }
         '422': { description: Empty, invalid, or mixed-venue replay window }
         '503': { description: Historical event storage unavailable }
+  /api/v1/v2/evaluation:
+    get:
+      summary: Evaluate forward outcomes of persisted V2 set relationships
+      description: |
+        Direction-neutral research evaluation. For each discovered relationship, measures
+        subsequent price return and maximum adverse/favorable excursion strictly after the
+        relationship evidence timestamp. Groups results by relation kind and attention weight.
+        It is not a directional signal, probability estimate, trading strategy, or execution
+        simulation. Vector V1 remains the sole decision authority.
+      parameters:
+        - in: query
+          name: symbol
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 96 }
+        - in: query
+          name: venue
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - in: query
+          name: horizon_ms
+          schema: { type: integer, minimum: 1, maximum: 7776000000, default: 300000 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 20000, default: 5000 }
+      responses:
+        '200': { description: Forward outcome samples and grouped association statistics }
+        '400': { description: Invalid evaluation parameters }
+        '413': { description: Relationship or price-event limit reached }
+        '503': { description: Relationship ledger or market history unavailable }
+  /api/v1/broker-allocations:
+    post:
+      summary: Build a non-executable equal-share allocation plan
+      description: |
+        Splits total notional equally across every selected broker. Rejects duplicate brokers
+        and mixed quote currencies. No broker is silently omitted, no failed allocation is
+        redistributed, and no automatic FX conversion is performed. This endpoint only plans;
+        execution_enabled is always false until authenticated broker adapters and risk controls
+        are fully integrated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrokerAllocationRequest'
+      responses:
+        '200': { description: Equal-share plan with adapter availability and non-executable status }
+        '400': { description: Invalid selection, amount, or quote currency }
+        '503': { description: Allocation planner unavailable }
   /api/v1/vector/history:
     get:
       summary: Get chronological persisted vector decisions for a symbol
@@ -158,6 +206,22 @@ paths:
         '503': { description: Storage unavailable }
 components:
   schemas:
+    BrokerAllocationRequest:
+      type: object
+      required: [total_notional, quote_currency, selections]
+      properties:
+        total_notional: { type: number, exclusiveMinimum: 0 }
+        quote_currency: { type: string, minLength: 3, maxLength: 8 }
+        selections:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [broker_id, quote_currency]
+            properties:
+              broker_id: { type: string, minLength: 1, maxLength: 64 }
+              quote_currency: { type: string, minLength: 3, maxLength: 8 }
     MarketEvent:
       type: object
       required: [event_id, venue, symbol, event_type, ts_ms]
