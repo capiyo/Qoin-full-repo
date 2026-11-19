@@ -227,10 +227,8 @@ export type QoinOrderSubmission = {
   broker_id: string;
   order: QoinNormalizedOrder;
   preflight: {
-    reference_price: string;
-    reference_price_observed_at_ms: number;
+    /** Attached atomically by the provider adapter; quote and clock are server-sourced. */
     protective_stop_price?: string | null;
-    now_ms: number;
   };
 };
 export type QoinBrokerOrderReceipt = {
