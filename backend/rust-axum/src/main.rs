@@ -33,7 +33,7 @@ mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
-use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -597,7 +597,6 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"state snapshot persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
-    let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
     // The seven-force vector engine is the single decision authority for every
     // newly ingested event. All features are derived from the causal rolling
     // state rebuilt from the immutable event log; unavailable basis is zero,
