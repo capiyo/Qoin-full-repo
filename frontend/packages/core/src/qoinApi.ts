@@ -459,3 +459,121 @@ export function runQoinBacktest(input: QoinBacktestRequest): Promise<QoinBacktes
 export function getQoinAlgorithmCatalogue(): Promise<QoinAlgorithmCatalogue> {
   return request<QoinAlgorithmCatalogue>("/api/v1/algorithms");
 }
+
+
+/** User-configurable research cycle. This API is paper-only; live execution is
+ * explicitly disabled by the server contract.
+ */
+export type QoinPaperAccountConfig = {
+  symbol: string;
+  venue: string;
+  quote_currency: string;
+  initial_cash: number;
+  notional_per_trade: number;
+  contract_multiplier: number;
+  quantity_step: number;
+  reinvest_profits: boolean;
+  fee_bps: number;
+  slippage_bps: number;
+};
+
+export type QoinOperatingCycleConfig = {
+  observation_minutes: number;
+  weight_evaluation_minutes: number;
+  session_minutes: number;
+  mode: "research" | "paper";
+  paper_accounts: QoinPaperAccountConfig[];
+};
+
+export type QoinOperatingCycleSnapshot = {
+  config: QoinOperatingCycleConfig;
+  phase: "idle" | "observation" | "weight_evaluation" | "paper_session" | "stopped" | "completed" | string;
+  active: boolean;
+  started_at_ms: number | null;
+  elapsed_seconds: number;
+  phase_seconds_remaining: number;
+  observations: number;
+  signal_evaluations: number;
+  mean_absolute_score: number | null;
+  mean_alignment: number | null;
+  mean_feature_values: Record<string, number>;
+  mean_weight_contributions: Record<string, [number, number]>;
+  mean_attention: number[][];
+  buy_signals: number;
+  sell_signals: number;
+  close_signals: number;
+  wait_signals: number;
+  live_execution_enabled: false;
+  weight_policy: string;
+  note: string;
+};
+
+export type QoinPaperAccountSnapshot = {
+  symbol: string;
+  venue: string;
+  quote_currency: string;
+  contract_multiplier: number;
+  quantity_step: number;
+  initial_cash: number;
+  cash: number;
+  equity: number;
+  net_pnl: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  fees_paid: number;
+  max_drawdown_pct: number;
+  events: number;
+  decisions: number;
+  buy_signals: number;
+  sell_signals: number;
+  wait_signals: number;
+  entries: number;
+  exits: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number;
+  net_winning_pnl: number;
+  net_losing_pnl: number;
+  profit_factor: number | null;
+  skipped_entries: number;
+  has_open_position: boolean;
+  open_position: Record<string, unknown> | null;
+  pending_action: string | null;
+};
+
+export type QoinPaperSessionSnapshot = {
+  cycle_id: string | null;
+  active: boolean;
+  accounts: QoinPaperAccountSnapshot[];
+  live_execution_enabled: false;
+  note: string;
+};
+
+export function getQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return request<QoinOperatingCycleSnapshot>("/api/v1/operating-cycle");
+}
+
+export function configureQoinOperatingCycle(config: QoinOperatingCycleConfig): Promise<QoinOperatingCycleSnapshot> {
+  return request<QoinOperatingCycleSnapshot>("/api/v1/operating-cycle", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function startQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return request<QoinOperatingCycleSnapshot>("/api/v1/operating-cycle/start", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function stopQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return request<QoinOperatingCycleSnapshot>("/api/v1/operating-cycle/stop", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getQoinPaperSession(): Promise<QoinPaperSessionSnapshot> {
+  return request<QoinPaperSessionSnapshot>("/api/v1/paper-session");
+}
