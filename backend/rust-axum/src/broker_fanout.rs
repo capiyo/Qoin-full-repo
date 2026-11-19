@@ -779,22 +779,29 @@ impl FanoutLifecycle {
                 || child.instrument_id != parent.instrument_id
                 || child.reduce_only != parent.reduce_only
                 || child.quantity <= Decimal::ZERO
+                || child.target_notional_portfolio <= Decimal::ZERO
+                || child.allocated_notional_portfolio <= Decimal::ZERO
                 || child.requested_quantity != child.quantity
                 || child.filled_quantity < Decimal::ZERO
                 || child.filled_quantity > child.requested_quantity
                 || child.revision < 0
                 || child.created_at_ms != parent.created_at_ms
                 || child.updated_at_ms < child.created_at_ms
+                || child.updated_at_ms > parent.updated_at_ms
                 || (child.status == ChildOrderStatus::Filled && child.filled_quantity != child.requested_quantity)
                 || (child.status == ChildOrderStatus::PartiallyFilled
                     && (child.filled_quantity <= Decimal::ZERO || child.filled_quantity >= child.requested_quantity))
-                || (matches!(child.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::Filled | ChildOrderStatus::CancelPending)
+                || (matches!(child.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::Filled | ChildOrderStatus::CancelPending | ChildOrderStatus::Cancelled)
                     && child.broker_order_id.as_ref().map_or(true, |id| id.trim().is_empty()))
+                || (matches!(child.status, ChildOrderStatus::Unknown | ChildOrderStatus::Rejected | ChildOrderStatus::Failed)
+                    && child.last_reason.as_ref().map_or(true, |reason| reason.trim().is_empty()))
                 || (child.filled_quantity == Decimal::ZERO && child.average_fill_price.is_some())
                 || (child.filled_quantity > Decimal::ZERO
                     && child.average_fill_price.map_or(true, |price| price <= Decimal::ZERO))
                 || (matches!(child.status, ChildOrderStatus::Prepared | ChildOrderStatus::Submitting | ChildOrderStatus::Accepted | ChildOrderStatus::Unknown | ChildOrderStatus::Rejected | ChildOrderStatus::Failed)
                     && child.filled_quantity > Decimal::ZERO)
+                || (child.status == ChildOrderStatus::Cancelled
+                    && child.filled_quantity == child.requested_quantity)
                 || !child_keys.insert(key)
                 || !child_ids.insert(child.client_order_id.clone())
             {
