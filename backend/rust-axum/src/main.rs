@@ -171,9 +171,10 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         let mid=(bid+ask)/2.0;
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
         state.last_book_ts_ms=Some(event.ts_ms);
-        if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
-            if bs+as_>0.0 {state.liquidity_imbalance=(bs-as_)/(bs+as_);}
-        }
+        state.liquidity_imbalance = match (event.bid_size,event.ask_size) {
+            (Some(bs),Some(as_)) if bs+as_>0.0 => (bs-as_)/(bs+as_),
+            _ => 0.0,
+        };
     }
     match event.event_type.as_str() {
         "trade" => { let size=event.size.unwrap_or(0.0); match event.side.as_deref() {
