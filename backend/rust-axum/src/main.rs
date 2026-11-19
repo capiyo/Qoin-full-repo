@@ -27,6 +27,7 @@ mod order_safety;
 mod execution_lifecycle;
 mod broker_contract;
 mod broker_catalogue;
+mod firebase_identity;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
@@ -82,6 +83,7 @@ struct AppState {
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
     broker_registry: broker_contract::BrokerRegistry,
+    firebase_verifier: Option<firebase_identity::FirebaseIdentityVerifier>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
@@ -255,6 +257,21 @@ struct BrokerOrderSubmission {
     preflight: broker_contract::ExecutionPreflight,
 }
 
+async fn firebase_uid_from_headers(
+    verifier: Option<&firebase_identity::FirebaseIdentityVerifier>,
+    headers: &HeaderMap,
+) -> Result<String, StatusCode> {
+    let verifier = verifier.ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let authorization = headers.get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let token = authorization.strip_prefix("Bearer ").ok_or(StatusCode::UNAUTHORIZED)?;
+    verifier.verify_id_token(token).await.map_err(|error| {
+        tracing::warn!(reason=%error, "Firebase identity verification rejected an order request");
+        StatusCode::UNAUTHORIZED
+    })
+}
+
 async fn submit_live_order(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -263,6 +280,10 @@ async fn submit_live_order(
     if !execution_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
     }
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order submission"}))),
+    };
     let enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
         Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
         Ok(None) => false,
@@ -293,6 +314,7 @@ async fn submit_live_order(
     };
     let ledger = doc!{
         "client_order_id": &submission.order.client_order_id,
+        "owner_uid": &owner_uid,
         "broker_id": &broker_id,
         "account_id": &submission.order.account_id,
         "status": "submitting",
@@ -364,7 +386,11 @@ async fn reconcile_live_order(
     if !execution_token_authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
     }
-    let record = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order reconciliation"}))),
+    };
+    let record = match s.orders.find_one(doc!{"client_order_id":&client_order_id, "owner_uid":&owner_uid}, None).await {
         Ok(Some(record)) => record,
         Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"order not found"}))),
         Err(error) => {
@@ -2017,10 +2043,15 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
+    let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
+        .map(firebase_identity::FirebaseIdentityVerifier::new)
+        .transpose()
+        .expect("configure a valid Firebase project ID for authenticated trading routes");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
         broker_registry: broker_contract::BrokerRegistry::default(),
+        firebase_verifier,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
