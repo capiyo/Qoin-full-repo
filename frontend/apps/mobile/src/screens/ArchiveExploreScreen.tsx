@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, subscribeQoinStream, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -453,6 +453,67 @@ function MobileBrokerCollectionPanel() {
   </View>;
 }
 
+
+function MobileOperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: boolean; onRequireAuth: () => void }) {
+  const [observation,setObservation]=useState("5"),[evaluation,setEvaluation]=useState("60"),[session,setSession]=useState("480");
+  const [symbol,setSymbol]=useState("BTCUSDT"),[venue,setVenue]=useState("binance_usdm"),[currency,setCurrency]=useState("USDT");
+  const [capital,setCapital]=useState("100"),[notional,setNotional]=useState("25"),[fee,setFee]=useState("10"),[slippage,setSlippage]=useState("5");
+  const [cycle,setCycle]=useState<QoinOperatingCycleSnapshot|null>(null),[paper,setPaper]=useState<QoinPaperSessionSnapshot|null>(null);
+  const [status,setStatus]=useState(""),[busy,setBusy]=useState(false);
+  useEffect(()=>{
+    if(!authenticated)return;
+    let active=true;
+    const load=()=>Promise.all([getQoinOperatingCycle(),getQoinPaperSession()]).then(([c,p])=>{
+      if(!active)return;setCycle(c);setPaper(p);setObservation(String(c.config.observation_minutes));setEvaluation(String(c.config.weight_evaluation_minutes));setSession(String(c.config.session_minutes));
+    }).catch(error=>{if(active)setStatus(error instanceof Error?error.message:"Operating cycle unavailable.");});
+    void load();const timer=setInterval(()=>{void load();},5000);return()=>{active=false;clearInterval(timer);};
+  },[authenticated]);
+  const account:QoinOperatingCycleConfig["paper_accounts"][number]={
+    symbol:symbol.trim().toUpperCase(),venue:venue.trim(),quote_currency:currency.trim().toUpperCase(),
+    initial_cash:Number(capital),notional_per_trade:Number(notional),contract_multiplier:1,quantity_step:0.000001,
+    reinvest_profits:true,fee_bps:Number(fee),slippage_bps:Number(slippage),
+  };
+  const valid=Boolean(account.symbol&&account.venue&&account.quote_currency)&&[account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite)&&account.initial_cash>0&&account.notional_per_trade>0&&account.notional_per_trade<=account.initial_cash&&account.fee_bps>=0&&account.slippage_bps>=0&&account.slippage_bps<10000;
+  const act=async(action:"configure"|"start"|"stop")=>{
+    if(!authenticated){onRequireAuth();return;}
+    if(action==="configure"&&!valid){setStatus("Check instrument, venue, currency, capital, notional and costs.");return;}
+    setBusy(true);setStatus("");
+    try{
+      if(action==="configure")await configureQoinOperatingCycle({observation_minutes:Number(observation),weight_evaluation_minutes:Number(evaluation),session_minutes:Number(session),mode:"paper",paper_accounts:[account]});
+      else if(action==="start")await startQoinOperatingCycle();else await stopQoinOperatingCycle();
+      const [c,p]=await Promise.all([getQoinOperatingCycle(),getQoinPaperSession()]);setCycle(c);setPaper(p);
+      setStatus(action==="stop"?"Cycle stopped.":action==="start"?"Paper cycle started.":"Configuration saved.");
+    }catch(error){setStatus(error instanceof Error?error.message:"Operating cycle action failed.");}finally{setBusy(false);}
+  };
+  const fields:[[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string],[string,string,(v:string)=>void,string]]=[
+    ["Observation minutes",observation,setObservation,"numeric"],["Weight evaluation minutes",evaluation,setEvaluation,"numeric"],["Paper session minutes",session,setSession,"numeric"],
+    ["Engine symbol",symbol,setSymbol,"default"],["Venue ID",venue,setVenue,"default"],["Quote currency",currency,setCurrency,"default"],
+    ["Starting capital",capital,setCapital,"decimal-pad"],["Entry notional",notional,setNotional,"decimal-pad"],["Fee (bps)",fee,setFee,"decimal-pad"],["Slippage (bps)",slippage,setSlippage,"decimal-pad"]
+  ];
+  return <View style={styles.tracePanel}>
+    <Text style={styles.attentionTitle}>Operating cycle</Text><Text style={styles.attentionCaption}>Observe → evaluate weights → bounded paper session</Text>
+    {!authenticated?<Pressable style={styles.backtestRun} onPress={onRequireAuth}><Text style={styles.backtestRunText}>Sign in to configure</Text></Pressable>:<>
+      {fields.map(([label,value,setter,keyboard])=><View key={label} style={styles.backtestInputWrap}><Text style={styles.engineLabel}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={setter} keyboardType={keyboard as "numeric"|"decimal-pad"|"default"} editable={!cycle?.active} style={styles.backtestInput}/></View>)}
+      <View style={styles.traceGateGrid}>
+        <Pressable disabled={busy||Boolean(cycle?.active)} onPress={()=>void act("configure")} style={styles.backtestRun}><Text style={styles.backtestRunText}>Save configuration</Text></Pressable>
+        <Pressable disabled={busy||Boolean(cycle?.active)} onPress={()=>void act("start")} style={styles.backtestRun}><Text style={styles.backtestRunText}>Start paper cycle</Text></Pressable>
+        <Pressable disabled={busy||!cycle?.active} onPress={()=>void act("stop")} style={styles.backtestRun}><Text style={styles.backtestRunText}>Stop cycle</Text></Pressable>
+      </View>
+      {cycle?<View style={styles.backtestMetrics}>{[
+        ["Phase",cycle.phase.replaceAll("_"," ")],["Remaining",Math.ceil(cycle.phase_seconds_remaining/60)+" min"],["Elapsed",Math.floor(cycle.elapsed_seconds/60)+" min"],
+        ["Observations",String(cycle.observations)],["Evaluations",String(cycle.signal_evaluations)],["BUY / SELL / WAIT",cycle.buy_signals+" / "+cycle.sell_signals+" / "+cycle.wait_signals],
+        ["Mean alignment",cycle.mean_alignment?.toFixed(4)??"—"]
+      ].map(([label,value])=><View key={label} style={styles.backtestMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}</View>:null}
+      {paper?.accounts?.map(a=><View key={a.venue+":"+a.symbol} style={styles.backtestFill}>
+        <Text style={styles.attentionTitle}>{a.symbol} · {a.venue}</Text><Text style={styles.engineValue}>Equity {a.quote_currency} {a.equity.toFixed(2)} · Net P/L {a.net_pnl.toFixed(2)}</Text>
+        <Text style={styles.disclaimer}>Cash {a.cash.toFixed(2)} · Fees {a.fees_paid.toFixed(2)} · Drawdown {a.max_drawdown_pct.toFixed(2)}% · Win rate {a.win_rate_pct.toFixed(1)}% · Entries/exits {a.entries}/{a.exits}</Text>
+      </View>)}
+      <Text style={styles.disclaimer}>Paper/research only. Live execution is disabled by the server contract. No broker orders are sent.</Text>
+      {status?<Text accessibilityLiveRegion="polite" style={styles.disclaimer}>{status}</Text>:null}
+    </>}
+  </View>;
+}
+
 export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
@@ -840,6 +901,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <Text style={styles.coverageDisclaimer}>Preview only: not active subscriptions, prices or enforced permissions. Finnhub data depends on a configured key and eligible access. No live broker execution is connected.</Text>
             </View>
             <MobileBrokerCollectionPanel />
+            <MobileOperatingCyclePanel authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </>
         ) : null}
 
