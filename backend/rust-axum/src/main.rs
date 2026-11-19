@@ -1986,6 +1986,9 @@ async fn main(){
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
+    orders.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
+        .expect("owner-scoped order history index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1}).build(),None).await.expect("V2 ledger backfill keyset index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_ms":-1,"record_type":1}).build(),None).await.expect("durable V2 ledger symbol/time index");
