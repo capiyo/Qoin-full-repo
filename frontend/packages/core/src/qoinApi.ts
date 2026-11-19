@@ -178,6 +178,11 @@ export type QoinStreamUpdate = {
     bid?: number | null; ask?: number | null; bid_size?: number | null; ask_size?: number | null; funding_rate?: number | null;
     open_interest?: number | null; liquidation_side?: string | null };
   state?: QoinMarketState; decision?: QoinVectorDecision; server_ts_ms?: number;
+  /** Same-event V1 shared-vector evaluation and V2 set/relationship discovery telemetry. */
+  v1_shared_market_vector?: Record<string, unknown> | null;
+  v2_relationship_discovery?: Record<string, unknown> | null;
+  market_vector?: Record<string, unknown> | null;
+  market_vector_persisted?: boolean;
   missed_updates?: number; note?: string; subscribed_symbols?: string[];
 };
 export type QoinNewsItem = {
