@@ -194,6 +194,17 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         <Text style={styles.engineValue}>Limit {ledger.requested_limit}</Text>
       </View>
       {ledger.universe_truncated ? <Text style={[styles.disclaimer,{color:"#D99528"}]}>Universe capped at {ledger.requested_limit} source documents. Measures below apply only to this returned sample.</Text> : null}
+      <Text style={styles.engineLabel}>SET CARDINALITY MAP · COUNTING MEASURE</Text>
+      <View style={{gap:8,padding:10,borderRadius:11,backgroundColor:"#FBFCFE"}}>
+        {ledger.sets.map((item) => <View key={"measure-"+item.set_id} style={{flexDirection:"row",alignItems:"center",gap:8}}>
+          <Text numberOfLines={1} style={{width:112,color:"#52637A",fontSize:9}}>{item.label}</Text>
+          <View style={{height:9,flex:1,borderRadius:8,backgroundColor:"#EAF0F6",overflow:"hidden"}}>
+            <View style={{height:9,width:ledger.universe_count ? (item.measure.counting_measure/ledger.universe_count*100)+"%" : "0%",borderRadius:8,backgroundColor:"#3985D6"}} />
+          </View>
+          <Text style={{width:24,textAlign:"right",color:"#243750",fontSize:10,fontWeight:"800"}}>{item.measure.counting_measure}</Text>
+        </View>)}
+        <Text style={styles.attentionCaption}>Each bar is the exact number of observed event IDs in that set, relative to the returned universe.</Text>
+      </View>
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
       {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
@@ -202,8 +213,18 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         <Text style={styles.attentionCaption}>Counting measure · trade-size {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</Text>
         <Text style={styles.attentionCaption} numberOfLines={2}>Members: {item.member_event_ids.slice(0,5).join(", ") || "∅"}{item.member_event_ids.length>5 ? " … +" + (item.member_event_ids.length-5) : ""}</Text>
       </View>)}
-      <Text style={styles.engineLabel}>TEMPORAL RELATIONS · 60 SECOND WINDOW</Text>
-      {ledger.relations.map((item) => <View key={item.relation_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
+      <Text style={styles.engineLabel}>RELATION FLOW · 60 SECOND WINDOW</Text>
+      {ledger.relations.map((item) => <View key={"flow-"+item.relation_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
+        <View style={{flexDirection:"row",alignItems:"center",gap:6}}>
+          <Text numberOfLines={2} style={{flex:1,color:"#3985D6",fontSize:8,fontWeight:"700"}}>{item.source_set.replaceAll("_"," ")}</Text>
+          <Svg viewBox="0 0 100 24" width={92} height={24}>
+            <Circle cx="7" cy="12" r="4" fill="#3985D6"/>
+            <Line x1="12" y1="12" x2="87" y2="12" stroke="#159B78" strokeWidth={item.edge_count ? 1.8 : .7} strokeDasharray={item.edge_count ? undefined : "2 2"}/>
+            <Circle cx="93" cy="12" r="4" fill="#159B78"/>
+            <SvgText x="50" y="8" fill="#52637A" fontSize="5" textAnchor="middle">{item.edge_count} edges</SvgText>
+          </Svg>
+          <Text numberOfLines={2} style={{flex:1,textAlign:"right",color:"#159B78",fontSize:8,fontWeight:"700"}}>{item.target_set.replaceAll("_"," ")}</Text>
+        </View>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
           <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#2867DC"}]}>{item.edge_count} edges</Text>
         </View>
