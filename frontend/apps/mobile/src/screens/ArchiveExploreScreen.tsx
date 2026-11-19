@@ -220,6 +220,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
           <Svg viewBox="0 0 100 24" width={92} height={24}>
             <Circle cx="7" cy="12" r="4" fill="#3985D6"/>
             <Line x1="12" y1="12" x2="87" y2="12" stroke="#159B78" strokeWidth={item.edge_count ? 1.8 : .7} strokeDasharray={item.edge_count ? undefined : "2 2"}/>
+            <SvgText x="85" y="16" fill="#159B78" fontSize="10" fontWeight="700">›</SvgText>
             <Circle cx="93" cy="12" r="4" fill="#159B78"/>
             <SvgText x="50" y="8" fill="#52637A" fontSize="5" textAnchor="middle">{item.edge_count} edges</SvgText>
           </Svg>
