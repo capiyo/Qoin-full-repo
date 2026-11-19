@@ -331,11 +331,14 @@ async fn submit_live_order(
     match s.orders.insert_one(ledger, None).await {
         Ok(_) => {},
         Err(error) if error.to_string().contains("E11000") => {
-            let existing = s.orders.find_one(doc!{"client_order_id":&submission.order.client_order_id}, None).await.ok().flatten().unwrap_or_default();
+            let existing = s.orders.find_one(doc!{
+                "client_order_id":&submission.order.client_order_id,
+                "owner_uid":&owner_uid
+            }, None).await.ok().flatten();
             return (StatusCode::CONFLICT, Json(serde_json::json!({
-                "error":"client_order_id has already been used; reconcile before any retry",
+                "error":"client_order_id has already been reserved; reconcile only through an order owned by this account",
                 "client_order_id":submission.order.client_order_id,
-                "existing_status":existing.get_str("status").unwrap_or("unknown"),
+                "existing_status":existing.as_ref().and_then(|record|record.get_str("status").ok()).unwrap_or("not_visible"),
                 "reconciliation_required":true
             })));
         },
