@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 pub const FEATURE_NAMES: [&str; 7] = [
     "order_flow_imbalance",
-    "liquidity_stress",
+    "liquidity_imbalance",
     "volatility",
     "funding_pressure",
     "open_interest_change",
@@ -18,7 +18,7 @@ pub const FEATURE_NAMES: [&str; 7] = [
     "basis",
 ];
 
-const DIRECTIONAL_WEIGHTS: [f64; 7] = [0.30, 0.0, 0.0, -0.10, 0.0, 0.12, -0.08];
+const DIRECTIONAL_WEIGHTS: [f64; 7] = [0.30, 0.18, 0.0, -0.10, 0.0, 0.12, -0.08];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -303,7 +303,7 @@ pub fn decide(
     let feature_trace = FEATURE_NAMES.iter().enumerate().map(|(index, name)| {
         let (transform, scale) = match *name {
             "order_flow_imbalance" => ("identity_clip", 1.0),
-            "liquidity_stress" => ("negative_spread_bps_div_25", 25.0),
+            "liquidity_imbalance" => ("bid_ask_depth_imbalance", 1.0),
             "volatility" => ("ewma_abs_return_div_0_01", 0.01),
             "funding_pressure" => ("funding_rate_times_100", 100.0),
             "open_interest_change" => ("relative_change_times_100", 100.0),
