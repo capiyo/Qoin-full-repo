@@ -14,7 +14,7 @@ service cloud.firestore {
 
     function validUserDocument(userId) {
       return request.resource.data.keys().hasOnly([
-          'uid', 'email', 'displayName', 'photoURL', 'updatedAt', 'archivedSymbols'
+          'uid', 'email', 'displayName', 'photoURL', 'updatedAt', 'archivedSymbols', 'brokerSelections'
         ])
         && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
         && validOptionalString('email', 320)
@@ -24,7 +24,10 @@ service cloud.firestore {
           || request.resource.data.updatedAt is timestamp)
         && (!('archivedSymbols' in request.resource.data)
           || (request.resource.data.archivedSymbols is list
-            && request.resource.data.archivedSymbols.size() <= 500));
+            && request.resource.data.archivedSymbols.size() <= 500))
+        && (!('brokerSelections' in request.resource.data)
+          || (request.resource.data.brokerSelections is list
+            && request.resource.data.brokerSelections.size() <= 20));
     }
 
     match /users/{userId} {
