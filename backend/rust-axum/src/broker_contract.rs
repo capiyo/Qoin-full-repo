@@ -6,6 +6,7 @@
 //! No asset class, quote currency, venue or broker is privileged here.
 
 use async_trait::async_trait;
+use futures_util::future::join_all;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
@@ -507,6 +508,83 @@ fn validate_capabilities(order: &NormalizedOrder, capabilities: &BrokerCapabilit
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub struct SelectedBrokerOrder {
+    pub broker_id: String,
+    pub order: NormalizedOrder,
+    pub preflight: ExecutionPreflight,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedBrokerOrder {
+    pub broker_id: String,
+    pub order: NormalizedOrder,
+    pub risk: RiskApproval,
+}
+
+/// Fetch and validate every selected account concurrently without submitting
+/// any order. A fan-out coordinator must complete this entire preflight for
+/// all selected accounts, then persist parent and child intents, before it
+/// begins any child submission.
+pub async fn preflight_selected_orders(
+    registry: &BrokerRegistry,
+    policy: &PortfolioRiskPolicy,
+    selected: Vec<SelectedBrokerOrder>,
+) -> Result<Vec<PreparedBrokerOrder>, ContractError> {
+    if selected.is_empty() || selected.len() > 15 {
+        return Err(ContractError::InvalidOrder("select between 1 and 15 broker accounts".into()));
+    }
+
+    let mut account_keys = HashSet::with_capacity(selected.len());
+    let mut client_order_ids = HashSet::with_capacity(selected.len());
+    let mut resolved = Vec::with_capacity(selected.len());
+    for item in selected {
+        let broker_id = item.broker_id.trim().to_ascii_lowercase();
+        let account_id = item.order.account_id.trim().to_string();
+        if broker_id.is_empty() || account_id.is_empty()
+            || item.order.client_order_id.trim().is_empty()
+            || !account_keys.insert((broker_id.clone(), account_id.clone()))
+            || !client_order_ids.insert(item.order.client_order_id.clone())
+        {
+            return Err(ContractError::InvalidOrder("selected broker/account and client-order identities must be non-empty and unique".into()));
+        }
+        let adapter = registry.resolve(&broker_id)?;
+        if !adapter.broker_id().eq_ignore_ascii_case(&broker_id) {
+            return Err(ContractError::Broker("registry returned an adapter for a different broker".into()));
+        }
+        resolved.push((broker_id, adapter, item.order, item.preflight));
+    }
+
+    let checks = resolved.into_iter().map(|(broker_id, adapter, order, input)| {
+        let policy = *policy;
+        async move {
+            let account = adapter.account_snapshot(&order.account_id).await?;
+            let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
+            if account.broker_id != adapter.broker_id()
+                || account.account_id != order.account_id
+                || instrument.broker_id != adapter.broker_id()
+                || instrument.instrument_id != order.instrument_id
+            {
+                return Err(ContractError::InvalidAccount("adapter returned an account or instrument that does not match the selected order".into()));
+            }
+            let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
+            validate_capabilities(&order, &capabilities)?;
+            let risk = validate_portfolio_order(&policy, &account, &instrument, &order, &RiskCheckInput {
+                reference_price: input.reference_price,
+                protective_stop_price: input.protective_stop_price,
+                now_ms: input.now_ms,
+                reference_price_observed_at_ms: input.reference_price_observed_at_ms,
+                protective_order_supported: capabilities.native_protective_orders,
+                required_margin_account_currency: input.required_margin_account_currency,
+            })?;
+            Ok(PreparedBrokerOrder { broker_id, order, risk })
+        }
+    });
+    // join_all waits for every account check. No submit method is called here;
+    // a single failed preflight invalidates the complete selected-account set.
+    join_all(checks).await.into_iter().collect()
+}
+
 /// Shared adapter invocation sequence. Callers must persist the client order
 /// intent before invoking this function and persist the returned receipt before
 /// reporting success. Any timeout/ambiguous adapter error requires reconciliation,
@@ -761,6 +839,112 @@ mod tests {
             required_margin_account_currency:d("0") }).unwrap();
         assert_eq!(approval.projected_gross_exposure, d("2000"));
         assert_eq!(approval.maximum_loss_account_currency, Decimal::ZERO);
+    }
+
+    struct MockAdapter {
+        submit_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl BrokerAdapter for MockAdapter {
+        fn broker_id(&self) -> &'static str { "mock" }
+
+        async fn capabilities(&self, _account_id: &str, _instrument_id: &str) -> Result<BrokerCapabilities, ContractError> {
+            Ok(BrokerCapabilities {
+                market_orders: true, limit_orders: true, stop_orders: true, stop_limit_orders: true,
+                native_protective_orders: true, amend_orders: true, cancel_orders: true,
+                fractional_quantity: true, streaming_execution_reports: true,
+            })
+        }
+
+        async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError> {
+            Ok(BrokerAccountSnapshot {
+                broker_id: "mock".into(), account_id: account_id.into(), account_currency: "USD".into(),
+                equity: if account_id == "unhealthy" { Decimal::ZERO } else { d("10000") },
+                available_margin: d("5000"), gross_exposure: Decimal::ZERO,
+                daily_realized_pnl: Decimal::ZERO, daily_unrealized_pnl: Decimal::ZERO,
+                open_positions: 0, observed_at_ms: 10_000,
+            })
+        }
+
+        async fn instrument_spec(&self, _account_id: &str, instrument_id: &str) -> Result<InstrumentSpec, ContractError> {
+            let mut spec = instrument(AssetClass::Equity, "MOCK", "1", "1");
+            spec.instrument_id = instrument_id.into();
+            spec.broker_id = "mock".into();
+            spec.quote_currency = "USD".into();
+            spec.settlement_currency = "USD".into();
+            Ok(spec)
+        }
+
+        async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError> {
+            self.submit_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(BrokerOrderReceipt {
+                broker_id: "mock".into(), account_id: order.account_id,
+                client_order_id: order.client_order_id, broker_order_id: "mock-order".into(),
+                status: "accepted".into(), accepted_at_ms: 10_100, raw_status: None,
+            })
+        }
+
+        async fn order_status(&self, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
+            Err(ContractError::Unsupported("mock status is not used in preflight tests".into()))
+        }
+
+        async fn cancel_order(&self, _account_id: &str, _broker_order_id: &str) -> Result<BrokerOrderReceipt, ContractError> {
+            Err(ContractError::Unsupported("mock cancellation is not used in preflight tests".into()))
+        }
+    }
+
+    fn selected_order(account_id: &str) -> SelectedBrokerOrder {
+        SelectedBrokerOrder {
+            broker_id: "mock".into(),
+            order: NormalizedOrder {
+                client_order_id: format!("mock-order-{account_id}"),
+                account_id: account_id.into(),
+                instrument_id: "instrument-1".into(),
+                side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                quantity: d("1"),
+                limit_price: None,
+                stop_price: Some(d("95")),
+                time_in_force: None,
+                reduce_only: false,
+            },
+            preflight: ExecutionPreflight {
+                reference_price: d("100"),
+                reference_price_observed_at_ms: 10_000,
+                protective_stop_price: Some(d("95")),
+                now_ms: 10_100,
+                required_margin_account_currency: d("100"),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn selected_account_preflight_checks_every_account_without_submitting() {
+        let submit_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let registry = BrokerRegistry::default();
+        registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
+        let prepared = preflight_selected_orders(
+            &registry,
+            &PortfolioRiskPolicy::default(),
+            vec![selected_order("account-a"), selected_order("account-b")],
+        ).await.unwrap();
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn one_failed_selected_account_invalidates_the_complete_preflight_set() {
+        let submit_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let registry = BrokerRegistry::default();
+        registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
+        let result = preflight_selected_orders(
+            &registry,
+            &PortfolioRiskPolicy::default(),
+            vec![selected_order("account-a"), selected_order("unhealthy")],
+        ).await;
+        assert!(result.is_err());
+        assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[test]
