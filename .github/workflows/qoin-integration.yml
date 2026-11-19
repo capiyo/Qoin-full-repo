@@ -191,6 +191,6 @@ jobs:
           }
           JSON
           curl -fsS -X POST http://127.0.0.1:8081/internal/broker-allocations -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation.json.out
-          jq -e '.broker_count == 15 and (.allocated_total - 100 | fabs < 0.0000001) and (.allocations | length == 15) and all(.allocations[]; (.allocation - (100 / 15) | fabs < 0.0000001)) and .execution_enabled == false' /tmp/broker-allocation.json.out
+          jq -e '.broker_count == 15 and (.allocated_total - 100 | abs < 0.0000001) and (.allocations | length == 15) and all(.allocations[]; (.allocation - (100 / 15) | abs < 0.0000001)) and .execution_enabled == false' /tmp/broker-allocation.json.out
           curl -fsS -X POST http://127.0.0.1:8080/api/v1/broker-allocations -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation-gateway.json
           jq -e '.broker_count == 15 and .execution_enabled == false and (.allocations | length == 15)' /tmp/broker-allocation-gateway.json
