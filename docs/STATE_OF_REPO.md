@@ -33,7 +33,7 @@ The branch has prior green CI snapshots documented in the PR history. The new pr
 - Finnhub coverage is plan- and symbol-entitlement-dependent. The instrument registry is curated and does not guarantee live data or redistribution rights.
 
 ### Research and algorithms
-- The seven-force deterministic baseline uses seven dimensions (OFI, liquidity stress, volatility, funding, relative OI change, liquidation pressure and mark-to-trade basis), a seven-by-seven attention matrix, top-k force selection, directional alignment and quote freshness/spread gates. The baseline is not independently validated as profitable.
+- The seven-force deterministic baseline uses seven dimensions (OFI, bid/ask depth imbalance, volatility, funding, relative OI change, decayed signed liquidation pressure and mark-to-trade basis), a seven-by-seven attention matrix, top-k force selection, directional alignment and quote freshness/spread gates. The baseline is not independently validated as profitable.
 - Portfolio accounting across instruments/currencies, robust position sizing, correlated exposure controls, walk-forward/out-of-sample evaluation, regime analysis and reproducible dataset versioning remain incomplete.
 - The algorithm catalogue and market-access tiers are preview-only. Independent strategy runtimes and verified entitlement enforcement are not complete.
 
