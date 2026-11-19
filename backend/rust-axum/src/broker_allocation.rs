@@ -198,6 +198,12 @@ mod tests {
     }
 
     #[test]
+    fn rejects_more_than_twenty_selected_accounts() {
+        let result = allocate_equal_notional(d("21000"), &targets(21, "100", "0.01"));
+        assert_eq!(result.unwrap_err(), AllocationError::InvalidRecipientCount);
+    }
+
+    #[test]
     fn quantity_step_residual_is_not_redistributed() {
         let result = allocate_equal_notional(d("100"), &targets(3, "3", "1")).unwrap();
         assert_eq!(result.target_notional_per_account, d("100") / d("3"));
