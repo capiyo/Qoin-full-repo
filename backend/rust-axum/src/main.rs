@@ -66,6 +66,7 @@ struct SymbolState {
     spread_bps: Option<f64>,
     #[serde(default)] last_book_ts_ms: Option<i64>,
     #[serde(default)] liquidity_imbalance: f64,
+    #[serde(default)] liquidity_available: bool,
     #[serde(default)] last_trade_ts_ms: Option<i64>,
     signed_flow: f64,
     total_trade_size: f64,
@@ -184,8 +185,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
         state.last_book_ts_ms=Some(event.ts_ms);
         state.liquidity_imbalance = match (event.bid_size,event.ask_size) {
-            (Some(bs),Some(as_)) if bs+as_>0.0 => (bs-as_)/(bs+as_),
-            _ => 0.0,
+            (Some(bs),Some(as_)) if bs+as_>0.0 => { state.liquidity_available=true; (bs-as_)/(bs+as_) },
+            _ => { state.liquidity_available=false; 0.0 },
         };
     }
     match event.event_type.as_str() {
@@ -736,10 +737,10 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         "data_coverage": {
             "spread_available": snapshot.spread_bps.is_some(),
             "spread_age_ms": snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
-            "liquidity_available": snapshot.last_book_ts_ms.is_some(),
+            "liquidity_available": snapshot.liquidity_available,
             "order_flow_available": snapshot.last_trade_ts_ms.zip(snapshot.last_event_ts_ms)
-                .is_some_and(|(trade_ts, latest_ts)| latest_ts.saturating_sub(trade_ts) <= 60_000),
-            "volatility_available": snapshot.last_trade_ts_ms.is_some(),
+                 .is_some_and(|(trade_ts, latest_ts)| latest_ts.saturating_sub(trade_ts) <= 60_000) && snapshot.total_trade_size > 0.0,
+            "volatility_available": snapshot.last_price.is_some(),
             "funding_available": snapshot.funding_rate.is_some(),
             "open_interest_available": snapshot.open_interest.is_some(),
             "liquidation_available": snapshot.liquidation_events > 0,
