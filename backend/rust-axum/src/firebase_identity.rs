@@ -122,3 +122,21 @@ impl FirebaseIdentityVerifier {
         Ok(uid.to_string())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_missing_and_malformed_tokens_without_network_access() {
+        let verifier = FirebaseIdentityVerifier::new("qoin-test-project".into()).unwrap();
+        assert!(verifier.verify_id_token("").await.is_err());
+        assert!(verifier.verify_id_token("not-a-jwt").await.is_err());
+    }
+
+    #[test]
+    fn refuses_an_empty_firebase_project_id() {
+        assert!(FirebaseIdentityVerifier::new("  ".into()).is_err());
+    }
+}
