@@ -32,6 +32,18 @@ try {
     archivedSymbols: ["BTCUSDT", "ETHUSDT"],
     updatedAt: serverTimestamp(),
   }, { merge: true }));
+  await assertSucceeds(setDoc(ownerRef, {
+    brokerSelections: ["binance_usdm", "interactive_brokers", "alpaca"],
+    updatedAt: serverTimestamp(),
+  }, { merge: true }));
+  await assertFails(setDoc(otherRef, {
+    brokerSelections: ["binance_usdm"],
+    updatedAt: serverTimestamp(),
+  }, { merge: true }));
+  await assertFails(setDoc(ownerRef, {
+    brokerSelections: Array.from({ length: 21 }, (_, index) => `broker-${index}`),
+    updatedAt: serverTimestamp(),
+  }, { merge: true }));
   await assertFails(setDoc(ownerRef, { role: "admin" }, { merge: true }));
   await assertFails(setDoc(ownerRef, {
     archivedSymbols: Array.from({ length: 501 }, (_, index) => `SYMBOL${index}`),
