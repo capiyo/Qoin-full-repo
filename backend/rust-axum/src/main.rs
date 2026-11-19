@@ -747,6 +747,64 @@ fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
     expected.iter().zip(supplied).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct FirebasePrincipal {
+    uid: String,
+    email: Option<String>,
+    email_verified: bool,
+    display_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct FirebaseLookupResponse {
+    users: Option<Vec<FirebaseLookupUser>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FirebaseLookupUser {
+    local_id: String,
+    email: Option<String>,
+    email_verified: Option<bool>,
+    display_name: Option<String>,
+    disabled: Option<bool>,
+}
+
+async fn verify_firebase_id_token(headers: &HeaderMap) -> Result<FirebasePrincipal, (StatusCode, Json<serde_json::Value>)> {
+    let api_key = env::var("FIREBASE_WEB_API_KEY").ok().filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Firebase server verification is not configured"}))))?;
+    let token = headers.get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"a Firebase ID token is required"}))))?;
+    if token.len() > 8192 {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"invalid Firebase ID token"}))));
+    }
+    let response = reqwest::Client::new()
+        .post(format!("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={}", url::form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>()))
+        .json(&serde_json::json!({"idToken":token}))
+        .send().await
+        .map_err(|error| {
+            tracing::warn!(error=%error,"Firebase token verification service unavailable");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Firebase token verification unavailable"})))
+        })?;
+    if !response.status().is_success() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"Firebase ID token is invalid, expired, or revoked"}))));
+    }
+    let lookup: FirebaseLookupResponse = response.json().await.map_err(|error| {
+        tracing::warn!(error=%error,"Firebase token lookup returned invalid response");
+        (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error":"invalid Firebase verification response"})))
+    })?;
+    let user = lookup.users.and_then(|users| users.into_iter().next())
+        .filter(|user| !user.local_id.is_empty() && !user.disabled.unwrap_or(false))
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"Firebase account is unavailable"}))))?;
+    Ok(FirebasePrincipal {
+        uid:user.local_id,email:user.email,email_verified:user.email_verified.unwrap_or(false),
+        display_name:user.display_name,
+    })
+}
+
 fn execution_token_authorized(headers: &HeaderMap) -> bool {
     let expected = match env::var("QOIN_EXECUTION_TOKEN") {
         Ok(token) if !token.trim().is_empty() => token,
