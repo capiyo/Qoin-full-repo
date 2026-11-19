@@ -576,7 +576,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
         </div>
         <div className="qoin-model-set-bars">{ledger.sets.slice(0,5).map((set)=> <div key={set.set_id}><span>{set.label}</span><i><b style={{width:ledger.universe_count?Math.min(100,set.measure.counting_measure/ledger.universe_count*100)+"%":"0%"}}/></i><strong>{set.measure.counting_measure}</strong></div>)}</div>
         <small className="qoin-model-time">{ledger.universe_truncated?"Sample capped; measures cover returned evidence only.":"Set memberships are derived from persisted source-event IDs."}</small>
-        </>:<p className="qoin-model-reason">{ledgerStatus==="loading"?"Loading persisted evidence and set measures…":ledgerStatus==="unavailable"?"V2 evidence is unavailable for this instrument.":"Swipe to load set and ledger evidence."}</p>}
+        </>:<div className="qoin-model-page"><p className="qoin-model-reason">{ledgerStatus==="loading"?"Loading persisted evidence and set measures…":ledgerStatus==="unavailable"?"V2 evidence is unavailable for this instrument.":"Swipe to load set and ledger evidence."}</p>{ledgerStatus==="unavailable"&&<button type="button" className="text-action" onClick={()=>setLedgerStatus("idle")}>Retry evidence load</button>}</div>}
       </div>}
     </div>
     <div className="qoin-card-footer">
