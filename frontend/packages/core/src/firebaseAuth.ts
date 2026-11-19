@@ -49,6 +49,12 @@ export function requireQoinFirebase() {
   return { auth: authInstance, user, app: authInstance.app };
 }
 
+/** Returns a short-lived Firebase ID token for authenticated Qoin API requests. */
+export async function getQoinFirebaseIdToken(): Promise<string> {
+  const { user } = requireQoinFirebase();
+  return user.getIdToken();
+}
+
 export function subscribeQoinAuth(callback: (user: User | null) => void) {
   if (!authInstance) throw new Error("Firebase is not configured.");
   return onAuthStateChanged(authInstance, callback);
