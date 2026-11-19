@@ -190,7 +190,7 @@ export function evaluateQoinSignal(input: QoinSignalRequest): Promise<QoinSignal
 export type QoinMarketState = {
   symbol: string; event_count: number; last_event_ts_ms?: number | null; last_price?: number | null;
   mark_price?: number | null; basis_bps?: number | null; spread_bps?: number | null; last_book_ts_ms?: number | null;
-  liquidity_imbalance?: number; last_trade_ts_ms?: number | null; signed_flow: number; order_flow_imbalance: number; total_trade_size: number;
+  liquidity_imbalance?: number; liquidity_available?: boolean; last_trade_ts_ms?: number | null; signed_flow: number; order_flow_imbalance: number; total_trade_size: number;
   event_intensity: number; ewma_abs_return: number; funding_rate?: number | null;
   open_interest?: number | null; open_interest_change?: number; liquidation_pressure?: number;
   liquidation_events: number; last_liquidation_side?: string | null; state_quality: number;
