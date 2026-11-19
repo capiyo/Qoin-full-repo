@@ -93,7 +93,6 @@ pub fn build_equal_share_plan(request: AllocationRequest) -> Result<AllocationPl
             adapter_status: adapter_status(selection.broker_id.trim().to_ascii_lowercase().as_str()),
         });
     }
-    let execution_enabled = allocations.iter().all(|allocation| allocation.adapter_status == "adapter_present_operator_gated");
     Ok(AllocationPlan {
         total_notional: request.total_notional,
         quote_currency: currency,
@@ -101,7 +100,7 @@ pub fn build_equal_share_plan(request: AllocationRequest) -> Result<AllocationPl
         allocation_per_broker: equal_share,
         allocated_total: allocated,
         unallocated_remainder: request.total_notional - allocated,
-        execution_enabled,
+        execution_enabled: false,
         allocations,
         policy: "equal_share_no_silent_omission_no_redistribution_no_automatic_fx",
     })
