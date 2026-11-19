@@ -349,6 +349,7 @@ async fn submit_live_order(
     }
     let result = broker_contract::submit_risk_checked(
         adapter.as_ref(),
+        &owner_uid,
         &broker_contract::PortfolioRiskPolicy::default(),
         submission.order.clone(),
         submission.preflight.clone(),
@@ -422,7 +423,7 @@ async fn reconcile_live_order(
         }))),
     };
     match broker_contract::lookup_order_by_client_order_id(
-        adapter.as_ref(), &submission.order.account_id, &client_order_id
+        adapter.as_ref(), &owner_uid, &submission.order.account_id, &client_order_id
     ).await {
         Ok(Some(receipt)) => {
             if let Err(error) = s.orders.update_one(
