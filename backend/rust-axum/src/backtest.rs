@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use crate::edge_strategy::EdgeStrategy;
 use qoin_vector_engine::{decide as decide_vector, EngineConfig, ForceObservation};
 
@@ -116,16 +117,19 @@ fn event_available_liquidity(event: &ReplayEvent, action: &str) -> Option<f64> {
     quantity.filter(|value| value.is_finite() && *value > 0.0)
 }
 
+#[cfg(test)]
 pub fn replay(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64) -> Result<ReplayResult, String> {
     replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, 0, 0.10, 5.0)
 }
 
+#[cfg(test)]
 pub fn replay_with_latency(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64) -> Result<ReplayResult, String> {
     replay_with_execution(events, strategy, initial_capital, fee_bps, slippage_bps, latency_ms, 0.10, 5.0)
 }
 
+#[cfg(test)]
 pub fn replay_with_execution(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, initial_capital: f64,
               fee_bps: f64, slippage_bps: f64, latency_ms: i64,
               max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String> {
