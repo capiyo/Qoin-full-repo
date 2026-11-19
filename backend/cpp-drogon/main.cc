@@ -110,7 +110,7 @@ std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
 }
-void proxyGet(const drogon::HttpRequestPtr&,
+void proxyGet(const drogon::HttpRequestPtr& incoming,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
     auto client = drogon::HttpClient::newHttpClient(upstream());
@@ -118,6 +118,8 @@ void proxyGet(const drogon::HttpRequestPtr&,
     request->setMethod(drogon::Get);
     request->setPath(path);
     request->addHeader("accept", "application/json");
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
     client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
         const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
@@ -143,6 +145,8 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     request->setPath(path);
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->addHeader("accept", "application/json");
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
     request->setBody(std::string(incoming->getBody()));
     client->sendRequest(request, [callback = std::move(callback)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
@@ -277,6 +281,8 @@ int main() {
         request->setMethod(drogon::Post);
         request->setPath("/internal/broker-allocations");
         request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        const auto authorization = req->getHeader("authorization");
+        if (!authorization.empty()) request->addHeader("authorization", authorization);
         request->setBody(std::string(req->getBody()));
         client->sendRequest(request, [cb = std::move(cb)](drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
             if (result != drogon::ReqResult::Ok || !response) {
