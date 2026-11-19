@@ -393,7 +393,7 @@ pub fn choose_execution_plan(
         return Err(RoutingError::InvalidPolicy("overhead and minimum saving must be non-negative, and quote age must be positive".into()));
     }
     if selected.is_empty() || selected.len() > MAX_FANOUT_ACCOUNTS {
-        return Err(RoutingError::InvalidPolicy("select between 1 and 15 broker accounts".into()));
+        return Err(RoutingError::InvalidPolicy("select between 1 and 20 broker accounts".into()));
     }
     let mut selected_accounts = HashSet::with_capacity(selected.len());
     for quote in selected {
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn small_capital_consolidates_when_each_equal_share_is_below_minimum() {
-        let quotes = (0..15).map(|i| quote(i, "1", "1", true)).collect::<Vec<_>>();
+        let quotes = (0..20).map(|i| quote(i, "1", "1", true)).collect::<Vec<_>>();
         let plan = choose_execution_plan(d("100"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { .. }));
     }
@@ -800,15 +800,15 @@ mod tests {
 
     #[test]
     fn fifteen_accounts_can_split_when_large_order_size_makes_it_economical() {
-        let mut quotes = (0..15).map(|i| quote(i, "0", "100", true)).collect::<Vec<_>>();
+        let mut quotes = (0..20).map(|i| quote(i, "0", "100", true)).collect::<Vec<_>>();
         for item in &mut quotes { item.split_slippage_bps = d("1"); }
-        let plan = choose_execution_plan(d("15000"), &quotes, AllocationPolicy::default()).unwrap();
+        let plan = choose_execution_plan(d("20000"), &quotes, AllocationPolicy::default()).unwrap();
         match plan {
             ExecutionPlan::EqualSplit { allocation, .. } => {
-                assert_eq!(allocation.children.len(), 15);
+                assert_eq!(allocation.children.len(), 20);
                 assert!(allocation.children.iter().all(|child| child.target_notional_portfolio == d("1000")));
             }
-            _ => panic!("expected a 15-account split when all accounts are feasible and child-size execution cost is lower"),
+            _ => panic!("expected a 20-account split when all accounts are feasible and child-size execution cost is lower"),
         }
     }
 
