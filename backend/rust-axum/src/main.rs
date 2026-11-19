@@ -2413,7 +2413,9 @@ async fn discover_relationships(
         "already_present":already_present,
         "relationships":relationships,
         "ledger":"append-only",
-        "decision_authority":"version-2-set-theoretic-attention (research only)"
+        "decision_authority":"version-1-vector-engine",
+        "v2_role":"independent_set_theoretic_research_attention_and_provenance_ledger",
+        "execution_mode":"research_only"
     }))))
 }
 
