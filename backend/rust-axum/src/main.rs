@@ -231,6 +231,17 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
     let configured = s.broker_registry.configured_brokers().unwrap_or_default();
     let configured_set: HashSet<String> = configured.iter().cloned().collect();
     let configured_count = selected.iter().filter(|item| item["id"].as_str().is_some_and(|id| configured_set.contains(id))).count();
+    let mut blockers = vec![
+        "No authenticated broker-account connection registry is configured.".to_string(),
+        "Provider-specific credentials and account permissions have not been verified.".to_string(),
+        "Live dispatch remains disabled until account authorization and provider conformance tests pass.".to_string(),
+    ];
+    if s.firebase_verifier.is_none() {
+        blockers.push("QOIN_FIREBASE_PROJECT_ID is not configured; server-side Firebase identity verification is unavailable.".into());
+    }
+    if configured.is_empty() {
+        blockers.push("No provider adapters are registered in this runtime.".into());
+    }
     Json(serde_json::json!({
         "selected_count": selected.len(),
         "execution_ready_count": ready_count,
@@ -240,12 +251,7 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
         "can_submit": false,
         "dispatch_enabled": false,
         "items": selected,
-        "blockers": [
-            "No authenticated broker-account connection registry is configured.",
-            "No provider adapters are registered in this runtime.",
-            "Provider-specific credentials and account permissions have not been verified.",
-            "Live dispatch remains disabled until account authorization and provider conformance tests pass."
-        ],
+        "blockers": blockers,
         "message": "Selection preferences are passed to the execution-readiness API, but no selected provider is currently eligible for order submission."
     }))
 }
