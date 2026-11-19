@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 pub fn catalogue() -> Value {
     // Deliberately balanced: ten crypto venues and ten FX/CFD brokers.
     let providers = [
-        ("binance_usdm","Binance USD-M","exchange","crypto","REST + WebSocket","execution_adapter_exists_not_connected",true),
+        ("binance_usdm","Binance USD-M","exchange","crypto","REST + WebSocket","adapter_pending",true),
         ("coinbase_advanced_trade","Coinbase Advanced Trade","exchange","crypto","REST + WebSocket","adapter_pending",true),
         ("kraken_spot","Kraken Spot","exchange","crypto","REST + WebSocket","adapter_pending",true),
         ("bybit","Bybit","exchange","crypto","REST + WebSocket","adapter_pending",true),
