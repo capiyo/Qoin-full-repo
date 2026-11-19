@@ -14,7 +14,7 @@ This branch contains the Qoin multi-asset research platform and an operator-cont
   - Coinbase Advanced Trade: public spot trade feed.
   - Kraken Spot WebSocket v2: public spot trade feed.
   - Finnhub: authenticated trade feed, news and economic calendar; a valid key, subscription and symbol entitlement are required.
-- Provider-specific symbols and venue IDs keep observations from different venues separate. Provider adapters preserve source timestamps and reject malformed observations.
+- Provider-specific symbols and venue IDs keep observations from different venues separate. Provider adapters preserve source timestamps and reject malformed or out-of-order observations.
 - Firebase client authentication, Firestore user-profile and Archive persistence, and Firebase Storage avatar rules for web and mobile.
 - Web, React Native and Tauri desktop clients, shared TypeScript contracts, algorithm catalogue preview and transparent vector inspection.
 - GitHub Actions workflows for Rust, Drogon, web, mobile, desktop and Axum–Drogon–MongoDB integration.
