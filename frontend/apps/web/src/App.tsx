@@ -137,7 +137,8 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
 
 function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   const labels = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"];
-  const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
+  const rawValues = QOIN_FEATURE_NAMES.map((name) => decision?.features?.[name] ?? 0);
+  const values = rawValues.map((value) => Math.max(-1, Math.min(1, value / 3)));
   const coordinates = values.map((value, index) => {
     const angle = (-Math.PI / 2) + index * (Math.PI * 2 / labels.length);
     const radius = 18 + value * 14;
@@ -158,7 +159,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
       {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#2867DC" />)}</>}
       {!decision && <text x="50" y="52" textAnchor="middle" fill="#94a3b8" fontSize="5">NO FEATURE VECTOR</text>}
     </svg>
-    <div className="feature-space-values">{labels.map((label,index) => <span key={label}>{label} <strong>{values[index].toFixed(3)}</strong></span>)}</div>
+    <div className="feature-space-values">{labels.map((label,index) => <span key={label}>{label} <strong>{rawValues[index].toFixed(3)}</strong></span>)}</div>
   </section>;
 }
 
