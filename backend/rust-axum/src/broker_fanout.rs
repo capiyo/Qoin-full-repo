@@ -707,8 +707,15 @@ impl FanoutLifecycle {
     pub fn restore(parent: ParentOrderIntent, children: Vec<ChildOrderIntent>) -> Result<Self, FanoutError> {
         if children.is_empty()
             || children.len() != parent.routed_accounts.len()
+            || parent.selected_accounts.is_empty()
+            || parent.selected_accounts.len() > 15
             || parent.parent_order_id.trim().is_empty()
+            || parent.owner_scope.trim().is_empty()
+            || parent.idempotency_key.trim().is_empty()
             || parent.request_fingerprint.trim().is_empty()
+            || parent.instrument_id.trim().is_empty()
+            || parent.portfolio_currency.trim().is_empty()
+            || parent.parent_notional_portfolio <= Decimal::ZERO
             || parent.revision < 0
             || parent.created_at_ms <= 0
             || parent.updated_at_ms < parent.created_at_ms
@@ -716,13 +723,38 @@ impl FanoutLifecycle {
             || parent.unallocated_remainder_portfolio < Decimal::ZERO
             || parent.allocated_notional_portfolio
                 .checked_add(parent.unallocated_remainder_portfolio) != Some(parent.parent_notional_portfolio)
+            || parent.aggregate_risk_approval.instrument_id != parent.instrument_id
+            || parent.aggregate_risk_approval.parent_notional_portfolio != parent.parent_notional_portfolio
+            || parent.aggregate_risk_approval.reduce_only != parent.reduce_only
         {
             return Err(FanoutError::InvalidPlan("persisted parent record is inconsistent".into()));
         }
-        let routed = parent.routed_accounts.iter().cloned().collect::<HashSet<_>>();
-        if routed.len() != parent.routed_accounts.len() {
-            return Err(FanoutError::InvalidPlan("persisted routed-account list contains duplicates".into()));
+
+        let selected = parent.selected_accounts.iter()
+            .map(BrokerAccountKey::normalized).collect::<Result<Vec<_>, _>>()?;
+        let routed = parent.routed_accounts.iter()
+            .map(BrokerAccountKey::normalized).collect::<Result<Vec<_>, _>>()?;
+        let not_routed = parent.not_routed_accounts.iter().map(|item| {
+            if item.reason.trim().is_empty() {
+                return Err(FanoutError::InvalidPlan("persisted not-routed account has no reason".into()));
+            }
+            item.account.normalized()
+        }).collect::<Result<Vec<_>, _>>()?;
+        let selected_set = selected.iter().cloned().collect::<HashSet<_>>();
+        let routed_set = routed.iter().cloned().collect::<HashSet<_>>();
+        let not_routed_set = not_routed.iter().cloned().collect::<HashSet<_>>();
+        if selected_set.len() != selected.len()
+            || routed_set.len() != routed.len()
+            || not_routed_set.len() != not_routed.len()
+            || routed_set.len() != children.len()
+            || !routed_set.is_disjoint(&not_routed_set)
+            || routed_set.union(&not_routed_set).cloned().collect::<HashSet<_>>() != selected_set
+            || (parent.route_mode == FanoutRouteMode::EqualSplit && !not_routed_set.is_empty())
+            || (parent.route_mode == FanoutRouteMode::Consolidated && routed.len() != 1)
+        {
+            return Err(FanoutError::InvalidPlan("persisted selected, routed and not-routed accounts do not form a valid route".into()));
         }
+
         let mut child_keys = HashSet::with_capacity(children.len());
         let mut child_ids = HashSet::with_capacity(children.len());
         for child in &children {
@@ -734,6 +766,7 @@ impl FanoutLifecycle {
                 || child.broker_id.trim().is_empty()
                 || child.account_id.trim().is_empty()
                 || child.client_order_id.trim().is_empty()
+                || child.child_order_id != child.client_order_id
                 || child.instrument_id != parent.instrument_id
                 || child.reduce_only != parent.reduce_only
                 || child.quantity <= Decimal::ZERO
@@ -748,6 +781,11 @@ impl FanoutLifecycle {
                     && (child.filled_quantity <= Decimal::ZERO || child.filled_quantity >= child.requested_quantity))
                 || (matches!(child.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::Filled | ChildOrderStatus::CancelPending)
                     && child.broker_order_id.as_ref().map_or(true, |id| id.trim().is_empty()))
+                || (child.filled_quantity == Decimal::ZERO && child.average_fill_price.is_some())
+                || (child.filled_quantity > Decimal::ZERO
+                    && child.average_fill_price.map_or(true, |price| price <= Decimal::ZERO))
+                || (matches!(child.status, ChildOrderStatus::Prepared | ChildOrderStatus::Submitting | ChildOrderStatus::Accepted | ChildOrderStatus::Unknown | ChildOrderStatus::Rejected | ChildOrderStatus::Failed)
+                    && child.filled_quantity > Decimal::ZERO)
                 || !child_keys.insert(key)
                 || !child_ids.insert(child.client_order_id.clone())
             {
@@ -763,15 +801,11 @@ impl FanoutLifecycle {
             {
                 return Err(FanoutError::InvalidPlan("persisted fee records do not match executions".into()));
             }
-            if child.filled_quantity > Decimal::ZERO
-                && child.average_fill_price.map_or(true, |price| price <= Decimal::ZERO)
-            {
-                return Err(FanoutError::InvalidPlan("persisted fill average is missing or invalid".into()));
-            }
         }
-        if child_keys != routed {
+        if child_keys != routed_set {
             return Err(FanoutError::InvalidPlan("persisted children do not cover routed accounts exactly".into()));
         }
+
         let dispatch_started = parent.status != ParentOrderStatus::Prepared
             || children.iter().any(|child| child.status != ChildOrderStatus::Prepared);
         let mut lifecycle = Self {
