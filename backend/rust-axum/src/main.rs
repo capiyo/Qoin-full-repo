@@ -60,6 +60,8 @@ struct SymbolState {
     event_count: usize,
     last_event_ts_ms: Option<i64>,
     last_price: Option<f64>,
+    #[serde(default)] mark_price: Option<f64>,
+    #[serde(default)] basis_bps: Option<f64>,
     spread_bps: Option<f64>,
     #[serde(default)] last_book_ts_ms: Option<i64>,
     signed_flow: f64,
@@ -111,7 +113,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.len() > 256 || e.venue.len() > 64 || e.symbol.len() > 96 {
         return Err("event_id, venue, or symbol exceeds its maximum length".into());
     }
-    if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "open_interest" | "liquidation") {
+    if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "mark_price" | "open_interest" | "liquidation") {
         return Err("event_type must be trade, book, funding, open_interest, or liquidation".into());
     }
     if e.side.as_deref().is_some_and(|side| !matches!(side, "buy" | "sell")) {
@@ -135,11 +137,20 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     state.symbol = event.symbol.clone();
+    if event.event_type == "trade" {
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
             state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
         }
         state.last_price = Some(price);
+    }
+    }
+    if event.event_type == "mark_price" {
+        if let Some(mark) = event.price.filter(|value| *value > 0.0) {
+            state.mark_price = Some(mark);
+            state.basis_bps = state.last_price.filter(|last| *last > 0.0)
+                .map(|last| (mark - last) / last * 10_000.0);
+        }
     }
     if let (Some(bid),Some(ask))=(event.bid,event.ask) {
         let mid=(bid+ask)/2.0;
@@ -158,6 +169,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
             if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);} }
         "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
+        "mark_price" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; },
         "open_interest" => if let Some(current) = event.open_interest {
             if let Some(previous) = state.open_interest.filter(|value| *value > 0.0) {
                 state.open_interest_change = ((current - previous) / previous).clamp(-3.0, 3.0);
@@ -611,7 +623,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         open_interest_change: snapshot.open_interest_change * 100.0,
         liquidation_pressure: (snapshot.liquidation_events as f64 / 10.0)
             * match snapshot.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
-        basis: 0.0,
+        basis: snapshot.basis_bps.map(|basis| basis / 25.0).unwrap_or(0.0),
         spread_bps: snapshot.spread_bps,
         spread_age_ms: snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms)
             .map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
@@ -662,7 +674,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             "spread_age_ms": snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
             "funding_available": snapshot.funding_rate.is_some(),
             "open_interest_available": snapshot.open_interest.is_some(),
-            "basis_available": false
+            "basis_available": snapshot.basis_bps.is_some()
         }
     });
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
@@ -1980,7 +1992,7 @@ async fn spawn_binance_stream(axum_addr: String, symbols: Vec<String>) {
                             funding_rate:None,open_interest:None,liquidation_side:None})
                     } else if event_name=="markPriceUpdate" {
                         Some(MarketEvent{event_id:format!("funding:{timestamp}"),venue:"binance_usdm".into(),symbol:symbol.into(),
-                            event_type:"funding".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:None,side:None,
+                            event_type:"mark_price".into(),ts_ms:timestamp,price:stream_number(data.get("p")),size:None,side:None,
                             bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:stream_number(data.get("r")),
                             open_interest:None,liquidation_side:None})
                     } else if event_name=="forceOrder" {
