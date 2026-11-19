@@ -192,7 +192,7 @@ pub fn durable_records(
         }
         "book" => memberships.push("book_events"),
         "funding" | "mark_price" => {
-            if matches!(event.event_type.as_str(), "funding" | "mark_price") && event.funding_rate.is_some() || event.funding_rate.is_some() {
+            if event.funding_rate.is_some() {
                 memberships.push("funding_events");
             }
             match event.funding_rate {
@@ -332,9 +332,9 @@ pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize
     let (buy_trades, buy_members) = make_set("buy_trades", "Buy-aggressor trades", &ordered, |event| event.event_type == "trade" && event.side.as_deref() == Some("buy"));
     let (sell_trades, sell_members) = make_set("sell_trades", "Sell-aggressor trades", &ordered, |event| event.event_type == "trade" && event.side.as_deref() == Some("sell"));
     let (books, _) = make_set("book_events", "Order-book observations", &ordered, |event| event.event_type == "book");
-    let (funding, funding_members) = make_set("funding_events", "Funding observations", &ordered, |event| event.event_type == "funding");
-    let (positive_funding, _) = make_set("positive_funding", "Positive funding observations", &ordered, |event| event.event_type == "funding" && event.funding_rate.is_some_and(|value| value > 0.0));
-    let (negative_funding, _) = make_set("negative_funding", "Negative funding observations", &ordered, |event| event.event_type == "funding" && event.funding_rate.is_some_and(|value| value < 0.0));
+    let (funding, funding_members) = make_set("funding_events", "Funding observations", &ordered, |event| matches!(event.event_type.as_str(), "funding" | "mark_price") && event.funding_rate.is_some());
+    let (positive_funding, _) = make_set("positive_funding", "Positive funding observations", &ordered, |event| matches!(event.event_type.as_str(), "funding" | "mark_price") && event.funding_rate.is_some_and(|value| value > 0.0));
+    let (negative_funding, _) = make_set("negative_funding", "Negative funding observations", &ordered, |event| matches!(event.event_type.as_str(), "funding" | "mark_price") && event.funding_rate.is_some_and(|value| value < 0.0));
     let (open_interest, oi_members) = make_set("open_interest_events", "Open-interest observations", &ordered, |event| event.event_type == "open_interest");
     let (liquidations, liquidation_members) = make_set("liquidations", "Liquidation observations", &ordered, |event| event.event_type == "liquidation");
     let (long_liquidations, _) = make_set("long_liquidations", "Long-position liquidation observations", &ordered, |event| event.event_type == "liquidation" && event.liquidation_side.as_deref() == Some("long"));
