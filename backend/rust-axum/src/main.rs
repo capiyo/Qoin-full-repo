@@ -114,7 +114,7 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
         return Err("event_id, venue, or symbol exceeds its maximum length".into());
     }
     if !matches!(e.event_type.as_str(), "trade" | "book" | "funding" | "mark_price" | "open_interest" | "liquidation") {
-        return Err("event_type must be trade, book, funding, open_interest, or liquidation".into());
+        return Err("event_type must be trade, book, funding, mark_price, open_interest, or liquidation".into());
     }
     if e.side.as_deref().is_some_and(|side| !matches!(side, "buy" | "sell")) {
         return Err("side must be buy or sell when supplied".into());
@@ -661,6 +661,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         "attended_features": signal.attended_features,
         "decision_vector": signal.decision_vector,
         "magnitude": signal.magnitude,
+        "interaction_contribution": signal.interaction_contribution,
         "angle_radians": signal.angle_radians,
         "angle_degrees": signal.angle_degrees,
         "angular_threshold_radians": s.signal_config.max_angle_radians,
