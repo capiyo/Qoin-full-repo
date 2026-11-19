@@ -18,15 +18,6 @@ type Instrument = {
   color: string;
 };
 
-const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#f59e0b" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#6477df" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#8b72e8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#76a85a" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#4d91d8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
-];
-
 type Tab = "Archive" | "Explore";
 type InstrumentMode = "live" | "backtest";
 function instrumentSlug(symbol: string): string { return symbol.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase(); }
@@ -747,7 +738,7 @@ export default function App() {
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   const pendingInstrumentRef = useRef<Instrument | null>(null);
-  const [instruments, setInstruments] = useState(seed);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [routePath, setRoutePath] = useState(() => window.location.pathname);
@@ -791,7 +782,7 @@ export default function App() {
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
-          setInstruments((items) => items.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          setInstruments((items) => items.map((item) => ({ ...item, archived: false })));
           return;
         }
         void getQoinArchivedSymbols().then((symbols) => {
@@ -906,11 +897,11 @@ export default function App() {
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
+        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
         provider: item.provider, providerStatus: item.provider_status,
-        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
+        archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, color: colors[index % colors.length],
       })));
-    }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
+    }).catch(() => { if (active) setVectorError("Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
