@@ -14,7 +14,8 @@ Binance is not the execution core. The old Binance-only order handler and execut
 4. The adapter supplies the authenticated account snapshot, broker instrument specification, capabilities and broker-calculated margin.
 5. Shared validation checks account health/trading permission, instrument tick and quantity steps, quote and conversion freshness, account-currency notional, stop distance, margin, leverage, daily loss and position limits.
 6. Qoin persists the idempotent order intent before invoking `submit_order`.
-7. The broker acknowledgement is persisted. Timeouts, mismatches or failed persistence require client-order-ID reconciliation; they must never trigger blind resubmission.
+7. The adapter receives the protective stop separately from the order-type trigger and must submit the entry plus native attached protection atomically. Providers that cannot guarantee native protection are rejected for opening orders.
+8. The broker acknowledgement is persisted. Timeouts, mismatches or failed persistence require client-order-ID reconciliation; they must never trigger blind resubmission.
 
 The public gateway continues to proxy the same internal order paths; the order payload is now provider-neutral.
 
@@ -47,15 +48,12 @@ The public gateway continues to proxy the same internal order paths; the order p
     "reduce_only": false
   },
   "preflight": {
-    "reference_price": "1.0842",
-    "reference_price_observed_at_ms": 0,
-    "protective_stop_price": "1.0800",
-    "now_ms": 0
+    "protective_stop_price": "1.0800"
   }
 }
 ```
 
-Decimal fields are serialized as decimal strings by the Rust decimal serializer. The example timestamps and values are illustrative and must be replaced with fresh server-validated market data; the endpoint rejects stale or invalid values. The execution token is required at the internal service boundary.
+Decimal fields are serialized as decimal strings by the Rust decimal serializer. The client supplies no reference quote or timestamp: the selected provider adapter returns fresh bid/ask and the Axum server supplies the current time. The protective stop is passed to the provider as an attached bracket instruction, not confused with a stop-entry trigger. The execution token is required at the internal service boundary.
 
 `GET /api/v1/orders/{client_order_id}/reconcile` resolves the same adapter from the persisted broker ID and calls its authoritative lookup method.
 
