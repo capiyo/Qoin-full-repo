@@ -187,7 +187,7 @@ export type QoinNewsItem = {
 export type QoinNewsResponse = { source: string; status: string; items: QoinNewsItem[]; message?: string };
 export type QoinBrokerDirectoryItem = {
   id: string; name: string; provider_kind: "forex_broker" | "exchange"; asset_classes: string; api: string; documentation_url: string;
-  execution_status: "execution_adapter_exists_not_connected" | "adapter_pending";
+  execution_status: "adapter_pending";
   selectable: boolean; execution_ready: boolean; note: string;
 };
 export type QoinBrokerCatalogue = {
@@ -196,6 +196,7 @@ export type QoinBrokerCatalogue = {
 };
 export type QoinBrokerReadiness = {
   selected_count: number; execution_ready_count: number; connected_account_count: number;
+  configured_adapter_count?: number; configured_adapters?: string[];
   can_submit: boolean; dispatch_enabled: boolean;
   items: Array<QoinBrokerDirectoryItem | { id: string; known: false; execution_ready: false; reason: string }>;
   blockers: string[]; message: string;
