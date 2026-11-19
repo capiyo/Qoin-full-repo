@@ -736,8 +736,13 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         "data_coverage": {
             "spread_available": snapshot.spread_bps.is_some(),
             "spread_age_ms": snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
+            "liquidity_available": snapshot.last_book_ts_ms.is_some(),
+            "order_flow_available": snapshot.last_trade_ts_ms.zip(snapshot.last_event_ts_ms)
+                .is_some_and(|(trade_ts, latest_ts)| latest_ts.saturating_sub(trade_ts) <= 60_000),
+            "volatility_available": snapshot.last_trade_ts_ms.is_some(),
             "funding_available": snapshot.funding_rate.is_some(),
             "open_interest_available": snapshot.open_interest.is_some(),
+            "liquidation_available": snapshot.liquidation_events > 0,
             "basis_available": snapshot.basis_bps.is_some()
         }
     });
