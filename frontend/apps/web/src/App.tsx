@@ -596,10 +596,11 @@ export default function App() {
               stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
             }]);
           }
-          if (update.v2_relationship_discovery && selected?.engineSymbol.toUpperCase() === symbol) {
+          const selectedInstrument = selected;
+          if (update.v2_relationship_discovery && selectedInstrument && selectedInstrument.engineSymbol.toUpperCase() === symbol) {
             getQoinV2Relationships(100).then((events) => {
               if (!active) return;
-              const tokens = [selected.engineSymbol, selected.symbol].map((value) => value.toUpperCase());
+              const tokens = [selectedInstrument.engineSymbol, selectedInstrument.symbol].map((value) => value.toUpperCase());
               const matching = events.filter(({ relationship }) => {
                 const labels = [relationship.source_symbol, relationship.target_symbol, relationship.source_domain, relationship.target_domain, relationship.source_set_id, relationship.target_set_id]
                   .filter((value): value is string => Boolean(value)).map((value) => value.toUpperCase());
