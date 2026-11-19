@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -454,10 +454,10 @@ function MobileBrokerCollectionPanel() {
     void AsyncStorage.getItem("qoin:broker-routing-preferences").then((raw)=>{
       if(!active||!raw)return;
       try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}catch{/* Ignore invalid local preference data. */}
-    }).catch(()=>undefined).finally(()=>{if(active)setPreferencesReady(true);});
+    }).catch(()=>undefined).then(async()=>{try{const remote=await getQoinBrokerSelections();if(active&&remote.length)setSelected(remote);}catch{/* Guest users retain device-local preferences. */}}).finally(()=>{if(active)setPreferencesReady(true);});
     return()=>{active=false;};
   },[]);
-  useEffect(()=>{if(preferencesReady)void AsyncStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected)).catch(()=>undefined);},[selected,preferencesReady]);
+  useEffect(()=>{if(preferencesReady){void AsyncStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected)).catch(()=>undefined);void saveQoinBrokerSelections(selected).catch(()=>undefined);}},[selected,preferencesReady]);
   const amount=Number(capital),valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <View style={{gap:11,padding:14,borderWidth:1,borderColor:"#E4EAF3",borderRadius:15,backgroundColor:"#FFFFFF"}}>
