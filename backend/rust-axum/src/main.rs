@@ -209,6 +209,40 @@ async fn set_trading_enabled(
     }
 }
 
+#[derive(Deserialize)]
+struct BrokerReadinessQuery { brokers: Option<String> }
+
+async fn get_broker_readiness(Query(query): Query<BrokerReadinessQuery>) -> impl IntoResponse {
+    let catalogue = broker_catalogue::catalogue();
+    let items = catalogue["items"].as_array().cloned().unwrap_or_default();
+    let requested: Vec<String> = query.brokers.unwrap_or_default().split(',')
+        .map(|id| id.trim().to_ascii_lowercase())
+        .filter(|id| !id.is_empty()).collect();
+    let mut seen = HashSet::new();
+    let selected: Vec<serde_json::Value> = requested.iter().filter(|id| seen.insert((*id).clone()))
+        .map(|id| {
+            items.iter().find(|item| item["id"].as_str() == Some(id.as_str())).cloned()
+                .unwrap_or_else(|| serde_json::json!({"id":id,"known":false,"execution_ready":false,
+                    "reason":"provider is not in the supported catalogue"}))
+        }).collect();
+    let unknown_count = selected.iter().filter(|item| item["known"] == false).count();
+    let ready_count = selected.iter().filter(|item| item["execution_ready"] == true).count();
+    Json(serde_json::json!({
+        "selected_count": selected.len(),
+        "execution_ready_count": ready_count,
+        "connected_account_count": 0,
+        "can_submit": !selected.is_empty() && ready_count == selected.len() && unknown_count == 0,
+        "dispatch_enabled": false,
+        "items": selected,
+        "blockers": [
+            "No authenticated broker-account connection registry is configured.",
+            "Provider-specific credentials and account permissions have not been verified.",
+            "Multi-broker order fan-out is not connected to the live order route."
+        ],
+        "message": "Selection preferences are passed to the execution-readiness API, but no selected provider is currently eligible for order submission."
+    }))
+}
+
 async fn submit_live_order(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -1988,6 +2022,7 @@ async fn main(){
         recovery_skipped_events: skipped_events,
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
+        .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
