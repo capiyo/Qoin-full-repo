@@ -272,6 +272,7 @@ pub enum FanoutPersistenceError {
     IdempotencyConflict,
     DuplicateChildIdentity,
     ConcurrentModification,
+    InvalidStoredRecords,
 }
 
 impl std::fmt::Display for FanoutPersistenceError {
@@ -556,6 +557,32 @@ pub fn build_fanout_intents(
 }
 
 
+/// Reload a persisted parent and all of its child records. Dispatch state is
+/// reconstructed from durable statuses so a process restart cannot reset the
+/// one-shot dispatch guard or authorize a duplicate submission.
+pub async fn load_fanout_lifecycle(
+    collection: &Collection<Document>,
+    parent_order_id: &str,
+) -> Result<Option<FanoutLifecycle>, FanoutPersistenceError> {
+    if parent_order_id.trim().is_empty() {
+        return Err(FanoutPersistenceError::InvalidRecords);
+    }
+    let Some(mut document) = collection.find_one(doc! { "parent_order_id": parent_order_id }, None).await
+        .map_err(|error| FanoutPersistenceError::Database(error.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let child_records = document.remove("children")
+        .ok_or(FanoutPersistenceError::InvalidStoredRecords)?;
+    let children = mongodb::bson::from_bson::<Vec<ChildOrderIntent>>(child_records)
+        .map_err(|_| FanoutPersistenceError::InvalidStoredRecords)?;
+    let parent = mongodb::bson::from_document::<ParentOrderIntent>(document)
+        .map_err(|_| FanoutPersistenceError::InvalidStoredRecords)?;
+    FanoutLifecycle::restore(parent, children)
+        .map(Some)
+        .map_err(|_| FanoutPersistenceError::InvalidStoredRecords)
+}
+
 /// Persist a parent-only transition (for example, dispatch-started) with
 /// optimistic concurrency. A zero match means another worker changed it;
 /// callers must reload the parent and reconcile rather than overwrite state.
@@ -672,6 +699,93 @@ impl FanoutLifecycle {
             return Err(FanoutError::InvalidPlan("child records do not cover the routed accounts exactly".into()));
         }
         Ok(Self { parent, children, persistence_confirmed: false, dispatch_started: false })
+    }
+
+    /// Restore an already persisted lifecycle after process restart. Unlike
+    /// new-intent construction, this accepts non-initial states but validates
+    /// their internal consistency before enabling any further transition.
+    pub fn restore(parent: ParentOrderIntent, children: Vec<ChildOrderIntent>) -> Result<Self, FanoutError> {
+        if children.is_empty()
+            || children.len() != parent.routed_accounts.len()
+            || parent.parent_order_id.trim().is_empty()
+            || parent.request_fingerprint.trim().is_empty()
+            || parent.revision < 0
+            || parent.created_at_ms <= 0
+            || parent.updated_at_ms < parent.created_at_ms
+            || parent.allocated_notional_portfolio < Decimal::ZERO
+            || parent.unallocated_remainder_portfolio < Decimal::ZERO
+            || parent.allocated_notional_portfolio
+                .checked_add(parent.unallocated_remainder_portfolio) != Some(parent.parent_notional_portfolio)
+        {
+            return Err(FanoutError::InvalidPlan("persisted parent record is inconsistent".into()));
+        }
+        let routed = parent.routed_accounts.iter().cloned().collect::<HashSet<_>>();
+        if routed.len() != parent.routed_accounts.len() {
+            return Err(FanoutError::InvalidPlan("persisted routed-account list contains duplicates".into()));
+        }
+        let mut child_keys = HashSet::with_capacity(children.len());
+        let mut child_ids = HashSet::with_capacity(children.len());
+        for child in &children {
+            let key = BrokerAccountKey {
+                broker_id: child.broker_id.trim().to_ascii_lowercase(),
+                account_id: child.account_id.trim().to_string(),
+            };
+            if child.parent_order_id != parent.parent_order_id
+                || child.broker_id.trim().is_empty()
+                || child.account_id.trim().is_empty()
+                || child.client_order_id.trim().is_empty()
+                || child.instrument_id != parent.instrument_id
+                || child.reduce_only != parent.reduce_only
+                || child.quantity <= Decimal::ZERO
+                || child.requested_quantity != child.quantity
+                || child.filled_quantity < Decimal::ZERO
+                || child.filled_quantity > child.requested_quantity
+                || child.revision < 0
+                || child.created_at_ms != parent.created_at_ms
+                || child.updated_at_ms < child.created_at_ms
+                || (child.status == ChildOrderStatus::Filled && child.filled_quantity != child.requested_quantity)
+                || (child.status == ChildOrderStatus::PartiallyFilled
+                    && (child.filled_quantity <= Decimal::ZERO || child.filled_quantity >= child.requested_quantity))
+                || (matches!(child.status, ChildOrderStatus::Accepted | ChildOrderStatus::PartiallyFilled | ChildOrderStatus::Filled | ChildOrderStatus::CancelPending)
+                    && child.broker_order_id.as_ref().map_or(true, |id| id.trim().is_empty()))
+                || !child_keys.insert(key)
+                || !child_ids.insert(child.client_order_id.clone())
+            {
+                return Err(FanoutError::InvalidPlan("persisted child record is inconsistent".into()));
+            }
+            let mut execution_ids = HashSet::with_capacity(child.execution_ids.len());
+            if child.execution_ids.iter().any(|id| id.trim().is_empty() || !execution_ids.insert(id.clone())) {
+                return Err(FanoutError::InvalidPlan("persisted execution IDs are invalid or duplicated".into()));
+            }
+            if child.fees.iter().any(|fee| fee.amount < Decimal::ZERO
+                || fee.currency.trim().is_empty()
+                || !execution_ids.contains(&fee.execution_id))
+            {
+                return Err(FanoutError::InvalidPlan("persisted fee records do not match executions".into()));
+            }
+            if child.filled_quantity > Decimal::ZERO
+                && child.average_fill_price.map_or(true, |price| price <= Decimal::ZERO)
+            {
+                return Err(FanoutError::InvalidPlan("persisted fill average is missing or invalid".into()));
+            }
+        }
+        if child_keys != routed {
+            return Err(FanoutError::InvalidPlan("persisted children do not cover routed accounts exactly".into()));
+        }
+        let dispatch_started = parent.status != ParentOrderStatus::Prepared
+            || children.iter().any(|child| child.status != ChildOrderStatus::Prepared);
+        let mut lifecycle = Self {
+            parent,
+            children,
+            persistence_confirmed: true,
+            dispatch_started,
+        };
+        let stored_status = lifecycle.parent.status;
+        lifecycle.refresh_parent_status();
+        if lifecycle.parent.status != stored_status {
+            return Err(FanoutError::InvalidPlan("persisted parent status does not match child states".into()));
+        }
+        Ok(lifecycle)
     }
 
     /// Accept only a receipt returned after a successful atomic Mongo insert.
@@ -1081,6 +1195,23 @@ mod tests {
         assert_eq!(first[0].client_order_id, second[0].client_order_id);
         assert_ne!(first[0].client_order_id, first[1].client_order_id);
         assert_eq!(first[0].client_order_id.len(), 36);
+    }
+
+    #[test]
+    fn restored_lifecycle_preserves_dispatch_guard_and_unknown_child_state() {
+        let mut fanout = build(&split_plan());
+        confirm_persisted(&mut fanout);
+        fanout.begin_dispatch(10_001).unwrap();
+        let child_id = fanout.children[0].child_order_id.clone();
+        fanout.begin_child_submission(&child_id, 10_002).unwrap();
+        fanout.apply_child_event(&child_id, ChildEvent::SubmissionUnknown {
+            reason: "network timeout after submit".into()
+        }, 10_003).unwrap();
+
+        let mut restored = FanoutLifecycle::restore(fanout.parent.clone(), fanout.children.clone()).unwrap();
+        assert_eq!(restored.parent.status, ParentOrderStatus::ReconciliationRequired);
+        assert_eq!(restored.begin_dispatch(10_004), Err(FanoutError::DispatchAlreadyStarted));
+        assert_eq!(restored.begin_child_submission(&child_id, 10_004), Err(FanoutError::ChildAlreadySubmitted));
     }
 
     #[test]
