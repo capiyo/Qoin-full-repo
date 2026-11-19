@@ -167,3 +167,30 @@ jobs:
           jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000 and .evaluated_relationships == 0 and (.interpretation | length) >= 4' /tmp/v2-evaluation.json
           curl -fsS 'http://127.0.0.1:8080/api/v1/v2/evaluation?symbol=BTCUSDT&venue=binance_usdm&horizon_ms=300000' >/tmp/v2-evaluation-gateway.json
           jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000' /tmp/v2-evaluation-gateway.json
+          cat >/tmp/broker-allocation.json <<'JSON'
+          {
+            "total_notional": 100,
+            "quote_currency": "USD",
+            "selections": [
+              {"broker_id":"binance","quote_currency":"USD"},
+              {"broker_id":"coinbase","quote_currency":"USD"},
+              {"broker_id":"kraken","quote_currency":"USD"},
+              {"broker_id":"interactive_brokers","quote_currency":"USD"},
+              {"broker_id":"alpaca","quote_currency":"USD"},
+              {"broker_id":"oanda","quote_currency":"USD"},
+              {"broker_id":"saxo","quote_currency":"USD"},
+              {"broker_id":"ig","quote_currency":"USD"},
+              {"broker_id":"fxcm","quote_currency":"USD"},
+              {"broker_id":"tradier","quote_currency":"USD"},
+              {"broker_id":"broker11","quote_currency":"USD"},
+              {"broker_id":"broker12","quote_currency":"USD"},
+              {"broker_id":"broker13","quote_currency":"USD"},
+              {"broker_id":"broker14","quote_currency":"USD"},
+              {"broker_id":"broker15","quote_currency":"USD"}
+            ]
+          }
+          JSON
+          curl -fsS -X POST http://127.0.0.1:8081/internal/broker-allocations -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation.json.out
+          jq -e '.broker_count == 15 and (.allocated_total - 100 | fabs < 0.0000001) and (.allocations | length == 15) and all(.allocations[]; (.allocation - (100 / 15) | fabs < 0.0000001)) and .execution_enabled == false' /tmp/broker-allocation.json.out
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/broker-allocations -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation-gateway.json
+          jq -e '.broker_count == 15 and .execution_enabled == false and (.allocations | length == 15)' /tmp/broker-allocation-gateway.json
