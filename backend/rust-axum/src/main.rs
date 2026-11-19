@@ -82,6 +82,7 @@ struct AppState {
     strategies: Collection<Document>,
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
+    broker_registry: broker_contract::BrokerRegistry,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
@@ -212,7 +213,7 @@ async fn set_trading_enabled(
 #[derive(Deserialize)]
 struct BrokerReadinessQuery { brokers: Option<String> }
 
-async fn get_broker_readiness(Query(query): Query<BrokerReadinessQuery>) -> impl IntoResponse {
+async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<BrokerReadinessQuery>) -> impl IntoResponse {
     let catalogue = broker_catalogue::catalogue();
     let items = catalogue["items"].as_array().cloned().unwrap_or_default();
     let requested: Vec<String> = query.brokers.unwrap_or_default().split(',')
@@ -227,23 +228,29 @@ async fn get_broker_readiness(Query(query): Query<BrokerReadinessQuery>) -> impl
         }).collect();
     let unknown_count = selected.iter().filter(|item| item["known"] == false).count();
     let ready_count = selected.iter().filter(|item| item["execution_ready"] == true).count();
+    let configured = s.broker_registry.configured_brokers().unwrap_or_default();
+    let configured_set: HashSet<String> = configured.iter().cloned().collect();
+    let configured_count = selected.iter().filter(|item| item["id"].as_str().is_some_and(|id| configured_set.contains(id))).count();
     Json(serde_json::json!({
         "selected_count": selected.len(),
         "execution_ready_count": ready_count,
         "connected_account_count": 0,
-        "can_submit": !selected.is_empty() && ready_count == selected.len() && unknown_count == 0,
+        "configured_adapter_count": configured_count,
+        "configured_adapters": configured,
+        "can_submit": false,
         "dispatch_enabled": false,
         "items": selected,
         "blockers": [
             "No authenticated broker-account connection registry is configured.",
+            "No provider adapters are registered in this runtime.",
             "Provider-specific credentials and account permissions have not been verified.",
-            "Multi-broker order fan-out is not connected to the live order route."
+            "Live dispatch remains disabled until account authorization and provider conformance tests pass."
         ],
         "message": "Selection preferences are passed to the execution-readiness API, but no selected provider is currently eligible for order submission."
     }))
 }
 
-async fn submit_live_order(
+async fn submit_legacy_binance_order(
     State(s): State<AppState>,
     headers: HeaderMap,
     Json(order): Json<trading::OrderRequest>,
@@ -335,7 +342,7 @@ async fn submit_live_order(
     }
 }
 
-async fn reconcile_live_order(
+async fn reconcile_legacy_binance_order(
     State(s): State<AppState>,
     Path(client_order_id): Path<String>,
     headers: HeaderMap,
@@ -402,6 +409,170 @@ async fn reconcile_live_order(
         "entry":entry,
         "protective_stop":stop
     })))
+}
+
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct BrokerOrderSubmission {
+    broker_id: String,
+    order: broker_contract::NormalizedOrder,
+    preflight: broker_contract::ExecutionPreflight,
+}
+
+async fn submit_live_order(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(submission): Json<BrokerOrderSubmission>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
+    }
+    let enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
+        Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
+        Ok(None) => false,
+        Err(error) => {
+            tracing::error!(error=%error, "trading kill-switch lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"trading control unavailable; order rejected"})));
+        }
+    };
+    if !enabled {
+        return (StatusCode::LOCKED, Json(serde_json::json!({"error":"trading kill switch is engaged; order rejected"})));
+    }
+    let broker_id = submission.broker_id.trim().to_ascii_lowercase();
+    if broker_id.is_empty() || broker_id.len() > 64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"broker_id is required"})));
+    }
+    let adapter = match s.broker_registry.resolve(&broker_id) {
+        Ok(adapter) => adapter,
+        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":error.to_string(),"broker_id":broker_id,"dispatch_started":false
+        }))),
+    };
+    if !adapter.broker_id().eq_ignore_ascii_case(&broker_id) {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"resolved adapter identity mismatch","dispatch_started":false})));
+    }
+    let request_doc = match mongodb::bson::to_document(&submission) {
+        Ok(document) => document,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"normalized order serialization failed"}))),
+    };
+    let ledger = doc!{
+        "client_order_id": &submission.order.client_order_id,
+        "broker_id": &broker_id,
+        "account_id": &submission.order.account_id,
+        "status": "submitting",
+        "request": request_doc,
+        "created_at": mongodb::bson::DateTime::now(),
+        "updated_at": mongodb::bson::DateTime::now(),
+    };
+    match s.orders.insert_one(ledger, None).await {
+        Ok(_) => {},
+        Err(error) if error.to_string().contains("E11000") => {
+            let existing = s.orders.find_one(doc!{"client_order_id":&submission.order.client_order_id}, None).await.ok().flatten().unwrap_or_default();
+            return (StatusCode::CONFLICT, Json(serde_json::json!({
+                "error":"client_order_id has already been used; reconcile before any retry",
+                "client_order_id":submission.order.client_order_id,
+                "existing_status":existing.get_str("status").unwrap_or("unknown"),
+                "reconciliation_required":true
+            })));
+        },
+        Err(error) => {
+            tracing::error!(error=%error, "could not persist normalized broker order intent");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"durable order ledger unavailable; no order submitted"})));
+        }
+    }
+    let result = broker_contract::submit_risk_checked(
+        adapter.as_ref(),
+        &broker_contract::PortfolioRiskPolicy::default(),
+        submission.order.clone(),
+        submission.preflight.clone(),
+    ).await;
+    match result {
+        Ok(receipt) => {
+            let stored = mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null);
+            if let Err(error) = s.orders.update_one(
+                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{"$set":{"status":"accepted","broker_receipt":stored,"updated_at":mongodb::bson::DateTime::now()}},
+                None
+            ).await {
+                tracing::error!(error=%error, client_order_id=%submission.order.client_order_id,
+                    "broker accepted order but Qoin ledger update failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"broker acknowledgement received but ledger update failed; reconcile before retrying",
+                    "client_order_id":submission.order.client_order_id,"reconciliation_required":true
+                })));
+            }
+            (StatusCode::OK, Json(serde_json::to_value(receipt).unwrap_or_default()))
+        }
+        Err(error) => {
+            if let Err(ledger_error) = s.orders.update_one(
+                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{"$set":{"status":"reconciliation_required","execution_error":error.to_string(),"updated_at":mongodb::bson::DateTime::now()}},
+                None
+            ).await {
+                tracing::error!(error=%ledger_error, client_order_id=%submission.order.client_order_id,
+                    "broker submission failed and Qoin ledger update also failed");
+            }
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error":error.to_string(),"broker_id":broker_id,
+                "client_order_id":submission.order.client_order_id,"reconciliation_required":true
+            })))
+        }
+    }
+}
+
+async fn reconcile_live_order(
+    State(s): State<AppState>,
+    Path(client_order_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
+    }
+    let record = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
+        Ok(Some(record)) => record,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"order not found"}))),
+        Err(error) => {
+            tracing::error!(error=%error, "order ledger lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"order ledger unavailable"})));
+        }
+    };
+    let request_doc = match record.get_document("request") {
+        Ok(document) => document.clone(),
+        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored normalized order is malformed"}))),
+    };
+    let submission = match mongodb::bson::from_document::<BrokerOrderSubmission>(request_doc) {
+        Ok(value) => value,
+        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored broker order cannot be decoded"}))),
+    };
+    let adapter = match s.broker_registry.resolve(&submission.broker_id) {
+        Ok(adapter) => adapter,
+        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":error.to_string(),"client_order_id":client_order_id,"reconciliation_required":true
+        }))),
+    };
+    match broker_contract::lookup_order_by_client_order_id(
+        adapter.as_ref(), &submission.order.account_id, &client_order_id
+    ).await {
+        Ok(Some(receipt)) => {
+            if let Err(error) = s.orders.update_one(
+                doc!{"client_order_id":&client_order_id},
+                doc!{"$set":{"status":"reconciled","broker_receipt":mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null),
+                    "reconciled_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}},
+                None
+            ).await {
+                tracing::error!(error=%error, client_order_id=%client_order_id, "could not persist broker reconciliation");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker queried but reconciliation persistence failed","client_order_id":client_order_id})));
+            }
+            (StatusCode::OK, Json(serde_json::to_value(receipt).unwrap_or_default()))
+        }
+        Ok(None) => (StatusCode::CONFLICT, Json(serde_json::json!({
+            "status":"not_found_authoritative","client_order_id":client_order_id,
+            "message":"The adapter confirmed a complete client-order-ID search; do not automatically resubmit."
+        }))),
+        Err(error) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error":error.to_string(),"client_order_id":client_order_id,"reconciliation_required":true
+        })))
+    }
 }
 
 async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
@@ -2013,6 +2184,7 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
+        broker_registry: broker_contract::BrokerRegistry::default(),
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
@@ -2025,6 +2197,8 @@ async fn main(){
         .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
+        .route("/internal/legacy/binance/orders",post(submit_legacy_binance_order))
+        .route("/internal/legacy/binance/orders/:client_order_id/reconcile",get(reconcile_legacy_binance_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
