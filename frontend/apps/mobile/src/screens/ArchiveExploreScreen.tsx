@@ -5,7 +5,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, getQoinV2Relationships, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinV2RelationshipEvent } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinState, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, getQoinV2Relationships, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinStrategy, type QoinV2RelationshipEvent } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -518,7 +518,42 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           }
         }
       }
-      if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
+      if (update.type === "stream.gap") {
+        setStreamStatus("gap — refreshing selected instrument");
+        const selectedInstrument = selected;
+        if (selectedInstrument) {
+          const symbol = selectedInstrument.engineSymbol;
+          Promise.all([
+            getQoinState(symbol).catch(() => null),
+            getInstrumentVector(symbol).catch(() => null),
+            getInstrumentVectorHistory(symbol, 500).catch(() => null),
+            getQoinEvents(symbol, 1000).catch(() => null),
+            getQoinV2Relationships(100).catch(() => null),
+          ]).then(([state, decision, history, events, ledger]) => {
+            if (!active) return;
+            if (state) {
+              setMarketState(state);
+              setLiveBySymbol((current) => ({ ...current, [symbol.toUpperCase()]: { ...current[symbol.toUpperCase()], state } }));
+            }
+            if (decision?.decision_vector) setVector(decision);
+            if (history) setVectorHistory(history.items);
+            if (events) {
+              setRawEvents(events.items.slice().reverse());
+              setLastEvent(events.items[0] || null);
+            }
+            if (ledger) {
+              const tokens = [selectedInstrument.engineSymbol, selectedInstrument.symbol].map((value) => value.toUpperCase());
+              setV2LedgerEvents(ledger.filter(({ relationship }) => {
+                const labels = [relationship.source_symbol, relationship.target_symbol, relationship.source_domain, relationship.target_domain, relationship.source_set_id, relationship.target_set_id]
+                  .filter((value): value is string => Boolean(value)).map((value) => value.toUpperCase());
+                return labels.some((label) => tokens.some((token) => label.includes(token)));
+              }));
+              setV2LedgerStatus("loaded");
+            }
+            setStreamStatus("selected instrument snapshots refreshed");
+          });
+        }
+      }
     }, setStreamStatus);
     return () => { active = false; unsubscribe(); };
   }, [items, selected?.engineSymbol]);
