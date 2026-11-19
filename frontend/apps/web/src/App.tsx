@@ -249,7 +249,7 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
 }
 
 
-function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | null }) {
+function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null }) {
   const names = QOIN_FEATURE_NAMES;
   const raw = names.map((name) => decision?.features?.[name] ?? 0);
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
@@ -264,6 +264,16 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
   const output = decision?.decision_vector ?? [0, 0];
   return <section className="vector-space-mechanics" aria-label="Six-dimensional vector space and output">
     <div className="attention-heading"><strong>Vector space · six engine dimensions</strong><span>2D projection of the actual R⁶ feature state</span></div>
+    <div className="live-mechanics-readout" aria-live="polite">
+      <div><span>Live input · {lastEvent?.venue || "waiting for provider"}</span><strong>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"}</strong></div>
+      <div><span>Last price</span><strong>{marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</strong></div>
+      <div><span>Flow imbalance</span><strong>{marketState?.order_flow_imbalance?.toFixed(5) ?? "—"}</strong></div>
+      <div><span>Event intensity</span><strong>{marketState?.event_intensity?.toFixed(5) ?? "—"}</strong></div>
+      <div><span>Spread · bps</span><strong>{marketState?.spread_bps?.toFixed(3) ?? "—"}</strong></div>
+      <div><span>Open interest</span><strong>{marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4}) ?? "—"}</strong></div>
+      <div><span>Funding rate</span><strong>{marketState?.funding_rate?.toFixed(7) ?? "—"}</strong></div>
+      <div><span>Source timestamp</span><strong>{lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "—"}</strong></div>
+    </div>
     <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in six dimensions. The bullish/bearish decision vector lives in a separate output space below.</p>
     <div className="vector-space-layout">
       <div className="vector-space-plot">
@@ -1242,7 +1252,7 @@ export default function App() {
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : mechanicsTab === "vector" ? <>
           <div className="vector-intro"><div><strong>Vector space</strong><p>Actual six-dimensional engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
-          <VectorSpaceMechanics decision={vector} />
+          <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
           <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
           <VectorMap decision={vector} history={vectorHistory} />
           <FeatureSpace decision={vector} />
