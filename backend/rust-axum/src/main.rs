@@ -25,7 +25,6 @@ mod vector_engine;
 mod set_ledger;
 mod order_safety;
 mod execution_lifecycle;
-mod trading;
 mod broker_contract;
 mod broker_catalogue;
 mod broker_allocation;
@@ -249,168 +248,6 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
         "message": "Selection preferences are passed to the execution-readiness API, but no selected provider is currently eligible for order submission."
     }))
 }
-
-async fn submit_legacy_binance_order(
-    State(s): State<AppState>,
-    headers: HeaderMap,
-    Json(order): Json<trading::OrderRequest>,
-) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
-    }
-    let trading_enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
-        Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
-        Ok(None) => false,
-        Err(error) => {
-            tracing::error!(error=%error, "trading kill-switch lookup failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"trading control unavailable; order rejected"})));
-        }
-    };
-    if !trading_enabled {
-        return (StatusCode::LOCKED, Json(serde_json::json!({"error":"trading kill switch is engaged; enable execution explicitly"})));
-    }
-    let executor = match trading::BinanceExecutor::from_env() {
-        Ok(executor) => executor,
-        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":error}))),
-    };
-    let request_doc = match mongodb::bson::to_document(&order) {
-        Ok(document) => document,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"order serialization failed"}))),
-    };
-    let ledger = doc! {
-        "client_order_id": &order.client_order_id,
-        "status": "submitting",
-        "request": request_doc,
-        "created_at": mongodb::bson::DateTime::now(),
-        "updated_at": mongodb::bson::DateTime::now(),
-    };
-    match s.orders.insert_one(ledger, None).await {
-        Ok(_) => {},
-        Err(error) if error.to_string().contains("E11000") => {
-            let existing = s.orders.find_one(doc!{"client_order_id":&order.client_order_id}, None).await
-                .ok().flatten().unwrap_or_default();
-            let status = existing.get_str("status").unwrap_or("unknown");
-            return (StatusCode::CONFLICT, Json(serde_json::json!({
-                "error":"client_order_id has already been used; do not resubmit",
-                "client_order_id":order.client_order_id,
-                "existing_status":status,
-                "reconciliation_required":status == "submitting" || status == "reconciliation_required"
-            })));
-        },
-        Err(error) => {
-            tracing::error!(error=%error, "could not persist durable order intent");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"durable order ledger unavailable; order not submitted"})));
-        }
-    }
-    match executor.place_market_order(order.clone()).await {
-        Ok(result) => {
-            let response = mongodb::bson::to_bson(&result).unwrap_or(mongodb::bson::Bson::Null);
-            let update = doc!{"$set":{
-                "status":"accepted",
-                "exchange_response":response,
-                "updated_at":mongodb::bson::DateTime::now()
-            }};
-            if let Err(error) = s.orders.update_one(doc!{"client_order_id":&order.client_order_id}, update, None).await {
-                tracing::error!(error=%error, client_order_id=%order.client_order_id,
-                    "exchange accepted order but durable ledger update failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-                    "error":"exchange accepted order but ledger update failed; reconcile at exchange before retrying",
-                    "client_order_id":order.client_order_id,
-                    "reconciliation_required":true
-                })));
-            }
-            (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default()))
-        }
-        Err(error) => {
-            let update = doc!{"$set":{
-                "status":"reconciliation_required",
-                "execution_error":&error,
-                "updated_at":mongodb::bson::DateTime::now()
-            }};
-            if let Err(ledger_error) = s.orders.update_one(doc!{"client_order_id":&order.client_order_id}, update, None).await {
-                tracing::error!(error=%ledger_error, client_order_id=%order.client_order_id,
-                    "execution failed and durable ledger update also failed");
-            }
-            tracing::error!(client_order_id=%order.client_order_id, error=%error,
-                "live order execution requires reconciliation");
-            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-                "error":error,
-                "client_order_id":order.client_order_id,
-                "reconciliation_required":true
-            })))
-        }
-    }
-}
-
-async fn reconcile_legacy_binance_order(
-    State(s): State<AppState>,
-    Path(client_order_id): Path<String>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
-    }
-    let ledger = match s.orders.find_one(doc!{"client_order_id":&client_order_id}, None).await {
-        Ok(Some(record)) => record,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"order not found"}))),
-        Err(error) => {
-            tracing::error!(error=%error, "order ledger lookup failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"order ledger unavailable"})));
-        }
-    };
-    let request_doc = match ledger.get_document("request") {
-        Ok(document) => document.clone(),
-        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored order request is malformed"}))),
-    };
-    let order = match mongodb::bson::from_document::<trading::OrderRequest>(request_doc) {
-        Ok(order) => order,
-        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored order request cannot be decoded"}))),
-    };
-    let executor = match trading::BinanceExecutor::from_env() {
-        Ok(executor) => executor,
-        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":error}))),
-    };
-    let entry = match executor.get_order_by_client_id(&order.symbol, &order.client_order_id).await {
-        Ok(value) => value,
-        Err(error) => return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error":"exchange entry-order lookup failed",
-            "detail":error,
-            "client_order_id":client_order_id,
-            "reconciliation_required":true
-        }))),
-    };
-    let stop = if order.reduce_only {
-        serde_json::Value::Null
-    } else {
-        let stop_id = trading::protective_stop_client_order_id(&order.client_order_id);
-        match executor.get_order_by_client_id(&order.symbol, &stop_id).await {
-            Ok(value) => value,
-            Err(error) => serde_json::json!({"lookup_error":error}),
-        }
-    };
-    let entry_status = entry.get("status").and_then(|value| value.as_str()).unwrap_or("UNKNOWN");
-    let stop_status = stop.get("status").and_then(|value| value.as_str()).unwrap_or("UNKNOWN");
-    let reconciled = if order.reduce_only {
-        matches!(entry_status, "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED")
-    } else {
-        entry_status == "FILLED" && stop_status == "NEW"
-    };
-    let status = if reconciled { "reconciled" } else { "reconciliation_required" };
-    if let Err(error) = s.orders.update_one(doc!{"client_order_id":&client_order_id},
-        doc!{"$set":{"status":status,"exchange_entry":mongodb::bson::to_bson(&entry).unwrap_or(mongodb::bson::Bson::Null),
-            "exchange_protective_stop":mongodb::bson::to_bson(&stop).unwrap_or(mongodb::bson::Bson::Null),
-            "reconciled_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}}, None).await {
-        tracing::error!(error=%error, client_order_id=%client_order_id, "could not persist exchange reconciliation result");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"exchange queried but reconciliation result could not be persisted","client_order_id":client_order_id})));
-    }
-    (if reconciled {StatusCode::OK}else{StatusCode::CONFLICT}, Json(serde_json::json!({
-        "client_order_id":client_order_id,
-        "status":status,
-        "entry":entry,
-        "protective_stop":stop
-    })))
-}
-
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct BrokerOrderSubmission {
@@ -2197,8 +2034,6 @@ async fn main(){
         .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
-        .route("/internal/legacy/binance/orders",post(submit_legacy_binance_order))
-        .route("/internal/legacy/binance/orders/:client_order_id/reconcile",get(reconcile_legacy_binance_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
         .route("/internal/stream",get(stream_ws)).route("/internal/events",get(get_events).post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
