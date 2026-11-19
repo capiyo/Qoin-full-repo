@@ -11,7 +11,7 @@ pub struct ReplayEvent {
 }
 #[derive(Debug, Clone, Default)]
 struct ReplayState {
-    last_price: Option<f64>, last_mark_price: Option<f64>, spread_bps: Option<f64>, signed_flow: f64, total_trade_size: f64,
+    last_price: Option<f64>, last_mark_price: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     open_interest: Option<f64>, open_interest_change: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
@@ -157,6 +157,7 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
                     * match state.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
                 basis: 0.0,
                 spread_bps: state.spread_bps,
+                spread_age_ms: state.last_book_ts_ms.map(|book_ts| _event.ts_ms.saturating_sub(book_ts)),
             };
             let signal = decide_vector(observation, config, config_version, false)
                 .map_err(|error| error.to_string())?;
@@ -326,6 +327,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         if let (Some(bid),Some(ask))=(event.bid,event.ask) {
             let mid=(bid+ask)/2.0;
             state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
+            state.last_book_ts_ms=Some(event.ts_ms);
             if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
         }
         if event.event_type == "funding" && position > 0.0 {
