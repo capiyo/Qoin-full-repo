@@ -11,7 +11,9 @@
   "dependencies": {
     "@qoin/core": "workspace:*",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "firebase": "^10.14.1",
+    "@tauri-apps/api": "^2.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.11",

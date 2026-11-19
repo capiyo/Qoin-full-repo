@@ -1,0 +1,13 @@
+[package]
+name = "qoin-set-theoretic-attention"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+qoin-market-space = { path = "../qoin-market-space" }
+
+[dev-dependencies]
+serde_json.workspace = true

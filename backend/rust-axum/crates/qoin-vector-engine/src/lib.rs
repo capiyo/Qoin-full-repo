@@ -6,6 +6,7 @@
 //! not trained weights and not evidence of an edge.
 
 use serde::{Deserialize, Serialize};
+use qoin_market_space::{attribution::{aggregate_by_family, attribute_exact_shapley, AttributionError, AttributionReport, ContributionDirection, FamilyContribution}, FeatureAvailability, MarketFeature, MarketSpaceError, MarketVector};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -197,6 +198,151 @@ pub fn decide(
     })
 }
 
+
+/// Result of evaluating Version 1 against the shared market-state vector.
+/// Regime coordinates raise the evidence threshold and volatility dampening;
+/// they never create a directional vote of their own.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MarketVectorDecision {
+    pub signal: Signal,
+    pub regime_risk_score: f64,
+    pub effective_signal_threshold: f64,
+    pub effective_volatility_dampener: f64,
+    /// Exact Shapley decomposition of the risk-adjusted decision margin:
+    /// absolute directional score minus the regime-adjusted threshold.
+    pub risk_adjusted_margin: f64,
+    pub attribution: AttributionReport,
+    pub family_attribution: Vec<FamilyContribution>,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum MarketVectorDecisionError {
+    #[error(transparent)]
+    MarketSpace(#[from] MarketSpaceError),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
+    #[error(transparent)]
+    Attribution(#[from] AttributionError),
+}
+
+/// Version 1 adapter for the shared 53-dimensional market vector.
+/// Required coordinates remain explicit: unavailable observations fail closed.
+/// Positive regime coordinates represent elevated risk; negative values represent
+/// subdued conditions. No hard regime label is introduced.
+pub fn decide_from_market_vector(
+    vector: &MarketVector,
+    config: &EngineConfig,
+    config_version: &str,
+    has_open_position: bool,
+) -> Result<MarketVectorDecision, MarketVectorDecisionError> {
+    vector.validate()?;
+    // Seven force/context coordinates and five regime coordinates share one
+    // attribution game. Quality scales evidence before it can influence a vote.
+    let features = [
+        MarketFeature::OrderFlowImbalance,
+        MarketFeature::OrderBookDepth,
+        MarketFeature::RealizedVolatility,
+        MarketFeature::FundingPressure,
+        MarketFeature::OpenInterestChange,
+        MarketFeature::LiquidationPressure,
+        MarketFeature::Basis,
+        MarketFeature::RegimeVolatilityLevel,
+        MarketFeature::RegimeLiquidityStress,
+        MarketFeature::RegimeCorrelationStress,
+        MarketFeature::RegimeTransitionIntensity,
+        MarketFeature::RegimeUncertainty,
+    ];
+    let mut observed = [0.0_f64; 12];
+    let mut qualities = [0.0_f64; 12];
+    for (index, feature) in features.iter().enumerate() {
+        let coordinate = vector.coordinates.get(feature)
+            .ok_or(MarketSpaceError::IncompleteVector)?;
+        if coordinate.status==FeatureAvailability::NotApplicable{
+            // A structurally out-of-scope force contributes no vote and no
+            // missing-data penalty. Applicable-but-missing remains fail-closed.
+            observed[index]=0.0;
+            qualities[index]=0.0;
+            continue;
+        }
+        observed[index] = vector.require(*feature)? * coordinate.quality;
+        qualities[index] = coordinate.quality;
+    }
+
+    let force_input = |values: &[f64; 12]| ForceObservation {
+        ofi: values[0],
+        liquidity: values[1],
+        volatility: values[2],
+        funding: values[3],
+        open_interest_change: values[4],
+        liquidation_pressure: values[5],
+        basis: values[6],
+    };
+    let regime_risk = |values: &[f64; 12]| {
+        values[7..12].iter().map(|value| value.max(0.0)).sum::<f64>() / 5.0
+    };
+    let regime_volatility = observed[7].max(0.0);
+    let regime_risk_score = regime_risk(&observed);
+
+    let mut effective_config = config.clone();
+    effective_config.signal_threshold = config.signal_threshold * (1.0 + regime_risk_score);
+    effective_config.volatility_dampener =
+        config.volatility_dampener * (1.0 + regime_volatility);
+    let signal = decide(force_input(&observed), &effective_config, config_version, has_open_position)?;
+
+    // Re-run the actual nonlinear engine for every coalition. This allocates
+    // clipping, Pareto top-k, the OFI×OI interaction, volatility dampening and
+    // the regime-adjusted threshold, rather than attributing a linear proxy.
+    let mut coalition_values = Vec::with_capacity(1 << features.len());
+    for mask in 0usize..(1usize << features.len()) {
+        let values = std::array::from_fn(|index| {
+            if mask & (1usize << index) != 0 { observed[index] } else { 0.0 }
+        });
+        let risk_score = regime_risk(&values);
+        let mut coalition_config = config.clone();
+        coalition_config.signal_threshold = config.signal_threshold * (1.0 + risk_score);
+        coalition_config.volatility_dampener =
+            config.volatility_dampener * (1.0 + values[7].max(0.0));
+        let coalition_signal = decide(
+            force_input(&values),
+            &coalition_config,
+            config_version,
+            false,
+        )?;
+        coalition_values.push(coalition_signal.score.abs() - coalition_config.signal_threshold);
+    }
+    let keys = features.iter().map(|feature| feature.as_str().to_owned()).collect::<Vec<_>>();
+    let mut attribution = attribute_exact_shapley(&keys, &coalition_values)?;
+    let applicable_inputs=features.iter().filter(|feature|{
+        vector.coordinates.get(feature)
+            .is_some_and(|coordinate|coordinate.status!=FeatureAvailability::NotApplicable)
+    }).count().max(1);
+    attribution.coverage_pct = qualities.iter().sum::<f64>() / applicable_inputs as f64 * 100.0;
+    for (contribution, (feature, quality)) in attribution.contributions.iter_mut()
+        .zip(features.iter().zip(qualities.iter())) {
+        contribution.feature = Some(*feature);
+        contribution.quality = Some(*quality);
+        contribution.direction = if contribution.signed_effect > 0.0 {
+            ContributionDirection::Positive
+        } else if contribution.signed_effect < 0.0 {
+            ContributionDirection::Negative
+        } else {
+            ContributionDirection::Neutral
+        };
+    }
+    let family_attribution = aggregate_by_family(&attribution);
+    let risk_adjusted_margin = coalition_values[(1usize << features.len()) - 1];
+
+    Ok(MarketVectorDecision {
+        signal,
+        regime_risk_score,
+        effective_signal_threshold: effective_config.signal_threshold,
+        effective_volatility_dampener: effective_config.volatility_dampener,
+        risk_adjusted_margin,
+        attribution,
+        family_attribution,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +352,119 @@ mod tests {
             ofi: 2.0, liquidity: 1.0, volatility: 0.2, funding: -0.5,
             open_interest_change: 1.0, liquidation_pressure: 0.5, basis: 0.0,
         }
+    }
+
+
+    fn shared_market_vector(regime_risk: f64) -> MarketVector {
+        let mut vector = MarketVector::new(
+            "v1-test-vector", "test-venue", "BTCUSD", "5m",
+            1_800_000_000_000, 1_800_000_000_001,
+        ).unwrap();
+        for (feature, value) in [
+            (MarketFeature::OrderFlowImbalance, 1.0),
+            (MarketFeature::OrderBookDepth, 1.0),
+            (MarketFeature::RealizedVolatility, 0.1),
+            (MarketFeature::FundingPressure, -0.5),
+            (MarketFeature::OpenInterestChange, 1.0),
+            (MarketFeature::LiquidationPressure, 0.5),
+            (MarketFeature::Basis, 0.0),
+            (MarketFeature::RegimeVolatilityLevel, regime_risk),
+            (MarketFeature::RegimeLiquidityStress, regime_risk),
+            (MarketFeature::RegimeCorrelationStress, regime_risk),
+            (MarketFeature::RegimeTransitionIntensity, regime_risk),
+            (MarketFeature::RegimeUncertainty, regime_risk),
+        ] {
+            vector.set_value(feature, Some(value), 1.0).unwrap();
+        }
+        vector
+    }
+
+    #[test]
+    fn shared_market_vector_drives_v1_and_includes_regime_overlay() {
+        let calm = decide_from_market_vector(
+            &shared_market_vector(0.0), &EngineConfig::default(), "v1-shared-space", false,
+        ).unwrap();
+        let stressed = decide_from_market_vector(
+            &shared_market_vector(1.0), &EngineConfig::default(), "v1-shared-space", false,
+        ).unwrap();
+        assert_eq!(calm.signal.decision, Decision::Buy);
+        assert!(stressed.effective_signal_threshold > calm.effective_signal_threshold);
+        assert_eq!(stressed.signal.decision, Decision::Wait);
+    }
+
+    #[test]
+    fn shared_market_vector_fails_closed_when_required_regime_is_missing() {
+        let mut vector = shared_market_vector(0.0);
+        vector.set_value(MarketFeature::RegimeUncertainty, None, 0.0).unwrap();
+        assert!(matches!(
+            decide_from_market_vector(&vector, &EngineConfig::default(), "v1", false),
+            Err(MarketVectorDecisionError::MarketSpace(MarketSpaceError::MissingFeature(
+                MarketFeature::RegimeUncertainty
+            )))
+        ));
+    }
+
+
+    #[test]
+    fn structurally_not_applicable_basis_is_neutral_and_excluded_from_coverage(){
+        let mut vector=shared_market_vector(0.0);
+        vector.set_not_applicable(MarketFeature::Basis);
+        let decision=decide_from_market_vector(
+            &vector,&EngineConfig::default(),"v1-spot",false,
+        ).unwrap();
+        assert_eq!(decision.attribution.coverage_pct,100.0);
+        let basis=decision.attribution.contributions.iter()
+            .find(|item|item.feature==Some(MarketFeature::Basis)).unwrap();
+        assert_eq!(basis.signed_effect,0.0);
+        assert_eq!(basis.contribution_pct,0.0);
+    }
+
+    #[test]
+    fn shared_vector_quality_scales_votes_and_shapley_percentages_reconcile() {
+        let mut vector = MarketVector::new(
+            "quality-test", "test-venue", "BTCUSD", "5m",
+            1_800_000_000_000, 1_800_000_000_001,
+        ).unwrap();
+        for feature in [
+            MarketFeature::OrderFlowImbalance,
+            MarketFeature::OrderBookDepth,
+            MarketFeature::RealizedVolatility,
+            MarketFeature::FundingPressure,
+            MarketFeature::OpenInterestChange,
+            MarketFeature::LiquidationPressure,
+            MarketFeature::Basis,
+            MarketFeature::RegimeVolatilityLevel,
+            MarketFeature::RegimeLiquidityStress,
+            MarketFeature::RegimeCorrelationStress,
+            MarketFeature::RegimeTransitionIntensity,
+            MarketFeature::RegimeUncertainty,
+        ] {
+            vector.set_value(feature, Some(0.0), 1.0).unwrap();
+        }
+        vector.set_value(MarketFeature::OrderFlowImbalance, Some(1.0), 1.0).unwrap();
+        let full_quality = decide_from_market_vector(
+            &vector, &EngineConfig::default(), "v1-attribution-test", false,
+        ).unwrap();
+        vector.set_value(MarketFeature::OrderFlowImbalance, Some(1.0), 0.2).unwrap();
+        let reduced_quality = decide_from_market_vector(
+            &vector, &EngineConfig::default(), "v1-attribution-test", false,
+        ).unwrap();
+
+        let ofi_effect = |decision: &MarketVectorDecision| {
+            decision.attribution.contributions.iter()
+                .find(|item| item.feature == Some(MarketFeature::OrderFlowImbalance))
+                .unwrap().signed_effect
+        };
+        assert!(ofi_effect(&full_quality) > ofi_effect(&reduced_quality));
+        let coordinate_pct = full_quality.attribution.contributions.iter()
+            .map(|item| item.contribution_pct).sum::<f64>();
+        let family_pct = full_quality.family_attribution.iter()
+            .map(|item| item.contribution_pct).sum::<f64>();
+        assert!((coordinate_pct - 100.0).abs() < 1e-8);
+        assert!((family_pct - 100.0).abs() < 1e-8);
+        assert!((full_quality.attribution.outcome - full_quality.risk_adjusted_margin).abs() < 1e-10);
+        assert!((full_quality.attribution.contributions.iter()
+            .map(|item| item.signed_effect).sum::<f64>() - full_quality.attribution.net_effect).abs() < 1e-8);
     }
 
     #[test]

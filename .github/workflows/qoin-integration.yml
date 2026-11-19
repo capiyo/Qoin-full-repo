@@ -1,14 +1,14 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map]
+    branches: [main, feat/mongodb-edge-strategy-map, feat/qoin-auth-engine-card-display, qoin-archive-explore-vector-ui, version-2-set-theoretic-attention]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
   pull_request:
-    branches: [main]
+    branches: [main, qoin-archive-explore-vector-ui]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
@@ -35,7 +35,7 @@ jobs:
       - name: Install Drogon build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
+          sudo apt-get install --yes cmake g++ libdrogon-dev libjsoncpp-dev libsqlite3-dev uuid-dev libmariadb-dev libbrotli-dev libhiredis-dev libyaml-cpp-dev
       - name: Build Axum
         run: cargo build --manifest-path backend/rust-axum/Cargo.toml
       - name: Build Drogon
@@ -51,21 +51,80 @@ jobs:
           export QOIN_AXUM_ADDR=127.0.0.1:8081
           export QOIN_AXUM_URL=http://127.0.0.1:8081
           export QOIN_DROGON_PORT=8080
+          export FIREBASE_WEB_API_KEY=ci-firebase-web-key
+          export FIREBASE_IDENTITY_TOOLKIT_URL=http://127.0.0.1:8099/v1/accounts:lookup
+          cat >/tmp/firebase-mock.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          import json
+          class Handler(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  length = int(self.headers.get("Content-Length", "0"))
+                  payload = json.loads(self.rfile.read(length) or b"{}")
+                  if payload.get("idToken") != "ci-firebase-id-token":
+                      self.send_response(400)
+                      self.end_headers()
+                      return
+                  body = json.dumps({"users":[{"localId":"ci-user-123","email":"ci-user@qoin.test","emailVerified":True,"displayName":"CI User","disabled":False}]}).encode()
+                  self.send_response(200)
+                  self.send_header("Content-Type","application/json")
+                  self.send_header("Content-Length",str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, *args): pass
+          HTTPServer(("127.0.0.1",8099),Handler).serve_forever()
+          PY
+          python3 /tmp/firebase-mock.py >/tmp/firebase-mock.log 2>&1 &
+          FIREBASE_MOCK_PID=$!
           ./target/debug/qoin-flow-engine >/tmp/qoin-axum.log 2>&1 &
           AXUM_PID=$!
-          ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
-          DROGON_PID=$!
-          cleanup() { kill "$DROGON_PID" "$AXUM_PID" 2>/dev/null || true; }
+          cleanup() { kill "${DROGON_PID:-}" "$AXUM_PID" "${FIREBASE_MOCK_PID:-}" 2>/dev/null || true; }
           trap cleanup EXIT
+          # The gateway proxies its first /health request to Axum. Wait for the
+          # upstream to be ready before starting Drogon so CI does not race its
+          # first outbound HttpClient connection during process initialization.
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            if curl -fsS http://127.0.0.1:8081/health >/tmp/axum-health.json; then break; fi
+            if ! kill -0 "$AXUM_PID" 2>/dev/null; then
+              echo "Axum exited before becoming healthy"
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
             sleep 1
           done
-          jq -e '.status == "ok" and .mongodb == true' /tmp/health.json
+          if [[ ! -s /tmp/axum-health.json ]]; then
+            echo "Axum health endpoint did not become ready"
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
+          ./build/drogon/qoin-gateway >/tmp/qoin-drogon.log 2>&1 &
+          DROGON_PID=$!
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            if ! kill -0 "$DROGON_PID" 2>/dev/null; then
+              echo "Drogon exited before becoming healthy"
+              cat /tmp/qoin-drogon.log
+              cat /tmp/qoin-axum.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ ! -s /tmp/health.json ]]; then
+            echo "Gateway health endpoint did not become ready"
+            cat /tmp/qoin-drogon.log
+            cat /tmp/qoin-axum.log
+            exit 1
+          fi
+          jq -e '.status == "ok" and .mongodb == true and .firebase_auth.status == "configured"' /tmp/health.json
+          unauthenticated_signal_status=$(curl -sS -o /tmp/unauthenticated-signal.json -w '%{http_code}' -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}')
+          test "$unauthenticated_signal_status" = "401"
+          curl -fsS -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' -H 'authorization: Bearer ci-firebase-id-token' --data '{"observation":{"ofi":2.0,"liquidity":1.0,"volatility":0.2,"funding":-0.5,"open_interest_change":1.0,"liquidation_pressure":0.5,"basis":0.0},"has_open_position":false}' >/tmp/signal.json
+          jq -e '.decision == "BUY" and .config_version == "baseline-v2" and .score > 0' /tmp/signal.json
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy.json
           jq -e '.strategy_key == "active" and .version != ""' /tmp/strategy.json
           jq '.version = "edge-map-ci-smoke-v2"' /tmp/strategy.json >/tmp/strategy-updated.json
-          curl -fsS -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
+          public_strategy_write_status=$(curl -sS -o /tmp/public-strategy-write.json -w '%{http_code}' -X PUT http://127.0.0.1:8080/api/v1/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json)
+          test "$public_strategy_write_status" = "405"
+          curl -fsS -X PUT http://127.0.0.1:8081/internal/strategy -H 'content-type: application/json' --data-binary @/tmp/strategy-updated.json >/tmp/strategy-put.json
           jq -e '.status == "strategy_updated" and .strategy.version == "edge-map-ci-smoke-v2"' /tmp/strategy-put.json
           kill "$AXUM_PID"
           wait "$AXUM_PID" 2>/dev/null || true
@@ -77,6 +136,100 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
-          curl -fsS -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          public_event_write_status=$(curl -sS -o /tmp/public-event-write.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"public-forbidden","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000200,"price":100.03,"size":1,"side":"buy"}')
+          test "$public_event_write_status" = "405"
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-book-1","venue":"ci","symbol":"BTCUSDT","event_type":"book","ts_ms":1792860000000,"bid":100,"ask":100.01,"bid_size":4,"ask_size":3}' >/tmp/book.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-trade-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}' >/tmp/trade.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-other-venue","venue":"finnhub","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.02,"size":1,"side":"buy"}' >/tmp/other-venue.json
           jq -e '.status == "accepted" and .decision.strategy_version == "edge-map-ci-smoke-v2"' /tmp/trade.json
+          node backend/tests/websocket_smoke.mjs
+unauthenticated_backtest_status=$(curl -sS -o /tmp/unauthenticated-backtest.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
+          test "$unauthenticated_backtest_status" = "401"
+          invalid_token_status=$(curl -sS -o /tmp/invalid-token-backtest.json -w '%{http_code}' -H 'authorization: Bearer invalid-firebase-token' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
+          test "$invalid_token_status" = "401"
+          unauthenticated_vector_status=$(curl -sS -o /tmp/unauthenticated-vector.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/vector?symbol=BTCUSDT')
+          test "$unauthenticated_vector_status" = "401"
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/vector?symbol=BTCUSDT' >/tmp/authenticated-vector.json
+          unauthenticated_state_status=$(curl -sS -o /tmp/unauthenticated-state.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/state?symbol=BTCUSDT')
+          test "$unauthenticated_state_status" = "401"
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/state?symbol=BTCUSDT' >/tmp/authenticated-state.json
+          unauthenticated_v2_status=$(curl -sS -o /tmp/unauthenticated-v2.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/v2/relationships?limit=10')
+          test "$unauthenticated_v2_status" = "401"
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/v2/relationships?limit=10' >/tmp/authenticated-v2.json
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&venue=ci&from_ts_ms=1792860000000&to_ts_ms=1792860000100&initial_capital=10000&fee_bps=10&slippage_bps=5&latency_ms=50&max_participation_rate=0.5&market_impact_bps=10' >/tmp/backtest.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "ci" and .events_replayed == 2 and .strategy_version == "edge-map-ci-smoke-v2" and .latency_ms == 50 and .max_participation_rate == 0.5 and .market_impact_bps == 10 and .market_impact_paid >= 0 and (.execution_stress_scenarios | length == 3) and .execution_stress_scenarios[2].cost_multiplier == 2 and .execution_stress_scenarios[2].fills_recomputed == false and .net_funding_cashflow == 0 and .funding_settlements == 0 and .max_event_gap_ms == 100 and .event_gaps_over_5m == 0' /tmp/backtest.json
+          mixed_status=$(curl -sS -o /tmp/mixed-venue-backtest.json -w '%{http_code}' -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/backtest?symbol=BTCUSDT&from_ts_ms=1792860000000&to_ts_ms=1792860000100')
+          test "$mixed_status" = "422"
+          jq -e '.error | contains("exactly one")' /tmp/mixed-venue-backtest.json
+          curl -fsS http://127.0.0.1:8080/api/v1/instruments >/tmp/instruments.json
+          jq -e '[.items[] | select(.symbol == "BTC/USD")][0].venue_id == "binance_usdm" and [.items[] | select(.symbol == "NVDA")][0].venue_id == "finnhub"' /tmp/instruments.json
+          curl -fsS http://127.0.0.1:8080/api/v1/algorithms >/tmp/algorithms.json
+          jq -e '.market_access_tiers_enabled == false and (.market_access_tiers | length) == 3 and .algorithms[0].algorithm_id == "qoin-vector-baseline"' /tmp/algorithms.json
+
+          cat >/tmp/v2-relationships.json <<'JSON'
+          {
+            "query": {
+              "id": "ci-query",
+              "domain": "BTCUSDT/5m",
+              "observed_at_ms": 1792860000100,
+              "atoms": ["trend:up", "liquidity:sweep"]
+            },
+            "candidates": [
+              {
+                "id": "ci-candidate-1",
+                "domain": "BTCUSDT/5m",
+                "observed_at_ms": 1792860000100,
+                "atoms": ["trend:up", "liquidity:sweep", "volatility:normal"]
+              },
+              {
+                "id": "ci-candidate-2",
+                "domain": "BTCUSDT/5m",
+                "observed_at_ms": 1792860000100,
+                "atoms": ["funding:positive", "basis:wide"]
+              }
+            ],
+            "model_version": "ci-v2.0.0",
+            "temperature": 1.0,
+            "recorded_at_ms": 1792860000200
+          }
+          JSON
+          curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery.json
+          jq -e '.candidate_count == 2 and .persisted == 2 and .already_present == 0 and .decision_authority == "version-1-vector-engine"' /tmp/v2-discovery.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery-retry.json
+          jq -e '.persisted == 0 and .already_present == 2' /tmp/v2-discovery-retry.json
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8081/internal/v2/relationships?limit=10' >/tmp/v2-ledger.json
+          echo 'V2 discovery response:'; cat /tmp/v2-discovery.json
+          echo 'V2 idempotent retry response:'; cat /tmp/v2-discovery-retry.json
+          echo 'V2 persisted ledger response:'; cat /tmp/v2-ledger.json
+          jq -e 'length == 2 and all(.[]; .event_type == "discovered" and .relationship.model_version == "ci-v2.0.0")' /tmp/v2-ledger.json
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8081/internal/v2/evaluation?symbol=BTCUSDT&venue=binance_usdm&horizon_ms=300000' >/tmp/v2-evaluation.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000 and .evaluated_relationships == 0 and (.interpretation | length) >= 4' /tmp/v2-evaluation.json
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8080/api/v1/v2/evaluation?symbol=BTCUSDT&venue=binance_usdm&horizon_ms=300000' >/tmp/v2-evaluation-gateway.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000' /tmp/v2-evaluation-gateway.json
+          cat >/tmp/broker-allocation.json <<'JSON'
+          {
+            "total_notional": 100,
+            "quote_currency": "USD",
+            "selections": [
+              {"broker_id":"binance","quote_currency":"USD"},
+              {"broker_id":"coinbase","quote_currency":"USD"},
+              {"broker_id":"kraken","quote_currency":"USD"},
+              {"broker_id":"interactive_brokers","quote_currency":"USD"},
+              {"broker_id":"alpaca","quote_currency":"USD"},
+              {"broker_id":"oanda","quote_currency":"USD"},
+              {"broker_id":"saxo","quote_currency":"USD"},
+              {"broker_id":"ig","quote_currency":"USD"},
+              {"broker_id":"fxcm","quote_currency":"USD"},
+              {"broker_id":"tradier","quote_currency":"USD"},
+              {"broker_id":"broker11","quote_currency":"USD"},
+              {"broker_id":"broker12","quote_currency":"USD"},
+              {"broker_id":"broker13","quote_currency":"USD"},
+              {"broker_id":"broker14","quote_currency":"USD"},
+              {"broker_id":"broker15","quote_currency":"USD"}
+            ]
+          }
+          JSON
+          curl -fsS -X POST http://127.0.0.1:8081/internal/broker-allocations -H 'authorization: Bearer ci-firebase-id-token' -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation.json.out
+          jq -e '.broker_count == 15 and (.allocated_total - 100 | abs < 0.0000001) and (.allocations | length == 15) and all(.allocations[]; (.allocation - (100 / 15) | abs < 0.0000001)) and .execution_enabled == false' /tmp/broker-allocation.json.out
+          curl -fsS -X POST http://127.0.0.1:8080/api/v1/broker-allocations -H 'authorization: Bearer ci-firebase-id-token' -H 'content-type: application/json' --data-binary @/tmp/broker-allocation.json >/tmp/broker-allocation-gateway.json
+          jq -e '.broker_count == 15 and .execution_enabled == false and (.allocations | length == 15)' /tmp/broker-allocation-gateway.json
