@@ -553,6 +553,7 @@ pub struct SelectedBrokerOrder {
 pub struct PreparedBrokerOrder {
     pub broker_id: String,
     pub order: NormalizedOrder,
+    pub protective_stop_price: Option<Decimal>,
     pub risk: RiskApproval,
 }
 
@@ -565,8 +566,8 @@ pub async fn preflight_selected_orders(
     policy: &PortfolioRiskPolicy,
     selected: Vec<SelectedBrokerOrder>,
 ) -> Result<Vec<PreparedBrokerOrder>, ContractError> {
-    if selected.is_empty() || selected.len() > 15 {
-        return Err(ContractError::InvalidOrder("select between 1 and 15 broker accounts".into()));
+    if selected.is_empty() || selected.len() > 20 {
+        return Err(ContractError::InvalidOrder("select between 1 and 20 broker accounts".into()));
     }
 
     let mut account_keys = HashSet::with_capacity(selected.len());
@@ -619,7 +620,7 @@ pub async fn preflight_selected_orders(
                 protective_order_supported: capabilities.native_protective_orders,
                 required_margin_account_currency: required_margin,
             })?;
-            Ok(PreparedBrokerOrder { broker_id, order, risk })
+            Ok(PreparedBrokerOrder { broker_id, order, protective_stop_price: input.protective_stop_price, risk })
         }
     });
     // join_all waits for every account check. No submit method is called here;
@@ -990,7 +991,7 @@ mod tests {
                 account_healthy: account_id != "unhealthy", trading_enabled: account_id != "disabled", equity: d("10000"),
                 available_margin: d("5000"), gross_exposure: Decimal::ZERO,
                 daily_realized_pnl: Decimal::ZERO, daily_unrealized_pnl: Decimal::ZERO,
-                open_positions: 0, observed_at_ms: 10_000,
+                open_positions: 0, observed_at_ms: current_time_ms().expect("test clock"),
             })
         }
 
@@ -1015,7 +1016,7 @@ mod tests {
             Ok(BrokerOrderReceipt {
                 broker_id: "mock".into(), account_id: order.account_id,
                 client_order_id: order.client_order_id, broker_order_id: "mock-order".into(),
-                status: "accepted".into(), accepted_at_ms: 10_100, raw_status: None,
+                status: "accepted".into(), accepted_at_ms: current_time_ms().expect("test clock"), raw_status: None,
             })
         }
 
