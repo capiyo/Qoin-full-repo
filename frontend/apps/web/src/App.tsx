@@ -530,82 +530,65 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
 }
 
 function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onToggleMode: () => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
-  const [page, setPage] = useState<0 | 1>(0);
-  const touchStart = useRef<number | null>(null);
-  const changePage = (next: 0 | 1) => setPage(next);
-  const decision = live?.decision;
-  const price = live?.state?.last_price;
-  const sourceTime = decision?.input_event?.event_ts_ms;
-  return (
-    <article className="instrument-card qoin-instrument-card"
-      onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }}
-      onTouchEnd={(event) => { const end = event.changedTouches[0]?.clientX; if (touchStart.current != null && end != null && Math.abs(end - touchStart.current) > 38) changePage(end < touchStart.current ? 1 : 0); touchStart.current = null; }}>
-      <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} research`}>
-        <span className="asset-mark" style={{ background: item.color }}>{item.symbol.slice(0, 1)}</span>
-        <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
-        <span className="open-arrow" aria-hidden="true">↗</span>
-      </button>
-      <div className="qoin-card-meta">
-        <span className="qoin-meta-chip">{item.market}</span>
-        <span className="qoin-meta-chip">{item.venue}</span>
-        <span className={`qoin-meta-chip ${item.providerStatus?.toLowerCase().includes("connected") ? "is-live" : ""}`}>{item.providerStatus || "Provider status unknown"}</span>
-      </div>
-      <div className="qoin-card-pager" aria-live="polite" style={page === 1 ? { gridTemplateColumns: "minmax(0,1fr)", alignItems: "start" } : undefined}>
-        {page === 0 ? <>
-          <div className="qoin-card-primary">
-            <span className="qoin-card-kicker">LATEST MARKET PRICE</span>
-            <strong>{price != null ? price.toLocaleString(undefined,{maximumFractionDigits:8}) : "—"}</strong>
-            <span className={`qoin-signal-state ${decision?.action === "buy" ? "positive" : decision?.action === "sell" ? "negative" : ""}`}>{decision?.action?.toUpperCase() || "AWAITING DATA"}</span>
-          </div>
-          <div className="qoin-card-secondary">
-            <span><small>Feed</small><b>{item.provider}</b></span>
-            <span><small>Venue</small><b>{item.venue}</b></span>
-            <span><small>Coverage</small><b>{item.providerStatus || "Unverified"}</b></span>
-          </div>
-        </> : <>
-          <div className="qoin-card-primary qoin-card-research" style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", borderRight: 0, paddingRight: 0 }}>
-            <span className="qoin-card-kicker">VECTOR ENGINE · V1</span>
-            <strong>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</strong>
-            <span className="qoin-signal-state">{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</span>
-          </div>
-          {decision ? <div className="qoin-card-reason" style={{ display: "grid", gap: 9 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <small>Decision vector · [bull, bear]</small>
-              <strong style={{ fontSize: 11 }}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</strong>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
-              {QOIN_FEATURE_NAMES.map((name) => <div key={name} style={{ padding: "7px 8px", borderRadius: 8, background: "#f1f5f9", minWidth: 0 }}>
-                <small style={{ display: "block", fontSize: 8, color: "#718096", textTransform: "uppercase" }}>{name.replaceAll("_"," ")}</small>
-                <strong style={{ display: "block", fontSize: 11, color: "#26364b" }}>{decision.features?.[name]?.toFixed(3) ?? "—"}</strong>
-              </div>)}
-            </div>
-            <div style={{ display: "grid", gap: 5 }}>
-              <small>Feature contribution · bullish / bearish</small>
-              {(decision.feature_trace || []).slice(0, 6).map((feature) => <div key={feature.name} style={{ display: "grid", gridTemplateColumns: "minmax(65px,1fr) 1fr 1fr", gap: 7, alignItems: "center", fontSize: 9 }}>
-                <span style={{ color: "#52637a" }}>{feature.name.replaceAll("_"," ")}</span>
-                <strong style={{ color: "#2867DC", textAlign: "right" }}>{feature.bullish_weighted_term.toFixed(3)}</strong>
-                <strong style={{ color: "#c15c65", textAlign: "right" }}>{feature.bearish_weighted_term.toFixed(3)}</strong>
-              </div>)}
-            </div>
-            <p style={{ display: "block", WebkitLineClamp: "unset", overflow: "visible", margin: 0, color: "#52637a", fontSize: 10, lineHeight: 1.45 }}>{decision.reason || "The engine returned no rationale for this evaluation."}</p>
-            <span>{decision.angle_degrees != null ? "Decision angle " + decision.angle_degrees.toFixed(2) + "°" : "Angle not reported"} · {sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</span>
-          </div> : <div className="qoin-card-reason">
-            <small>V1 calculation status</small>
-            <p>No engine decision has been returned for this instrument. Vector coordinates, feature values and contributions will appear when the backend supplies a calculation; no preview values are substituted.</p>
-          </div>}
-        </>}
-      </div>
-      <div className="qoin-card-footer">
-        <div className="qoin-page-dots" role="group" aria-label="Card pages">
-          <button type="button" aria-label="Show first card page" aria-pressed={page === 0} className={page === 0 ? "active" : ""} onClick={() => changePage(0)} />
-          <button type="button" aria-label="Show second card page" aria-pressed={page === 1} className={page === 1 ? "active" : ""} onClick={() => changePage(1)} />
+  const [page,setPage]=useState<0|1>(0);
+  const [ledger,setLedger]=useState<QoinSetLedger|null>(null);
+  const [ledgerStatus,setLedgerStatus]=useState<"idle"|"loading"|"loaded"|"unavailable">("idle");
+  const touchStart=useRef<number|null>(null);
+  const decision=live?.decision;
+  const price=live?.state?.last_price;
+  const sourceTime=decision?.input_event?.event_ts_ms;
+  useEffect(()=>{
+    if(page!==1||ledger||ledgerStatus==="loading"||ledgerStatus==="unavailable")return;
+    let active=true;
+    setLedgerStatus("loading");
+    getQoinSetLedger(item.engineSymbol,1000).then((result)=>{if(active){setLedger(result);setLedgerStatus("loaded");}}).catch(()=>{if(active)setLedgerStatus("unavailable");});
+    return()=>{active=false;};
+  },[page,item.engineSymbol,ledger,ledgerStatus]);
+  return <article className="instrument-card qoin-instrument-card"
+    onTouchStart={(event)=>{touchStart.current=event.touches[0]?.clientX??null;}}
+    onTouchEnd={(event)=>{const end=event.changedTouches[0]?.clientX;if(touchStart.current!=null&&end!=null&&Math.abs(end-touchStart.current)>38)setPage(end<touchStart.current?1:0);touchStart.current=null;}}>
+    <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} research`}>
+      <span className="asset-mark" style={{background:item.color}}>{item.symbol.slice(0,1)}</span>
+      <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
+      <span className="open-arrow" aria-hidden="true">↗</span>
+    </button>
+    <div className="qoin-card-meta">
+      <span className="qoin-meta-chip">{item.market}</span>
+      <span className="qoin-meta-chip">{item.venue}</span>
+      <span className="qoin-meta-chip">{item.providerStatus||"Provider status unknown"}</span>
+      <span className="qoin-meta-chip qoin-price-chip">PRICE · {price!=null?price.toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</span>
+    </div>
+    <div className="qoin-card-pager" aria-live="polite">
+      {page===0?<div className="qoin-model-page">
+        <div className="qoin-model-heading"><span className="qoin-card-kicker">RESEARCH MODEL 01</span><span className="qoin-signal-state">{decision?.action?.toUpperCase()||"AWAITING DATA"}</span></div>
+        <div className="qoin-model-primary"><strong>{decision?.magnitude!=null?decision.magnitude.toFixed(4):"—"}</strong><span>Decision magnitude</span></div>
+        <div className="qoin-model-vector"><span>Resultant vector · [bull, bear]</span><strong>{decision?.decision_vector?.[0]?.toFixed(4)??"—"} / {decision?.decision_vector?.[1]?.toFixed(4)??"—"}</strong></div>
+        <div className="qoin-model-feature-grid">{QOIN_FEATURE_NAMES.map((name)=> <div key={name}><small>{name.replaceAll("_"," ")}</small><strong>{decision?.features?.[name]?.toFixed(3)??"—"}</strong></div>)}</div>
+        <p className="qoin-model-reason">{decision?.reason||"No persisted vector decision is available yet. Values are not fabricated."}</p>
+        <small className="qoin-model-time">{decision?.strategy_version||"Strategy version unavailable"} · {sourceTime?new Date(sourceTime).toLocaleString():"No source event timestamp"}</small>
+      </div>:<div className="qoin-model-page">
+        <div className="qoin-model-heading"><span className="qoin-card-kicker">RESEARCH MODEL 02</span><span className="qoin-signal-state">{ledgerStatus==="loaded"?"EVIDENCE LOADED":ledgerStatus==="loading"?"LOADING":ledgerStatus==="unavailable"?"UNAVAILABLE":"ON DEMAND"}</span></div>
+        {ledger?<><div className="qoin-model-stat-grid">
+          <div><small>Event universe</small><strong>{ledger.universe_count}</strong></div>
+          <div><small>Evidence sets</small><strong>{ledger.sets.length}</strong></div>
+          <div><small>Relations</small><strong>{ledger.relations.length}</strong></div>
+          <div><small>History</small><strong>{ledger.durable_history_complete===false?"Bounded":"Reported"}</strong></div>
         </div>
-        <span>SWIPE TO EXPLORE</span>
-        <button type="button" className="text-action" aria-pressed={mode === "backtest"} onClick={onToggleMode}>{mode === "live" ? "Switch to backtest" : "Switch to live"}</button>
-        {action && <button className="text-action" onClick={action.onClick}>{action.label}</button>}
+        <div className="qoin-model-set-bars">{ledger.sets.slice(0,5).map((set)=> <div key={set.set_id}><span>{set.label}</span><i><b style={{width:ledger.universe_count?Math.min(100,set.measure.counting_measure/ledger.universe_count*100)+"%":"0%"}}/></i><strong>{set.measure.counting_measure}</strong></div>)}</div>
+        <small className="qoin-model-time">{ledger.universe_truncated?"Sample capped; measures cover returned evidence only.":"Set memberships are derived from persisted source-event IDs."}</small>
+        </>:<p className="qoin-model-reason">{ledgerStatus==="loading"?"Loading persisted evidence and set measures…":ledgerStatus==="unavailable"?"V2 evidence is unavailable for this instrument.":"Swipe to load set and ledger evidence."}</p>}
+      </div>}
+    </div>
+    <div className="qoin-card-footer">
+      <div className="qoin-page-dots" role="group" aria-label="Research model pages">
+        <button type="button" aria-label="Show research model one" aria-pressed={page===0} className={page===0?"active":""} onClick={()=>setPage(0)}/>
+        <button type="button" aria-label="Show research model two" aria-pressed={page===1} className={page===1?"active":""} onClick={()=>setPage(1)}/>
       </div>
-    </article>
-  );
+      <span>SWIPE · TWO MODELS</span>
+      <button type="button" className="text-action" aria-pressed={mode==="backtest"} onClick={onToggleMode}>{mode==="live"?"Backtest":"Live"}</button>
+      {action&&<button className="text-action" onClick={action.onClick}>{action.label}</button>}
+    </div>
+  </article>;
 }
 
 export default function App() {
