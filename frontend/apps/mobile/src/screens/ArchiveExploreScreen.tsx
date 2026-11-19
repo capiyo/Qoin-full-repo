@@ -23,15 +23,6 @@ type Instrument = {
   tint: string;
 };
 
-const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", detail: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#E6A23C" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", detail: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#6477DF" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", detail: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#8B72E8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#76A85A" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", detail: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#4D91D8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#8895A7" },
-];
-
 type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void };
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
@@ -515,7 +506,7 @@ function MobileOperatingCyclePanel({ authenticated, onRequireAuth }: { authentic
 }
 
 export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
-  const [items, setItems] = useState(seed);
+  const [items, setItems] = useState<Instrument[]>([]);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
@@ -594,7 +585,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
-          setItems((current) => current.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          setItems((current) => current.map((item) => ({ ...item, archived: false })));
           return;
         }
         void getQoinArchivedSymbols().then((symbols) => {
@@ -690,10 +681,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
       setItems(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"), provider: item.provider, providerStatus: item.provider_status,
-        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), tint: colors[index % colors.length],
+        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status,
+        archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
       })));
-    }).catch(() => undefined);
+    }).catch((error) => { if (active) setVectorError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
