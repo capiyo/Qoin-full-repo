@@ -163,3 +163,7 @@ jobs:
           echo 'V2 idempotent retry response:'; cat /tmp/v2-discovery-retry.json
           echo 'V2 persisted ledger response:'; cat /tmp/v2-ledger.json
           jq -e 'length == 2 and all(.[]; .event_type == "discovered" and .relationship.model_version == "ci-v2.0.0")' /tmp/v2-ledger.json
+          curl -fsS 'http://127.0.0.1:8081/internal/v2/evaluation?symbol=BTCUSDT&venue=binance_usdm&horizon_ms=300000' >/tmp/v2-evaluation.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000 and .evaluated_relationships == 0 and (.interpretation | length) >= 4' /tmp/v2-evaluation.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/v2/evaluation?symbol=BTCUSDT&venue=binance_usdm&horizon_ms=300000' >/tmp/v2-evaluation-gateway.json
+          jq -e '.symbol == "BTCUSDT" and .venue == "binance_usdm" and .horizon_ms == 300000' /tmp/v2-evaluation-gateway.json
