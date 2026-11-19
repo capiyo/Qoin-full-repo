@@ -13,7 +13,7 @@ pub struct ReplayEvent {
 #[derive(Debug, Clone, Default)]
 struct ReplayState {
     last_price: Option<f64>, last_mark_price: Option<f64>, basis_bps: Option<f64>, spread_bps: Option<f64>, last_book_ts_ms: Option<i64>,
-    last_event_ts_ms: Option<i64>, liquidity_imbalance: f64, signed_flow: f64, total_trade_size: f64,
+    last_event_ts_ms: Option<i64>, last_trade_ts_ms: Option<i64>, liquidity_imbalance: f64, signed_flow: f64, total_trade_size: f64,
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     open_interest: Option<f64>, open_interest_change: f64, liquidation_pressure: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
@@ -212,6 +212,8 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             state.signed_flow *= decay;
             state.total_trade_size *= decay;
             state.liquidation_pressure *= decay;
+            let oi_decay = (-std::f64::consts::LN_2 * elapsed_ms / 300_000.0).exp();
+            state.open_interest_change *= oi_decay;
         }
         let current_mark_price = event_mark_price(event);
         if let Some(price) = current_mark_price { state.last_mark_price = Some(price); }
@@ -335,6 +337,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 state.ewma_abs_return=0.94*state.ewma_abs_return+0.06*(price/previous).ln().abs();
             }
             state.last_price=Some(price);
+            state.last_trade_ts_ms=Some(event.ts_ms);
             state.basis_bps=state.last_mark_price.filter(|mark| *mark > 0.0)
                 .map(|mark| (mark-price)/price*10_000.0);
         }
@@ -376,7 +379,9 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             },
             _=>{}
         }
-        if state.total_trade_size>0.0 {state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
+        if state.total_trade_size>0.0 && state.last_trade_ts_ms.is_some_and(|last_trade| event.ts_ms.saturating_sub(last_trade)<=60_000) {
+            state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);
+        } else { state.ofi=0.0; }
         state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
         let decision=decide(&symbol,&state,event)?;
         match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
