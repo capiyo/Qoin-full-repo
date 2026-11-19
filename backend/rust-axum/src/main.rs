@@ -635,7 +635,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
                 return (StatusCode::CONFLICT,Json(serde_json::json!({
                     "error":"out-of-order market event rejected",
                     "last_event_ts_ms":previous.last_event_ts_ms,
-                    "last_event_id":previous.last_event_id,
+                    "last_event_id":previous.last_event_id.as_deref(),
                     "incoming_event_ts_ms":event.ts_ms,
                     "incoming_event_id":event.event_id
                 })));
