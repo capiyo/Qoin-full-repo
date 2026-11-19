@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -616,16 +616,20 @@ const BROKER_DIRECTORY_PREVIEW = [
 ] as const;
 
 function BrokerCollectionPanel() {
+  const [directory,setDirectory]=useState(BROKER_DIRECTORY_PREVIEW);
   const [selected,setSelected]=useState<string[]>([]);
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
   const [ready,setReady]=useState(false);
   useEffect(()=>{
+    let active=true;
+    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Exchange API":"Broker API",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
     try {
       const raw=window.localStorage.getItem("qoin:broker-routing-preferences");
       if(raw){const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&BROKER_DIRECTORY_PREVIEW.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}
     } catch { /* local preferences are optional */ }
     setReady(true);
+    return ()=>{active=false;};
   },[]);
   useEffect(()=>{if(ready)try{window.localStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected));}catch{/* storage may be unavailable */}},[selected,ready]);
   const toggle=(id:string)=>{
@@ -636,7 +640,7 @@ function BrokerCollectionPanel() {
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <section className="broker-collection" aria-label="Broker collection and routing preferences">
     <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select eligible execution venues for a future strategy allocation. Market-data providers are not treated as brokers.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
-    <div className="broker-directory-grid">{BROKER_DIRECTORY_PREVIEW.map((broker)=><article className="broker-directory-card" key={broker.id}>
+    <div className="broker-directory-grid">{directory.map((broker)=><article className="broker-directory-card" key={broker.id}>
       <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
       <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
       <div className="broker-card-footer"><span>{broker.selectable?"Preference can be selected":"Not execution eligible"}</span>
