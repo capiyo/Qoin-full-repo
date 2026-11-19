@@ -43,7 +43,7 @@ function loadCardModes(): Record<string, InstrumentMode> {
 
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 
-const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"] as const;
 
 type NativeMotionPoint = { id: number; x: number; y: number; vx: number; vy: number };
 
@@ -136,19 +136,19 @@ function VectorMap({ decision, history }: { decision: QoinVectorDecision | null;
 }
 
 function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
-  const labels = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"];
+  const labels = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"];
   const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
   const coordinates = values.map((value, index) => {
-    const angle = (-Math.PI / 2) + index * (Math.PI * 2 / 6);
+    const angle = (-Math.PI / 2) + index * (Math.PI * 2 / labels.length);
     const radius = 18 + value * 14;
     return [50 + Math.cos(angle) * radius, 50 + Math.sin(angle) * radius] as const;
   });
   const polygon = coordinates.map((point) => point.join(",")).join(" ");
   return <section className="feature-space-panel">
-    <div className="attention-heading"><strong>Six-dimensional feature space</strong><span>Normalized engine inputs · not a learned embedding</span></div>
+    <div className="attention-heading"><strong>Seven-force feature space</strong><span>Normalized engine inputs · not a learned embedding</span></div>
     <svg viewBox="0 0 100 100" role="img" aria-label="Six dimensional normalized feature profile">
       {[14, 24, 34].map((radius) => <polygon key={radius} points={labels.map((_, i) => {
-        const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
+        const angle = -Math.PI / 2 + i * (Math.PI * 2 / labels.length);
         return (50 + Math.cos(angle) * radius) + "," + (50 + Math.sin(angle) * radius);
       }).join(" ")} fill="none" stroke="#e5ebf4" strokeWidth=".5" />)}
       {labels.map((label, i) => {
@@ -185,12 +185,11 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     <div className="trace-gates">
       {gates && [
         ["Spread supplied", yesNo(gates.spread_present)], ["Spread within limit", yesNo(gates.spread_within_limit)],
-        ["Event evidence", yesNo(gates.event_intensity_positive)], ["Magnitude threshold", yesNo(gates.magnitude_passed)],
-        ["Buy angle", yesNo(gates.buy_angle_passed)], ["Sell angle", yesNo(gates.sell_angle_passed)],
-        ["Bullish > bearish", yesNo(gates.bullish_exceeds_bearish)], ["Bearish > bullish", yesNo(gates.bearish_exceeds_bullish)],
+        ["Alignment threshold", yesNo(gates.alignment_passed)], ["Magnitude threshold", yesNo(gates.magnitude_passed)],
+        ["Angular threshold", yesNo(gates.angle_passed)],
       ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
     </div>
-    <p className="disclaimer">Angle: {decision.angle_degrees?.toFixed(4) ?? "—"}° ({decision.angle_radians?.toFixed(6) ?? "—"} rad) · angular gate: {gates?.angle_limit_degrees ?? "—"}° · magnitude gate: {gates?.magnitude_limit ?? "—"} · spread gate: {gates?.spread_limit_bps ?? "—"} bps. Final action: {decision.action?.toUpperCase() || "WAIT"} — {decision.reason || "No reason supplied"}.</p>
+    <p className="disclaimer">Angle: {decision.angle_degrees?.toFixed(4) ?? "—"}° ({decision.angle_radians?.toFixed(6) ?? "—"} rad) · angular gate: {gates?.angle_limit_radians?.toFixed(4) ?? "—"} rad · score gate: {gates?.signal_threshold ?? "—"} · spread gate: {gates?.spread_limit_bps ?? "—"} bps. Final action: {decision.action?.toUpperCase() || "WAIT"} — {decision.reason || "No reason supplied"}.</p>
     <details className="trace-details"><summary>Inspect exact raw inputs, parameters and full serialized calculation</summary>
       <h4>Raw inputs (null means the provider did not supply the field)</h4><pre>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</pre>
       <h4>Exact strategy parameters used for this decision</h4><pre>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</pre>
@@ -262,8 +261,8 @@ function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: 
   const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
   const output = decision?.decision_vector ?? [0, 0];
-  return <section className="vector-space-mechanics" aria-label="Six-dimensional vector space and output">
-    <div className="attention-heading"><strong>Vector space · six engine dimensions</strong><span>2D projection of the actual R⁶ feature state</span></div>
+  return <section className="vector-space-mechanics" aria-label="Seven-force vector space and output">
+    <div className="attention-heading"><strong>Vector space · seven engine dimensions</strong><span>2D projection of the actual R⁷ feature state</span></div>
     <div className="live-mechanics-readout" aria-live="polite">
       <div><span>Live input · {lastEvent?.venue || "waiting for provider"}</span><strong>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"}</strong></div>
       <div><span>Last price</span><strong>{marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</strong></div>
@@ -274,7 +273,7 @@ function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: 
       <div><span>Funding rate</span><strong>{marketState?.funding_rate?.toFixed(7) ?? "—"}</strong></div>
       <div><span>Source timestamp</span><strong>{lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "—"}</strong></div>
     </div>
-    <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in six dimensions. The bullish/bearish decision vector lives in a separate output space below.</p>
+    <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in seven dimensions. The bullish/bearish decision vector lives in a separate output space below.</p>
     <div className="vector-space-layout">
       <div className="vector-space-plot">
         <svg viewBox="0 0 100 100" role="img" aria-label="Six-dimensional feature vectors, directed attention links and resultant decision vector">
@@ -1252,7 +1251,7 @@ export default function App() {
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : mechanicsTab === "vector" ? <>
-          <div className="vector-intro"><div><strong>Vector space</strong><p>Actual six-dimensional engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
+          <div className="vector-intro"><div><strong>Vector space</strong><p>Actual seven-force engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
           <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
           <VectorMap decision={vector} history={vectorHistory} />
@@ -1339,7 +1338,7 @@ export default function App() {
                 </div>
               </section>
               <section className="strategy-map-panel">
-            <div className="attention-heading"><strong>Active strategy map</strong><span>{decisionStrategy?.version || "Strategy unavailable"} · {decisionStrategy?.status || "unknown status"}</span></div>
+            <div className="attention-heading"><strong>Legacy edge map · not used by active vector engine</strong><span>{decisionStrategy?.version || "Strategy unavailable"} · {decisionStrategy?.status || "unknown status"}</span></div>
             {decisionStrategy ? <>
               <div className="strategy-gates">
                 <div><span>Angular threshold</span><strong>{decisionStrategy.angular_threshold_degrees.toFixed(2)}°</strong></div>
@@ -1353,7 +1352,7 @@ export default function App() {
                 <span>Bearish <b>{decisionStrategy.bearish_weights[name]?.toFixed(3) ?? "—"}</b></span>
                 <span>Scale <b>{decisionStrategy.feature_scales[name]?.toFixed(3) ?? "—"}</b></span>
               </div>)}</div>
-              <p className="disclaimer">MongoDB-backed active strategy parameters. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</p>
+              <p className="disclaimer">Legacy MongoDB-backed edge-map parameters; the seven-force engine uses its own versioned configuration. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</p>
             </> : <p className="provider-empty">The active strategy map could not be loaded.</p>}
           </section>
           <section className="raw-tape">
