@@ -420,9 +420,26 @@ function MobileResearchLedger({ decision, history, events }: { decision: QoinVec
 
 
 const MOBILE_BROKER_DIRECTORY = [
-  {id:"binance_usdm",name:"Binance USD-M",kind:"Execution adapter",status:"Adapter ready · account link pending",selectable:true},
-  {id:"coinbase_advanced_trade",name:"Coinbase Advanced Trade",kind:"Market data only",status:"Public market stream · no execution adapter",selectable:false},
-  {id:"kraken_spot",name:"Kraken Spot",kind:"Market data only",status:"Public market stream · no execution adapter",selectable:false},
+  {id:"binance_usdm",name:"Binance USD-M",kind:"Exchange API",status:"Existing Binance executor · account link pending",selectable:true},
+  {id:"coinbase_advanced_trade",name:"Coinbase Advanced Trade",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"kraken_spot",name:"Kraken Spot",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"bybit",name:"Bybit",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"okx",name:"OKX",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"bitget",name:"Bitget",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"gate_io",name:"Gate.io",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"kucoin",name:"KuCoin",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"deribit",name:"Deribit",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"hyperliquid",name:"Hyperliquid",kind:"Exchange API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"interactive_brokers",name:"Interactive Brokers",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"alpaca",name:"Alpaca",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"oanda",name:"OANDA",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"saxo",name:"Saxo",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"ig",name:"IG",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"fxcm",name:"FXCM",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"capital_com",name:"Capital.com",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"deriv",name:"Deriv",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"trading_212",name:"Trading 212",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
+  {id:"xtb",name:"XTB",kind:"Broker API",status:"API listed · Qoin execution adapter pending",selectable:true},
 ] as const;
 
 function MobileBrokerCollectionPanel() {
@@ -434,7 +451,7 @@ function MobileBrokerCollectionPanel() {
     let active=true;
     void AsyncStorage.getItem("qoin:broker-routing-preferences").then((raw)=>{
       if(!active||!raw)return;
-      try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,15));}catch{/* Ignore invalid local preference data. */}
+      try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}catch{/* Ignore invalid local preference data. */}
     }).catch(()=>undefined).finally(()=>{if(active)setPreferencesReady(true);});
     return()=>{active=false;};
   },[]);
@@ -442,10 +459,10 @@ function MobileBrokerCollectionPanel() {
   const amount=Number(capital),valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <View style={{gap:11,padding:14,borderWidth:1,borderColor:"#E4EAF3",borderRadius:15,backgroundColor:"#FFFFFF"}}>
-    <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,alignItems:"center"}}><View style={{flex:1,gap:4}}><Text style={styles.kicker}>EXECUTION VENUES</Text><Text style={styles.newsTitle}>Broker collection</Text><Text style={styles.noteCopy}>Choose eligible execution venues. Market-data feeds are not execution brokers.</Text></View><Text style={styles.coverageStatus}>{selected.length}/15</Text></View>
+    <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,alignItems:"center"}}><View style={{flex:1,gap:4}}><Text style={styles.kicker}>EXECUTION VENUES</Text><Text style={styles.newsTitle}>Broker collection</Text><Text style={styles.noteCopy}>Choose eligible execution venues. Market-data feeds are not execution brokers.</Text></View><Text style={styles.coverageStatus}>{selected.length}/20</Text></View>
     {MOBILE_BROKER_DIRECTORY.map((broker)=><View key={broker.id} style={{gap:6,paddingVertical:10,borderTopWidth:1,borderTopColor:"#EDF1F6"}}>
       <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8}}><View style={{flex:1,gap:3}}><Text style={{color:"#243750",fontSize:12,fontWeight:"800"}}>{broker.name}</Text><Text style={{color:"#8794A7",fontSize:8}}>{broker.kind}</Text></View>
-        {broker.selectable?<Pressable accessibilityRole="button" accessibilityState={{selected:selected.includes(broker.id)}} onPress={()=>setSelected((current)=>current.includes(broker.id)?current.filter((id)=>id!==broker.id):current.length<15?[...current,broker.id]:current)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:20,backgroundColor:selected.includes(broker.id)?"#EAF6EF":"#EDF3FF"}}><Text style={{color:selected.includes(broker.id)?"#16845B":"#2867DC",fontSize:9,fontWeight:"800"}}>{selected.includes(broker.id)?"Selected":"Select"}</Text></Pressable>:<Text style={{color:"#A36B12",fontSize:8,fontWeight:"800"}}>DATA ONLY</Text>}
+        {broker.selectable?<Pressable accessibilityRole="button" accessibilityState={{selected:selected.includes(broker.id)}} onPress={()=>setSelected((current)=>current.includes(broker.id)?current.filter((id)=>id!==broker.id):current.length<20?[...current,broker.id]:current)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:20,backgroundColor:selected.includes(broker.id)?"#EAF6EF":"#EDF3FF"}}><Text style={{color:selected.includes(broker.id)?"#16845B":"#2867DC",fontSize:9,fontWeight:"800"}}>{selected.includes(broker.id)?"Selected":"Select"}</Text></Pressable>:<Text style={{color:"#A36B12",fontSize:8,fontWeight:"800"}}>DATA ONLY</Text>}
       </View>
       <Text style={{color:"#8794A7",fontSize:9,lineHeight:14}}>{broker.status}</Text>
     </View>)}
