@@ -444,6 +444,15 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string, 0 | 1>>({});
+  const [cardLedgers, setCardLedgers] = useState<Record<string,QoinSetLedger>>({});
+  const [cardLedgerStatus, setCardLedgerStatus] = useState<Record<string,"loading"|"unavailable">>({});
+  const cardLedgerRequestsRef = useRef<Set<string>>(new Set());
+  const loadCardLedger = (item: Instrument) => {
+    if (cardLedgers[item.symbol] || cardLedgerRequestsRef.current.has(item.symbol)) return;
+    cardLedgerRequestsRef.current.add(item.symbol);
+    setCardLedgerStatus((current)=>({...current,[item.symbol]:"loading"}));
+    void getQoinSetLedger(item.engineSymbol,1000).then((ledger)=>setCardLedgers((current)=>({...current,[item.symbol]:ledger}))).catch(()=>setCardLedgerStatus((current)=>({...current,[item.symbol]:"unavailable"}))).finally(()=>cardLedgerRequestsRef.current.delete(item.symbol));
+  };
   const [viewModeBySymbol, setViewModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
   const [viewModesReady, setViewModesReady] = useState(false);
   const selectedMode = selected ? (viewModeBySymbol[selected.symbol] || "live") : "live";
@@ -791,88 +800,49 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         ) : null}
 
         {data.length ? data.map((item) => {
-          const live = liveBySymbol[item.engineSymbol.toUpperCase()];
-          const decision = live?.decision;
-          const page = algorithmBySymbol[item.symbol] ?? 0;
-          const setPage = (next: 0 | 1) => setAlgorithmBySymbol((current) => ({ ...current, [item.symbol]: next }));
-          const sourceTime = decision?.input_event?.event_ts_ms;
-          return (
-            <View key={item.symbol} style={styles.card}>
-              <View onTouchStart={(event) => { cardTouchStart.current[item.symbol] = event.nativeEvent.pageX; }} onTouchEnd={(event) => {
-                const start = cardTouchStart.current[item.symbol];
-                const end = event.nativeEvent.pageX;
-                if (start != null && Math.abs(end - start) > 38) setPage(end < start ? 1 : 0);
-                delete cardTouchStart.current[item.symbol];
-              }}>
-                <Pressable onPress={() => openInstrument(item)} style={styles.cardMain}>
-                  <View style={[styles.assetMark, { backgroundColor: item.tint }]}><Text style={styles.assetMarkText}>{item.symbol.slice(0, 1)}</Text></View>
-                  <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
-                  <Text style={styles.arrow}>↗</Text>
-                </Pressable>
-                <View style={styles.cardMetaRow}>
-                  <Text style={styles.cardMetaChip}>{item.market}</Text>
-                  <Text style={styles.cardMetaChip}>{item.venue}</Text>
-                  <Text style={[styles.cardMetaChip, item.providerStatus?.toLowerCase().includes("connected") && styles.cardMetaLive]}>{item.providerStatus || "Provider unknown"}</Text>
-                </View>
-                {page === 0 ? (
-                  <View style={styles.cardPager}>
-                    <View style={styles.cardPagerPrimary}>
-                      <Text style={styles.cardKicker}>LATEST MARKET PRICE</Text>
-                      <Text style={styles.cardPagerValue}>{live?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8}) ?? "—"}</Text>
-                      <Text style={[styles.cardPagerStatus, decision?.action === "sell" && styles.cardPagerNegative]}>{decision?.action?.toUpperCase() || "AWAITING DATA"}</Text>
-                    </View>
-                    <View style={styles.cardPagerSecondary}>
-                      <Text style={styles.cardMetaLabel}>FEED</Text><Text style={styles.cardMetaValue}>{item.provider}</Text>
-                      <Text style={styles.cardMetaLabel}>VENUE</Text><Text style={styles.cardMetaValue}>{item.venue}</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={[styles.cardPager,{gap:10},page === 1 && {flexDirection:"column",alignItems:"stretch"}]}>
-                    <View style={[styles.cardPagerPrimary,{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}]}>
-                      <Text style={styles.cardKicker}>VECTOR ENGINE · V1</Text>
-                      <Text style={styles.cardPagerValue}>{decision?.magnitude != null ? decision.magnitude.toFixed(4) : "—"}</Text>
-                      <Text style={styles.cardPagerStatus}>{decision ? (decision.action || "WAIT").toUpperCase() + " · MAGNITUDE" : "AWAITING ENGINE DECISION"}</Text>
-                    </View>
-                    {decision ? <View style={[styles.cardPagerReason,{gap:8,paddingLeft:0,borderLeftWidth:0}]}>
-                      <View style={{flexDirection:"row",justifyContent:"space-between",flexWrap:"wrap"}}>
-                        <Text style={styles.cardMetaLabel}>DECISION VECTOR · [BULL, BEAR]</Text>
-                        <Text style={styles.cardMetaValue}>{decision.decision_vector?.[0]?.toFixed(4) ?? "—"} / {decision.decision_vector?.[1]?.toFixed(4) ?? "—"}</Text>
-                      </View>
-                      <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>
-                        {QOIN_FEATURE_NAMES.map((name) => <View key={name} style={{width:"31%",minWidth:78,padding:7,borderRadius:8,backgroundColor:"#F1F5F9"}}>
-                          <Text style={[styles.cardMetaLabel,{fontSize:8}]}>{name.replaceAll("_"," ")}</Text>
-                          <Text style={styles.cardMetaValue}>{decision.features?.[name]?.toFixed(3) ?? "—"}</Text>
-                        </View>)}
-                      </View>
-                      <Text style={styles.cardMetaLabel}>FEATURE CONTRIBUTION · BULL / BEAR</Text>
-                      {(decision.feature_trace || []).slice(0,6).map((feature) => <View key={feature.name} style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-                        <Text style={[styles.cardMetaLabel,{flex:1}]}>{feature.name.replaceAll("_"," ")}</Text>
-                        <Text style={{fontSize:10,color:"#24865A"}}>{feature.bullish_weighted_term.toFixed(3)}</Text>
-                        <Text style={{fontSize:10,color:"#C15C65"}}>{feature.bearish_weighted_term.toFixed(3)}</Text>
-                      </View>)}
-                      <Text style={styles.cardReasonText}>{decision.reason || "The engine returned no rationale for this evaluation."}</Text>
-                      <Text style={styles.cardMetaLabel}>{decision.angle_degrees != null ? "Decision angle " + decision.angle_degrees.toFixed(2) + "°" : "Angle not reported"} · {sourceTime ? new Date(sourceTime).toLocaleString() : "No source event timestamp"}</Text>
-                    </View> : <View style={styles.cardPagerReason}>
-                      <Text style={styles.cardMetaLabel}>V1 CALCULATION STATUS</Text>
-                      <Text style={styles.cardReasonText}>No engine decision has been returned for this instrument. Vector coordinates, feature values and contributions will appear when the backend supplies a calculation; no preview values are substituted.</Text>
-                    </View>}
-                  </View>
-                )}
-                <View style={styles.cardPagerFooter}>
-                  <View style={styles.cardPagerDots}>
-                    <Pressable accessibilityLabel="Show first card page" accessibilityState={{ selected: page === 0 }} onPress={() => setPage(0)} style={[styles.cardPagerDot, page === 0 && styles.cardPagerDotActive]} />
-                    <Pressable accessibilityLabel="Show second card page" accessibilityState={{ selected: page === 1 }} onPress={() => setPage(1)} style={[styles.cardPagerDot, page === 1 && styles.cardPagerDotActive]} />
-                  </View>
-                  <Text style={styles.cardSwipeHint}>SWIPE TO EXPLORE</Text>
-                </View>
+          const live=liveBySymbol[item.engineSymbol.toUpperCase()];
+          const decision=live?.decision;
+          const page=algorithmBySymbol[item.symbol]??0;
+          const cardLedger=cardLedgers[item.symbol];
+          const ledgerStatus=cardLedgerStatus[item.symbol]||"idle";
+          const setPage=(next:0|1)=>{setAlgorithmBySymbol((current)=>({...current,[item.symbol]:next}));if(next===1)loadCardLedger(item);};
+          const sourceTime=decision?.input_event?.event_ts_ms;
+          return <View key={item.symbol} style={styles.card}>
+            <View onTouchStart={(event)=>{cardTouchStart.current[item.symbol]=event.nativeEvent.pageX;}} onTouchEnd={(event)=>{const start=cardTouchStart.current[item.symbol],end=event.nativeEvent.pageX;if(start!=null&&Math.abs(end-start)>38)setPage(end<start?1:0);delete cardTouchStart.current[item.symbol];}}>
+              <Pressable onPress={()=>openInstrument(item)} style={styles.cardMain}>
+                <View style={[styles.assetMark,{backgroundColor:item.tint}]}><Text style={styles.assetMarkText}>{item.symbol.slice(0,1)}</Text></View>
+                <View style={styles.assetCopy}><Text style={styles.assetName}>{item.name}</Text><Text style={styles.assetMeta}>{item.symbol} · {item.market}</Text></View>
+                <Text style={styles.arrow}>↗</Text>
+              </Pressable>
+              <View style={styles.cardMetaRow}>
+                <Text style={styles.cardMetaChip}>{item.market}</Text><Text style={styles.cardMetaChip}>{item.venue}</Text>
+                <Text style={[styles.cardMetaChip,item.providerStatus?.toLowerCase().includes("connected")&&styles.cardMetaLive]}>{item.providerStatus||"Provider unknown"}</Text>
+                <Text style={styles.cardMetaChip}>PRICE · {live?.state?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8})??"—"}</Text>
               </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 9, marginLeft: 48, flexWrap: "wrap" }}>
-                <Pressable accessibilityRole="button" accessibilityState={{ selected: (viewModeBySymbol[item.symbol] || "live") === "backtest" }} onPress={() => setViewModeBySymbol((current) => ({ ...current, [item.symbol]: current[item.symbol] === "backtest" ? "live" : "backtest" }))} style={{ paddingVertical: 8, paddingHorizontal: 11, borderRadius: 10, backgroundColor: "#eaf1ff", borderWidth: 1, borderColor: "#cbdcff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{(viewModeBySymbol[item.symbol] || "live") === "live" ? "Switch to Backtest" : "Switch to Live"}</Text></Pressable>
-                {mode === "Explore" ? <Pressable onPress={() => toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable> : null}
-              </View>
+              {page===0?<View style={[styles.cardPager,{flexDirection:"column",alignItems:"stretch",gap:8}]}>
+                <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}><Text style={styles.cardKicker}>RESEARCH MODEL 01</Text><Text style={styles.cardPagerStatus}>{decision?.action?.toUpperCase()||"AWAITING DATA"}</Text></View>
+                <View style={{flexDirection:"row",alignItems:"baseline",gap:8}}><Text style={styles.cardPagerValue}>{decision?.magnitude?.toFixed(4)??"—"}</Text><Text style={styles.cardMetaLabel}>DECISION MAGNITUDE</Text></View>
+                <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}><Text style={styles.cardMetaLabel}>RESULTANT VECTOR · [BULL, BEAR]</Text><Text style={styles.cardMetaValue}>{decision?.decision_vector?.[0]?.toFixed(4)??"—"} / {decision?.decision_vector?.[1]?.toFixed(4)??"—"}</Text></View>
+                <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>{QOIN_FEATURE_NAMES.map((name)=><View key={name} style={{width:"31%",minWidth:78,padding:7,borderRadius:8,backgroundColor:"#F1F5F9"}}><Text style={[styles.cardMetaLabel,{fontSize:8}]}>{name.replaceAll("_"," ")}</Text><Text style={styles.cardMetaValue}>{decision?.features?.[name]?.toFixed(3)??"—"}</Text></View>)}</View>
+                <Text style={styles.cardReasonText}>{decision?.reason||"No persisted vector decision is available. No preview values are substituted."}</Text>
+                <Text style={styles.cardMetaLabel}>{decision?.strategy_version||"Strategy version unavailable"} · {sourceTime?new Date(sourceTime).toLocaleString():"No source event timestamp"}</Text>
+              </View>:<View style={[styles.cardPager,{flexDirection:"column",alignItems:"stretch",gap:9}]}>
+                <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={styles.cardKicker}>RESEARCH MODEL 02</Text><Text style={styles.cardPagerStatus}>{cardLedger?"EVIDENCE LOADED":ledgerStatus==="loading"?"LOADING":ledgerStatus==="unavailable"?"UNAVAILABLE":"ON DEMAND"}</Text></View>
+                {cardLedger?<><View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{[["UNIVERSE",cardLedger.universe_count],["SETS",cardLedger.sets.length],["RELATIONS",cardLedger.relations.length]].map(([label,value])=><View key={String(label)} style={{flex:1,minWidth:72,padding:9,borderRadius:9,backgroundColor:"#F1F5F9"}}><Text style={styles.cardMetaLabel}>{label}</Text><Text style={styles.cardPagerValue}>{value}</Text></View>)}</View>
+                  {cardLedger.sets.slice(0,5).map((set)=><View key={set.set_id} style={{flexDirection:"row",alignItems:"center",gap:7}}><Text numberOfLines={1} style={{width:105,color:"#52637A",fontSize:8}}>{set.label}</Text><View style={{flex:1,height:7,borderRadius:6,backgroundColor:"#EAF0F6",overflow:"hidden"}}><View style={{height:7,width:cardLedger.universe_count?Math.min(100,set.measure.counting_measure/cardLedger.universe_count*100)+"%":"0%",backgroundColor:"#3985D6"}}/></View><Text style={{width:22,textAlign:"right",fontSize:9,color:"#243750"}}>{set.measure.counting_measure}</Text></View>)}
+                  <Text style={styles.cardMetaLabel}>{cardLedger.universe_truncated?"Evidence sample is capped.":"Membership is derived from persisted event IDs."}</Text></>:<Text style={styles.cardReasonText}>{ledgerStatus==="loading"?"Loading persisted event memberships and measures…":ledgerStatus==="unavailable"?"V2 ledger evidence is unavailable for this instrument.":"Swipe to load the set and ledger model."}</Text>}
+              </View>}
+              <View style={styles.cardPagerFooter}><View style={styles.cardPagerDots}>
+                <Pressable accessibilityLabel="Show research model one" accessibilityState={{selected:page===0}} onPress={()=>setPage(0)} style={[styles.cardPagerDot,page===0&&styles.cardPagerDotActive]}/>
+                <Pressable accessibilityLabel="Show research model two" accessibilityState={{selected:page===1}} onPress={()=>setPage(1)} style={[styles.cardPagerDot,page===1&&styles.cardPagerDotActive]}/>
+              </View><Text style={styles.cardSwipeHint}>SWIPE · TWO MODELS</Text></View>
             </View>
-          );
-        }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode === "Archive" ? "Explore instruments and add the ones you want to follow." : "Try another name or market."}</Text></View>}
+            <View style={{flexDirection:"row",alignItems:"center",gap:8,marginTop:9,marginLeft:48,flexWrap:"wrap"}}>
+              <Pressable accessibilityRole="button" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")==="backtest"}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:current[item.symbol]==="backtest"?"live":"backtest"}))} style={{paddingVertical:8,paddingHorizontal:11,borderRadius:10,backgroundColor:"#eaf1ff",borderWidth:1,borderColor:"#cbdcff"}}><Text style={{color:"#2458b8",fontSize:9,fontWeight:"800"}}>{(viewModeBySymbol[item.symbol]||"live")==="live"?"Switch to Backtest":"Switch to Live"}</Text></Pressable>
+              {mode==="Explore"?<Pressable onPress={()=>toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable>:null}
+            </View>
+          </View>;
+        }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode==="Archive"?"Explore instruments and add the ones you want to follow.":"Try another name or market."}</Text></View>}
 
         {mode === "Explore" ? <View style={styles.newsSection}>
           <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
