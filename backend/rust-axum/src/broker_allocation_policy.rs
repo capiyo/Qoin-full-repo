@@ -207,6 +207,7 @@ pub fn validate_aggregate_portfolio_risk(
         || request.parent_notional_portfolio <= Decimal::ZERO
         || request.maximum_loss_at_stop_portfolio < Decimal::ZERO
         || (!request.reduce_only && request.maximum_loss_at_stop_portfolio <= Decimal::ZERO)
+        || (request.reduce_only && request.maximum_loss_at_stop_portfolio != Decimal::ZERO)
         || request.now_ms <= 0
         || request.market_data_observed_at_ms <= 0
         || snapshot.observed_at_ms > request.now_ms
@@ -614,6 +615,16 @@ mod tests {
         ));
         let mut request = aggregate_request();
         request.market_data_observed_at_ms = 1;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn reduce_only_request_cannot_claim_a_nonzero_stop_loss() {
+        let mut request = aggregate_request();
+        request.reduce_only = true;
         assert!(matches!(
             validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
             Err(RoutingError::AggregateRiskRejected(_))
