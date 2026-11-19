@@ -420,6 +420,7 @@ const MOBILE_BROKER_DIRECTORY = [
 function MobileBrokerCollectionPanel() {
   const [selected,setSelected]=useState<string[]>([]);
   const [capital,setCapital]=useState("100");
+  const [currency,setCurrency]=useState("USD");
   const [preferencesReady,setPreferencesReady]=useState(false);
   useEffect(()=>{
     let active=true;
@@ -441,10 +442,12 @@ function MobileBrokerCollectionPanel() {
       <Text style={{color:"#8794A7",fontSize:9,lineHeight:14}}>{broker.status}</Text>
     </View>)}
     <View style={{gap:7,padding:11,borderRadius:11,backgroundColor:"#F5F8FD"}}>
-      <Text style={styles.engineLabel}>EQUAL TARGET NOTIONAL · PREVIEW</Text>
-      <TextInput value={capital} onChangeText={setCapital} keyboardType="decimal-pad" accessibilityLabel="Portfolio notional for allocation preview" style={[styles.backtestInput,{backgroundColor:"#FFFFFF"}]} placeholder="Portfolio notional"/>
+      <Text style={styles.engineLabel}>PORTFOLIO BASE CURRENCY</Text>
+      <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>{["USD","EUR","GBP","KES","USDT"].map((value)=><Pressable key={value} onPress={()=>setCurrency(value)} style={{paddingVertical:6,paddingHorizontal:10,borderRadius:18,backgroundColor:currency===value?"#EAF1FF":"#FFFFFF",borderWidth:1,borderColor:currency===value?"#9AB8F1":"#E1E8F1"}}><Text style={{color:currency===value?"#2867DC":"#8794A7",fontSize:8,fontWeight:"800"}}>{value}</Text></Pressable>)}</View>
+      <Text style={styles.engineLabel}>EQUAL TARGET NOTIONAL · {currency} · PREVIEW</Text>
+      <TextInput value={capital} onChangeText={setCapital} keyboardType="decimal-pad" accessibilityLabel={"Portfolio notional in "+currency+" for allocation preview"} style={[styles.backtestInput,{backgroundColor:"#FFFFFF"}]} placeholder="Portfolio notional"/>
       <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Selected venues</Text><Text style={styles.engineValue}>{selected.length}</Text></View>
-      <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Target per selected account</Text><Text style={styles.engineValue}>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</Text></View>
+      <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Target per selected account · {currency}</Text><Text style={styles.engineValue}>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</Text></View>
     </View>
     <Text style={styles.coverageDisclaimer}>{selected.length?"Preference is saved on this device only. Account linking and server-side eligibility checks remain required.":"No execution account is connected. Select a listed adapter to save a local preference."} Equal split is a target notional, not a guaranteed fill. Backend must validate minimums, margin, risk, costs and every selected account before routing.</Text>
   </View>;
