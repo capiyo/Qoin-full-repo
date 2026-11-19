@@ -843,6 +843,29 @@ mod tests {
     }
 
     #[test]
+    fn margin_reference_price_matches_market_limit_and_stop_order_semantics() {
+        let quote = BrokerQuote {
+            broker_id: "adapter".into(), account_id: "account".into(),
+            instrument_id: "EURUSD".into(), bid: d("1.0841"), ask: d("1.0843"),
+            observed_at_ms: 1,
+        };
+        let base = NormalizedOrder {
+            client_order_id: "price-semantics".into(), account_id: "account".into(),
+            instrument_id: "EURUSD".into(), side: OrderSide::Buy, order_type: OrderType::Market,
+            quantity: d("1"), limit_price: None, stop_price: None, time_in_force: None, reduce_only: true,
+        };
+        assert_eq!(base.margin_reference_price(&quote).unwrap(), d("1.0843"));
+        let mut limit = base.clone();
+        limit.order_type = OrderType::Limit;
+        limit.limit_price = Some(d("1.0800"));
+        assert_eq!(limit.margin_reference_price(&quote).unwrap(), d("1.0800"));
+        let mut stop = base;
+        stop.order_type = OrderType::Stop;
+        stop.stop_price = Some(d("1.0900"));
+        assert_eq!(stop.margin_reference_price(&quote).unwrap(), d("1.0900"));
+    }
+
+    #[test]
     fn broker_quote_rejects_crossed_or_incomplete_market_data() {
         let mut quote = BrokerQuote {
             broker_id: "adapter".into(), account_id: "account".into(),
