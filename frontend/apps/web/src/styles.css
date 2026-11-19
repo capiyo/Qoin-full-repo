@@ -500,3 +500,30 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 .set-overlap-corner,.set-overlap-heading{background:#f1f5fa;color:#64748b;font-weight:800}
 .set-overlap-row-label{justify-content:flex-start;overflow:hidden;color:var(--qoin-text,#34465e);font-size:8px;text-overflow:ellipsis;white-space:nowrap}
 .set-overlap-cell{background:#edf3ff;color:#243750;font-variant-numeric:tabular-nums;font-weight:700}
+
+/* Two research models are the swipeable faces of every instrument card. */
+.qoin-price-chip{color:#243750;font-variant-numeric:tabular-nums}
+.qoin-model-page{display:grid;gap:9px;min-width:0;width:100%}
+.qoin-model-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.qoin-model-primary{display:flex;align-items:baseline;gap:9px}
+.qoin-model-primary strong{color:#243750;font-size:25px;font-weight:800;letter-spacing:-.05em;font-variant-numeric:tabular-nums}
+.qoin-model-primary span,.qoin-model-vector span{color:#8794A7;font-size:8px}
+.qoin-model-vector{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 9px;border-radius:9px;background:#F1F5F9}
+.qoin-model-vector strong{color:#243750;font-size:10px;font-variant-numeric:tabular-nums}
+.qoin-model-feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.qoin-model-feature-grid>div{display:grid;gap:4px;min-width:0;padding:8px;border-radius:8px;background:#F1F5F9}
+.qoin-model-feature-grid small{overflow:hidden;color:#718096;font-size:7px;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap}
+.qoin-model-feature-grid strong{color:#26364b;font-size:11px;font-variant-numeric:tabular-nums}
+.qoin-model-reason{margin:0;color:#52637A;font-size:9px;line-height:1.5}
+.qoin-model-time{color:#8996A8;font-size:8px;line-height:1.4}
+.qoin-model-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.qoin-model-stat-grid>div{display:grid;gap:4px;padding:8px;border-radius:9px;background:#F1F5F9}
+.qoin-model-stat-grid small{color:#8794A7;font-size:7px;text-transform:uppercase}
+.qoin-model-stat-grid strong{color:#243750;font-size:14px;font-variant-numeric:tabular-nums}
+.qoin-model-set-bars{display:grid;gap:6px}
+.qoin-model-set-bars>div{display:grid;grid-template-columns:minmax(75px,1fr) minmax(55px,1.4fr) 22px;gap:7px;align-items:center}
+.qoin-model-set-bars span{overflow:hidden;color:#52637A;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
+.qoin-model-set-bars i{height:7px;overflow:hidden;border-radius:8px;background:#EAF0F6}
+.qoin-model-set-bars i b{display:block;height:100%;border-radius:8px;background:#3985D6}
+.qoin-model-set-bars>div>strong{color:#243750;font-size:9px;text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:650px){.qoin-model-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.qoin-model-primary strong{font-size:22px}}
