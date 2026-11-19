@@ -321,7 +321,7 @@ pub struct RiskCheckInput {
     /// Broker-calculated margin requirement, normalized to account currency.
     pub required_margin_account_currency: Decimal,
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RiskApproval {
     pub notional_account_currency: Decimal,
     pub maximum_loss_account_currency: Decimal,
@@ -481,7 +481,7 @@ pub fn validate_portfolio_order(
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionPreflight {
     pub reference_price: Decimal,
     pub reference_price_observed_at_ms: i64,
@@ -489,7 +489,7 @@ pub struct ExecutionPreflight {
     pub now_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RiskCheckedReceipt {
     pub risk: RiskApproval,
     pub broker_receipt: BrokerOrderReceipt,
