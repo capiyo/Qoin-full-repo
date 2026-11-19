@@ -348,7 +348,8 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
         <Text style={styles.engineValue}>Price {fill.price.toPrecision(8)} · Qty {fill.quantity.toPrecision(6)}</Text>
         <Text style={styles.disclaimer}>Fee {fill.fee.toFixed(4)} · Slippage {fill.slippage_cost.toFixed(4)} · Impact {fill.market_impact_cost.toFixed(4)} · Realized {fill.realized_pnl.toFixed(4)}</Text>
       </View>)}
-      <Text style={styles.traceJson}>{result.assumptions.join("\n")}</Text>
+      <Text style={styles.traceJson}>{result.assumptions.join("
+")}</Text>
     </> : null}
   </View>;
 }
@@ -871,12 +872,14 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.topline}><Text style={styles.brand}>qoin</Text><View style={styles.topActions}><Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable></View></View>
-        <View style={styles.hero}><Text style={styles.kicker}>YOUR MARKET WORKSPACE</Text><Text style={styles.heroTitle}>See the market{"\n"}<Text style={styles.blue}>as a system.</Text></Text><Text style={styles.heroCopy}>Keep the instruments that matter close. Explore the forces shaping each one.</Text></View>
+        <View style={styles.hero}><Text style={styles.kicker}>YOUR MARKET WORKSPACE</Text><Text style={styles.heroTitle}>See the market{"
+"}<Text style={styles.blue}>as a system.</Text></Text><Text style={styles.heroCopy}>Keep the instruments that matter close. Explore the forces shaping each one.</Text></View>
         <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
         {mode === "Explore" ? (
           <>
-            {mode === "Explore" && registryError ? <Text accessibilityRole="alert" style={styles.disclaimer}>Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</Text> : null}\n            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
+            {mode === "Explore" && registryError ? <Text accessibilityRole="alert" style={styles.disclaimer}>Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</Text> : null}
+            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
             <View style={styles.coverageSection}>
               <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
