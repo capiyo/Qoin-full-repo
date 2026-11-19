@@ -15,6 +15,8 @@ paths:
   /api/v1/events:
     get:
       summary: Get chronological raw market observations for a symbol
+      security:
+        - FirebaseBearer: []
       parameters:
         - in: query
           name: symbol
@@ -30,6 +32,8 @@ paths:
   /api/v1/state:
     get:
       summary: Get latest state estimate for a symbol
+      security:
+        - FirebaseBearer: []
       parameters:
         - in: query
           name: symbol
@@ -40,6 +44,8 @@ paths:
   /api/v1/backtest:
     get:
       summary: Replay persisted raw market events through the pinned active research strategy
+      security:
+        - FirebaseBearer: []
       description: |
         Deterministic read-only paper simulation. Uses only events already stored in MongoDB,
         sorts by event timestamp then event ID, and never submits orders. A signal can only fill
@@ -102,6 +108,8 @@ paths:
   /api/v1/v2/evaluation:
     get:
       summary: Evaluate forward outcomes of persisted V2 set relationships
+      security:
+        - FirebaseBearer: []
       description: |
         Direction-neutral research evaluation. For each discovered relationship, measures
         subsequent price return and maximum adverse/favorable excursion strictly after the
@@ -131,6 +139,8 @@ paths:
   /api/v1/broker-allocations:
     post:
       summary: Build a non-executable equal-share allocation plan
+      security:
+        - FirebaseBearer: []
       description: |
         Splits total notional equally across every selected broker. Rejects duplicate brokers
         and mixed quote currencies. No broker is silently omitted, no failed allocation is
@@ -147,9 +157,24 @@ paths:
         '200': { description: Equal-share plan with adapter availability and non-executable status }
         '400': { description: Invalid selection, amount, or quote currency }
         '503': { description: Allocation planner unavailable }
+  /api/v1/v2/relationships:
+    get:
+      summary: Read the authenticated append-only V2 relationship ledger
+      security:
+        - FirebaseBearer: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200': { description: Persisted V2 relationship provenance events }
+        '401': { description: Firebase ID token missing or invalid }
+        '503': { description: Relationship ledger unavailable }
   /api/v1/vector/history:
     get:
       summary: Get chronological persisted vector decisions for a symbol
+      security:
+        - FirebaseBearer: []
       parameters:
         - in: query
           name: symbol
@@ -205,6 +230,11 @@ paths:
         '200': { description: Latest decision or abstain response }
         '503': { description: Storage unavailable }
 components:
+  securitySchemes:
+    FirebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
   schemas:
     BrokerAllocationRequest:
       type: object
