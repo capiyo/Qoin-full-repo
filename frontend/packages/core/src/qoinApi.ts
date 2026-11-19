@@ -10,6 +10,7 @@ export type MarketForceObservation = {
   liquidation_pressure: number;
   basis: number;
   spread_bps?: number | null;
+  spread_age_ms?: number | null;
 };
 
 export type QoinDecision = "BUY" | "SELL" | "CLOSE" | "WAIT";
@@ -44,6 +45,7 @@ export type QoinFeatureTrace = {
 export type QoinDecisionDiagnostics = {
   spread_present: boolean;
   spread_within_limit: boolean;
+  spread_fresh: boolean;
   alignment_passed: boolean;
   magnitude_passed: boolean;
   angle_passed: boolean;
@@ -84,7 +86,7 @@ export type QoinVectorDecision = {
   score?: number;
   alignment?: number;
   active_force_count?: number;
-  data_coverage?: { spread_available: boolean; funding_available: boolean; open_interest_available: boolean; basis_available: boolean };
+  data_coverage?: { spread_available: boolean; spread_age_ms: number | null; funding_available: boolean; open_interest_available: boolean; basis_available: boolean };
   strategy_version?: string;
   raw_inputs?: Record<string, number | null>;
   feature_trace?: QoinFeatureTrace[];
