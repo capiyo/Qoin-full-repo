@@ -544,8 +544,9 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
     getQoinSetLedger(item.engineSymbol,1000).then((result)=>{if(active){setLedger(result);setLedgerStatus("loaded");}}).catch(()=>{if(active)setLedgerStatus("unavailable");});
   },[page,item.engineSymbol,ledger,ledgerStatus]);
   return <article className="instrument-card qoin-instrument-card"
-    onTouchStart={(event)=>{touchStart.current=event.touches[0]?.clientX??null;}}
-    onTouchEnd={(event)=>{const end=event.changedTouches[0]?.clientX;if(touchStart.current!=null&&end!=null&&Math.abs(end-touchStart.current)>38)setPage(end<touchStart.current?1:0);touchStart.current=null;}}>
+    onPointerDown={(event)=>{if(event.pointerType!=="mouse"||event.button===0)touchStart.current=event.clientX;}}
+    onPointerUp={(event)=>{const end=event.clientX;if(touchStart.current!=null&&Math.abs(end-touchStart.current)>38)setPage(end<touchStart.current?1:0);touchStart.current=null;}}
+    onPointerCancel={()=>{touchStart.current=null;}}>
     <button className="card-main" onClick={onOpen} aria-label={`Open ${item.name} research`}>
       <span className="asset-mark" style={{background:item.color}}>{item.symbol.slice(0,1)}</span>
       <span className="asset-copy"><strong>{item.name}</strong><small>{item.symbol} <i>·</i> {item.market}</small></span>
