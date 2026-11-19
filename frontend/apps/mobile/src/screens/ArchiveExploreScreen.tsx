@@ -420,15 +420,16 @@ const MOBILE_BROKER_DIRECTORY = [
 function MobileBrokerCollectionPanel() {
   const [selected,setSelected]=useState<string[]>([]);
   const [capital,setCapital]=useState("100");
+  const [preferencesReady,setPreferencesReady]=useState(false);
   useEffect(()=>{
     let active=true;
     void AsyncStorage.getItem("qoin:broker-routing-preferences").then((raw)=>{
       if(!active||!raw)return;
       try{const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&MOBILE_BROKER_DIRECTORY.some((broker)=>broker.id===id&&broker.selectable)).slice(0,15));}catch{/* Ignore invalid local preference data. */}
-    }).catch(()=>undefined);
+    }).catch(()=>undefined).finally(()=>{if(active)setPreferencesReady(true);});
     return()=>{active=false;};
   },[]);
-  useEffect(()=>{void AsyncStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected)).catch(()=>undefined);},[selected]);
+  useEffect(()=>{if(preferencesReady)void AsyncStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected)).catch(()=>undefined);},[selected,preferencesReady]);
   const amount=Number(capital),valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <View style={{gap:11,padding:14,borderWidth:1,borderColor:"#E4EAF3",borderRadius:15,backgroundColor:"#FFFFFF"}}>
