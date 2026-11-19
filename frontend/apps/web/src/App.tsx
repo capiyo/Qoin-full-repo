@@ -175,11 +175,11 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
       <small>{new Date(decision.input_event.event_ts_ms).toLocaleString()} · {decision.input_event.state_event_count} accumulated events · state through {decision.input_event.state_last_event_ts_ms ? new Date(decision.input_event.state_last_event_ts_ms).toLocaleString() : "unknown"}</small>
     </div>}
     <div className="trace-table-wrap"><table className="trace-table">
-      <thead><tr><th>Feature</th><th>Raw</th><th>Transform</th><th>Scale</th><th>Normalized</th><th>Clamped</th><th>Bull term</th><th>Bear term</th></tr></thead>
+      <thead><tr><th>Feature</th><th>Raw</th><th>Transform</th><th>Scale</th><th>Normalized</th><th>Clamped</th><th>Bull term</th><th>Bear term</th><th>OI interaction</th></tr></thead>
       <tbody>{(decision.feature_trace || []).map((item) => <tr key={item.name}>
         <td>{item.name.replaceAll("_", " ")}</td><td>{item.raw_value.toPrecision(5)}</td><td>{item.transform}</td><td>{item.scale}</td>
         <td>{item.normalized_value.toFixed(5)}</td><td>{item.clamped_value.toFixed(5)}</td>
-        <td>{item.bullish_weighted_term.toFixed(5)}</td><td>{item.bearish_weighted_term.toFixed(5)}</td>
+        <td>{item.bullish_weighted_term.toFixed(5)}</td><td>{item.bearish_weighted_term.toFixed(5)}</td><td>{item.interaction_contribution?.toFixed(5) ?? "0.00000"}</td>
       </tr>)}</tbody>
     </table></div>
     <div className="trace-gates">
@@ -1312,7 +1312,7 @@ export default function App() {
                     <span>{bearishWeight == null ? "Bearish weight unavailable" : <>Bear {bearishWeight.toFixed(3)} × {attended.toFixed(3)} = <b>{(bearishWeight*attended).toFixed(4)}</b></>}</span>
                   </div>;
                 })}
-                <p className="disclaimer">Signed contributions are shown before the strategy's aggregate positive clamp. The actual decision vector above remains authoritative.</p>
+                <p className="disclaimer">Directional feature terms and the OFI × absolute OI-change interaction are shown separately before score clipping. The actual decision vector above remains authoritative.</p>
               </section>
               <DecisionTracePanel decision={vector} />
 
