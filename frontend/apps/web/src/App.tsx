@@ -596,6 +596,19 @@ export default function App() {
               stored_at: new Date(update.server_ts_ms || Date.now()).toISOString(),
             }]);
           }
+          if (update.v2_relationship_discovery && selected?.engineSymbol.toUpperCase() === symbol) {
+            getQoinV2Relationships(100).then((events) => {
+              if (!active) return;
+              const tokens = [selected.engineSymbol, selected.symbol].map((value) => value.toUpperCase());
+              const matching = events.filter(({ relationship }) => {
+                const labels = [relationship.source_symbol, relationship.target_symbol, relationship.source_domain, relationship.target_domain, relationship.source_set_id, relationship.target_set_id]
+                  .filter((value): value is string => Boolean(value)).map((value) => value.toUpperCase());
+                return labels.some((label) => tokens.some((token) => label.includes(token)));
+              });
+              setV2LedgerEvents(matching);
+              setV2LedgerStatus("loaded");
+            }).catch(() => { if (active) setV2LedgerStatus("error"); });
+          }
         }
       }
       if (update.type === "stream.gap") setStreamStatus("gap — refresh required");
