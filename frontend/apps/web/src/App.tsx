@@ -591,6 +591,48 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
   </article>;
 }
 
+
+const BROKER_DIRECTORY_PREVIEW = [
+  { id:"binance_usdm", name:"Binance USD-M", category:"Execution adapter", status:"adapter_ready", detail:"USD-M perpetual execution adapter exists; authenticated account linking and multi-account dispatch are not connected.", selectable:true },
+  { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
+  { id:"kraken_spot", name:"Kraken Spot", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
+] as const;
+
+function BrokerCollectionPanel() {
+  const [selected,setSelected]=useState<string[]>([]);
+  const [capital,setCapital]=useState("100");
+  const [ready,setReady]=useState(false);
+  useEffect(()=>{
+    try {
+      const raw=window.localStorage.getItem("qoin:broker-routing-preferences");
+      if(raw){const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&BROKER_DIRECTORY_PREVIEW.some((broker)=>broker.id===id&&broker.selectable)).slice(0,15));}
+    } catch { /* local preferences are optional */ }
+    setReady(true);
+  },[]);
+  useEffect(()=>{if(ready)try{window.localStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected));}catch{/* storage may be unavailable */}},[selected,ready]);
+  const toggle=(id:string)=>{
+    setSelected((current)=>current.includes(id)?current.filter((value)=>value!==id):current.length>=15?current:[...current,id]);
+  };
+  const amount=Number(capital);
+  const valid=Number.isFinite(amount)&&amount>0;
+  const perAccount=valid&&selected.length?amount/selected.length:null;
+  return <section className="broker-collection" aria-label="Broker collection and routing preferences">
+    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select eligible execution venues for a future strategy allocation. Market-data providers are not treated as brokers.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 15</span></div>
+    <div className="broker-directory-grid">{BROKER_DIRECTORY_PREVIEW.map((broker)=><article className="broker-directory-card" key={broker.id}>
+      <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
+      <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
+      <div className="broker-card-footer"><span>{broker.selectable?"Preference can be selected":"Not execution eligible"}</span>
+        {broker.selectable?<button type="button" className={selected.includes(broker.id)?"broker-select selected":"broker-select"} aria-pressed={selected.includes(broker.id)} onClick={()=>toggle(broker.id)}>{selected.includes(broker.id)?"Selected":"Select"}</button>:<span aria-label="Unavailable for execution">—</span>}
+      </div>
+    </article>)}</div>
+    <div className="broker-allocation-panel">
+      <div className="broker-allocation-copy"><p className="eyebrow">ALLOCATION PREVIEW</p><h3>Equal target notional</h3><p>When multiple authenticated broker accounts are available, the strategy's parent notional can be divided equally across every selected eligible account. This is a preview only; the frontend does not submit or authorize orders.</p></div>
+      <div className="broker-allocation-controls"><label htmlFor="qoin-allocation-capital">Portfolio notional</label><input id="qoin-allocation-capital" inputMode="decimal" value={capital} onChange={(event)=>setCapital(event.target.value)} aria-invalid={!valid}/><div className="broker-allocation-result"><span>Selected execution venues</span><strong>{selected.length}</strong><span>Target per selected account</span><strong>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</strong></div></div>
+      <p className="broker-allocation-footnote">{selected.length===0?"Select an execution adapter to save a local routing preference. No broker accounts are connected yet.":selected.length===1?"One venue preference selected. Account linking and backend eligibility checks are still required.":"Equal target is calculated before broker quantity-step rounding. The backend must reject any split that fails minimums, margin, risk or cost checks."} The preference is stored on this device only; no API route currently persists broker selections.</p>
+    </div>
+  </section>;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -1087,6 +1129,7 @@ export default function App() {
                         </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading proposed market coverage…" : "Market coverage catalogue could not be loaded. Instrument availability remains provider-dependent."}</p>}
                         <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
                       </section>
+                      <BrokerCollectionPanel />
                       <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
                         <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
                         {catalogue?.algorithms?.length ? <div className="algorithm-grid">{catalogue.algorithms.map((algorithm) => <article className="algorithm-card" key={algorithm.algorithm_id}>
