@@ -517,6 +517,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [catalogueStatus, setCatalogueStatus] = useState("loading");
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [registryError, setRegistryError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
   const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
@@ -684,7 +685,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
       })));
-    }).catch((error) => { if (active) setVectorError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
+    }).catch((error) => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -875,7 +876,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 
         {mode === "Explore" ? (
           <>
-            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
+            {mode === "Explore" && registryError ? <Text accessibilityRole="alert" style={styles.disclaimer}>Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</Text> : null}\n            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
             <View style={styles.coverageSection}>
               <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
