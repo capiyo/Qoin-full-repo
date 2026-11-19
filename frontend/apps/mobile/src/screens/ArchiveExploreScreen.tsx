@@ -34,7 +34,7 @@ const seed: Instrument[] = [
 
 type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void };
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
-const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"] as const;
 
 type PercentageWidth = `${number}%`;
 
@@ -45,18 +45,18 @@ function percentageWidth(value: number, total: number): PercentageWidth {
 }
 
 function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
-  const labels = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"];
+  const labels = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"];
   const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
   const coordinates = values.map((value, index) => {
-    const angle = -Math.PI / 2 + index * Math.PI * 2 / 6;
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / labels.length;
     const radius = 18 + value * 14;
     return (50 + Math.cos(angle) * radius) + "," + (50 + Math.sin(angle) * radius);
   }).join(" ");
   return <View style={styles.featureSpacePanel}>
-    <Text style={styles.attentionTitle}>Six-dimensional feature space</Text>
+    <Text style={styles.attentionTitle}>Seven-force feature space</Text>
     <Text style={styles.attentionCaption}>Normalized engine inputs · not a learned embedding</Text>
     <Svg viewBox="0 0 100 100" width="100%" height={190}>
-      {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF4" strokeWidth=".5" />)}
+      {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF4" strokeWidth=".5" />)}
       {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF4" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
       {decision ? <Polygon points={coordinates} fill="#3475E8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#94A3B8" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
     </Svg>
@@ -70,9 +70,8 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   const rows = decision.feature_trace || [];
   const gateRows: [string, boolean | undefined][] = [
     ["Spread supplied", gates?.spread_present], ["Spread within limit", gates?.spread_within_limit],
-    ["Event evidence", gates?.event_intensity_positive], ["Magnitude threshold", gates?.magnitude_passed],
-    ["Buy angle", gates?.buy_angle_passed], ["Sell angle", gates?.sell_angle_passed],
-    ["Bullish > bearish", gates?.bullish_exceeds_bearish], ["Bearish > bullish", gates?.bearish_exceeds_bullish],
+    ["Alignment threshold", gates?.alignment_passed], ["Magnitude threshold", gates?.magnitude_passed],
+    ["Angular threshold", gates?.angle_passed],
   ];
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Decision trace · nothing hidden</Text>
@@ -97,7 +96,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
         <Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value == null ? "Not reported" : value ? "PASS" : "FAIL"}</Text>
       </View>)}
     </View>
-    <Text style={styles.disclaimer}>Angle {decision.angle_degrees?.toFixed(4) ?? "—"}° · angle limit {gates?.angle_limit_degrees ?? "—"}° · magnitude limit {gates?.magnitude_limit ?? "—"} · spread limit {gates?.spread_limit_bps ?? "—"} bps. {decision.reason || ""}</Text>
+    <Text style={styles.disclaimer}>Angle {decision.angle_degrees?.toFixed(4) ?? "—"}° · angle limit {gates?.angle_limit_radians?.toFixed(4) ?? "—"} rad · score limit {gates?.signal_threshold ?? "—"} · spread limit {gates?.spread_limit_bps ?? "—"} bps. {decision.reason || ""}</Text>
     <Text style={styles.traceSubhead}>Raw inputs (null means not supplied)</Text>
     <Text selectable style={styles.traceJson}>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</Text>
     <Text style={styles.traceSubhead}>Exact strategy parameter snapshot</Text>
@@ -112,7 +111,7 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   const names = QOIN_FEATURE_NAMES;
   const raw = names.map((name) => decision?.features?.[name] ?? 0);
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
-  const directions = names.map((_, index) => -Math.PI / 2 + index * Math.PI / 3);
+  const directions = names.map((_, index) => -Math.PI / 2 + index * Math.PI * 2 / names.length);
   const endpoints = attended.map((value, index) => ({
     x: 50 + Math.cos(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
     y: 50 - Math.sin(directions[index]) * Math.max(-1, Math.min(1, value)) * 34,
@@ -123,8 +122,8 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
   const output = decision?.decision_vector ?? [0, 0];
   return <View style={styles.tracePanel}>
-    <Text style={styles.attentionTitle}>Vector space · six engine dimensions</Text>
-    <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁶ feature state · decision output is a separate space</Text>
+    <Text style={styles.attentionTitle}>Vector space · seven engine dimensions</Text>
+    <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁷ feature state · decision output is a separate space</Text>
     <View style={{padding:11,borderRadius:12,backgroundColor:"#13231C",gap:8}}>
       <Text style={{color:"#7DD6A5",fontSize:9,fontWeight:"800"}}>LIVE PROVIDER INPUT · {lastEvent?.venue || "WAITING"}</Text>
       <Text style={{color:"#E1EEE6",fontSize:11,fontWeight:"700"}}>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"} · {lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "timestamp unavailable"}</Text>
@@ -1071,7 +1070,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             {vector ? <DecisionTracePanel decision={vector} /> : null}
             <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <View style={styles.strategyPanel}>
-              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Active strategy map</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Legacy edge map · not used by active vector engine</Text><Text style={styles.attentionCaption}>{decisionStrategy?.version || "Unavailable"}</Text></View>
               {decisionStrategy ? <>
                 <View style={styles.strategyGates}>
                   {[
@@ -1089,7 +1088,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                     <Text style={styles.attentionCaption}>Scale {decisionStrategy.feature_scales[name]?.toFixed(3) ?? "—"}</Text>
                   </View>
                 </View>)}
-                <Text style={styles.disclaimer}>Status: {decisionStrategy.status}. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</Text>
+                <Text style={styles.disclaimer}>Legacy edge-map status: {decisionStrategy.status}. The seven-force engine uses its own versioned configuration. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</Text>
               </> : <Text style={styles.disclaimer}>The active strategy map could not be loaded.</Text>}
             </View>
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
@@ -1117,8 +1116,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                   <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Feature contribution ledger</Text><Text style={styles.attentionCaption}>Weight × attended feature</Text></View>
                   {QOIN_FEATURE_NAMES.map((name,index) => {
                     const attended = vector.attended_features?.[index] ?? 0;
-                    const bullishWeight = strategy?.bullish_weights[name];
-                    const bearishWeight = strategy?.bearish_weights[name];
+                    const trace = vector.feature_trace?.find((item) => item.name === name);
+                    const bullishWeight = trace?.bullish_weight;
+                    const bearishWeight = trace?.bearish_weight;
                     return <View key={name} style={styles.contributionRow}>
                       <Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text>
                       <View style={styles.strategyWeightValues}>
