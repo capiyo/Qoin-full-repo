@@ -127,7 +127,7 @@ export async function saveQoinArchivedSymbols(symbols: string[]): Promise<void> 
 
 const QOIN_BROKER_IDS = new Set([
   "binance_usdm","coinbase_advanced_trade","kraken_spot","bybit","okx","bitget","gate_io","kucoin",
-  "deribit","hyperliquid","interactive_brokers","alpaca","oanda","saxo","ig","fxcm","capital_com","deriv","trading_212","xtb",
+  "deribit","hyperliquid","oanda","ig","fxcm","capital_com","deriv","xtb","pepperstone","ic_markets","forex_com","cmc_markets",
 ]);
 
 export async function getQoinBrokerSelections(): Promise<string[]> {
