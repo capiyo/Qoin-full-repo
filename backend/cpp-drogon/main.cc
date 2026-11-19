@@ -270,6 +270,20 @@ int main() {
         const auto limit = req->getParameter("limit");
         proxyGet(req, std::move(cb), "/internal/v2/relationships" + (limit.empty() ? "" : "?limit=" + drogon::utils::urlEncode(limit)));
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/v2/evaluation", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto names = {"symbol", "venue", "horizon_ms", "limit"};
+        std::string path = "/internal/v2/evaluation";
+        bool first = true;
+        for (const auto* name : names) {
+            const auto value = req->getParameter(name);
+            if (value.empty()) continue;
+            path += first ? "?" : "&";
+            first = false;
+            path += std::string(name) + "=" + drogon::utils::urlEncode(value);
+        }
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/events", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) {
