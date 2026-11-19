@@ -1,3 +1,4 @@
+import { getQoinFirebaseIdToken } from "./firebaseAuth";
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
 export type MarketForceObservation = {
@@ -248,6 +249,25 @@ export type QoinBrokerOrderReceipt = {
     raw_status?: string | null;
   };
 };
+/** Submit through the shared broker-neutral adapter route using the signed-in Firebase identity. */
+export async function submitQoinOrder(submission: QoinOrderSubmission): Promise<QoinBrokerOrderReceipt> {
+  const idToken = await getQoinFirebaseIdToken();
+  return request<QoinBrokerOrderReceipt>("/api/v1/orders", {
+    method: "POST",
+    headers: { authorization: `Bearer ${idToken}` },
+    body: JSON.stringify(submission),
+  });
+}
+
+/** Reconciliation is owner-scoped on the server and uses the original broker adapter. */
+export async function reconcileQoinOrder(clientOrderId: string): Promise<QoinBrokerOrderReceipt["broker_receipt"]> {
+  const idToken = await getQoinFirebaseIdToken();
+  return request<QoinBrokerOrderReceipt["broker_receipt"]>(
+    "/api/v1/orders/" + encodeURIComponent(clientOrderId) + "/reconcile",
+    { headers: { authorization: `Bearer ${idToken}` } },
+  );
+}
+
 /** Order submission is server-orchestrated; browser/mobile clients never receive the operator execution token. */
 
 export type QoinInstrument = {
