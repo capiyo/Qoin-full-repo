@@ -2343,3 +2343,63 @@ mod execution_route_auth_tests {
         assert!(!constant_time_token_match(b"operator-token-123", b""));
     }
 }
+
+
+#[cfg(test)]
+mod vector_ingestion_tests {
+    use super::*;
+
+    fn event(event_id: &str, event_type: &str, ts_ms: i64) -> MarketEvent {
+        MarketEvent {
+            event_id: event_id.into(),
+            venue: "test".into(),
+            symbol: "BTCUSDT".into(),
+            event_type: event_type.into(),
+            ts_ms,
+            price: None,
+            size: None,
+            side: None,
+            bid: None,
+            ask: None,
+            bid_size: None,
+            ask_size: None,
+            funding_rate: None,
+            open_interest: None,
+            liquidation_side: None,
+        }
+    }
+
+    #[test]
+    fn mark_price_does_not_overwrite_last_trade_and_derives_basis() {
+        let mut state = SymbolState::default();
+        let mut trade = event("trade-1", "trade", 1_000);
+        trade.price = Some(100.0);
+        trade.size = Some(1.0);
+        trade.side = Some("buy".into());
+        apply(&mut state, &trade);
+
+        let mut mark = event("mark-1", "mark_price", 2_000);
+        mark.price = Some(101.0);
+        mark.funding_rate = Some(0.001);
+        apply(&mut state, &mark);
+
+        assert_eq!(state.last_price, Some(100.0));
+        assert_eq!(state.mark_price, Some(101.0));
+        assert_eq!(state.basis_bps, Some(100.0));
+        assert_eq!(state.funding_rate, Some(0.001));
+    }
+
+    #[test]
+    fn open_interest_force_is_a_relative_change_not_an_absolute_level() {
+        let mut state = SymbolState::default();
+        let mut first = event("oi-1", "open_interest", 1_000);
+        first.open_interest = Some(1_000.0);
+        apply(&mut state, &first);
+        let mut second = event("oi-2", "open_interest", 2_000);
+        second.open_interest = Some(1_100.0);
+        apply(&mut state, &second);
+
+        assert_eq!(state.open_interest, Some(1_100.0));
+        assert!((state.open_interest_change - 0.1).abs() < 1e-12);
+    }
+}
