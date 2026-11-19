@@ -1021,13 +1021,15 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let database_ok=s.database.run_command(doc!{"ping":1},None).await.is_ok();
     let pending_events=s.events.count_documents(doc!{"_qoin_pipeline_status":"pending"},None).await.unwrap_or(u64::MAX);
     let recovery_ok=s.recovery_skipped_events==0&&pending_events==0;
+    let firebase_auth_configured=env::var("FIREBASE_WEB_API_KEY").map(|value|!value.trim().is_empty()).unwrap_or(false);
     let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
-    let healthy=database_ok && recovery_ok;
+    let healthy=database_ok && recovery_ok && firebase_auth_configured;
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
        "mongodb":database_ok,
+       "firebase_auth":{"status":if firebase_auth_configured{"configured"}else{"missing_server_api_key"}},
        "market_recovery":{"status":if recovery_ok{"ok"}else{"degraded"},
          "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events,
          "pending_pipeline_events":pending_events},
