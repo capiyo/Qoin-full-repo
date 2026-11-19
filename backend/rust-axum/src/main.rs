@@ -139,6 +139,16 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     }
     Ok(())
 }
+fn event_follows_state(event: &MarketEvent, previous: &SymbolState) -> bool {
+    let previous_key=(
+        previous.last_event_ts_ms.unwrap_or(0),
+        previous.last_event_id.as_deref().unwrap_or(""),
+        previous.last_event_venue.as_deref().unwrap_or(""),
+    );
+    let incoming_key=(event.ts_ms,event.event_id.as_str(),event.venue.as_str());
+    incoming_key > previous_key
+}
+
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
     // Exponential half-life keeps flow and liquidation pressure local in time.
     if let Some(previous_ts) = state.last_event_ts_ms {
@@ -627,11 +637,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     if let Ok(memory)=s.memory.read() {
         if let Some(previous)=memory.get(&event.symbol) {
-            let previous_key=(previous.last_event_ts_ms.unwrap_or(0),
-                previous.last_event_id.as_deref().unwrap_or(""),
-                previous.last_event_venue.as_deref().unwrap_or(""));
-            let incoming_key=(event.ts_ms,event.event_id.as_str(),event.venue.as_str());
-            if incoming_key <= previous_key {
+            if !event_follows_state(&event, previous) {
                 return (StatusCode::CONFLICT,Json(serde_json::json!({
                     "error":"out-of-order market event rejected",
                     "last_event_ts_ms":previous.last_event_ts_ms,
