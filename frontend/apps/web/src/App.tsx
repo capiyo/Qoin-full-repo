@@ -192,7 +192,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     </div>
     <p className="disclaimer">Angle: {decision.angle_degrees?.toFixed(4) ?? "—"}° ({decision.angle_radians?.toFixed(6) ?? "—"} rad) · angular gate: {gates?.angle_limit_radians?.toFixed(4) ?? "—"} rad · score gate: {gates?.signal_threshold ?? "—"} · spread gate: {gates?.spread_limit_bps ?? "—"} bps. Final action: {decision.action?.toUpperCase() || "WAIT"} — {decision.reason || "No reason supplied"}.</p>
     <details className="trace-details"><summary>Inspect exact raw inputs, parameters and full serialized calculation</summary>
-      <h4>Raw inputs (null means the provider did not supply the field)</h4><pre>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</pre>
+      <h4>Engine inputs (zero may represent unavailable data; consult the coverage flags)</h4><pre>{JSON.stringify({ ...decision.raw_inputs, liquidation_side: decision.liquidation_side }, null, 2)}</pre>
       <h4>Exact strategy parameters used for this decision</h4><pre>{JSON.stringify(decision.strategy_parameters || null, null, 2)}</pre>
       <h4>Complete decision object</h4><pre>{JSON.stringify(decision, null, 2)}</pre>
     </details>
