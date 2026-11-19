@@ -54,7 +54,8 @@ services:
       QOIN_KRAKEN_STREAM_SYMBOLS: ${QOIN_KRAKEN_STREAM_SYMBOLS:-BTC/USD,ETH/USD,SOL/USD}
       QOIN_COINBASE_STREAM_PRODUCTS: ${QOIN_COINBASE_STREAM_PRODUCTS:-BTC-USD,ETH-USD,SOL-USD}
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
-      FIREBASE_WEB_API_KEY: ${FIREBASE_WEB_API_KEY:-}
+      FIREBASE_WEB_API_KEY: ${FIREBASE_WEB_API_KEY:?Set the Firebase Web API key used for server-side ID-token verification}
+      FIREBASE_IDENTITY_TOOLKIT_URL: ${FIREBASE_IDENTITY_TOOLKIT_URL:-https://identitytoolkit.googleapis.com/v1/accounts:lookup}
     depends_on:
       mongodb:
         condition: service_healthy
