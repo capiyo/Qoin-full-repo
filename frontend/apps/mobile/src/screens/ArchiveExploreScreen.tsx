@@ -138,7 +138,7 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
           ["Liquidation pressure",marketState?.liquidation_pressure?.toFixed(4)],
           ["Event intensity",marketState?.event_intensity?.toFixed(5)],
           ["Spread bps",marketState?.spread_bps?.toFixed(3)],
-          ["Quote age ms",marketState?.last_book_ts_ms && marketState.last_event_ts_ms ? String(Math.max(0,marketState.last_event_ts_ms-marketState.last_book_ts_ms)) : "—"],
+          ["Quote age ms",marketState?.last_book_ts_ms != null && marketState?.last_event_ts_ms != null ? String(Math.max(0,marketState.last_event_ts_ms-marketState.last_book_ts_ms)) : "—"],
           ["Open interest",marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4})],
           ["Funding",marketState?.funding_rate?.toFixed(7)],
         ].map(([label,value])=><View key={label} style={{minWidth:"28%"}}>
