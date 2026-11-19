@@ -32,7 +32,7 @@ mod firebase_identity;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
-use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
+use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -68,6 +68,7 @@ struct SymbolState {
     ewma_abs_return: f64,
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
+    #[serde(default)] open_interest_change: f64,
     liquidation_events: usize,
     last_liquidation_side: Option<String>,
     state_quality: f64,
@@ -155,7 +156,12 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
             if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);} }
         "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
-        "open_interest" => if event.open_interest.is_some(){state.open_interest=event.open_interest;},
+        "open_interest" => if let Some(current) = event.open_interest {
+            if let Some(previous) = state.open_interest.filter(|value| *value > 0.0) {
+                state.open_interest_change = ((current - previous) / previous).clamp(-3.0, 3.0);
+            }
+            state.open_interest = Some(current);
+        },
         "book" => {}, _ => {}
     }
     state.event_count+=1;
@@ -464,7 +470,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
     let healthy=database_ok && recovery_ok;
-    let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
+    let strategy_version=s.signal_config_version.clone();
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
        "mongodb":database_ok,
@@ -592,17 +598,68 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state persistence failed","event_persisted":true})));
     }
     let strategy=match s.active_strategy.read(){Ok(v)=>v.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned"})))};
-    let mut decision:EdgeDecision=match strategy.decide(&snapshot.symbol,snapshot.order_flow_imbalance,snapshot.funding_rate,
-        snapshot.spread_bps,snapshot.ewma_abs_return,snapshot.event_intensity,snapshot.liquidation_events,snapshot.last_liquidation_side.as_deref()){
-        Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
+    // The seven-force vector engine is the single decision authority for every
+    // newly ingested event. All features are derived from the causal rolling
+    // state rebuilt from the immutable event log; unavailable basis is zero,
+    // and a missing/stale spread forces WAIT inside the engine.
+    let observation = ForceObservation {
+        ofi: snapshot.order_flow_imbalance,
+        liquidity: snapshot.spread_bps.map(|spread| -spread / 25.0).unwrap_or(0.0),
+        volatility: snapshot.ewma_abs_return / 0.01,
+        funding: snapshot.funding_rate.unwrap_or(0.0) * 100.0,
+        open_interest_change: snapshot.open_interest_change * 100.0,
+        liquidation_pressure: (snapshot.liquidation_events as f64 / 10.0)
+            * match snapshot.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+        basis: 0.0,
+        spread_bps: snapshot.spread_bps,
     };
-    decision.input_event = Some(DecisionInputEvent {
-        event_id: event.event_id.clone(),
-        venue: event.venue.clone(),
-        event_type: event.event_type.clone(),
-        event_ts_ms: event.ts_ms,
-        state_event_count: snapshot.event_count,
-        state_last_event_ts_ms: snapshot.last_event_ts_ms,
+    let signal = match decide_signal(observation, &s.signal_config, &s.signal_config_version, false) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(error=%error, symbol=%snapshot.symbol, "authoritative vector engine rejected market state");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
+        }
+    };
+    let decision = serde_json::json!({
+        "symbol": snapshot.symbol,
+        "input_event": {
+            "event_id": event.event_id,
+            "venue": event.venue,
+            "event_type": event.event_type,
+            "event_ts_ms": event.ts_ms,
+            "state_event_count": snapshot.event_count,
+            "state_last_event_ts_ms": snapshot.last_event_ts_ms
+        },
+        "strategy_key": "qoin-vector-baseline",
+        "strategy_version": signal.config_version,
+        "model_version": "qoin-seven-force-vector-v1",
+        "decision": signal.decision,
+        "score": signal.score,
+        "alignment": signal.alignment,
+        "active_force_count": signal.active_force_count,
+        "raw_inputs": signal.raw_inputs,
+        "feature_trace": signal.feature_trace,
+        "strategy_parameters": s.signal_config,
+        "features": signal.features,
+        "feature_names": signal.feature_names,
+        "attention": signal.attention,
+        "attended_features": signal.attended_features,
+        "decision_vector": signal.decision_vector,
+        "magnitude": signal.magnitude,
+        "angle_radians": signal.angle_radians,
+        "angle_degrees": signal.angle_degrees,
+        "angular_threshold_radians": s.signal_config.max_angle_radians,
+        "diagnostics": signal.diagnostics,
+        "action": signal.action,
+        "reason": signal.rationale,
+        "research_only": true,
+        "liquidation_side": snapshot.last_liquidation_side,
+        "data_coverage": {
+            "spread_available": snapshot.spread_bps.is_some(),
+            "funding_available": snapshot.funding_rate.is_some(),
+            "open_interest_available": snapshot.open_interest.is_some(),
+            "basis_available": false
+        }
     });
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
@@ -1976,7 +2033,7 @@ async fn main(){
     if let Ok(value) = env::var("QOIN_MAX_ANGLE_RADIANS") { signal_config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric"); }
     let signal_config_version = env::var("QOIN_CONFIG_VERSION").unwrap_or_else(|_| "baseline-v2".into());
     decide_signal(ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-        open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
+        open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(0.0) },
         &signal_config, &signal_config_version, false).expect("Qoin signal engine configuration must be valid");
 
     let uri=env::var("QOIN_MONGODB_URI").unwrap_or_else(|_|"mongodb://127.0.0.1:27017".into());
