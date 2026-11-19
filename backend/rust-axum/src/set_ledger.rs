@@ -191,8 +191,10 @@ pub fn durable_records(
             }
         }
         "book" => memberships.push("book_events"),
-        "funding" => {
-            memberships.push("funding_events");
+        "funding" | "mark_price" => {
+            if matches!(event.event_type.as_str(), "funding" | "mark_price") && event.funding_rate.is_some() || event.funding_rate.is_some() {
+                memberships.push("funding_events");
+            }
             match event.funding_rate {
                 Some(value) if value > 0.0 => memberships.push("positive_funding"),
                 Some(value) if value < 0.0 => memberships.push("negative_funding"),
@@ -248,8 +250,8 @@ pub fn durable_records(
             ("liquidation", _, "trade", Some("buy")) => ("buy_trades_before_liquidations", neighbour, event),
             ("trade", Some("sell"), "liquidation", _) => ("sell_trades_before_liquidations", event, neighbour),
             ("liquidation", _, "trade", Some("sell")) => ("sell_trades_before_liquidations", neighbour, event),
-            ("funding", _, "open_interest", _) => ("funding_before_open_interest", event, neighbour),
-            ("open_interest", _, "funding", _) => ("funding_before_open_interest", neighbour, event),
+            ("funding" | "mark_price", _, "open_interest", _) => ("funding_before_open_interest", event, neighbour),
+            ("open_interest", _, "funding" | "mark_price", _) => ("funding_before_open_interest", neighbour, event),
             _ => continue,
         };
         let lag_ms = target.ts_ms - source.ts_ms;
