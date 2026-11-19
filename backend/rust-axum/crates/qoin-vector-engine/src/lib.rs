@@ -18,7 +18,7 @@ pub const FEATURE_NAMES: [&str; 7] = [
     "basis",
 ];
 
-const DIRECTIONAL_WEIGHTS: [f64; 7] = [0.30, 0.18, 0.0, -0.10, 0.12, 0.12, -0.08];
+const DIRECTIONAL_WEIGHTS: [f64; 7] = [0.30, 0.0, 0.0, -0.10, 0.0, 0.12, -0.08];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ForceObservation {
@@ -229,7 +229,7 @@ pub fn decide(
     }
 
     let active_force_count = selected.iter().filter(|selected| **selected).count();
-    let interaction = (config.interaction_coefficient * attended[0] * attended[4])
+    let interaction = (config.interaction_coefficient * attended[0] * attended[4].abs())
         .clamp(-0.25, 0.25);
     let directional = (0..FEATURE_NAMES.len())
         .map(|index| attended[index] * DIRECTIONAL_WEIGHTS[index])
