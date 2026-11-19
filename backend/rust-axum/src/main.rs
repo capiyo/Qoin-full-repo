@@ -225,7 +225,6 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
                 .unwrap_or_else(|| serde_json::json!({"id":id,"known":false,"execution_ready":false,
                     "reason":"provider is not in the supported catalogue"}))
         }).collect();
-    let unknown_count = selected.iter().filter(|item| item["known"] == false).count();
     let ready_count = selected.iter().filter(|item| item["execution_ready"] == true).count();
     let configured = s.broker_registry.configured_brokers().unwrap_or_default();
     let configured_set: HashSet<String> = configured.iter().cloned().collect();
