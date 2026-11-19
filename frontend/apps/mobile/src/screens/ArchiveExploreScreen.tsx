@@ -84,10 +84,10 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     <ScrollView horizontal showsHorizontalScrollIndicator>
       <View>
         <View style={styles.traceTableRow}>
-          {["Feature","Raw","Transform","Scale","Normalized","Clamped","Bull term","Bear term"].map((label) => <Text key={label} style={[styles.traceCell,styles.traceHead]}>{label}</Text>)}
+          {["Feature","Raw","Transform","Scale","Normalized","Clamped","Bull term","Bear term","OI interaction"].map((label) => <Text key={label} style={[styles.traceCell,styles.traceHead]}>{label}</Text>)}
         </View>
         {rows.map((item) => <View key={item.name} style={styles.traceTableRow}>
-          {[item.name.replaceAll("_"," "),item.raw_value.toPrecision(4),item.transform,String(item.scale),item.normalized_value.toFixed(4),item.clamped_value.toFixed(4),item.bullish_weighted_term.toFixed(4),item.bearish_weighted_term.toFixed(4)].map((value,index) => <Text key={index} style={styles.traceCell}>{value}</Text>)}
+          {[item.name.replaceAll("_"," "),item.raw_value.toPrecision(4),item.transform,String(item.scale),item.normalized_value.toFixed(4),item.clamped_value.toFixed(4),item.bullish_weighted_term.toFixed(4),item.bearish_weighted_term.toFixed(4),(item.interaction_contribution ?? 0).toFixed(4)].map((value,index) => <Text key={index} style={styles.traceCell}>{value}</Text>)}
         </View>)}
       </View>
     </ScrollView>
@@ -1127,7 +1127,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                       </View>
                     </View>;
                   })}
-                  <Text style={styles.disclaimer}>Signed contributions are shown before the aggregate positive clamp. The actual decision vector remains authoritative.</Text>
+                  <Text style={styles.disclaimer}>Directional feature terms and the OFI × absolute OI-change interaction are shown separately before score clipping. The actual decision vector remains authoritative.</Text>
                 </View>
                 <View style={styles.attentionPanel}>
                   <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Attention matrix</Text><Text style={styles.attentionCaption}>Row → column weights</Text></View>
