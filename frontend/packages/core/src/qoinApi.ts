@@ -186,14 +186,25 @@ export type QoinNewsItem = {
 };
 export type QoinNewsResponse = { source: string; status: string; items: QoinNewsItem[]; message?: string };
 export type QoinBrokerDirectoryItem = {
-  id: string; name: string; provider_kind: "broker" | "exchange"; asset_classes: string; api: string; documentation_url: string;
+  id: string; name: string; provider_kind: "forex_broker" | "exchange"; asset_classes: string; api: string; documentation_url: string;
   execution_status: "execution_adapter_exists_not_connected" | "adapter_pending";
   selectable: boolean; execution_ready: boolean; note: string;
 };
 export type QoinBrokerCatalogue = {
-  version: number; count: number; max_selected: number; execution_enabled: boolean;
+  version: number; count: number; max_selected: number; execution_enabled: boolean; market_balance?: { crypto: number; forex: number };
   items: QoinBrokerDirectoryItem[]; warning: string;
 };
+export type QoinBrokerReadiness = {
+  selected_count: number; execution_ready_count: number; connected_account_count: number;
+  can_submit: boolean; dispatch_enabled: boolean;
+  items: Array<QoinBrokerDirectoryItem | { id: string; known: false; execution_ready: false; reason: string }>;
+  blockers: string[]; message: string;
+};
+/** Checks selected provider eligibility. This endpoint never submits an order. */
+export function getQoinBrokerReadiness(brokerIds: string[]): Promise<QoinBrokerReadiness> {
+  const brokers = [...new Set(brokerIds)].slice(0, 20).join(",");
+  return request<QoinBrokerReadiness>("/api/v1/trading/readiness" + (brokers ? "?brokers=" + encodeURIComponent(brokers) : ""));
+}
 /** Public provider directory only; never creates credentials, links accounts or submits orders. */
 export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
   return request<QoinBrokerCatalogue>("/api/v1/brokers");
