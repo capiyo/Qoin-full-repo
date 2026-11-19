@@ -27,6 +27,7 @@ mod order_safety;
 mod execution_lifecycle;
 mod trading;
 mod broker_contract;
+mod broker_catalogue;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
@@ -1986,7 +1987,7 @@ async fn main(){
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
     };
-    let app=Router::new().route("/health",get(health)).route("/v1/signal",post(evaluate_signal))
+    let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
