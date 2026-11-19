@@ -87,7 +87,7 @@ export type QoinVectorDecision = {
   score?: number;
   alignment?: number;
   active_force_count?: number;
-  data_coverage?: { spread_available: boolean; spread_age_ms: number | null; funding_available: boolean; open_interest_available: boolean; basis_available: boolean };
+  data_coverage?: { spread_available: boolean; spread_age_ms: number | null; liquidity_available: boolean; order_flow_available: boolean; volatility_available: boolean; funding_available: boolean; open_interest_available: boolean; liquidation_available: boolean; basis_available: boolean };
   strategy_version?: string;
   raw_inputs?: Record<string, number | null>;
   feature_trace?: QoinFeatureTrace[];
