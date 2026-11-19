@@ -61,6 +61,7 @@ struct SymbolState {
     last_event_ts_ms: Option<i64>,
     last_price: Option<f64>,
     spread_bps: Option<f64>,
+    #[serde(default)] last_book_ts_ms: Option<i64>,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
@@ -143,6 +144,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     if let (Some(bid),Some(ask))=(event.bid,event.ask) {
         let mid=(bid+ask)/2.0;
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
+        state.last_book_ts_ms=Some(event.ts_ms);
         if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
             if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;}
         }
@@ -611,6 +613,8 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             * match snapshot.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
         basis: 0.0,
         spread_bps: snapshot.spread_bps,
+        spread_age_ms: snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms)
+            .map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
     };
     let signal = match decide_signal(observation, &s.signal_config, &s.signal_config_version, false) {
         Ok(value) => value,
@@ -655,6 +659,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         "liquidation_side": snapshot.last_liquidation_side,
         "data_coverage": {
             "spread_available": snapshot.spread_bps.is_some(),
+            "spread_age_ms": snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
             "funding_available": snapshot.funding_rate.is_some(),
             "open_interest_available": snapshot.open_interest.is_some(),
             "basis_available": false
@@ -2024,12 +2029,14 @@ async fn main(){
     let mut signal_config = EngineConfig::default();
     if let Ok(value) = env::var("QOIN_SIGNAL_THRESHOLD") { signal_config.signal_threshold = value.parse().expect("QOIN_SIGNAL_THRESHOLD must be numeric"); }
     if let Ok(value) = env::var("QOIN_INPUT_CLIP") { signal_config.input_clip = value.parse().expect("QOIN_INPUT_CLIP must be numeric"); }
+    if let Ok(value) = env::var("QOIN_MAX_SPREAD_BPS") { signal_config.max_spread_bps = value.parse().expect("QOIN_MAX_SPREAD_BPS must be numeric"); }
+    if let Ok(value) = env::var("QOIN_MAX_SPREAD_AGE_MS") { signal_config.max_spread_age_ms = value.parse().expect("QOIN_MAX_SPREAD_AGE_MS must be an integer"); }
     if let Ok(value) = env::var("QOIN_TOP_K") { signal_config.top_k = value.parse().expect("QOIN_TOP_K must be an integer"); }
     if let Ok(value) = env::var("QOIN_MIN_ALIGNMENT") { signal_config.min_alignment = value.parse().expect("QOIN_MIN_ALIGNMENT must be numeric"); }
     if let Ok(value) = env::var("QOIN_MAX_ANGLE_RADIANS") { signal_config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric"); }
     let signal_config_version = env::var("QOIN_CONFIG_VERSION").unwrap_or_else(|_| "baseline-v2".into());
     decide_signal(ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-        open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(0.0) },
+        open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(0.0), spread_age_ms: Some(0) },
         &signal_config, &signal_config_version, false).expect("Qoin signal engine configuration must be valid");
 
     let uri=env::var("QOIN_MONGODB_URI").unwrap_or_else(|_|"mongodb://127.0.0.1:27017".into());
