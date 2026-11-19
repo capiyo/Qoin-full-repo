@@ -194,10 +194,10 @@ impl NormalizedOrder {
         match self.order_type {
             OrderType::Limit if !self.limit_price.is_some_and(|value| value > Decimal::ZERO) =>
                 return Err(ContractError::InvalidOrder("limit orders require a positive limit price".into())),
-            OrderType::Stop if !self.stop_price.is_some_and(|value| value.is_finite() && value > 0.0) =>
+            OrderType::Stop if !self.stop_price.is_some_and(|value| value > Decimal::ZERO) =>
                 return Err(ContractError::InvalidOrder("stop orders require a positive stop price".into())),
-            OrderType::StopLimit if !self.stop_price.is_some_and(|value| value.is_finite() && value > 0.0)
-                || !self.limit_price.is_some_and(|value| value.is_finite() && value > 0.0) =>
+            OrderType::StopLimit if !self.stop_price.is_some_and(|value| value > Decimal::ZERO)
+                || !self.limit_price.is_some_and(|value| value > Decimal::ZERO) =>
                 return Err(ContractError::InvalidOrder("stop-limit orders require positive stop and limit prices".into())),
             _ => {}
         }
