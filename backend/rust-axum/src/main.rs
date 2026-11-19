@@ -21,7 +21,6 @@ mod algorithm_catalogue;
 mod algorithm_entitlements;
 mod edge_strategy;
 mod backtest;
-mod vector_engine;
 mod set_ledger;
 mod order_safety;
 mod execution_lifecycle;
