@@ -43,7 +43,7 @@ function loadCardModes(): Record<string, InstrumentMode> {
 
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 
-const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"] as const;
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LQTY", "VOL", "FUND", "OIΔ", "LIQ", "BASIS"] as const;
 
 type NativeMotionPoint = { id: number; x: number; y: number; vx: number; vy: number };
 
@@ -146,13 +146,13 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   const polygon = coordinates.map((point) => point.join(",")).join(" ");
   return <section className="feature-space-panel">
     <div className="attention-heading"><strong>Seven-force feature space</strong><span>Normalized engine inputs · not a learned embedding</span></div>
-    <svg viewBox="0 0 100 100" role="img" aria-label="Six dimensional normalized feature profile">
+    <svg viewBox="0 0 100 100" role="img" aria-label="Seven-force normalized feature profile">
       {[14, 24, 34].map((radius) => <polygon key={radius} points={labels.map((_, i) => {
         const angle = -Math.PI / 2 + i * (Math.PI * 2 / labels.length);
         return (50 + Math.cos(angle) * radius) + "," + (50 + Math.sin(angle) * radius);
       }).join(" ")} fill="none" stroke="#e5ebf4" strokeWidth=".5" />)}
       {labels.map((label, i) => {
-        const angle = -Math.PI / 2 + i * (Math.PI * 2 / 6);
+        const angle = -Math.PI / 2 + i * (Math.PI * 2 / labels.length);
         return <g key={label}><line x1="50" y1="50" x2={50 + Math.cos(angle) * 35} y2={50 + Math.sin(angle) * 35} stroke="#e5ebf4" strokeWidth=".5" /><text x={50 + Math.cos(angle) * 43} y={50 + Math.sin(angle) * 43} textAnchor="middle" dominantBaseline="middle" fill="#7f8da1" fontSize="4.5">{label}</text></g>;
       })}
       {decision && <><polygon points={polygon} fill="#3475e8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" />{coordinates.map(([x,y],i) => <circle key={labels[i]} cx={x} cy={y} r="1.8" fill="#2867DC" />)}</>}
@@ -276,7 +276,7 @@ function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: 
     <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in seven dimensions. The bullish/bearish decision vector lives in a separate output space below.</p>
     <div className="vector-space-layout">
       <div className="vector-space-plot">
-        <svg viewBox="0 0 100 100" role="img" aria-label="Six-dimensional feature vectors, directed attention links and resultant decision vector">
+        <svg viewBox="0 0 100 100" role="img" aria-label="Seven-force feature vectors, directed attention links and resultant decision vector">
           <defs>
             <pattern id="qoin-vector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#263b33" strokeWidth=".35"/></pattern>
             <marker id="qoin-attention-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#D6A85C"/></marker>
