@@ -185,6 +185,20 @@ export type QoinNewsItem = {
   image?: string; published_at_ms: number; related?: string; category?: string;
 };
 export type QoinNewsResponse = { source: string; status: string; items: QoinNewsItem[]; message?: string };
+export type QoinBrokerDirectoryItem = {
+  id: string; name: string; provider_kind: "broker" | "exchange"; asset_classes: string; api: string;
+  execution_status: "execution_adapter_exists_not_connected" | "adapter_pending";
+  selectable: boolean; execution_ready: boolean; note: string;
+};
+export type QoinBrokerCatalogue = {
+  version: number; count: number; max_selected: number; execution_enabled: boolean;
+  items: QoinBrokerDirectoryItem[]; warning: string;
+};
+/** Public provider directory only; never creates credentials, links accounts or submits orders. */
+export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
+  return request<QoinBrokerCatalogue>("/api/v1/brokers");
+}
+
 export type QoinInstrument = {
   symbol: string; engine_symbol: string; name: string;
   asset_class: "Crypto" | "Equities" | "FX" | "Indices" | "Commodities";
