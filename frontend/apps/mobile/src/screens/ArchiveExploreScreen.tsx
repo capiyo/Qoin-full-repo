@@ -162,6 +162,12 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
   const secondMembers = new Set(secondSet?.member_event_ids ?? []);
   const intersectionCount = [...firstMembers].filter((id) => secondMembers.has(id)).length;
   const unionCount = new Set([...firstMembers, ...secondMembers]).size;
+  const overlapMatrix = (ledger?.sets ?? []).map((set) => (ledger?.sets ?? []).map((other) => {
+    const otherMembers = new Set(other.member_event_ids);
+    const count = set.member_event_ids.filter((id) => otherMembers.has(id)).length;
+    const denominator = Math.min(set.measure.counting_measure, other.measure.counting_measure);
+    return { count, intensity: denominator > 0 ? count / denominator : 0 };
+  }));
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Version 2 · Set &amp; relation ledger</Text>
     <Text style={styles.attentionCaption}>Derived from persisted events · read-only · separate from V1 decisions</Text>
@@ -205,6 +211,25 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         </View>)}
         <Text style={styles.attentionCaption}>Each bar is the exact number of observed event IDs in that set, relative to the returned universe.</Text>
       </View>
+      <Text style={styles.engineLabel}>SET INTERSECTION MATRIX · |A ∩ B|</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{gap:3,padding:4}}>
+          <View style={{flexDirection:"row",alignItems:"center",gap:3}}>
+            <View style={{width:106}} />
+            {ledger.sets.map((item) => <Text key={"matrix-head-"+item.set_id} style={{width:24,textAlign:"center",color:"#8794A7",fontSize:7,fontWeight:"800"}}>{item.set_id.split("_").map((part)=>part[0]).join("").toUpperCase()}</Text>)}
+          </View>
+          {ledger.sets.map((item,rowIndex) => <View key={"matrix-row-"+item.set_id} style={{flexDirection:"row",alignItems:"center",gap:3}}>
+            <Text numberOfLines={1} style={{width:106,color:"#52637A",fontSize:8}}>{item.label}</Text>
+            {ledger.sets.map((other,columnIndex) => {
+              const cell=overlapMatrix[rowIndex][columnIndex];
+              return <View key={other.set_id} style={{width:24,height:22,borderRadius:4,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(40,103,220,"+(0.06+cell.intensity*0.42)+")"}}>
+                <Text style={{color:"#243750",fontSize:8,fontWeight:"700"}}>{cell.count}</Text>
+              </View>;
+            })}
+          </View>)}
+        </View>
+      </ScrollView>
+      <Text style={styles.attentionCaption}>Cells show exact shared event-ID counts. Darker cells mean greater overlap relative to the smaller set.</Text>
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
       {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
