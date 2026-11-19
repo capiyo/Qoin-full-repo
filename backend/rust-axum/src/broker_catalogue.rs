@@ -3,6 +3,7 @@ use axum::{response::IntoResponse, Json};
 use serde_json::{json, Value};
 
 pub fn catalogue() -> Value {
+    // Deliberately balanced: ten crypto venues and ten FX/CFD brokers.
     let providers = [
         ("binance_usdm","Binance USD-M","exchange","crypto","REST + WebSocket","execution_adapter_exists_not_connected",true),
         ("coinbase_advanced_trade","Coinbase Advanced Trade","exchange","crypto","REST + WebSocket","adapter_pending",true),
@@ -14,16 +15,16 @@ pub fn catalogue() -> Value {
         ("kucoin","KuCoin","exchange","crypto","REST + WebSocket","adapter_pending",true),
         ("deribit","Deribit","exchange","crypto_derivatives","REST + WebSocket","adapter_pending",true),
         ("hyperliquid","Hyperliquid","exchange","crypto_perpetuals","JSON-RPC + WebSocket","adapter_pending",true),
-        ("interactive_brokers","Interactive Brokers","broker","multi_asset","Client Portal REST/WebSocket + TWS socket","adapter_pending",true),
-        ("alpaca","Alpaca","broker","us_equities_options_crypto","REST + WebSocket","adapter_pending",true),
-        ("oanda","OANDA","broker","forex_cfds","REST v20 + streaming","adapter_pending",true),
-        ("saxo","Saxo","broker","multi_asset","REST + WebSocket OpenAPI","adapter_pending",true),
-        ("ig","IG","broker","forex_cfds","REST + streaming","adapter_pending",true),
-        ("fxcm","FXCM","broker","forex_cfds","REST/streaming SDK; account eligibility required","adapter_pending",true),
-        ("capital_com","Capital.com","broker","forex_cfds","REST + WebSocket","adapter_pending",true),
-        ("deriv","Deriv","broker","forex_synthetics_options","WebSocket + REST","adapter_pending",true),
-        ("trading_212","Trading 212","broker","equities_etfs","REST","adapter_pending",true),
-        ("xtb","XTB","broker","multi_asset_cfds","xAPI socket/WebSocket","adapter_pending",true),
+        ("oanda","OANDA","forex_broker","forex_cfds","REST v20 + streaming","adapter_pending",true),
+        ("ig","IG","forex_broker","forex_cfds","REST + streaming","adapter_pending",true),
+        ("fxcm","FXCM","forex_broker","forex_cfds","REST/streaming SDK; account eligibility required","adapter_pending",true),
+        ("capital_com","Capital.com","forex_broker","forex_cfds","REST + WebSocket","adapter_pending",true),
+        ("deriv","Deriv","forex_broker","forex_synthetics_options","WebSocket + REST","adapter_pending",true),
+        ("xtb","XTB","forex_broker","forex_cfds","xAPI socket/WebSocket","adapter_pending",true),
+        ("pepperstone","Pepperstone","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_pending",true),
+        ("ic_markets","IC Markets","forex_broker","forex_cfds","cTrader Open API / platform integration","adapter_pending",true),
+        ("forex_com","FOREX.com","forex_broker","forex_cfds","REST API; regional eligibility required","adapter_pending",true),
+        ("cmc_markets","CMC Markets","forex_broker","forex_cfds","REST API; account eligibility required","adapter_pending",true),
     ];
     let items: Vec<Value> = providers.iter().map(|(id,name,kind,assets,api,status,selectable)| json!({
         "id": id, "name": name, "provider_kind": kind, "asset_classes": assets,
@@ -38,29 +39,30 @@ pub fn catalogue() -> Value {
             "kucoin" => "https://www.kucoin.com/docs-new",
             "deribit" => "https://docs.deribit.com/",
             "hyperliquid" => "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api",
-            "interactive_brokers" => "https://www.interactivebrokers.com/campus/ibkr-api-page/",
-            "alpaca" => "https://docs.alpaca.markets/",
             "oanda" => "https://developer.oanda.com/rest-live-v20/introduction/",
-            "saxo" => "https://www.developer.saxo/openapi/learn",
             "ig" => "https://labs.ig.com/",
             "fxcm" => "https://fxcm-api.readthedocs.io/",
             "capital_com" => "https://open-api.capital.com/",
             "deriv" => "https://api.deriv.com/",
-            "trading_212" => "https://docs.trading212.com/",
             "xtb" => "https://xopenhub.pro/api/xapi/",
+            "pepperstone" => "https://openapi.ctrader.com/",
+            "ic_markets" => "https://openapi.ctrader.com/",
+            "forex_com" => "https://www.forex.com/en-us/developer/",
+            "cmc_markets" => "https://www.cmcmarkets.com/en/platforms/api",
             _ => ""
         }, "execution_status": status, "selectable": selectable,
         "execution_ready": false,
         "note": if *id == "binance_usdm" {
             "A Binance USD-M executor exists in the legacy internal order path; generic multi-account adapter registration and account linking are not connected."
         } else {
-            "Provider has a documented API/platform route; Qoin has not implemented or verified an execution adapter or account connection for this provider."
+            "Provider API route is listed for discovery; Qoin has not implemented or verified this provider's execution adapter or account connection."
         }
     })).collect();
     json!({
-        "version": 1,
+        "version": 2,
         "count": items.len(),
         "max_selected": 20,
+        "market_balance": {"crypto": 10, "forex": 10},
         "execution_enabled": false,
         "items": items,
         "warning": "Directory entries are selectable connection preferences, not proof of account connectivity or execution readiness. Qoin is research-only."
@@ -75,17 +77,28 @@ pub async fn get_brokers() -> impl IntoResponse {
 mod tests {
     use super::*;
     #[test]
-    fn directory_has_twenty_unique_selectable_providers_and_no_false_readiness() {
+    fn directory_is_balanced_and_has_no_false_readiness() {
         let value = catalogue();
         let items = value["items"].as_array().unwrap();
         assert_eq!(items.len(), 20);
         let mut ids = std::collections::HashSet::new();
+        let mut crypto = 0;
+        let mut forex = 0;
         for item in items {
             assert!(ids.insert(item["id"].as_str().unwrap()));
             assert_eq!(item["selectable"], true);
             assert_eq!(item["execution_ready"], false);
             assert!(!item["documentation_url"].as_str().unwrap_or("").is_empty());
+            match item["provider_kind"].as_str().unwrap() {
+                "exchange" => crypto += 1,
+                "forex_broker" => forex += 1,
+                other => panic!("unexpected provider category: {other}"),
+            }
         }
+        assert_eq!(crypto, 10);
+        assert_eq!(forex, 10);
+        assert_eq!(value["market_balance"]["crypto"], 10);
+        assert_eq!(value["market_balance"]["forex"], 10);
         assert_eq!(value["max_selected"], 20);
         assert_eq!(value["execution_enabled"], false);
     }
