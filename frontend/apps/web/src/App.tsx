@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols } from "@qoin/core";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, runQoinBacktest, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -17,15 +17,6 @@ type Instrument = {
   archived: boolean;
   color: string;
 };
-
-const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#f59e0b" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#6477df" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#8b72e8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#76a85a" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#4d91d8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
-];
 
 type Tab = "Archive" | "Explore";
 type InstrumentMode = "live" | "backtest";
@@ -634,6 +625,102 @@ function BrokerCollectionPanel() {
   </section>;
 }
 
+
+function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: boolean; onRequireAuth: () => void }) {
+  const [observation, setObservation] = useState("5");
+  const [evaluation, setEvaluation] = useState("60");
+  const [session, setSession] = useState("480");
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [venue, setVenue] = useState("binance_usdm");
+  const [currency, setCurrency] = useState("USDT");
+  const [capital, setCapital] = useState("100");
+  const [notional, setNotional] = useState("25");
+  const [fee, setFee] = useState("10");
+  const [slippage, setSlippage] = useState("5");
+  const [cycle, setCycle] = useState<QoinOperatingCycleSnapshot | null>(null);
+  const [paper, setPaper] = useState<QoinPaperSessionSnapshot | null>(null);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    const [nextCycle, nextPaper] = await Promise.all([getQoinOperatingCycle(), getQoinPaperSession()]);
+    setCycle(nextCycle); setPaper(nextPaper);
+    setObservation(String(nextCycle.config.observation_minutes));
+    setEvaluation(String(nextCycle.config.weight_evaluation_minutes));
+    setSession(String(nextCycle.config.session_minutes));
+  };
+  useEffect(() => {
+    if (!authenticated) return;
+    let active = true;
+    const load = () => Promise.all([getQoinOperatingCycle(), getQoinPaperSession()]).then(([c,p]) => {
+      if (!active) return; setCycle(c); setPaper(p);
+      setObservation(String(c.config.observation_minutes)); setEvaluation(String(c.config.weight_evaluation_minutes)); setSession(String(c.config.session_minutes));
+    }).catch(error => { if (active) setStatus(error instanceof Error ? error.message : "Operating cycle unavailable."); });
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authenticated]);
+
+  const account: QoinOperatingCycleConfig["paper_accounts"][number] = {
+    symbol: symbol.trim().toUpperCase(), venue: venue.trim(), quote_currency: currency.trim().toUpperCase(),
+    initial_cash: Number(capital), notional_per_trade: Number(notional), contract_multiplier: 1,
+    quantity_step: 0.000001, reinvest_profits: true, fee_bps: Number(fee), slippage_bps: Number(slippage),
+  };
+  const valid = account.symbol.length > 0 && account.venue.length > 0 && account.quote_currency.length > 0 &&
+    [account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite) &&
+    account.initial_cash > 0 && account.notional_per_trade > 0 && account.notional_per_trade <= account.initial_cash &&
+    account.fee_bps >= 0 && account.slippage_bps >= 0 && account.slippage_bps < 10000;
+  const act = async (action: "configure" | "start" | "stop") => {
+    if (!authenticated) { onRequireAuth(); return; }
+    if (action === "configure" && !valid) { setStatus("Check the instrument, venue, currency, capital, notional and cost assumptions."); return; }
+    setBusy(true); setStatus("");
+    try {
+      if (action === "configure") await configureQoinOperatingCycle({
+        observation_minutes: Number(observation), weight_evaluation_minutes: Number(evaluation),
+        session_minutes: Number(session), mode: "paper", paper_accounts: [account],
+      });
+      else if (action === "start") await startQoinOperatingCycle();
+      else await stopQoinOperatingCycle();
+      await refresh(); setStatus(action === "stop" ? "Cycle stopped." : action === "start" ? "Paper cycle started." : "Configuration saved.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Operating cycle action failed."); }
+    finally { setBusy(false); }
+  };
+  const money = (value: number, code: string) => code + " " + value.toFixed(2);
+  return <section className="algorithm-catalogue operating-cycle-panel" aria-label="Operating cycle and paper session">
+    <div className="coverage-heading"><div><p className="eyebrow">RESEARCH OPERATIONS</p><h3>Operating cycle</h3><p>Observe → evaluate weights → run a bounded paper session.</p></div><span className="coverage-status">{cycle?.phase?.replaceAll("_"," ").toUpperCase() || "NOT LOADED"}</span></div>
+    {!authenticated ? <div className="empty-state"><p>Sign in to configure and monitor your private paper cycle.</p><button className="primary-button" onClick={onRequireAuth}>Sign in</button></div> : <>
+      <div className="backtest-controls">
+        <label>Observation (minutes)<input type="number" min="1" max="1440" value={observation} onChange={e=>setObservation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Weight evaluation (minutes)<input type="number" min="1" max="10080" value={evaluation} onChange={e=>setEvaluation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Paper session (minutes)<input type="number" min="1" max="10080" value={session} onChange={e=>setSession(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Engine symbol<input value={symbol} onChange={e=>setSymbol(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Venue ID<input value={venue} onChange={e=>setVenue(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Quote currency<input value={currency} onChange={e=>setCurrency(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Starting capital<input type="number" min="0.01" value={capital} onChange={e=>setCapital(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Entry notional<input type="number" min="0.01" value={notional} onChange={e=>setNotional(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Fee (bps)<input type="number" min="0" value={fee} onChange={e=>setFee(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Slippage (bps)<input type="number" min="0" max="9999" value={slippage} onChange={e=>setSlippage(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+      </div>
+      <div className="coverage-actions">
+        <button className="secondary-button" disabled={busy || cycle?.active} onClick={()=>void act("configure")}>Save configuration</button>
+        <button className="primary-button" disabled={busy || Boolean(cycle?.active)} onClick={()=>void act("start")}>Start paper cycle</button>
+        <button className="secondary-button" disabled={busy || !cycle?.active} onClick={()=>void act("stop")}>Stop cycle</button>
+      </div>
+      <p className="disclaimer">Research and paper only. Live execution is disabled by the server contract. No broker orders are sent. Venue, contract multiplier and quantity step must match the provider instrument.</p>
+      {cycle ? <div className="live-state-grid">
+        <div><span>Phase remaining</span><strong>{Math.max(0,Math.ceil(cycle.phase_seconds_remaining/60))} min</strong></div>
+        <div><span>Elapsed</span><strong>{Math.floor(cycle.elapsed_seconds/60)} min</strong></div>
+        <div><span>Observations</span><strong>{cycle.observations}</strong></div>
+        <div><span>Evaluations</span><strong>{cycle.signal_evaluations}</strong></div>
+        <div><span>BUY / SELL / WAIT</span><strong>{cycle.buy_signals} / {cycle.sell_signals} / {cycle.wait_signals}</strong></div>
+        <div><span>Mean alignment</span><strong>{cycle.mean_alignment?.toFixed(4) ?? "—"}</strong></div>
+      </div> : null}
+      {paper?.accounts?.length ? <><h4>Paper account ledger</h4><div className="instrument-grid">{paper.accounts.map((a)=><article className="instrument-card" key={a.venue+":"+a.symbol}><div className="card-topline"><span>{a.symbol}</span><span>{a.venue}</span></div><h3>{money(a.equity,a.quote_currency)}</h3><p>Net P/L {money(a.net_pnl,a.quote_currency)} · realized {money(a.realized_pnl,a.quote_currency)} · unrealized {money(a.unrealized_pnl,a.quote_currency)}</p><div className="live-state-grid"><div><span>Cash</span><strong>{money(a.cash,a.quote_currency)}</strong></div><div><span>Fees</span><strong>{money(a.fees_paid,a.quote_currency)}</strong></div><div><span>Drawdown</span><strong>{a.max_drawdown_pct.toFixed(2)}%</strong></div><div><span>Win rate</span><strong>{a.win_rate_pct.toFixed(1)}%</strong></div><div><span>Entries / exits</span><strong>{a.entries} / {a.exits}</strong></div><div><span>Open position</span><strong>{a.has_open_position ? "Yes" : "No"}</strong></div></div></article>)}</div></> : <p className="disclaimer">No paper-session account snapshot is available yet.</p>}
+      {status ? <p className="disclaimer" role="status">{status}</p> : null}
+    </>}
+  </section>;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -651,7 +738,7 @@ export default function App() {
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   const pendingInstrumentRef = useRef<Instrument | null>(null);
-  const [instruments, setInstruments] = useState(seed);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [routePath, setRoutePath] = useState(() => window.location.pathname);
@@ -667,6 +754,7 @@ export default function App() {
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [registryError, setRegistryError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
   const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
@@ -695,7 +783,7 @@ export default function App() {
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
-          setInstruments((items) => items.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          setInstruments((items) => items.map((item) => ({ ...item, archived: false })));
           return;
         }
         void getQoinArchivedSymbols().then((symbols) => {
@@ -810,11 +898,11 @@ export default function App() {
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
+        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
         provider: item.provider, providerStatus: item.provider_status,
-        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
+        archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, color: colors[index % colors.length],
       })));
-    }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
+    }).catch(() => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -1118,6 +1206,7 @@ export default function App() {
                       <div className="explore-workspace">
                       <div className="explore-main-column">
                       <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
+                      {registryError ? <p className="disclaimer" role="alert">Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</p> : null}
                       <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
                       <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
                       <section className="coverage-preview" aria-label="Market access tier preview">
@@ -1131,6 +1220,7 @@ export default function App() {
                         <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
                       </section>
                       <BrokerCollectionPanel />
+                      <OperatingCyclePanel authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
                       <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
                         <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
                         {catalogue?.algorithms?.length ? <div className="algorithm-grid">{catalogue.algorithms.map((algorithm) => <article className="algorithm-card" key={algorithm.algorithm_id}>
