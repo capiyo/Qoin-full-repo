@@ -25,11 +25,13 @@ mod vector_engine;
 mod order_safety;
 mod execution_lifecycle;
 mod trading;
+mod v2_evaluation;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
 use qoin_market_space::{attribution::AttributionReport, hub::{HubError, NormalizationProfile, VariableHub}, FeatureAvailability, MarketFeature, MarketVector};
 use qoin_set_theoretic_attention::{set_attention_weights, EvidenceSet, RelationshipEventType, RelationshipLedgerEvent, RelationshipRecord, VectorEvidenceConfig, Vocabulary};
 use sha2::{Digest, Sha256};
+use v2_evaluation::{PriceObservation, V2EvaluationReport};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -2294,6 +2296,9 @@ async fn discover_vector_relationships(
 struct RelationshipLedgerQuery { limit: Option<i64> }
 
 #[derive(Deserialize)]
+struct V2EvaluationQuery { symbol: String, venue: String, horizon_ms: Option<i64>, limit: Option<i64> }
+
+#[derive(Deserialize)]
 struct DiscoverRelationshipsRequest {
     query: EvidenceSet,
     candidates: Vec<EvidenceSet>,
@@ -2456,6 +2461,103 @@ async fn append_relationship_event(
 }
 
 // Keep the V2 append-only ledger read path explicit for integration verification.
+async fn evaluate_v2_relationships(
+    State(state): State<AppState>,
+    Query(query): Query<V2EvaluationQuery>,
+) -> Result<Json<V2EvaluationReport>, (StatusCode, Json<serde_json::Value>)> {
+    let symbol = query.symbol.trim().to_owned();
+    let venue = query.venue.trim().to_owned();
+    let horizon_ms = query.horizon_ms.unwrap_or(5 * 60_000);
+    let limit = query.limit.unwrap_or(5_000);
+    if symbol.is_empty() || symbol.len() > 96 || venue.is_empty() || venue.len() > 64
+        || !(1..=90 * 24 * 60 * 60 * 1000).contains(&horizon_ms)
+        || !(1..=20_000).contains(&limit) {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error":"symbol/venue are required; horizon_ms must be in (0, 90 days]; limit must be in [1, 20000]"
+        }))));
+    }
+    let ledger_filter = doc! {
+        "event_type":"discovered",
+        "relationship.source_symbol":&symbol,
+        "relationship.target_symbol":&symbol,
+        "relationship.source_venue":&venue,
+        "relationship.target_venue":&venue
+    };
+    let ledger_options = FindOptions::builder()
+        .sort(doc!{"recorded_at_ms":1,"event_id":1})
+        .limit(limit + 1)
+        .build();
+    let mut ledger_cursor = state.relationship_ledger.find(ledger_filter, Some(ledger_options)).await
+        .map_err(|error| {
+            tracing::error!(error=%error, symbol=%symbol, venue=%venue, "V2 evaluation ledger query failed");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"V2 relationship ledger unavailable"})))
+        })?;
+    let ledger_documents = ledger_cursor.try_collect::<Vec<Document>>().await.map_err(|error| {
+        tracing::error!(error=%error, "V2 evaluation ledger read failed");
+        (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"V2 relationship ledger read failed"})))
+    })?;
+    if ledger_documents.len() as i64 > limit {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"V2 evaluation sample exceeds the configured relationship limit; narrow the query",
+            "limit":limit
+        }))));
+    }
+    let ledger = ledger_documents.into_iter()
+        .map(mongodb::bson::from_document::<RelationshipLedgerEvent>)
+        .collect::<Result<Vec<_>,_>>()
+        .map_err(|error| {
+            tracing::error!(error=%error, "V2 evaluation encountered an invalid ledger event");
+            (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"V2 ledger contains invalid data"})))
+        })?;
+    let Some(first_observed) = ledger.iter().map(|event| event.relationship.observed_at_ms).min() else {
+        return Ok(Json(v2_evaluation::evaluate(&symbol, &venue, horizon_ms, &[], &[])
+            .map_err(|error|(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":error}))))?));
+    };
+    let last_observed = ledger.iter().map(|event| event.relationship.observed_at_ms).max().unwrap_or(first_observed);
+    let to_ts_ms = last_observed.saturating_add(horizon_ms);
+    let event_filter = doc! {
+        "venue":&venue, "symbol":&symbol,
+        "ts_ms":{"$gt":first_observed,"$lte":to_ts_ms},
+        "$or":[{"event_type":"trade"},{"event_type":"book"}]
+    };
+    let event_options = FindOptions::builder()
+        .sort(doc!{"ts_ms":1,"event_id":1})
+        .limit(200_001)
+        .build();
+    let mut event_cursor = state.events.find(event_filter, Some(event_options)).await.map_err(|error| {
+        tracing::error!(error=%error, symbol=%symbol, venue=%venue, "V2 evaluation market-event query failed");
+        (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market history unavailable for V2 evaluation"})))
+    })?;
+    let event_documents = event_cursor.try_collect::<Vec<Document>>().await.map_err(|error| {
+        tracing::error!(error=%error, "V2 evaluation market-event read failed");
+        (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market history read failed"})))
+    })?;
+    if event_documents.len() > 200_000 {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"V2 evaluation price history exceeds 200000 observations; narrow the relationship range"
+        }))));
+    }
+    let mut observations = Vec::with_capacity(event_documents.len());
+    for document in event_documents {
+        let ts_ms = document.get_i64("ts_ms").or_else(|_|document.get_i32("ts_ms").map(i64::from)).unwrap_or(0);
+        let event_type = document.get_str("event_type").unwrap_or("");
+        let price = if event_type == "trade" {
+            document.get_f64("price").ok().filter(|value|value.is_finite() && *value>0.0)
+        } else {
+            let bid = document.get_f64("bid").ok();
+            let ask = document.get_f64("ask").ok();
+            match (bid,ask) {
+                (Some(bid),Some(ask)) if bid.is_finite() && ask.is_finite() && bid>0.0 && ask>=bid => Some((bid+ask)/2.0),
+                _ => None
+            }
+        };
+        if let Some(price)=price { observations.push(PriceObservation{ts_ms,price}); }
+    }
+    let report = v2_evaluation::evaluate(&symbol,&venue,horizon_ms,&ledger,&observations)
+        .map_err(|error|(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":error}))))?;
+    Ok(Json(report))
+}
+
 async fn list_relationship_events(
     State(state): State<AppState>,
     Query(query): Query<RelationshipLedgerQuery>,
@@ -2717,6 +2819,7 @@ async fn main(){
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
+        .route("/internal/v2/evaluation",get(evaluate_v2_relationships))
         .route("/internal/v2/relationships/discover",post(discover_relationships))
         .route("/internal/v2/relationships/discover-vectors",post(discover_vector_relationships))
         .route("/internal/v2/relationships/discover-history",post(discover_vector_relationships_from_history))
