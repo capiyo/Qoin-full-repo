@@ -1051,7 +1051,10 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
           && env::var("BINANCE_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)
           && env::var("BINANCE_API_SECRET").map(|v|!v.trim().is_empty()).unwrap_or(false)
           && ((env::var("QOIN_TRADING_MODE").as_deref()==Ok("live")
-                && env::var("QOIN_LIVE_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_REAL_MONEY_RISK").unwrap_or(false))
+                && env::var("QOIN_LIVE_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_REAL_MONEY_RISK").unwrap_or(false)
+                && ["QOIN_LIVE_ACCOUNT_VERIFIED","QOIN_LIVE_WITHDRAWALS_DISABLED",
+                    "QOIN_LIVE_RECONCILIATION_APPROVED","QOIN_LIVE_RISK_CONTROLS_APPROVED"]
+                    .iter().all(|name|env::var(name).map(|v|v.eq_ignore_ascii_case("true")).unwrap_or(false)))
               || (env::var("QOIN_TRADING_MODE").as_deref()==Ok("testnet")
                 && env::var("QOIN_TESTNET_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_TESTNET_ORDERS").unwrap_or(false)))
           {"configured"}else{"disabled"},
