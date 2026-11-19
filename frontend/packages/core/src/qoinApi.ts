@@ -102,6 +102,11 @@ export const QOIN_FEATURE_NAMES = [
   "liquidation_pressure",
 ] as const;
 
+/** Fetches the latest persisted market-state snapshot for a symbol. */
+export function getQoinMarketState(symbol: string): Promise<QoinMarketState> {
+  return request<QoinMarketState>(`/api/v1/state?symbol=${encodeURIComponent(symbol)}`);
+}
+
 /** Fetches the latest persisted engine vector for a symbol; never places orders. */
 export function getInstrumentVector(symbol: string): Promise<QoinVectorDecision> {
   return request<QoinVectorDecision>(`/api/v1/vector?symbol=${encodeURIComponent(symbol)}`);
