@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
-import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getInstrumentVector, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -621,6 +621,7 @@ function BrokerCollectionPanel() {
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
   const [ready,setReady]=useState(false);
+  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
     void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Exchange API":"Broker API",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
@@ -632,6 +633,11 @@ function BrokerCollectionPanel() {
     return ()=>{active=false;};
   },[]);
   useEffect(()=>{if(ready){try{window.localStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected));}catch{/* storage may be unavailable */}void saveQoinBrokerSelections(selected).catch(()=>undefined);}},[selected,ready]);
+  useEffect(()=>{
+    let active=true;
+    void getQoinBrokerReadiness(selected).then((result)=>{if(active)setReadiness(result);}).catch(()=>{if(active)setReadiness(null);});
+    return()=>{active=false;};
+  },[selected]);
   const toggle=(id:string)=>{
     setSelected((current)=>current.includes(id)?current.filter((value)=>value!==id):current.length>=20?current:[...current,id]);
   };
@@ -639,7 +645,7 @@ function BrokerCollectionPanel() {
   const valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <section className="broker-collection" aria-label="Broker collection and routing preferences">
-    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers to connect later. Selection is a saved preference only; it does not connect an account or enable order execution.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
+    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers to include in Qoin’s execution-readiness check. Account authorization is separate; trades remain blocked until every selected account is verified.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
     <div className="broker-directory-grid">{directory.map((broker)=><article className="broker-directory-card" key={broker.id}>
       <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
       <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
@@ -647,10 +653,10 @@ function BrokerCollectionPanel() {
         {broker.selectable?<button type="button" className={selected.includes(broker.id)?"broker-select selected":"broker-select"} aria-pressed={selected.includes(broker.id)} onClick={()=>toggle(broker.id)}>{selected.includes(broker.id)?"Selected":"Select"}</button>:<span aria-label="Unavailable for execution">—</span>}
       </div>
     </article>)}</div>
-    <div className="broker-allocation-panel">
+    <div className="broker-allocation-panel">\n      <div role="status" aria-live="polite"><strong>Trade connection status:</strong> {readiness?`${readiness.connected_account_count} connected accounts · ${readiness.execution_ready_count}/${readiness.selected_count} selected providers execution-ready · ${readiness.dispatch_enabled?"dispatch enabled":"dispatch blocked"}`:"Checking selected providers…"}<p>{readiness?.message||"Waiting for broker readiness API."}</p>{readiness?.blockers?.map((item)=><small key={item}>{item} </small>)}</div>
       <div className="broker-allocation-copy"><p className="eyebrow">ROUTING POLICY</p><h3>Capital-aware execution</h3><p>Qoin consolidates by default. It considers an equal split across every selected execution-ready account only when all child minimums, quantity steps, account health, margin and aggregate risk checks pass and measured fees, split-size slippage, FX costs and operational overhead justify it — or when a complete split is the only feasible route. This is a comparison preview, not a live order route.</p></div>
       <div className="broker-allocation-controls"><label htmlFor="qoin-allocation-currency">Portfolio currency</label><select id="qoin-allocation-currency" value={currency} onChange={(event)=>setCurrency(event.target.value)}><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>USDT</option></select><label htmlFor="qoin-allocation-capital">Portfolio notional · {currency}</label><input id="qoin-allocation-capital" inputMode="decimal" value={capital} onChange={(event)=>setCapital(event.target.value)} aria-invalid={!valid}/><div className="broker-allocation-result"><span>Selected venue preferences</span><strong>{selected.length}</strong><span>Illustrative equal-split target per selected venue · {currency}</span><strong>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</strong></div></div>
-      <p className="broker-allocation-footnote">{selected.length===0?"Select a provider to save a connection preference. No broker accounts are connected yet.":selected.length===1?"One venue preference selected. Account linking and backend eligibility checks are still required.":"Equal target is calculated before broker quantity-step rounding. The backend must reject any split that fails minimums, margin, risk or cost checks."} The equal-split figure is a comparison baseline only; consolidation remains the default route. The preference is stored on this device only; no API route currently persists broker selections.</p>
+      <p className="broker-allocation-footnote">{selected.length===0?"Select a provider to save a connection preference. No broker accounts are connected yet.":selected.length===1?"One venue preference selected. Account linking and backend eligibility checks are still required.":"Equal target is calculated before broker quantity-step rounding. The backend must reject any split that fails minimums, margin, risk or cost checks."} The equal-split figure is a comparison baseline only; consolidation remains the default route. Signed-in broker preferences are saved to the user profile; the selected provider IDs are also sent to the backend readiness API. This is not an order submission.</p>
     </div>
   </section>;
 }
