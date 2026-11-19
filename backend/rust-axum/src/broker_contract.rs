@@ -827,8 +827,14 @@ mod tests {
             minimum_quantity: d("0.01"),
             minimum_notional: None,
             price_currency_to_account_rate: d(rate),
-            conversion_rate_observed_at_ms: 10_000,
+            conversion_rate_observed_at_ms: current_time_ms().expect("test clock"),
         }
+    }
+
+    fn instrument_at(asset_class: AssetClass, symbol: &str, multiplier: &str, rate: &str, observed_at_ms: i64) -> InstrumentSpec {
+        let mut spec = instrument(asset_class, symbol, multiplier, rate);
+        spec.conversion_rate_observed_at_ms = observed_at_ms;
+        spec
     }
 
     #[test]
@@ -914,7 +920,7 @@ mod tests {
 
     #[test]
     fn portfolio_risk_is_account_currency_and_asset_class_agnostic() {
-        let mut spec = instrument(AssetClass::Forex, "EURUSD", "100000", "0.92");
+        let mut spec = instrument_at(AssetClass::Forex, "EURUSD", "100000", "0.92", 10_000);
         spec.quote_currency = "USD".into();
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(),
@@ -940,7 +946,7 @@ mod tests {
 
     #[test]
     fn portfolio_risk_rejects_stale_quotes_and_missing_protection() {
-        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let spec = instrument_at(AssetClass::Equity, "ABC", "1", "1", 10_000);
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(),
             account_currency:"USD".into(), account_healthy:true, trading_enabled:true, equity:d("10000"), available_margin:d("5000"),
@@ -970,7 +976,7 @@ mod tests {
 
     #[test]
     fn same_currency_conversion_must_be_exactly_one() {
-        let mut spec = instrument(AssetClass::Equity, "ABC", "1", "1.00000001");
+        let mut spec = instrument_at(AssetClass::Equity, "ABC", "1", "1.00000001", 10_000);
         spec.quote_currency = "USD".into();
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
@@ -991,7 +997,7 @@ mod tests {
 
     #[test]
     fn reduce_only_does_not_add_gross_exposure_or_consume_opening_notional_budget() {
-        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let spec = instrument_at(AssetClass::Equity, "ABC", "1", "1", 10_000);
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
             account_healthy:true, trading_enabled:true, equity:d("1000"), available_margin:d("1000"), gross_exposure:d("2000"),
@@ -1013,7 +1019,7 @@ mod tests {
 
     #[test]
     fn stop_order_notional_uses_trigger_price_for_pretrade_budget() {
-        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let spec = instrument_at(AssetClass::Equity, "ABC", "1", "1", 10_000);
         let account = BrokerAccountSnapshot {
             broker_id: "selected-broker".into(), account_id: "acct".into(),
             account_currency: "USD".into(), account_healthy: true, trading_enabled: true,
