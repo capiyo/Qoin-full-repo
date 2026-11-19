@@ -783,7 +783,12 @@ async fn verify_firebase_id_token(headers: &HeaderMap) -> Result<FirebasePrincip
     }
     let identity_toolkit_url = env::var("FIREBASE_IDENTITY_TOOLKIT_URL")
         .unwrap_or_else(|_| "https://identitytoolkit.googleapis.com/v1/accounts:lookup".into());
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build()
+        .map_err(|error| {
+            tracing::error!(error=%error,"could not initialize Firebase verification client");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"Firebase verification unavailable"})))
+        })?;
+    let response = client
         .post(format!("{}?key={}", identity_toolkit_url.trim_end_matches('?'), url::form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>()))
         .json(&serde_json::json!({"idToken":token}))
         .send().await
