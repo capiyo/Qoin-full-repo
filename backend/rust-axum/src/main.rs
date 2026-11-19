@@ -2434,6 +2434,21 @@ mod vector_ingestion_tests {
     }
 
     #[test]
+    fn live_event_order_matches_deterministic_recovery_order() {
+        let mut state = SymbolState::default();
+        let current = event("b", "trade", 10_000);
+        apply(&mut state, &current);
+
+        let older_timestamp = event("z", "trade", 9_999);
+        let earlier_same_timestamp = event("a", "trade", 10_000);
+        let later_same_timestamp = event("c", "trade", 10_000);
+
+        assert!(!event_follows_state(&older_timestamp, &state));
+        assert!(!event_follows_state(&earlier_same_timestamp, &state));
+        assert!(event_follows_state(&later_same_timestamp, &state));
+    }
+
+    #[test]
     fn mark_price_does_not_overwrite_last_trade_and_derives_basis() {
         let mut state = SymbolState::default();
         let mut trade = event("trade-1", "trade", 1_000);
