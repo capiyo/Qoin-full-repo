@@ -26,6 +26,7 @@ mod order_safety;
 mod execution_lifecycle;
 mod trading;
 mod v2_evaluation;
+mod broker_router;
 use edge_strategy::{DecisionInputEvent, EdgeDecision, EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, decide_from_market_vector, EngineConfig, ForceObservation, Signal};
 use qoin_market_space::{attribution::AttributionReport, hub::{HubError, NormalizationProfile, VariableHub}, FeatureAvailability, MarketFeature, MarketVector};
@@ -2461,6 +2462,15 @@ async fn append_relationship_event(
 }
 
 // Keep the V2 append-only ledger read path explicit for integration verification.
+async fn plan_broker_allocations(
+    Json(request): Json<broker_router::AllocationRequest>,
+) -> impl IntoResponse {
+    match broker_router::build_equal_share_plan(request) {
+        Ok(plan) => (StatusCode::OK, Json(serde_json::to_value(plan).unwrap_or_default())),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error}))),
+    }
+}
+
 async fn evaluate_v2_relationships(
     State(state): State<AppState>,
     Query(query): Query<V2EvaluationQuery>,
@@ -2820,6 +2830,7 @@ async fn main(){
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/v2/relationships",get(list_relationship_events).post(append_relationship_event))
         .route("/internal/v2/evaluation",get(evaluate_v2_relationships))
+        .route("/internal/broker-allocations",post(plan_broker_allocations))
         .route("/internal/v2/relationships/discover",post(discover_relationships))
         .route("/internal/v2/relationships/discover-vectors",post(discover_vector_relationships))
         .route("/internal/v2/relationships/discover-history",post(discover_vector_relationships_from_history))
