@@ -762,13 +762,10 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
             "truncated":true
         })));
     }
-    let strategy = match s.active_strategy.read() {
-        Ok(strategy) => strategy.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"strategy lock poisoned"}))),
-    };
-    match backtest::replay_with_execution(
+    match backtest::replay_with_vector_engine(
         events,
-        &strategy,
+        &s.signal_config,
+        &s.signal_config_version,
         q.initial_capital.unwrap_or(10_000.0),
         q.fee_bps.unwrap_or(10.0),
         q.slippage_bps.unwrap_or(5.0),
