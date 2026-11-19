@@ -72,3 +72,12 @@ The broker catalogue is a discovery/selection directory, not a claim that all li
 - Keep live dispatch disabled until the operator explicitly authorizes the deployment after those gates pass.
 
 No live-money readiness is implied by the presence of the generic route or provider catalogue.
+
+
+## Provider adapter skeletons (2026-11-19)
+
+- Added named Rust adapter types for all 20 directory providers, using the common `BrokerAdapter` contract.
+- Every scaffold returns `Unsupported` for account discovery, capabilities, instrument metadata, quotes, margin and order operations. The scaffolds are deliberately not registered in `BrokerRegistry`.
+- The catalogue reports `adapter_scaffolded`, while `execution_ready` remains false. A scaffold is not a provider integration and cannot submit, cancel or reconcile orders.
+- Provider credentials must be collected through an authenticated frontend flow, sent only over TLS to a dedicated backend connection endpoint, encrypted with a server-managed key, and stored separately from order intents. The browser must retain only an opaque connection ID.
+- Provider activation remains per-provider and fail-closed until API authentication, account ownership, instrument/precision mapping, fresh pricing, margin, native attached protection, cancellation, authoritative idempotency lookup and sandbox conformance are all verified.
