@@ -277,6 +277,15 @@ int main() {
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
+
+    drogon::app().registerHandler("/api/v1/orders", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/orders");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/orders/{1}", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb, const std::string& clientOrderId) {
+        proxyGet(req, std::move(cb), "/internal/orders/" + drogon::utils::urlEncode(clientOrderId) + "/reconcile");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/trading/readiness", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto brokers = req->getParameter("brokers");
