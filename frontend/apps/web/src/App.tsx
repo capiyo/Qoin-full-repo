@@ -593,7 +593,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
 
 
 const BROKER_DIRECTORY_PREVIEW = [
-  { id:"binance_usdm", name:"Binance USD-M", category:"Execution adapter", status:"adapter_ready", detail:"USD-M perpetual execution adapter exists; authenticated account linking and multi-account dispatch are not connected.", selectable:true },
+  { id:"binance_usdm", name:"Binance USD-M", category:"Execution adapter", status:"execution_adapter", detail:"USD-M perpetual execution adapter exists; authenticated account linking and multi-account dispatch are not connected.", selectable:true },
   { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
   { id:"kraken_spot", name:"Kraken Spot", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
 ] as const;
