@@ -119,7 +119,7 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   const attention = decision?.attention ?? [];
   const links = names.flatMap((_, from) => names.map((__, to) => ({ from, to, weight: attention[from]?.[to] ?? 0 })).filter((link) => link.from !== link.to && link.weight >= 0.18))
     .sort((a, b) => b.weight - a.weight).slice(0, 12);
-  const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF"];
+  const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF","#E2B86A"];
   const output = decision?.decision_vector ?? [0, 0];
   return <View style={styles.tracePanel}>
     <Text style={styles.attentionTitle}>Vector space · seven engine dimensions</Text>
@@ -629,7 +629,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const unreadNotifications = notifications.filter((item) => !item.read).length;
   const addNotification = (notification: QoinNotification) => setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
-  const decisionStrategy = vector?.strategy_parameters || strategy;
+  const decisionStrategy = strategy;
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
   const requireAuthentication = () => {
     setAccountOpen(true);
