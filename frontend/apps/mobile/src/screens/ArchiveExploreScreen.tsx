@@ -1089,7 +1089,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                   </View>
                 </View>)}
                 <Text style={styles.disclaimer}>Legacy edge-map status: {decisionStrategy.status}. The seven-force engine uses its own versioned configuration. Last update: {new Date(decisionStrategy.updated_at_ms).toLocaleString()}.</Text>
-              </> : <Text style={styles.disclaimer}>The active strategy map could not be loaded.</Text>}
+              </> : <Text style={styles.disclaimer}>The legacy edge-map compatibility settings could not be loaded.</Text>}
             </View>
             {vectorLoading ? <Text style={styles.disclaimer}>Loading the latest persisted engine vector…</Text> : vector ? (
               <>
@@ -1113,7 +1113,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
                   </View>;
                 })}
                 <View style={styles.contributionPanel}>
-                  <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Feature contribution ledger</Text><Text style={styles.attentionCaption}>Weight × attended feature</Text></View>
+                  <View style={styles.attentionHeader}><Text style={styles.attentionTitle}>Feature contribution ledger</Text><Text style={styles.attentionCaption}>Directional weight × attended force</Text></View>
+                  <Text style={styles.disclaimer}>OFI × |OI change| interaction: {vector.interaction_contribution?.toFixed(5) ?? "—"}</Text>
                   {QOIN_FEATURE_NAMES.map((name,index) => {
                     const attended = vector.attended_features?.[index] ?? 0;
                     const trace = vector.feature_trace?.find((item) => item.name === name);
