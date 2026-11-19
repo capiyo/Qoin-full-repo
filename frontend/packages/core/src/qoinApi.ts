@@ -9,6 +9,7 @@ export type MarketForceObservation = {
   open_interest_change: number;
   liquidation_pressure: number;
   basis: number;
+  spread_bps?: number | null;
 };
 
 export type QoinDecision = "BUY" | "SELL" | "CLOSE" | "WAIT";
@@ -35,19 +36,22 @@ export type QoinFeatureTrace = {
   bearish_weight: number;
   bullish_weighted_term: number;
   bearish_weighted_term: number;
+  selected?: boolean;
+  attended_value?: number;
+  directional_weight?: number;
+  directional_contribution?: number;
 };
 export type QoinDecisionDiagnostics = {
   spread_present: boolean;
   spread_within_limit: boolean;
-  event_intensity_positive: boolean;
+  alignment_passed: boolean;
   magnitude_passed: boolean;
-  buy_angle_passed: boolean;
-  sell_angle_passed: boolean;
-  bullish_exceeds_bearish: boolean;
-  bearish_exceeds_bullish: boolean;
+  angle_passed: boolean;
+  active_force_count: number;
   spread_limit_bps: number;
-  magnitude_limit: number;
-  angle_limit_degrees: number;
+  signal_threshold: number;
+  alignment_threshold: number;
+  angle_limit_radians: number;
 };
 export type QoinStrategySnapshot = {
   strategy_key: string;
@@ -75,10 +79,16 @@ export type QoinVectorDecision = {
   input_event?: QoinDecisionInputEvent | null;
   liquidation_side?: string | null;
   strategy_key?: string;
+  model_version?: string;
+  decision?: QoinDecision;
+  score?: number;
+  alignment?: number;
+  active_force_count?: number;
+  data_coverage?: { spread_available: boolean; funding_available: boolean; open_interest_available: boolean; basis_available: boolean };
   strategy_version?: string;
   raw_inputs?: Record<string, number | null>;
   feature_trace?: QoinFeatureTrace[];
-  strategy_parameters?: QoinStrategySnapshot;
+  strategy_parameters?: QoinStrategySnapshot | Record<string, unknown>;
   features?: Record<string, number>;
   attention?: number[][];
   attended_features?: number[];
@@ -95,11 +105,12 @@ export type QoinVectorDecision = {
 
 export const QOIN_FEATURE_NAMES = [
   "order_flow_imbalance",
-  "funding_pressure",
   "liquidity_stress",
-  "volatility_shock",
-  "event_intensity",
+  "volatility",
+  "funding_pressure",
+  "open_interest_change",
   "liquidation_pressure",
+  "basis",
 ] as const;
 
 /** Fetches the latest persisted market-state snapshot for a symbol. */
