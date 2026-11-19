@@ -492,6 +492,31 @@ export function evaluateQoinV2Relationships(input: QoinV2EvaluationRequest): Pro
   return request<QoinV2EvaluationReport>("/api/v1/v2/evaluation?" + query.toString());
 }
 
+
+export type QoinBrokerSelection = { broker_id: string; quote_currency: string };
+export type QoinBrokerAllocationRequest = {
+  total_notional: number; quote_currency: string; selections: QoinBrokerSelection[];
+};
+export type QoinBrokerAllocation = {
+  broker_id: string; quote_currency: string; allocation: number; share_fraction: number;
+  adapter_status: "adapter_present_operator_gated" | "adapter_not_connected" | "unknown_broker";
+};
+export type QoinBrokerAllocationPlan = {
+  total_notional: number; quote_currency: string; broker_count: number; allocation_per_broker: number;
+  allocated_total: number; unallocated_remainder: number; execution_enabled: boolean;
+  allocations: QoinBrokerAllocation[];
+  policy: "equal_share_no_silent_omission_no_redistribution_no_automatic_fx";
+};
+
+/** Equal-share plan only; adapter gaps are explicit and no orders are submitted. */
+export function planQoinBrokerAllocations(input: QoinBrokerAllocationRequest): Promise<QoinBrokerAllocationPlan> {
+  return request<QoinBrokerAllocationPlan>("/api/v1/broker-allocations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
 /** Read-only algorithm and preview market coverage catalogue. */
 export function getQoinAlgorithmCatalogue(): Promise<QoinAlgorithmCatalogue> {
   return request<QoinAlgorithmCatalogue>("/api/v1/algorithms");
