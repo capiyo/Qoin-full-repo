@@ -562,7 +562,8 @@ pub async fn preflight_selected_orders(
     }
 
     let checks = resolved.into_iter().map(|(broker_id, adapter, order, input)| {
-        let policy = *policy;
+        // Copy the shared reference into each future; the policy value is not Copy.
+        let policy = policy;
         async move {
             let account = adapter.account_snapshot(&order.account_id).await?;
             let instrument = adapter.instrument_spec(&order.account_id, &order.instrument_id).await?;
@@ -576,7 +577,7 @@ pub async fn preflight_selected_orders(
             let capabilities = adapter.capabilities(&order.account_id, &order.instrument_id).await?;
             validate_capabilities(&order, &capabilities)?;
             let required_margin = adapter.required_margin_account_currency(&order, input.reference_price).await?;
-            let risk = validate_portfolio_order(&policy, &account, &instrument, &order, &RiskCheckInput {
+            let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
                 reference_price: input.reference_price,
                 protective_stop_price: input.protective_stop_price,
                 now_ms: input.now_ms,
