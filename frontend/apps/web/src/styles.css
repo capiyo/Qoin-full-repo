@@ -541,3 +541,5 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 @media(max-width:650px){.broker-allocation-controls{grid-column:1/-1}.broker-allocation-result{grid-template-columns:1fr auto}}
 
 .broker-allocation-controls select{width:100%;min-width:0;padding:9px 11px;border:1px solid #DCE4EF;border-radius:10px;background:#FFFFFF;color:#243750;font-size:11px}
+
+.qoin-card-pager .qoin-model-page{grid-column:1/-1}
