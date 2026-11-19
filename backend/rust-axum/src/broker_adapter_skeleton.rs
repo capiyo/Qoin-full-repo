@@ -116,6 +116,20 @@ mod tests {
         assert!(PROVIDER_ADAPTER_IDS.iter().all(|id| !id.trim().is_empty()));
     }
 
+    #[test]
+    fn scaffold_ids_match_the_public_catalogue_exactly() {
+        let catalogue = crate::broker_catalogue::catalogue();
+        let items = catalogue["items"].as_array().expect("catalogue items");
+        let mut ids: Vec<&str> = items.iter()
+            .map(|item| item["id"].as_str().expect("provider id"))
+            .collect();
+        let mut scaffold_ids = PROVIDER_ADAPTER_IDS.to_vec();
+        ids.sort_unstable();
+        scaffold_ids.sort_unstable();
+        assert_eq!(ids, scaffold_ids);
+        assert!(items.iter().all(|item| item["execution_ready"] == false));
+    }
+
     #[tokio::test]
     async fn provider_scaffold_cannot_submit_orders() {
         let adapter = BinanceUsdmAdapter;
