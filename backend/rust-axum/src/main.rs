@@ -63,6 +63,7 @@ struct SymbolState {
     #[serde(default)] basis_bps: Option<f64>,
     spread_bps: Option<f64>,
     #[serde(default)] last_book_ts_ms: Option<i64>,
+    #[serde(default)] liquidity_imbalance: f64,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
@@ -71,6 +72,7 @@ struct SymbolState {
     funding_rate: Option<f64>,
     open_interest: Option<f64>,
     #[serde(default)] open_interest_change: f64,
+    #[serde(default)] liquidation_pressure: f64,
     liquidation_events: usize,
     last_liquidation_side: Option<String>,
     state_quality: f64,
@@ -135,6 +137,14 @@ fn validate_event(e: &MarketEvent) -> Result<(), String> {
     Ok(())
 }
 fn apply(state: &mut SymbolState, event: &MarketEvent) {
+    // Exponential half-life keeps flow and liquidation pressure local in time.
+    if let Some(previous_ts) = state.last_event_ts_ms {
+        let elapsed_ms = event.ts_ms.saturating_sub(previous_ts) as f64;
+        let decay = (-std::f64::consts::LN_2 * elapsed_ms / 60_000.0).exp();
+        state.signed_flow *= decay;
+        state.total_trade_size *= decay;
+        state.liquidation_pressure *= decay;
+    }
     state.symbol = event.symbol.clone();
     if event.event_type == "trade" {
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
@@ -158,7 +168,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.spread_bps=if mid>0.0 {Some((ask-bid)/mid*10_000.0)} else {None};
         state.last_book_ts_ms=Some(event.ts_ms);
         if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) {
-            if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;}
+            if bs+as_>0.0 {state.liquidity_imbalance=(bs-as_)/(bs+as_);}
         }
     }
     match event.event_type.as_str() {
@@ -167,8 +177,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.total_trade_size+=size; state.event_intensity+=1.0; }
         "liquidation" => { state.liquidation_events+=1; state.event_intensity+=2.0;
             state.last_liquidation_side=event.liquidation_side.clone();
-            if event.liquidation_side.as_deref()==Some("long"){state.signed_flow-=event.size.unwrap_or(0.0);}
-            if event.liquidation_side.as_deref()==Some("short"){state.signed_flow+=event.size.unwrap_or(0.0);} }
+            match event.liquidation_side.as_deref() { Some("long")=>state.liquidation_pressure-=1.0,
+                Some("short")=>state.liquidation_pressure+=1.0, _=>{} } }
         "funding" => if event.funding_rate.is_some(){state.funding_rate=event.funding_rate;},
         "mark_price" => if event.funding_rate.is_some() { state.funding_rate = event.funding_rate; },
         "open_interest" => if let Some(current) = event.open_interest {
@@ -618,12 +628,11 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     // and a missing/stale spread forces WAIT inside the engine.
     let observation = ForceObservation {
         ofi: snapshot.order_flow_imbalance,
-        liquidity: snapshot.spread_bps.map(|spread| -spread / 25.0).unwrap_or(0.0),
+        liquidity: snapshot.liquidity_imbalance,
         volatility: snapshot.ewma_abs_return / 0.01,
         funding: snapshot.funding_rate.unwrap_or(0.0) * 100.0,
         open_interest_change: snapshot.open_interest_change * 100.0,
-        liquidation_pressure: (snapshot.liquidation_events as f64 / 10.0)
-            * match snapshot.last_liquidation_side.as_deref() { Some("long") => -1.0, Some("short") => 1.0, _ => 0.0 },
+        liquidation_pressure: snapshot.liquidation_pressure / 10.0,
         basis: snapshot.basis_bps.map(|basis| basis / 25.0).unwrap_or(0.0),
         spread_bps: snapshot.spread_bps,
         spread_age_ms: snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms)
