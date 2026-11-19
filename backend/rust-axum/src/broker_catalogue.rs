@@ -53,7 +53,7 @@ pub fn catalogue() -> Value {
         }, "execution_status": status, "selectable": selectable,
         "execution_ready": false,
         "note": if *id == "binance_usdm" {
-            "A Binance USD-M executor exists in the legacy internal order path; generic multi-account adapter registration and account linking are not connected."
+            "Qoin exposes a broker-neutral execution contract and runtime adapter registry. No provider adapter is currently registered or execution-ready."
         } else {
             "Provider API route is listed for discovery; Qoin has not implemented or verified this provider's execution adapter or account connection."
         }
