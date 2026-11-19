@@ -466,6 +466,32 @@ export function runQoinBacktest(input: QoinBacktestRequest): Promise<QoinBacktes
   return request<QoinBacktestResult>("/api/v1/backtest?" + query.toString());
 }
 
+
+export type QoinV2EvaluationSample = {
+  event_id: string; relationship_id: string; relation_kind: string;
+  observed_at_ms: number; evaluated_at_ms: number; horizon_ms: number; attention_weight: number;
+  source_atom_count: number; target_atom_count: number; intersection_count: number; union_count: number;
+  realized_return_bps: number; max_adverse_excursion_bps: number; max_favorable_excursion_bps: number;
+};
+export type QoinV2RelationSummary = {
+  relation_kind: string; samples: number; positive: number; negative: number; flat: number;
+  mean_return_bps: number; attention_weighted_mean_return_bps: number;
+  mean_adverse_excursion_bps: number; mean_favorable_excursion_bps: number; mean_attention_weight: number;
+};
+export type QoinV2EvaluationReport = {
+  symbol: string; venue: string; horizon_ms: number; discovered_relationships: number;
+  evaluated_relationships: number; unresolved_relationships: number;
+  samples: QoinV2EvaluationSample[]; by_relation_kind: QoinV2RelationSummary[]; interpretation: string[];
+};
+export type QoinV2EvaluationRequest = { symbol: string; venue: string; horizon_ms?: number; limit?: number };
+
+/** Forward-only, direction-neutral outcome study for V2 relationship records. */
+export function evaluateQoinV2Relationships(input: QoinV2EvaluationRequest): Promise<QoinV2EvaluationReport> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, String(value));
+  return request<QoinV2EvaluationReport>("/api/v1/v2/evaluation?" + query.toString());
+}
+
 /** Read-only algorithm and preview market coverage catalogue. */
 export function getQoinAlgorithmCatalogue(): Promise<QoinAlgorithmCatalogue> {
   return request<QoinAlgorithmCatalogue>("/api/v1/algorithms");
