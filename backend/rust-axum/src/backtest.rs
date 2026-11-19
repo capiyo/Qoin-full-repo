@@ -344,7 +344,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             state.last_book_ts_ms=Some(event.ts_ms);
             if let (Some(bs),Some(as_))=(event.bid_size,event.ask_size) { if bs+as_>0.0 {state.signed_flow+=(bs-as_)/(bs+as_)*0.1;} }
         }
-        if matches!(event.event_type.as_str(), "funding" | "mark_price") && position > 0.0 {
+        if event.event_type == "funding" && position > 0.0 {
             if let (Some(rate), Some(mark_price)) = (event.funding_rate, event.price.filter(|price| price.is_finite() && *price > 0.0)) {
                 let cashflow = funding_cashflow(position, mark_price, rate);
                 cash += cashflow;
