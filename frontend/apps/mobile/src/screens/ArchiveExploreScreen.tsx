@@ -34,7 +34,7 @@ const seed: Instrument[] = [
 
 type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void };
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
-const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LIQ", "VOL", "FUND", "OI Δ", "LIQ", "BASIS"] as const;
+const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LQTY", "VOL", "FUND", "OIΔ", "LIQ", "BASIS"] as const;
 
 type PercentageWidth = `${number}%`;
 
@@ -57,7 +57,7 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
     <Text style={styles.attentionCaption}>Normalized engine inputs · not a learned embedding</Text>
     <Svg viewBox="0 0 100 100" width="100%" height={190}>
       {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF4" strokeWidth=".5" />)}
-      {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/6; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF4" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
+      {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF4" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
       {decision ? <Polygon points={coordinates} fill="#3475E8" fillOpacity=".16" stroke="#2867DC" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#94A3B8" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
     </Svg>
     <View style={styles.featureValues}>{QOIN_FEATURE_NAMES.map((name,index) => <View key={name} style={styles.featureValue}><Text style={styles.metricLabel}>{labels[index]}</Text><Text style={styles.metricValue}>{values[index].toFixed(3)}</Text></View>)}</View>
@@ -1024,12 +1024,12 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>
               <Text style={styles.mapCopy}>Horizontal · bullish component. Vertical · bearish component. {vectorHistory.length} persisted decisions.</Text>
               <FeatureSpace decision={vector} />
-              {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; replay still evaluates stored events through the active Rust strategy."}</Text>}
+              {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; the authoritative seven-force Rust engine has not emitted a decision yet."}</Text>}
               <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : mechanicsTab === "vector" ? <>
-            <Text style={styles.mapTitle}>Vector space · six engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁶ feature state with attention interactions.</Text>
+            <Text style={styles.mapTitle}>Vector space · seven engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁷ feature state with attention interactions.</Text>
             <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
             <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>
