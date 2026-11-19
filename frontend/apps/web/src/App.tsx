@@ -334,6 +334,12 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
   const secondMembers = new Set(secondSet?.member_event_ids ?? []);
   const intersectionCount = [...firstMembers].filter((id) => secondMembers.has(id)).length;
   const unionCount = new Set([...firstMembers, ...secondMembers]).size;
+  const overlapMatrix = (ledger?.sets ?? []).map((set) => (ledger?.sets ?? []).map((other) => {
+    const otherMembers = new Set(other.member_event_ids);
+    const count = set.member_event_ids.filter((id) => otherMembers.has(id)).length;
+    const denominator = Math.min(set.measure.counting_measure, other.measure.counting_measure);
+    return { count, intensity: denominator > 0 ? count / denominator : 0 };
+  }));
   return <section aria-label="Version 2 set and relation ledger" style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #E8EDF4", borderRadius: 16, background: "#FFFFFF", color: "#243750" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <div><strong style={{ fontSize: 14 }}>Version 2 · Set &amp; relation ledger</strong><p style={{ margin: "4px 0 0", color: "#8794A7", fontSize: 10 }}>Finite sets derived from persisted source events; separate from V1 signal calculations.</p></div>
@@ -379,6 +385,23 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
           <strong>{item.measure.counting_measure}</strong>
         </div>)}
         <p className="set-venn-note">Bars are exact cardinalities from returned event IDs. A zero-length bar means the set has no observed members in this universe.</p>
+      </section>
+      <section className="set-overlap-map" aria-label="Pairwise set intersection matrix">
+        <div className="attention-heading"><strong>Set intersection matrix</strong><span>Each cell shows |A ∩ B|</span></div>
+        <div className="set-overlap-scroll">
+          <div className="set-overlap-grid" style={{gridTemplateColumns: `104px repeat(${ledger.sets.length}, minmax(24px, 1fr))`}}>
+            <span className="set-overlap-corner">A ∩ B</span>
+            {ledger.sets.map((item) => <span className="set-overlap-heading" key={"col-"+item.set_id} title={item.label}>{item.set_id.split("_").map((part)=>part[0]).join("").toUpperCase()}</span>)}
+            {ledger.sets.map((item,rowIndex) => <React.Fragment key={"row-"+item.set_id}>
+              <span className="set-overlap-row-label" title={item.label}>{item.label}</span>
+              {ledger.sets.map((other,columnIndex) => {
+                const cell=overlapMatrix[rowIndex][columnIndex];
+                return <span key={other.set_id} className="set-overlap-cell" title={item.label+" ∩ "+other.label+" = "+cell.count} style={{backgroundColor: `rgba(40,103,220,${0.06+cell.intensity*0.42})`}}>{cell.count}</span>;
+              })}
+            </React.Fragment>)}
+          </div>
+        </div>
+        <p className="set-venn-note">Intersection counts are computed from shared event IDs, not inferred from the visual layout. Stronger cells mean a larger share of the smaller set is shared.</p>
       </section>
       <section className="relation-flow-map" aria-label="Observed temporal relation graph">
         <div className="attention-heading"><strong>Relation flow</strong><span>Source set → target set · observed edges</span></div>
