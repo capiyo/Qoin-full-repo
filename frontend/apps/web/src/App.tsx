@@ -616,7 +616,7 @@ const BROKER_DIRECTORY_PREVIEW = [
 ] as const;
 
 function BrokerCollectionPanel() {
-  const [directory,setDirectory]=useState(BROKER_DIRECTORY_PREVIEW);
+  const [directory,setDirectory]=useState<Array<{id:string;name:string;category:string;status:string;detail:string;selectable:boolean}>>([...BROKER_DIRECTORY_PREVIEW]);
   const [selected,setSelected]=useState<string[]>([]);
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
