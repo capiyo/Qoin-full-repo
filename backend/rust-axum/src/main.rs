@@ -64,6 +64,7 @@ struct SymbolState {
     spread_bps: Option<f64>,
     #[serde(default)] last_book_ts_ms: Option<i64>,
     #[serde(default)] liquidity_imbalance: f64,
+    #[serde(default)] last_trade_ts_ms: Option<i64>,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
@@ -144,6 +145,8 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         state.signed_flow *= decay;
         state.total_trade_size *= decay;
         state.liquidation_pressure *= decay;
+        let oi_decay = (-std::f64::consts::LN_2 * elapsed_ms / 300_000.0).exp();
+        state.open_interest_change *= oi_decay;
     }
     state.symbol = event.symbol.clone();
     if event.event_type == "trade" {
@@ -152,6 +155,7 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
             state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
         }
         state.last_price = Some(price);
+        state.last_trade_ts_ms = Some(event.ts_ms);
         state.basis_bps = state.mark_price.filter(|mark| *mark > 0.0)
             .map(|mark| (mark - price) / price * 10_000.0);
     }
@@ -191,7 +195,9 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
     }
     state.event_count+=1;
     state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
-    if state.total_trade_size>0.0 {state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);}
+    if state.total_trade_size>0.0 && state.last_trade_ts_ms.is_some_and(|last_trade| event.ts_ms.saturating_sub(last_trade)<=60_000) {
+        state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);
+    } else { state.order_flow_imbalance=0.0; }
     state.state_quality=((state.event_count as f64/100.0).sqrt()).min(1.0);
 }
 fn constant_time_token_match(expected: &[u8], supplied: &[u8]) -> bool {
@@ -2421,6 +2427,9 @@ mod vector_ingestion_tests {
         assert!((state.total_trade_size - 5.0).abs() < 1e-12);
         assert!((state.order_flow_imbalance - 1.0).abs() < 1e-12);
         assert!((state.liquidity_imbalance - 0.5).abs() < 1e-12);
+        let stale = event("stale", "book", 61_001);
+        apply(&mut state, &stale);
+        assert_eq!(state.order_flow_imbalance, 0.0);
     }
 
     #[test]
