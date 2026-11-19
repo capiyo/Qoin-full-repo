@@ -117,10 +117,12 @@ void proxyGet(const drogon::HttpRequestPtr& incoming,
     request->setMethod(drogon::Get);
     request->setPath(path);
     request->addHeader("accept", "application/json");
-    const auto executionToken = incoming->getHeader("x-qoin-execution-token");
-    if (!executionToken.empty()) request->addHeader("x-qoin-execution-token", executionToken);
-    const auto ledgerMaintenanceToken = incoming->getHeader("x-qoin-ledger-maintenance-token");
-    if (!ledgerMaintenanceToken.empty()) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    const char* executionToken = std::getenv("QOIN_EXECUTION_TOKEN");
+    if (executionToken && *executionToken) request->addHeader("x-qoin-execution-token", executionToken);
+    const char* ledgerMaintenanceToken = std::getenv("QOIN_LEDGER_MAINTENANCE_TOKEN");
+    if (ledgerMaintenanceToken && *ledgerMaintenanceToken) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
     client->sendRequest(request, [callback = std::move(callback)](drogon::ReqResult result,
         const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
@@ -147,10 +149,12 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->addHeader("accept", "application/json");
     request->setBody(std::string(incoming->getBody()));
-    const auto executionToken = incoming->getHeader("x-qoin-execution-token");
-    if (!executionToken.empty()) request->addHeader("x-qoin-execution-token", executionToken);
-    const auto ledgerMaintenanceToken = incoming->getHeader("x-qoin-ledger-maintenance-token");
-    if (!ledgerMaintenanceToken.empty()) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    const char* executionToken = std::getenv("QOIN_EXECUTION_TOKEN");
+    if (executionToken && *executionToken) request->addHeader("x-qoin-execution-token", executionToken);
+    const char* ledgerMaintenanceToken = std::getenv("QOIN_LEDGER_MAINTENANCE_TOKEN");
+    if (ledgerMaintenanceToken && *ledgerMaintenanceToken) request->addHeader("x-qoin-ledger-maintenance-token", ledgerMaintenanceToken);
     client->sendRequest(request, [callback = std::move(callback)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
         if (result != drogon::ReqResult::Ok || !response) {
