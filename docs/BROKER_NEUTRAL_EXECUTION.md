@@ -59,7 +59,7 @@ Decimal fields are serialized as decimal strings by the Rust decimal serializer.
 
 ## Current honest capability state
 
-The generic contract, runtime registry, shared preflight and risk-checked submission sequence, durable intent-before-submit path, and generic reconciliation route are implemented. The registry starts empty. No Forex or crypto provider adapter is currently registered, no authenticated broker-account connection registry is wired, and the readiness endpoint reports zero configured adapters and keeps dispatch disabled. The previous Binance-only order implementation has been removed rather than silently retained as the universal path.
+The generic contract, owner-scoped adapter interface, runtime registry, server-sourced quote preflight, native protective-stop submission contract, shared risk-checked submission sequence, durable intent-before-submit path, Firebase identity verification, and owner-scoped reconciliation route are implemented. The registry starts empty. No Forex or crypto provider adapter is currently registered, no authenticated broker-account connection registry is wired, and the readiness endpoint reports zero configured adapters and keeps dispatch disabled. The previous Binance-only order implementation has been removed rather than silently retained as the universal path.
 
 The broker catalogue is a discovery/selection directory, not a claim that all listed APIs are implemented. A provider becomes executable only after its adapter implements every required contract method, passes provider-specific conformance and sandbox tests, proves account ownership and trading permissions, and is registered by the backend from server-side credentials. Credentials must never be supplied by frontend payloads or pasted into chat.
 
