@@ -184,7 +184,7 @@ unauthenticated_backtest_status=$(curl -sS -o /tmp/unauthenticated-backtest.json
           jq -e '.candidate_count == 2 and .persisted == 2 and .already_present == 0 and .decision_authority == "version-1-vector-engine"' /tmp/v2-discovery.json
           curl -fsS -X POST http://127.0.0.1:8081/internal/v2/relationships/discover -H 'content-type: application/json' --data-binary @/tmp/v2-relationships.json >/tmp/v2-discovery-retry.json
           jq -e '.persisted == 0 and .already_present == 2' /tmp/v2-discovery-retry.json
-          curl -fsS 'http://127.0.0.1:8081/internal/v2/relationships?limit=10' >/tmp/v2-ledger.json
+          curl -fsS -H 'authorization: Bearer ci-firebase-id-token' 'http://127.0.0.1:8081/internal/v2/relationships?limit=10' >/tmp/v2-ledger.json
           echo 'V2 discovery response:'; cat /tmp/v2-discovery.json
           echo 'V2 idempotent retry response:'; cat /tmp/v2-discovery-retry.json
           echo 'V2 persisted ledger response:'; cat /tmp/v2-ledger.json
