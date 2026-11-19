@@ -542,7 +542,6 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
     let active=true;
     setLedgerStatus("loading");
     getQoinSetLedger(item.engineSymbol,1000).then((result)=>{if(active){setLedger(result);setLedgerStatus("loaded");}}).catch(()=>{if(active)setLedgerStatus("unavailable");});
-    return()=>{active=false;};
   },[page,item.engineSymbol,ledger,ledgerStatus]);
   return <article className="instrument-card qoin-instrument-card"
     onTouchStart={(event)=>{touchStart.current=event.touches[0]?.clientX??null;}}
