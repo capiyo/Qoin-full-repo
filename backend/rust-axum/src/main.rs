@@ -2044,7 +2044,7 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"strategy map persistence failed"})));
     }
     match s.active_strategy.write(){Ok(mut current)=>*current=stored.clone(),Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"strategy lock poisoned after persistence"})))}
-    (StatusCode::OK,Json(serde_json::json!({"status":"strategy_updated","strategy":stored,"live_trading":false})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"legacy_strategy_updated","legacy_only":true,"applies_to_active_vector_engine":false,"strategy":stored,"live_trading":false})))
 }
 #[tokio::main]
 async fn main(){
@@ -2104,7 +2104,7 @@ async fn main(){
             baseline
         }
     };
-    tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded active edge strategy map from MongoDB");
+    tracing::info!(strategy_key=%active.strategy_key,version=%active.version,"loaded legacy edge-map compatibility settings; active decisions use qoin-vector-engine");
     // Rebuild rolling state from the immutable event log on every process start.
     // Snapshot-only recovery can preserve a stale snapshot when a crash occurs
     // after event insertion but before snapshot persistence. Replaying the raw
