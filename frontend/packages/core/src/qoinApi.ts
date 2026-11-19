@@ -138,10 +138,22 @@ function getBaseUrl(): string {
   return "http://127.0.0.1:8080";
 }
 
+type QoinAuthTokenProvider = () => Promise<string | null>;
+let authTokenProvider: QoinAuthTokenProvider | null = null;
+
+/** Install the active Firebase user's ID-token provider from the web or native app. */
+export function setQoinAuthTokenProvider(provider: QoinAuthTokenProvider | null): void {
+  authTokenProvider = provider;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = authTokenProvider ? await authTokenProvider().catch(() => null) : null;
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "application/json");
+  if (token) headers.set("authorization", `Bearer ${token}`);
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers,
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
