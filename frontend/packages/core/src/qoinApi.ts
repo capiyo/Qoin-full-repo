@@ -210,6 +210,58 @@ export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
   return request<QoinBrokerCatalogue>("/api/v1/brokers");
 }
 
+export type QoinNormalizedOrder = {
+  client_order_id: string;
+  account_id: string;
+  instrument_id: string;
+  side: "buy" | "sell";
+  order_type: "market" | "limit" | "stop" | "stop_limit";
+  quantity: string;
+  limit_price?: string | null;
+  stop_price?: string | null;
+  time_in_force?: string | null;
+  reduce_only: boolean;
+};
+export type QoinOrderSubmission = {
+  broker_id: string;
+  order: QoinNormalizedOrder;
+  preflight: {
+    reference_price: string;
+    reference_price_observed_at_ms: number;
+    protective_stop_price?: string | null;
+    now_ms: number;
+  };
+};
+export type QoinBrokerOrderReceipt = {
+  risk: {
+    notional_account_currency: string;
+    maximum_loss_account_currency: string;
+    remaining_daily_loss_budget: string;
+    projected_gross_exposure: string;
+  };
+  broker_receipt: {
+    broker_id: string;
+    account_id: string;
+    client_order_id: string;
+    broker_order_id: string;
+    status: string;
+    accepted_at_ms: number;
+    raw_status?: string | null;
+  };
+};
+/** Generic order entry. It fails closed when the selected broker has no registered adapter. */
+export function submitQoinOrder(submission: QoinOrderSubmission): Promise<QoinBrokerOrderReceipt> {
+  return request<QoinBrokerOrderReceipt>("/api/v1/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(submission),
+  });
+}
+/** Reconcile by Qoin client order ID using the same broker adapter as the original intent. */
+export function reconcileQoinOrder(clientOrderId: string): Promise<QoinBrokerOrderReceipt> {
+  return request<QoinBrokerOrderReceipt>("/api/v1/orders/" + encodeURIComponent(clientOrderId) + "/reconcile");
+}
+
 export type QoinInstrument = {
   symbol: string; engine_symbol: string; name: string;
   asset_class: "Crypto" | "Equities" | "FX" | "Indices" | "Commodities";
