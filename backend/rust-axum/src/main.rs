@@ -58,6 +58,8 @@ struct SymbolState {
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
+    #[serde(default)] last_event_id: Option<String>,
+    #[serde(default)] last_event_venue: Option<String>,
     last_price: Option<f64>,
     #[serde(default)] mark_price: Option<f64>,
     #[serde(default)] basis_bps: Option<f64>,
@@ -195,7 +197,9 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         "book" => {}, _ => {}
     }
     state.event_count+=1;
-    state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
+    state.last_event_ts_ms=Some(event.ts_ms);
+    state.last_event_id=Some(event.event_id.clone());
+    state.last_event_venue=Some(event.venue.clone());
     if state.total_trade_size>0.0 && state.last_trade_ts_ms.is_some_and(|last_trade| event.ts_ms.saturating_sub(last_trade)<=60_000) {
         state.order_flow_imbalance=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);
     } else { state.order_flow_imbalance=0.0; }
@@ -604,6 +608,42 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         hash.wrapping_mul(31).wrapping_add(byte as usize)) % s.symbol_ingest_locks.len();
     let _symbol_guard = s.symbol_ingest_locks[lock_stripe].lock().await;
     if let Err(message)=validate_event(&event){tracing::warn!(symbol=%event.symbol,event_type=%event.event_type,reason=%message,"invalid market event rejected");return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":message})));}
+
+    // Idempotent retries are handled before event-time ordering checks.
+    let duplicate_filter=doc!{"venue":&event.venue,"symbol":&event.symbol,"event_id":&event.event_id};
+    match s.events.find_one(duplicate_filter.clone(),None).await {
+        Ok(Some(_)) => {
+            if let Err(error)=persist_set_ledger_records(&s.events,&s.set_ledger_records,&event).await {
+                tracing::error!(error=%error,symbol=%event.symbol,event_id=%event.event_id,"duplicate event ledger repair failed");
+                return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable set ledger append failed","event_persisted":true})));
+            }
+            return (StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id,"ledger_repair_attempted":true})));
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::error!(error=%error,"duplicate event lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event lookup unavailable"})));
+        }
+    }
+    if let Ok(memory)=s.memory.read() {
+        if let Some(previous)=memory.get(&event.symbol) {
+            let previous_key=(previous.last_event_ts_ms.unwrap_or(0),
+                previous.last_event_id.as_deref().unwrap_or(""),
+                previous.last_event_venue.as_deref().unwrap_or(""));
+            let incoming_key=(event.ts_ms,event.event_id.as_str(),event.venue.as_str());
+            if incoming_key <= previous_key {
+                return (StatusCode::CONFLICT,Json(serde_json::json!({
+                    "error":"out-of-order market event rejected",
+                    "last_event_ts_ms":previous.last_event_ts_ms,
+                    "last_event_id":previous.last_event_id,
+                    "incoming_event_ts_ms":event.ts_ms,
+                    "incoming_event_id":event.event_id
+                })));
+            }
+        }
+    } else {
+        return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})));
+    }
     let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     let newly_inserted = match s.events.insert_one(raw,None).await{
         Ok(_)=>true,
