@@ -6,6 +6,7 @@
 //! No asset class, quote currency, venue or broker is privileged here.
 
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, sync::{Arc, RwLock}};
 
@@ -54,12 +55,12 @@ pub struct InstrumentSpec {
     pub settlement_currency: String,
     pub quantity_unit: QuantityUnit,
     /// Converts one native quantity unit into base exposure (or contract value).
-    pub contract_multiplier: f64,
-    pub tick_size: f64,
-    pub quantity_step: f64,
-    pub minimum_quantity: f64,
-    pub minimum_notional: Option<f64>,
-    pub price_currency_to_account_rate: f64,
+    pub contract_multiplier: Decimal,
+    pub tick_size: Decimal,
+    pub quantity_step: Decimal,
+    pub minimum_quantity: Decimal,
+    pub minimum_notional: Option<Decimal>,
+    pub price_currency_to_account_rate: Decimal,
     pub conversion_rate_observed_at_ms: i64,
 }
 
@@ -72,8 +73,8 @@ impl InstrumentSpec {
             ("minimum_quantity", self.minimum_quantity),
             ("price_currency_to_account_rate", self.price_currency_to_account_rate),
         ] {
-            if !value.is_finite() || value <= 0.0 {
-                return Err(ContractError::InvalidInstrument(format!("{name} must be finite and positive")));
+            if value <= Decimal::ZERO {
+                return Err(ContractError::InvalidInstrument(format!("{name} must be positive")));
             }
         }
         if self.conversion_rate_observed_at_ms <= 0 {
@@ -85,34 +86,40 @@ impl InstrumentSpec {
             || self.broker_symbol.trim().is_empty()
             || self.quote_currency.trim().is_empty()
             || self.settlement_currency.trim().is_empty()
+            || self.base_currency.as_ref().is_some_and(|currency| currency.trim().is_empty())
         {
             return Err(ContractError::InvalidInstrument("instrument identity and currencies are required".into()));
         }
-        if self.minimum_notional.is_some_and(|value| !value.is_finite() || value < 0.0) {
-            return Err(ContractError::InvalidInstrument("minimum_notional must be finite and non-negative".into()));
+        if self.minimum_notional.is_some_and(|value| value < Decimal::ZERO) {
+            return Err(ContractError::InvalidInstrument("minimum_notional must be non-negative".into()));
         }
         Ok(())
     }
 
-    pub fn notional_in_account_currency(&self, quantity: f64, price: f64) -> Result<f64, ContractError> {
+    pub fn notional_in_account_currency(&self, quantity: Decimal, price: Decimal) -> Result<Decimal, ContractError> {
         self.validate()?;
-        if !quantity.is_finite() || quantity <= 0.0 || !price.is_finite() || price <= 0.0 {
-            return Err(ContractError::InvalidOrder("quantity and price must be finite and positive".into()));
+        if quantity <= Decimal::ZERO || price <= Decimal::ZERO {
+            return Err(ContractError::InvalidOrder("quantity and price must be positive".into()));
         }
-        let notional = quantity * self.contract_multiplier * price * self.price_currency_to_account_rate;
-        if !notional.is_finite() || notional <= 0.0 {
+        let notional = quantity
+            .checked_mul(self.contract_multiplier)
+            .and_then(|value| value.checked_mul(price))
+            .and_then(|value| value.checked_mul(self.price_currency_to_account_rate))
+            .ok_or_else(|| ContractError::InvalidOrder("converted notional arithmetic overflow".into()))?;
+        if notional <= Decimal::ZERO {
             return Err(ContractError::InvalidOrder("converted notional is invalid".into()));
         }
         Ok(notional)
     }
 
-    pub fn validate_quantity(&self, quantity: f64) -> Result<(), ContractError> {
+    pub fn validate_quantity(&self, quantity: Decimal) -> Result<(), ContractError> {
         self.validate()?;
-        if !quantity.is_finite() || quantity < self.minimum_quantity {
+        if quantity < self.minimum_quantity {
             return Err(ContractError::InvalidOrder("quantity is below the instrument minimum or invalid".into()));
         }
-        let steps = quantity / self.quantity_step;
-        if !steps.is_finite() || (steps - steps.round()).abs() > 1e-8 {
+        let remainder = quantity.checked_rem(self.quantity_step)
+            .ok_or_else(|| ContractError::InvalidOrder("quantity step calculation overflow".into()))?;
+        if remainder != Decimal::ZERO {
             return Err(ContractError::InvalidOrder("quantity does not conform to instrument step size".into()));
         }
         Ok(())
@@ -124,11 +131,11 @@ pub struct BrokerAccountSnapshot {
     pub broker_id: String,
     pub account_id: String,
     pub account_currency: String,
-    pub equity: f64,
-    pub available_margin: f64,
-    pub gross_exposure: f64,
-    pub daily_realized_pnl: f64,
-    pub daily_unrealized_pnl: f64,
+    pub equity: Decimal,
+    pub available_margin: Decimal,
+    pub gross_exposure: Decimal,
+    pub daily_realized_pnl: Decimal,
+    pub daily_unrealized_pnl: Decimal,
     pub open_positions: usize,
     pub observed_at_ms: i64,
 }
@@ -140,23 +147,25 @@ impl BrokerAccountSnapshot {
         {
             return Err(ContractError::InvalidAccount("account identity, currency and observation time are required".into()));
         }
-        let values = [self.equity, self.available_margin, self.gross_exposure,
-            self.daily_realized_pnl, self.daily_unrealized_pnl];
-        if values.iter().any(|value| !value.is_finite())
-            || self.equity <= 0.0 || self.available_margin < 0.0 || self.gross_exposure < 0.0
+        if self.equity <= Decimal::ZERO
+            || self.available_margin < Decimal::ZERO
+            || self.gross_exposure < Decimal::ZERO
         {
             return Err(ContractError::InvalidAccount("account snapshot contains invalid financial values".into()));
         }
         Ok(())
     }
 
-    pub fn current_daily_loss(&self) -> Result<f64, ContractError> {
+    pub fn current_daily_loss(&self) -> Result<Decimal, ContractError> {
         self.validate()?;
-        let pnl = self.daily_realized_pnl + self.daily_unrealized_pnl;
-        if !pnl.is_finite() {
-            return Err(ContractError::InvalidAccount("daily P&L overflow".into()));
+        let pnl = self.daily_realized_pnl.checked_add(self.daily_unrealized_pnl)
+            .ok_or_else(|| ContractError::InvalidAccount("daily P&L arithmetic overflow".into()))?;
+        if pnl < Decimal::ZERO {
+            Decimal::ZERO.checked_sub(pnl)
+                .ok_or_else(|| ContractError::InvalidAccount("daily loss arithmetic overflow".into()))
+        } else {
+            Ok(Decimal::ZERO)
         }
-        Ok((-pnl).max(0.0))
     }
 }
 
@@ -167,9 +176,9 @@ pub struct NormalizedOrder {
     pub instrument_id: String,
     pub side: OrderSide,
     pub order_type: OrderType,
-    pub quantity: f64,
-    pub limit_price: Option<f64>,
-    pub stop_price: Option<f64>,
+    pub quantity: Decimal,
+    pub limit_price: Option<Decimal>,
+    pub stop_price: Option<Decimal>,
     pub time_in_force: Option<String>,
     pub reduce_only: bool,
 }
@@ -183,7 +192,7 @@ impl NormalizedOrder {
         }
         instrument.validate_quantity(self.quantity)?;
         match self.order_type {
-            OrderType::Limit if !self.limit_price.is_some_and(|value| value.is_finite() && value > 0.0) =>
+            OrderType::Limit if !self.limit_price.is_some_and(|value| value > Decimal::ZERO) =>
                 return Err(ContractError::InvalidOrder("limit orders require a positive limit price".into())),
             OrderType::Stop if !self.stop_price.is_some_and(|value| value.is_finite() && value > 0.0) =>
                 return Err(ContractError::InvalidOrder("stop orders require a positive stop price".into())),
@@ -226,10 +235,10 @@ pub struct BrokerExecutionReport {
     pub account_id: String,
     pub broker_order_id: String,
     pub execution_id: String,
-    pub cumulative_quantity: f64,
-    pub last_fill_quantity: f64,
-    pub last_fill_price: f64,
-    pub fee_amount: Option<f64>,
+    pub cumulative_quantity: Decimal,
+    pub last_fill_quantity: Decimal,
+    pub last_fill_price: Decimal,
+    pub fee_amount: Option<Decimal>,
     pub fee_currency: Option<String>,
     pub event_time_ms: i64,
 }
@@ -259,121 +268,194 @@ impl std::error::Error for ContractError {}
 
 #[derive(Debug, Clone)]
 pub struct PortfolioRiskPolicy {
-    pub max_risk_fraction: f64,
-    pub max_order_notional_fraction: f64,
-    pub max_gross_leverage: f64,
-    pub max_daily_loss_fraction: f64,
+    pub max_risk_fraction: Decimal,
+    pub max_order_notional_fraction: Decimal,
+    pub max_gross_leverage: Decimal,
+    pub max_daily_loss_fraction: Decimal,
     pub max_open_positions: usize,
     pub max_market_data_age_ms: i64,
 }
 impl Default for PortfolioRiskPolicy {
-    fn default() -> Self { Self { max_risk_fraction: 0.0025, max_order_notional_fraction: 0.25,
-        max_gross_leverage: 2.0, max_daily_loss_fraction: 0.02, max_open_positions: 5,
-        max_market_data_age_ms: 5_000 } }
+    fn default() -> Self {
+        Self {
+            max_risk_fraction: Decimal::new(25, 4),
+            max_order_notional_fraction: Decimal::new(25, 2),
+            max_gross_leverage: Decimal::from(2),
+            max_daily_loss_fraction: Decimal::new(2, 2),
+            max_open_positions: 5,
+            max_market_data_age_ms: 5_000,
+        }
+    }
 }
 #[derive(Debug, Clone)]
 pub struct RiskCheckInput {
-    pub reference_price: f64,
-    pub protective_stop_price: Option<f64>,
+    pub reference_price: Decimal,
+    pub protective_stop_price: Option<Decimal>,
     pub now_ms: i64,
     pub reference_price_observed_at_ms: i64,
     pub protective_order_supported: bool,
     /// Broker-calculated margin requirement, normalized to account currency.
-    pub required_margin_account_currency: f64,
+    pub required_margin_account_currency: Decimal,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskApproval {
-    pub notional_account_currency: f64,
-    pub maximum_loss_account_currency: f64,
-    pub remaining_daily_loss_budget: f64,
-    pub projected_gross_exposure: f64,
+    pub notional_account_currency: Decimal,
+    pub maximum_loss_account_currency: Decimal,
+    pub remaining_daily_loss_budget: Decimal,
+    pub projected_gross_exposure: Decimal,
 }
 /// Shared pre-trade gate. All amounts are normalized to account currency;
 /// no USD/USDT assumption is made.
-pub fn validate_portfolio_order(policy: &PortfolioRiskPolicy, account: &BrokerAccountSnapshot,
-    instrument: &InstrumentSpec, order: &NormalizedOrder, input: &RiskCheckInput)
-    -> Result<RiskApproval, ContractError> {
+pub fn validate_portfolio_order(
+    policy: &PortfolioRiskPolicy,
+    account: &BrokerAccountSnapshot,
+    instrument: &InstrumentSpec,
+    order: &NormalizedOrder,
+    input: &RiskCheckInput,
+) -> Result<RiskApproval, ContractError> {
     account.validate()?;
     order.validate(instrument)?;
     if account.broker_id != instrument.broker_id || order.account_id != account.account_id {
         return Err(ContractError::InvalidOrder("broker/account does not match selected instrument".into()));
     }
-    let fractions = [policy.max_risk_fraction, policy.max_order_notional_fraction, policy.max_daily_loss_fraction];
-    if fractions.iter().any(|v| !v.is_finite() || *v <= 0.0 || *v > 1.0)
-        || !policy.max_gross_leverage.is_finite() || policy.max_gross_leverage <= 0.0
-        || policy.max_open_positions == 0 || policy.max_market_data_age_ms < 0 {
+    let fractions = [
+        policy.max_risk_fraction,
+        policy.max_order_notional_fraction,
+        policy.max_daily_loss_fraction,
+    ];
+    if fractions.iter().any(|value| *value <= Decimal::ZERO || *value > Decimal::ONE)
+        || policy.max_gross_leverage <= Decimal::ZERO
+        || policy.max_open_positions == 0
+        || policy.max_market_data_age_ms < 0
+    {
         return Err(ContractError::InvalidOrder("portfolio risk policy is invalid".into()));
     }
+
     let account_age_ms = input.now_ms.saturating_sub(account.observed_at_ms);
     let quote_age_ms = input.now_ms.saturating_sub(input.reference_price_observed_at_ms);
     let conversion_age_ms = input.now_ms.saturating_sub(instrument.conversion_rate_observed_at_ms);
-    if input.now_ms <= 0 || input.reference_price_observed_at_ms <= 0
-        || account.observed_at_ms > input.now_ms || input.reference_price_observed_at_ms > input.now_ms
+    if input.now_ms <= 0
+        || input.reference_price_observed_at_ms <= 0
+        || account.observed_at_ms > input.now_ms
+        || input.reference_price_observed_at_ms > input.now_ms
         || instrument.conversion_rate_observed_at_ms > input.now_ms
-        || account_age_ms < 0 || account_age_ms > policy.max_market_data_age_ms
-        || !input.reference_price.is_finite() || input.reference_price <= 0.0
-        || quote_age_ms < 0 || quote_age_ms > policy.max_market_data_age_ms
-        || conversion_age_ms < 0 || conversion_age_ms > policy.max_market_data_age_ms
-        || !input.required_margin_account_currency.is_finite() || input.required_margin_account_currency < 0.0 {
-        return Err(ContractError::InvalidOrder("market price is invalid or stale".into()));
+        || account_age_ms < 0
+        || account_age_ms > policy.max_market_data_age_ms
+        || input.reference_price <= Decimal::ZERO
+        || quote_age_ms < 0
+        || quote_age_ms > policy.max_market_data_age_ms
+        || conversion_age_ms < 0
+        || conversion_age_ms > policy.max_market_data_age_ms
+        || input.required_margin_account_currency < Decimal::ZERO
+    {
+        return Err(ContractError::InvalidOrder("market price, conversion, margin or observation time is invalid or stale".into()));
     }
     if !input.protective_order_supported && !order.reduce_only {
         return Err(ContractError::Unsupported("selected broker/instrument cannot place a protective order".into()));
     }
     if instrument.quote_currency.eq_ignore_ascii_case(&account.account_currency)
-        && (instrument.price_currency_to_account_rate - 1.0).abs() > 1e-8 {
+        && instrument.price_currency_to_account_rate != Decimal::ONE
+    {
         return Err(ContractError::InvalidInstrument("same-currency conversion rate must equal one".into()));
     }
+
     let execution_price = order.limit_price.unwrap_or(input.reference_price);
+    if execution_price <= Decimal::ZERO {
+        return Err(ContractError::InvalidOrder("execution price must be positive".into()));
+    }
     let notional = instrument.notional_in_account_currency(order.quantity, execution_price)?;
-    let projected_gross_exposure = account.gross_exposure + notional;
-    let notional_cap = account.equity * policy.max_order_notional_fraction;
-    let leverage_cap = account.equity * policy.max_gross_leverage;
-    if !projected_gross_exposure.is_finite() || !notional_cap.is_finite() || !leverage_cap.is_finite() {
-        return Err(ContractError::InvalidOrder("portfolio exposure calculation overflow".into()));
+    // A broker-enforced reduce-only instruction cannot add exposure. The
+    // adapter must preserve that flag; position-level close sizing remains
+    // the broker's authoritative responsibility.
+    let projected_gross_exposure = if order.reduce_only {
+        account.gross_exposure
+    } else {
+        account.gross_exposure.checked_add(notional)
+            .ok_or_else(|| ContractError::InvalidOrder("projected exposure arithmetic overflow".into()))?
+    };
+    let notional_cap = account.equity.checked_mul(policy.max_order_notional_fraction)
+        .ok_or_else(|| ContractError::InvalidOrder("notional budget arithmetic overflow".into()))?;
+    let leverage_cap = account.equity.checked_mul(policy.max_gross_leverage)
+        .ok_or_else(|| ContractError::InvalidOrder("leverage budget arithmetic overflow".into()))?;
+    if !order.reduce_only && notional > notional_cap {
+        return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into()));
     }
-    if instrument.minimum_notional.is_some_and(|minimum| order.quantity * instrument.contract_multiplier * execution_price < minimum) {
-        return Err(ContractError::InvalidOrder("order is below instrument minimum notional".into()));
-    }
-    if notional > notional_cap { return Err(ContractError::InvalidOrder("order exceeds account-currency notional budget".into())); }
     if input.required_margin_account_currency > account.available_margin {
         return Err(ContractError::InvalidOrder("insufficient available margin in broker account".into()));
     }
-    if projected_gross_exposure > leverage_cap { return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into())); }
+    if projected_gross_exposure > leverage_cap {
+        return Err(ContractError::InvalidOrder("projected gross exposure exceeds leverage limit".into()));
+    }
     if account.open_positions >= policy.max_open_positions && !order.reduce_only {
         return Err(ContractError::InvalidOrder("open-position limit reached".into()));
     }
+
+    if let Some(minimum) = instrument.minimum_notional {
+        let quote_notional = order.quantity
+            .checked_mul(instrument.contract_multiplier)
+            .and_then(|value| value.checked_mul(execution_price))
+            .ok_or_else(|| ContractError::InvalidOrder("minimum-notional calculation overflow".into()))?;
+        if quote_notional < minimum {
+            return Err(ContractError::InvalidOrder("order is below instrument minimum notional".into()));
+        }
+    }
+
     let daily_loss = account.current_daily_loss()?;
-    let daily_cap = account.equity * policy.max_daily_loss_fraction;
-    if daily_loss >= daily_cap { return Err(ContractError::InvalidOrder("daily loss limit reached".into())); }
-    let remaining_daily_loss_budget = (daily_cap - daily_loss).max(0.0);
-    let maximum_loss = if order.reduce_only { 0.0 } else {
+    let daily_cap = account.equity.checked_mul(policy.max_daily_loss_fraction)
+        .ok_or_else(|| ContractError::InvalidOrder("daily-loss budget arithmetic overflow".into()))?;
+    if daily_loss >= daily_cap {
+        return Err(ContractError::InvalidOrder("daily loss limit reached".into()));
+    }
+    let remaining_daily_loss_budget = daily_cap.checked_sub(daily_loss)
+        .ok_or_else(|| ContractError::InvalidOrder("remaining daily-loss budget arithmetic overflow".into()))?;
+
+    let maximum_loss = if order.reduce_only {
+        Decimal::ZERO
+    } else {
         let stop = input.protective_stop_price.ok_or_else(|| ContractError::Unsupported(
-            "opening orders require a broker-supported protective stop".into()))?;
+            "opening orders require a broker-supported protective stop".into()
+        ))?;
         let valid = match order.side {
-            OrderSide::Buy => stop.is_finite() && stop > 0.0 && stop < execution_price,
-            OrderSide::Sell => stop.is_finite() && stop > execution_price,
+            OrderSide::Buy => stop > Decimal::ZERO && stop < execution_price,
+            OrderSide::Sell => stop > execution_price,
         };
-        if !valid { return Err(ContractError::InvalidOrder("protective stop is invalid for order direction".into())); }
-        let loss = instrument.notional_in_account_currency(order.quantity, (execution_price-stop).abs())?;
-        if loss > account.equity * policy.max_risk_fraction {
+        if !valid {
+            return Err(ContractError::InvalidOrder("protective stop is invalid for order direction".into()));
+        }
+        let distance = if execution_price >= stop {
+            execution_price.checked_sub(stop)
+        } else {
+            stop.checked_sub(execution_price)
+        }.ok_or_else(|| ContractError::InvalidOrder("stop-distance arithmetic overflow".into()))?;
+        let loss = instrument.notional_in_account_currency(order.quantity, distance)?;
+        let risk_cap = account.equity.checked_mul(policy.max_risk_fraction)
+            .ok_or_else(|| ContractError::InvalidOrder("maximum-risk budget arithmetic overflow".into()))?;
+        if loss > risk_cap {
             return Err(ContractError::InvalidOrder("maximum loss at stop exceeds risk budget".into()));
+        }
+        if loss > remaining_daily_loss_budget {
+            return Err(ContractError::InvalidOrder("maximum loss at stop exceeds remaining daily-loss budget".into()));
         }
         loss
     };
-    Ok(RiskApproval { notional_account_currency:notional, maximum_loss_account_currency:maximum_loss,
-        remaining_daily_loss_budget, projected_gross_exposure })
+
+    Ok(RiskApproval {
+        notional_account_currency: notional,
+        maximum_loss_account_currency: maximum_loss,
+        remaining_daily_loss_budget,
+        projected_gross_exposure,
+    })
 }
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPreflight {
-    pub reference_price: f64,
+    pub reference_price: Decimal,
     pub reference_price_observed_at_ms: i64,
-    pub protective_stop_price: Option<f64>,
+    pub protective_stop_price: Option<Decimal>,
     pub now_ms: i64,
     /// The selected broker calculates margin using its own account mode,
     /// instrument rules and current portfolio state.
-    pub required_margin_account_currency: f64,
+    pub required_margin_account_currency: Decimal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -501,9 +583,11 @@ pub trait BrokerAdapter: Send + Sync {
 mod tests {
     use super::*;
 
-    fn instrument(asset_class: AssetClass, symbol: &str, multiplier: f64, rate: f64) -> InstrumentSpec {
+    fn d(value: &str) -> Decimal { value.parse().expect("valid test decimal") }
+
+    fn instrument(asset_class: AssetClass, symbol: &str, multiplier: &str, rate: &str) -> InstrumentSpec {
         InstrumentSpec {
-            instrument_id: format!("{}:{}", asset_class as u8, symbol),
+            instrument_id: format!("{:?}:{}", asset_class, symbol),
             broker_id: "selected-broker".into(),
             venue_id: "selected-venue".into(),
             broker_symbol: symbol.into(),
@@ -512,12 +596,12 @@ mod tests {
             quote_currency: "EUR".into(),
             settlement_currency: "EUR".into(),
             quantity_unit: QuantityUnit::Units,
-            contract_multiplier: multiplier,
-            tick_size: 0.0001,
-            quantity_step: 0.01,
-            minimum_quantity: 0.01,
+            contract_multiplier: d(multiplier),
+            tick_size: d("0.0001"),
+            quantity_step: d("0.01"),
+            minimum_quantity: d("0.01"),
             minimum_notional: None,
-            price_currency_to_account_rate: rate,
+            price_currency_to_account_rate: d(rate),
             conversion_rate_observed_at_ms: 10_000,
         }
     }
@@ -525,76 +609,134 @@ mod tests {
     #[test]
     fn supports_non_usdt_forex_equity_and_crypto_instruments() {
         let cases = [
-            (instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92), 0.01, 1.1),
-            (instrument(AssetClass::Equity, "AAPL", 1.0, 0.92), 2.0, 190.0),
-            (instrument(AssetClass::Crypto, "BTC-EUR", 1.0, 1.0), 0.01, 60_000.0),
+            (instrument(AssetClass::Forex, "EURUSD", "100000", "0.92"), d("0.01"), d("1.1")),
+            (instrument(AssetClass::Equity, "AAPL", "1", "0.92"), d("2"), d("190")),
+            (instrument(AssetClass::Crypto, "BTC-EUR", "1", "1"), d("0.01"), d("60000")),
         ];
         for (spec, quantity, price) in cases {
             let notional = spec.notional_in_account_currency(quantity, price).unwrap();
-            assert!(notional.is_finite() && notional > 0.0);
+            assert!(notional > Decimal::ZERO);
         }
     }
 
     #[test]
     fn quantity_step_and_minimum_are_enforced_per_instrument() {
-        let mut spec = instrument(AssetClass::Equity, "ABC", 1.0, 1.0);
-        spec.quantity_step = 0.05;
-        assert!(spec.validate_quantity(1.25).is_ok());
-        assert!(spec.validate_quantity(1.23).is_err());
-        assert!(spec.validate_quantity(0.001).is_err());
+        let mut spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        spec.quantity_step = d("0.05");
+        assert!(spec.validate_quantity(d("1.25")).is_ok());
+        assert!(spec.validate_quantity(d("1.23")).is_err());
+        assert!(spec.validate_quantity(d("0.001")).is_err());
     }
 
     #[test]
     fn account_loss_uses_realized_and_unrealized_pnl() {
         let account = BrokerAccountSnapshot {
             broker_id: "broker".into(), account_id: "account".into(),
-            account_currency: "KES".into(), equity: 100_000.0,
-            available_margin: 50_000.0, gross_exposure: 20_000.0,
-            daily_realized_pnl: -1_000.0, daily_unrealized_pnl: -500.0,
+            account_currency: "KES".into(), equity: d("100000"),
+            available_margin: d("50000"), gross_exposure: d("20000"),
+            daily_realized_pnl: d("-1000"), daily_unrealized_pnl: d("-500"),
             open_positions: 2, observed_at_ms: 1,
         };
-        assert_eq!(account.current_daily_loss().unwrap(), 1_500.0);
+        assert_eq!(account.current_daily_loss().unwrap(), d("1500"));
     }
 
     #[test]
     fn portfolio_risk_is_account_currency_and_asset_class_agnostic() {
-        let mut spec = instrument(AssetClass::Forex, "EURUSD", 100_000.0, 0.92);
+        let mut spec = instrument(AssetClass::Forex, "EURUSD", "100000", "0.92");
         spec.quote_currency = "USD".into();
-        let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
-            account_currency:"EUR".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
-            daily_realized_pnl:0.0, daily_unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
-        let order = NormalizedOrder { client_order_id:"fx-order-1".into(), account_id:"acct".into(),
+        let account = BrokerAccountSnapshot {
+            broker_id:"selected-broker".into(), account_id:"acct".into(),
+            account_currency:"EUR".into(), equity:d("10000"), available_margin:d("5000"),
+            gross_exposure:Decimal::ZERO, daily_realized_pnl:Decimal::ZERO,
+            daily_unrealized_pnl:Decimal::ZERO, open_positions:0, observed_at_ms:10_000
+        };
+        let order = NormalizedOrder {
+            client_order_id:"fx-order-1".into(), account_id:"acct".into(),
             instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
-            quantity:0.01, limit_price:None, stop_price:Some(1.09), time_in_force:None, reduce_only:false };
+            quantity:d("0.01"), limit_price:None, stop_price:Some(d("1.09")),
+            time_in_force:None, reduce_only:false
+        };
         let approved = validate_portfolio_order(&PortfolioRiskPolicy::default(), &account, &spec, &order,
-            &RiskCheckInput { reference_price:1.1, protective_stop_price:Some(1.09),
-                now_ms:10_100, reference_price_observed_at_ms:10_000, protective_order_supported:true, required_margin_account_currency:100.0 }).unwrap();
-        assert!((approved.notional_account_currency-1_012.0).abs()<1e-8);
-        assert!(approved.maximum_loss_account_currency>0.0);
+            &RiskCheckInput {
+                reference_price:d("1.1"), protective_stop_price:Some(d("1.09")),
+                now_ms:10_100, reference_price_observed_at_ms:10_000,
+                protective_order_supported:true, required_margin_account_currency:d("100")
+            }).unwrap();
+        assert_eq!(approved.notional_account_currency, d("1012"));
+        assert!(approved.maximum_loss_account_currency > Decimal::ZERO);
     }
 
     #[test]
     fn portfolio_risk_rejects_stale_quotes_and_missing_protection() {
-        let spec = instrument(AssetClass::Equity, "ABC", 1.0, 1.0);
-        let account = BrokerAccountSnapshot { broker_id:"selected-broker".into(), account_id:"acct".into(),
-            account_currency:"USD".into(), equity:10_000.0, available_margin:5_000.0, gross_exposure:0.0,
-            daily_realized_pnl:0.0, daily_unrealized_pnl:0.0, open_positions:0, observed_at_ms:10_000 };
-        let order = NormalizedOrder { client_order_id:"equity-order-1".into(), account_id:"acct".into(),
+        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let account = BrokerAccountSnapshot {
+            broker_id:"selected-broker".into(), account_id:"acct".into(),
+            account_currency:"USD".into(), equity:d("10000"), available_margin:d("5000"),
+            gross_exposure:Decimal::ZERO, daily_realized_pnl:Decimal::ZERO,
+            daily_unrealized_pnl:Decimal::ZERO, open_positions:0, observed_at_ms:10_000
+        };
+        let order = NormalizedOrder {
+            client_order_id:"equity-order-1".into(), account_id:"acct".into(),
             instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
-            quantity:1.0, limit_price:None, stop_price:Some(95.0), time_in_force:None, reduce_only:false };
+            quantity:d("1"), limit_price:None, stop_price:Some(d("95")),
+            time_in_force:None, reduce_only:false
+        };
         let policy = PortfolioRiskPolicy::default();
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:16_100, reference_price_observed_at_ms:10_000,
-            protective_order_supported:true, required_margin_account_currency:100.0 }).is_err());
+            reference_price:d("100"), protective_stop_price:Some(d("95")), now_ms:16_100,
+            reference_price_observed_at_ms:10_000, protective_order_supported:true,
+            required_margin_account_currency:d("100") }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
-            protective_order_supported:false, required_margin_account_currency:100.0 }).is_err());
+            reference_price:d("100"), protective_stop_price:Some(d("95")), now_ms:10_100,
+            reference_price_observed_at_ms:10_000, protective_order_supported:false,
+            required_margin_account_currency:d("100") }).is_err());
         assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:16_100, reference_price_observed_at_ms:10_000,
-            protective_order_supported:true, required_margin_account_currency:100.0 }).is_err());
-        assert!(validate_portfolio_order(&policy,&account,&spec,&order,&RiskCheckInput {
-            reference_price:100.0, protective_stop_price:Some(95.0), now_ms:10_100, reference_price_observed_at_ms:10_000,
-            protective_order_supported:true, required_margin_account_currency:6_000.0 }).is_err());
+            reference_price:d("100"), protective_stop_price:Some(d("95")), now_ms:10_100,
+            reference_price_observed_at_ms:10_000, protective_order_supported:true,
+            required_margin_account_currency:d("6000") }).is_err());
+    }
+
+    #[test]
+    fn same_currency_conversion_must_be_exactly_one() {
+        let mut spec = instrument(AssetClass::Equity, "ABC", "1", "1.00000001");
+        spec.quote_currency = "USD".into();
+        let account = BrokerAccountSnapshot {
+            broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
+            equity:d("10000"), available_margin:d("5000"), gross_exposure:Decimal::ZERO,
+            daily_realized_pnl:Decimal::ZERO, daily_unrealized_pnl:Decimal::ZERO,
+            open_positions:0, observed_at_ms:10_000
+        };
+        let order = NormalizedOrder {
+            client_order_id:"same-currency-1".into(), account_id:"acct".into(),
+            instrument_id:spec.instrument_id.clone(), side:OrderSide::Buy, order_type:OrderType::Market,
+            quantity:d("1"), limit_price:None, stop_price:Some(d("95")), time_in_force:None, reduce_only:false
+        };
+        assert!(validate_portfolio_order(&PortfolioRiskPolicy::default(),&account,&spec,&order,&RiskCheckInput {
+            reference_price:d("100"), protective_stop_price:Some(d("95")), now_ms:10_100,
+            reference_price_observed_at_ms:10_000, protective_order_supported:true,
+            required_margin_account_currency:d("100") }).is_err());
+    }
+
+    #[test]
+    fn reduce_only_does_not_add_gross_exposure_or_consume_opening_notional_budget() {
+        let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
+        let account = BrokerAccountSnapshot {
+            broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
+            equity:d("1000"), available_margin:d("1000"), gross_exposure:d("2000"),
+            daily_realized_pnl:Decimal::ZERO, daily_unrealized_pnl:Decimal::ZERO,
+            open_positions:5, observed_at_ms:10_000
+        };
+        let order = NormalizedOrder {
+            client_order_id:"close-only-1".into(), account_id:"acct".into(),
+            instrument_id:spec.instrument_id.clone(), side:OrderSide::Sell, order_type:OrderType::Market,
+            quantity:d("10"), limit_price:None, stop_price:None, time_in_force:None, reduce_only:true
+        };
+        let approval = validate_portfolio_order(&PortfolioRiskPolicy::default(),&account,&spec,&order,&RiskCheckInput {
+            reference_price:d("100"), protective_stop_price:None, now_ms:10_100,
+            reference_price_observed_at_ms:10_000, protective_order_supported:false,
+            required_margin_account_currency:d("0") }).unwrap();
+        assert_eq!(approval.projected_gross_exposure, d("2000"));
+        assert_eq!(approval.maximum_loss_account_currency, Decimal::ZERO);
     }
 
     #[test]
@@ -610,7 +752,7 @@ mod tests {
         let order = NormalizedOrder {
             client_order_id: "capability-order".into(), account_id: "acct".into(),
             instrument_id: "instrument".into(), side: OrderSide::Buy, order_type: OrderType::Market,
-            quantity: 1.0, limit_price: None, stop_price: Some(90.0), time_in_force: None,
+            quantity: d("1"), limit_price: None, stop_price: Some(d("90")), time_in_force: None,
             reduce_only: false,
         };
         let capabilities = BrokerCapabilities {
@@ -629,11 +771,11 @@ mod tests {
 
     #[test]
     fn normalized_order_checks_instrument_identity_and_type_requirements() {
-        let spec = instrument(AssetClass::Equity, "AAPL", 1.0, 1.0);
+        let spec = instrument(AssetClass::Equity, "AAPL", "1", "1");
         let order = NormalizedOrder {
             client_order_id: "qoin-unique-1".into(), account_id: "acct".into(),
             instrument_id: spec.instrument_id.clone(), side: OrderSide::Buy,
-            order_type: OrderType::Limit, quantity: 1.0, limit_price: Some(190.0),
+            order_type: OrderType::Limit, quantity: d("1"), limit_price: Some(d("190")),
             stop_price: None, time_in_force: Some("day".into()), reduce_only: false,
         };
         assert!(order.validate(&spec).is_ok());
