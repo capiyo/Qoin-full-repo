@@ -2401,6 +2401,42 @@ mod vector_ingestion_tests {
     }
 
     #[test]
+    fn book_depth_is_separate_from_decayed_trade_flow() {
+        let mut state = SymbolState::default();
+        let mut trade = event("trade-1", "trade", 1_000);
+        trade.price = Some(100.0);
+        trade.size = Some(10.0);
+        trade.side = Some("buy".into());
+        apply(&mut state, &trade);
+        assert_eq!(state.order_flow_imbalance, 1.0);
+
+        let mut book = event("book-1", "book", 61_000);
+        book.bid = Some(100.0);
+        book.ask = Some(100.02);
+        book.bid_size = Some(30.0);
+        book.ask_size = Some(10.0);
+        apply(&mut state, &book);
+
+        assert!((state.signed_flow - 5.0).abs() < 1e-12);
+        assert!((state.total_trade_size - 5.0).abs() < 1e-12);
+        assert!((state.order_flow_imbalance - 1.0).abs() < 1e-12);
+        assert!((state.liquidity_imbalance - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn liquidation_pressure_is_signed_and_decays_with_event_time() {
+        let mut state = SymbolState::default();
+        let mut liquidation = event("liq-1", "liquidation", 1_000);
+        liquidation.liquidation_side = Some("long".into());
+        apply(&mut state, &liquidation);
+        assert_eq!(state.liquidation_pressure, -1.0);
+
+        let next = event("trade-1", "trade", 61_000);
+        apply(&mut state, &next);
+        assert!((state.liquidation_pressure + 0.5).abs() < 1e-12);
+    }
+
+    #[test]
     fn open_interest_force_is_a_relative_change_not_an_absolute_level() {
         let mut state = SymbolState::default();
         let mut first = event("oi-1", "open_interest", 1_000);
