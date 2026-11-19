@@ -1007,13 +1007,14 @@ async fn reconcile_live_order(
     })))
 }
 
-async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
+async fn evaluate_signal(State(s): State<AppState>, headers: HeaderMap, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, Json<serde_json::Value>)> {
+    verify_firebase_id_token(&headers).await?;
     let result = decide_signal(
         request.observation,
         &s.signal_config,
         &s.signal_config_version,
         request.has_open_position,
-    ).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    ).map_err(|error| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string()}))))?;
     Ok(Json(result))
 }
 
