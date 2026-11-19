@@ -624,7 +624,7 @@ function BrokerCollectionPanel() {
   const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
-    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Exchange API":"Broker API",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
+    void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
     try {
       const raw=window.localStorage.getItem("qoin:broker-routing-preferences");
       if(raw){const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&BROKER_DIRECTORY_PREVIEW.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}
