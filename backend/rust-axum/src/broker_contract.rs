@@ -805,6 +805,30 @@ mod tests {
     }
 
     #[test]
+    fn broker_quote_uses_ask_for_buys_and_bid_for_sells() {
+        let quote = BrokerQuote {
+            broker_id: "adapter".into(), account_id: "account".into(),
+            instrument_id: "EURUSD".into(), bid: d("1.0841"), ask: d("1.0843"),
+            observed_at_ms: 1,
+        };
+        assert_eq!(quote.execution_price(OrderSide::Buy).unwrap(), d("1.0843"));
+        assert_eq!(quote.execution_price(OrderSide::Sell).unwrap(), d("1.0841"));
+    }
+
+    #[test]
+    fn broker_quote_rejects_crossed_or_incomplete_market_data() {
+        let mut quote = BrokerQuote {
+            broker_id: "adapter".into(), account_id: "account".into(),
+            instrument_id: "BTC-EUR".into(), bid: d("60000"), ask: d("59999"),
+            observed_at_ms: 1,
+        };
+        assert!(quote.execution_price(OrderSide::Buy).is_err());
+        quote.ask = d("60001");
+        quote.observed_at_ms = 0;
+        assert!(quote.execution_price(OrderSide::Sell).is_err());
+    }
+
+    #[test]
     fn supports_non_usdt_forex_equity_and_crypto_instruments() {
         let cases = [
             (instrument(AssetClass::Forex, "EURUSD", "100000", "0.92"), d("0.01"), d("1.1")),
