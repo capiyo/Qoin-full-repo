@@ -223,6 +223,22 @@ pub struct NormalizedOrder {
 }
 
 impl NormalizedOrder {
+    /// Price used for margin estimation, aligned with the risk gate's order-type semantics.
+    pub fn margin_reference_price(&self, quote: &BrokerQuote) -> Result<Decimal, ContractError> {
+        let market_price = quote.execution_price(self.side)?;
+        let price = match self.order_type {
+            OrderType::Market => market_price,
+            OrderType::Limit | OrderType::StopLimit => self.limit_price
+                .ok_or_else(|| ContractError::InvalidOrder("limit execution price is required".into()))?,
+            OrderType::Stop => self.stop_price
+                .ok_or_else(|| ContractError::InvalidOrder("stop trigger price is required".into()))?,
+        };
+        if price <= Decimal::ZERO {
+            return Err(ContractError::InvalidOrder("margin reference price must be positive".into()));
+        }
+        Ok(price)
+    }
+
     pub fn validate(&self, instrument: &InstrumentSpec) -> Result<(), ContractError> {
         if self.client_order_id.trim().is_empty() || self.client_order_id.len() > 128
             || self.account_id.trim().is_empty() || self.instrument_id != instrument.instrument_id
@@ -614,7 +630,7 @@ pub async fn preflight_selected_orders(
             }
             let capabilities = adapter.capabilities(owner_uid, &order.account_id, &order.instrument_id).await?;
             validate_capabilities(&order, &capabilities)?;
-            let reference_price = quote.execution_price(order.side)?;
+            let reference_price = order.margin_reference_price(&quote)?;
             let required_margin = adapter.required_margin_account_currency(owner_uid, &order, reference_price).await?;
             let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
                 reference_price,
@@ -661,7 +677,7 @@ pub async fn submit_risk_checked(
     }
     let capabilities = adapter.capabilities(owner_uid, &order.account_id, &order.instrument_id).await?;
     validate_capabilities(&order, &capabilities)?;
-    let reference_price = quote.execution_price(order.side)?;
+    let reference_price = order.margin_reference_price(&quote)?;
     let required_margin = adapter.required_margin_account_currency(owner_uid, &order, reference_price).await?;
     let risk = validate_portfolio_order(policy, &account, &instrument, &order, &RiskCheckInput {
         reference_price,
