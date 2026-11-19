@@ -7,7 +7,7 @@
 //! and conformance-tested. They are intentionally NOT registered at runtime.
 
 use crate::broker_contract::{
-    AssetClass, BrokerAccountSnapshot, BrokerAdapter, BrokerCapabilities,
+    BrokerAccountSnapshot, BrokerAdapter, BrokerCapabilities,
     BrokerOrderReceipt, BrokerQuote, ContractError, InstrumentSpec, NormalizedOrder,
 };
 use async_trait::async_trait;
