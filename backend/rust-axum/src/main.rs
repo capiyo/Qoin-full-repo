@@ -1025,7 +1025,14 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let firebase_auth_configured=env::var("FIREBASE_WEB_API_KEY").map(|value|!value.trim().is_empty()).unwrap_or(false);
     let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
-    let healthy=database_ok && recovery_ok && firebase_auth_configured;
+    // Ambiguous submissions and failed reconciliation are operational incidents,
+    // not merely informational metrics. Surface them in health so orchestration
+    // and alerting cannot report a clean service while exposure is uncertain.
+    let unresolved_orders=s.orders.count_documents(
+        doc!{"status":{"$in":["submitting","reconciliation_required"]}},None
+    ).await.unwrap_or(u64::MAX);
+    let execution_reconciliation_ok=unresolved_orders==0;
+    let healthy=database_ok && recovery_ok && firebase_auth_configured && execution_reconciliation_ok;
     let strategy_version=s.active_strategy.read().ok().map(|v|v.version.clone()).unwrap_or_else(||"unavailable".into());
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
@@ -1050,6 +1057,8 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
           {"configured"}else{"disabled"},
        "live_order_adapter":"binance_usdm_with_required_protective_stop",
        "new_order_entry_enabled":order_entry_enabled,
+       "order_reconciliation":{"status":if execution_reconciliation_ok{"ok"}else{"degraded"},
+          "unresolved_orders":unresolved_orders},
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
@@ -2707,9 +2716,12 @@ async fn main(){
     let relationship_ledger:Collection<Document>=db.collection("v2_relationship_ledger");
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
+    // A process restart must never re-arm order entry from an environment
+    // variable. Preserve the persisted operator-controlled state; initialize
+    // a missing control in the disabled position only.
     trading_controls.update_one(doc!{"_id":"execution"},
-        doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
-            "updated_at":mongodb::bson::DateTime::now()}},
+        doc!{"$setOnInsert":{"enabled":false,"updated_at":mongodb::bson::DateTime::now(),
+            "reason":"safe_default_on_first_initialization"}},
         UpdateOptions::builder().upsert(true).build()).await.expect("initialize trading kill switch");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
