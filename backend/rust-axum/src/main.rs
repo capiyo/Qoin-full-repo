@@ -965,8 +965,8 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
          "pending_pipeline_events":pending_events},
        "strategy_version":strategy_version,
        "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
-          "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
-          "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
+          "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
+          "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
        "live_order_submission":if matches!(env::var("QOIN_TRADING_MODE").as_deref(),Ok("live")|Ok("testnet"))
           && env::var("QOIN_EXECUTION_TOKEN").map(|v|!v.trim().is_empty()).unwrap_or(false)
@@ -1676,10 +1676,10 @@ async fn get_instruments()->impl IntoResponse {
         for row in rows {
             let venue_id=row.get("venue_id").and_then(|v|v.as_str()).unwrap_or_default();
             if venue_id=="coinbase_advanced_trade" {
-                let enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+                let enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
                 row["provider_status"]=serde_json::json!(if enabled {"public_stream_enabled"} else {"stream_disabled"});
             } else if venue_id=="kraken_spot" {
-                let enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+                let enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
                 row["provider_status"]=serde_json::json!(if enabled {"public_stream_enabled"} else {"stream_disabled"});
             } else if venue_id=="binance_usdm" {
                 row["provider_status"]=serde_json::json!(if binance_enabled {"public_stream_enabled"} else {"stream_disabled"});
@@ -2737,7 +2737,7 @@ async fn main(){
         tokio::spawn(async move{spawn_binance_stream(adapter_addr,symbols).await;});
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
-    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if kraken_enabled {
         let symbols=env::var("QOIN_KRAKEN_STREAM_SYMBOLS").unwrap_or_else(|_|"BTC/USD,ETH/USD,SOL/USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
@@ -2746,7 +2746,7 @@ async fn main(){
     } else {
         tracing::info!("Kraken Spot public market stream disabled by configuration");
     }
-    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false);
+    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
     if coinbase_enabled {
         let products=env::var("QOIN_COINBASE_STREAM_PRODUCTS").unwrap_or_else(|_|"BTC-USD,ETH-USD,SOL-USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
