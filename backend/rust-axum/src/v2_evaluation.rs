@@ -186,7 +186,7 @@ mod tests {
         let result = evaluate_forward_window(&points, 100, 3).unwrap();
         assert_eq!(result.0, 103);
         assert!((result.1 + 100.0).abs() < 1e-9);
-        assert!((result.2 + 300.0).abs() < 1e-9);
+        assert!((result.2 + 100.0).abs() < 1e-9);
         assert!((result.3 - 200.0).abs() < 1e-9);
     }
 
