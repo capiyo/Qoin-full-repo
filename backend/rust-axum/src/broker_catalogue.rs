@@ -84,6 +84,7 @@ mod tests {
             assert!(ids.insert(item["id"].as_str().unwrap()));
             assert_eq!(item["selectable"], true);
             assert_eq!(item["execution_ready"], false);
+            assert!(!item["documentation_url"].as_str().unwrap_or("").is_empty());
         }
         assert_eq!(value["max_selected"], 20);
         assert_eq!(value["execution_enabled"], false);
