@@ -33,6 +33,9 @@ pub struct ForceObservation {
     /// causes an abstention; it is not silently treated as a liquid market.
     #[serde(default)]
     pub spread_bps: Option<f64>,
+    /// Age of the quote used for the spread, in milliseconds.
+    #[serde(default)]
+    pub spread_age_ms: Option<i64>,
 }
 
 impl ForceObservation {
@@ -62,6 +65,7 @@ pub struct EngineConfig {
     pub volatility_dampener: f64,
     pub interaction_coefficient: f64,
     pub max_spread_bps: f64,
+    pub max_spread_age_ms: i64,
 }
 
 impl Default for EngineConfig {
@@ -76,6 +80,7 @@ impl Default for EngineConfig {
             volatility_dampener: 0.15,
             interaction_coefficient: 0.025,
             max_spread_bps: 25.0,
+            max_spread_age_ms: 30_000,
         }
     }
 }
@@ -102,6 +107,7 @@ pub struct FeatureTrace {
 pub struct DecisionDiagnostics {
     pub spread_present: bool,
     pub spread_within_limit: bool,
+    pub spread_fresh: bool,
     pub alignment_passed: bool,
     pub magnitude_passed: bool,
     pub angle_passed: bool,
@@ -152,6 +158,7 @@ fn valid_config(config: &EngineConfig) -> bool {
         && config.volatility_dampener.is_finite()
         && config.interaction_coefficient.is_finite()
         && config.max_spread_bps.is_finite()
+        && config.max_spread_age_ms > 0
         && config.signal_threshold > 0.0
         && config.input_clip > 0.0
         && config.score_clip > 0.0
@@ -184,6 +191,7 @@ pub fn decide(
     let raw = input.values();
     if raw.iter().any(|v| !v.is_finite())
         || input.spread_bps.is_some_and(|v| !v.is_finite() || v < 0.0)
+        || input.spread_age_ms.is_some_and(|age| age < 0)
     {
         return Err(EngineError::NonFiniteInput);
     }
@@ -242,6 +250,9 @@ pub fn decide(
     let angle_radians = alignment.acos();
     let spread_within_limit = input.spread_bps
         .is_some_and(|spread| spread <= config.max_spread_bps);
+    let spread_fresh = input.spread_age_ms
+        .is_some_and(|age| age <= config.max_spread_age_ms);
+    let market_quality_ok = spread_within_limit && spread_fresh;
     let alignment_passed = alignment.abs() >= config.min_alignment;
     let magnitude_passed = score.abs() >= config.signal_threshold;
     let angle_passed = if score >= 0.0 {
@@ -250,7 +261,7 @@ pub fn decide(
         (std::f64::consts::PI - angle_radians) <= config.max_angle_radians
     };
 
-    let decision = if !spread_within_limit {
+    let decision = if !market_quality_ok {
         Decision::Wait
     } else if magnitude_passed && alignment_passed && angle_passed && score > 0.0 {
         Decision::Buy
@@ -269,6 +280,8 @@ pub fn decide(
     }.to_owned();
     let rationale = if !spread_within_limit {
         "WAIT: current spread is missing or exceeds the configured liquidity limit".to_owned()
+    } else if !spread_fresh {
+        "WAIT: the quote used for the spread is missing or stale".to_owned()
     } else if !magnitude_passed {
         "WAIT: directional force magnitude is below the configured threshold".to_owned()
     } else if !alignment_passed || !angle_passed {
@@ -335,6 +348,7 @@ pub fn decide(
         diagnostics: DecisionDiagnostics {
             spread_present: input.spread_bps.is_some(),
             spread_within_limit,
+            spread_fresh,
             alignment_passed,
             magnitude_passed,
             angle_passed,
@@ -355,7 +369,7 @@ mod tests {
         ForceObservation {
             ofi: 2.0, liquidity: 1.0, volatility: 0.2, funding: -0.5,
             open_interest_change: 1.0, liquidation_pressure: 0.5, basis: 0.0,
-            spread_bps: Some(2.0),
+            spread_bps: Some(2.0), spread_age_ms: Some(0),
         }
     }
 
@@ -367,7 +381,7 @@ mod tests {
     #[test]
     fn weak_signal_without_position_waits() {
         let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(1.0) };
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(1.0), spread_age_ms: Some(0) };
         let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
         assert_eq!(result.decision, Decision::Wait);
         assert_eq!(result.active_force_count, 0);
@@ -380,6 +394,11 @@ mod tests {
         assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Wait);
         input.spread_bps = Some(30.0);
         assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Wait);
+        input.spread_bps = Some(2.0);
+        input.spread_age_ms = Some(30_001);
+        let stale = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        assert_eq!(stale.decision, Decision::Wait);
+        assert!(!stale.diagnostics.spread_fresh);
     }
 
     #[test]
@@ -392,7 +411,7 @@ mod tests {
     #[test]
     fn strong_negative_force_produces_sell() {
         let input = ForceObservation { ofi: -2.0, liquidity: -1.0, volatility: 0.2, funding: 0.5,
-            open_interest_change: -1.0, liquidation_pressure: -0.5, basis: 0.0, spread_bps: Some(2.0) };
+            open_interest_change: -1.0, liquidation_pressure: -0.5, basis: 0.0, spread_bps: Some(2.0), spread_age_ms: Some(0) };
         let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
         assert_eq!(result.decision, Decision::Sell);
     }
