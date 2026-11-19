@@ -90,7 +90,12 @@ impl FirebaseIdentityVerifier {
             return Err("Firebase ID token must use RS256".into());
         }
         let kid = header.kid.ok_or_else(|| "Firebase ID token has no signing key ID".to_string())?;
-        let keys = self.jwks().await?;
+        let mut keys = self.jwks().await?;
+        if !keys.keys.iter().any(|key| key.common.key_id.as_deref() == Some(kid.as_str())) {
+            // Google may rotate signing keys before a cached max-age expires.
+            *self.cached_keys.write().await = None;
+            keys = self.jwks().await?;
+        }
         let jwk = keys.keys.iter().find(|key| key.common.key_id.as_deref() == Some(kid.as_str()))
             .ok_or_else(|| "Firebase ID token signing key is unknown or rotated".to_string())?;
         let decoding_key = DecodingKey::from_jwk(jwk)
