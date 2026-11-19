@@ -130,9 +130,15 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         {[
           ["Price",marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8})],
+          ["Mark price",marketState?.mark_price?.toLocaleString(undefined,{maximumFractionDigits:8})],
+          ["Basis bps",marketState?.basis_bps?.toFixed(3)],
           ["Flow imbalance",marketState?.order_flow_imbalance?.toFixed(5)],
+          ["Book imbalance",marketState?.liquidity_imbalance?.toFixed(5)],
+          ["OI change",marketState?.open_interest_change?.toFixed(5)],
+          ["Liquidation pressure",marketState?.liquidation_pressure?.toFixed(4)],
           ["Event intensity",marketState?.event_intensity?.toFixed(5)],
           ["Spread bps",marketState?.spread_bps?.toFixed(3)],
+          ["Quote age ms",marketState?.last_book_ts_ms && marketState.last_event_ts_ms ? String(Math.max(0,marketState.last_event_ts_ms-marketState.last_book_ts_ms)) : "—"],
           ["Open interest",marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4})],
           ["Funding",marketState?.funding_rate?.toFixed(7)],
         ].map(([label,value])=><View key={label} style={{minWidth:"28%"}}>
