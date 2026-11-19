@@ -515,7 +515,7 @@ pub struct SelectedBrokerOrder {
     pub preflight: ExecutionPreflight,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PreparedBrokerOrder {
     pub broker_id: String,
     pub order: NormalizedOrder,
