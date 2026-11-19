@@ -593,9 +593,26 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
 
 
 const BROKER_DIRECTORY_PREVIEW = [
-  { id:"binance_usdm", name:"Binance USD-M", category:"Execution adapter", status:"execution_adapter", detail:"USD-M perpetual execution adapter exists; authenticated account linking and multi-account dispatch are not connected.", selectable:true },
-  { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
-  { id:"kraken_spot", name:"Kraken Spot", category:"Market data only", status:"market_data_only", detail:"Public market stream is available. No order execution adapter is registered.", selectable:false },
+  { id:"binance_usdm", name:"Binance USD-M", category:"Exchange API", status:"execution_adapter_exists_not_connected", detail:"USD-M executor exists; user account linking and generic dispatch are not connected.", selectable:true },
+  { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Exchange API", status:"adapter_pending", detail:"Advanced Trade REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"kraken_spot", name:"Kraken Spot", category:"Exchange API", status:"adapter_pending", detail:"Spot REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"bybit", name:"Bybit", category:"Exchange API", status:"adapter_pending", detail:"V5 REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"okx", name:"OKX", category:"Exchange API", status:"adapter_pending", detail:"REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"bitget", name:"Bitget", category:"Exchange API", status:"adapter_pending", detail:"REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"gate_io", name:"Gate.io", category:"Exchange API", status:"adapter_pending", detail:"REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"kucoin", name:"KuCoin", category:"Exchange API", status:"adapter_pending", detail:"REST and WebSocket API; Qoin execution adapter pending.", selectable:true },
+  { id:"deribit", name:"Deribit", category:"Exchange API", status:"adapter_pending", detail:"REST and WebSocket API for crypto derivatives; Qoin execution adapter pending.", selectable:true },
+  { id:"hyperliquid", name:"Hyperliquid", category:"Exchange API", status:"adapter_pending", detail:"Exchange API and WebSocket; wallet authorization and adapter pending.", selectable:true },
+  { id:"interactive_brokers", name:"Interactive Brokers", category:"Broker API", status:"adapter_pending", detail:"Client Portal Web API and TWS API; account authorization and adapter pending.", selectable:true },
+  { id:"alpaca", name:"Alpaca", category:"Broker API", status:"adapter_pending", detail:"Trading API and streaming; eligibility and Qoin adapter pending.", selectable:true },
+  { id:"oanda", name:"OANDA", category:"Broker API", status:"adapter_pending", detail:"v20 REST and streaming API; Qoin execution adapter pending.", selectable:true },
+  { id:"saxo", name:"Saxo", category:"Broker API", status:"adapter_pending", detail:"Saxo OpenAPI REST and streaming; live app approval and Qoin adapter pending.", selectable:true },
+  { id:"ig", name:"IG", category:"Broker API", status:"adapter_pending", detail:"REST and streaming API; account/API-key eligibility and adapter pending.", selectable:true },
+  { id:"fxcm", name:"FXCM", category:"Broker API", status:"adapter_pending", detail:"Trading API/ForexConnect routes; account eligibility and adapter pending.", selectable:true },
+  { id:"capital_com", name:"Capital.com", category:"Broker API", status:"adapter_pending", detail:"Public REST and WebSocket API; Qoin adapter pending.", selectable:true },
+  { id:"deriv", name:"Deriv", category:"Broker API", status:"adapter_pending", detail:"OAuth/WebSocket API; account authorization and adapter pending.", selectable:true },
+  { id:"trading_212", name:"Trading 212", category:"Broker API", status:"adapter_pending", detail:"Public API availability is account/region dependent; Qoin adapter pending.", selectable:true },
+  { id:"xtb", name:"XTB", category:"Broker API", status:"adapter_pending", detail:"xAPI availability and account access must be confirmed; Qoin adapter pending.", selectable:true },
 ] as const;
 
 function BrokerCollectionPanel() {
@@ -606,19 +623,19 @@ function BrokerCollectionPanel() {
   useEffect(()=>{
     try {
       const raw=window.localStorage.getItem("qoin:broker-routing-preferences");
-      if(raw){const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&BROKER_DIRECTORY_PREVIEW.some((broker)=>broker.id===id&&broker.selectable)).slice(0,15));}
+      if(raw){const parsed:unknown=JSON.parse(raw);if(Array.isArray(parsed))setSelected(parsed.filter((id):id is string=>typeof id==="string"&&BROKER_DIRECTORY_PREVIEW.some((broker)=>broker.id===id&&broker.selectable)).slice(0,20));}
     } catch { /* local preferences are optional */ }
     setReady(true);
   },[]);
   useEffect(()=>{if(ready)try{window.localStorage.setItem("qoin:broker-routing-preferences",JSON.stringify(selected));}catch{/* storage may be unavailable */}},[selected,ready]);
   const toggle=(id:string)=>{
-    setSelected((current)=>current.includes(id)?current.filter((value)=>value!==id):current.length>=15?current:[...current,id]);
+    setSelected((current)=>current.includes(id)?current.filter((value)=>value!==id):current.length>=20?current:[...current,id]);
   };
   const amount=Number(capital);
   const valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <section className="broker-collection" aria-label="Broker collection and routing preferences">
-    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select eligible execution venues for a future strategy allocation. Market-data providers are not treated as brokers.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 15</span></div>
+    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select eligible execution venues for a future strategy allocation. Market-data providers are not treated as brokers.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
     <div className="broker-directory-grid">{BROKER_DIRECTORY_PREVIEW.map((broker)=><article className="broker-directory-card" key={broker.id}>
       <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
       <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
