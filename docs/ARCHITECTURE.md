@@ -12,14 +12,14 @@ The crate `backend/rust-axum/crates/qoin-vector-engine` is the single decision i
 The engine consumes seven normalized forces in a stable order:
 
 1. `order_flow_imbalance` — signed trade flow divided by observed trade size.
-2. `liquidity_stress` — negative best-bid/ask spread normalized by 25 bps; missing spread is not assumed to be liquid.
+2. `liquidity_imbalance` — signed best-bid versus ask-depth imbalance; spread is handled by a separate freshness/quality gate.
 3. `volatility` — EWMA absolute log return normalized by 1%.
 4. `funding_pressure` — funding rate multiplied by 100.
 5. `open_interest_change` — relative change between consecutive open-interest observations, multiplied by 100; the absolute open-interest level is not treated as directional.
-6. `liquidation_pressure` — signed liquidation count, with long liquidations negative and short liquidations positive.
+6. `liquidation_pressure` — exponentially decayed signed liquidation count (60-second half-life), with long liquidations negative and short liquidations positive.
 7. `basis` — mark-to-last-trade basis in bps normalized by 25; this is available only where a provider supplies mark price and a trade reference.
 
-The engine clips inputs, constructs a seven-by-seven deterministic self-attention matrix, applies deterministic top-k force selection, calculates the directional score and alignment, and records a full feature/contribution trace. The OFI × absolute OI-change interaction is reported separately so the score calculation is inspectable. This is a hand-specified research baseline, not a trained model.
+Trade-flow imbalance and liquidation pressure decay with a 60-second half-life; book depth imbalance is kept separate from trade flow. The engine clips inputs, constructs a seven-by-seven deterministic self-attention matrix, applies deterministic top-k force selection, calculates the directional score and alignment, and records a full feature/contribution trace. The OFI × absolute OI-change interaction is reported separately so the score calculation is inspectable. This is a hand-specified research baseline, not a trained model.
 
 A decision is forced to WAIT if the spread is absent, exceeds the configured maximum, or the quote used to calculate it is older than the configured maximum age. Defaults are 25 bps and 30 seconds. These are configurable at service startup with `QOIN_MAX_SPREAD_BPS` and `QOIN_MAX_SPREAD_AGE_MS`. Other baseline parameters include `QOIN_SIGNAL_THRESHOLD`, `QOIN_INPUT_CLIP`, `QOIN_TOP_K`, `QOIN_MIN_ALIGNMENT`, `QOIN_MAX_ANGLE_RADIANS`, and `QOIN_CONFIG_VERSION`.
 
