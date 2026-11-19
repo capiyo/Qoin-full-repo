@@ -1230,7 +1230,8 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         "v1_shared_market_vector":v1_vector_decision,"v2_relationship_discovery":v2_discovery,
         "market_vector":market_vector,"market_vector_persisted":should_evaluate_v1_now})))
 }
-async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+async fn get_state(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
     if let Ok(g)=s.memory.read(){
@@ -1245,7 +1246,8 @@ async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl I
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state storage unavailable"})))
     }
 }
-async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+async fn get_vector(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     match s.decisions.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
@@ -1253,7 +1255,8 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
-async fn get_latest_market_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+async fn get_latest_market_vector(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<SymbolQuery>)->impl IntoResponse{
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
     match s.market_vectors.find_one(filter,FindOneOptions::builder().sort(doc!{"event_time_cutoff_ms":-1}).build()).await{
@@ -1621,7 +1624,8 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
         backoff = (backoff * 2).min(30);
     }
 }
-async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+async fn get_events(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(100).clamp(1,1000);
     let options=FindOptions::builder().sort(doc!{"ts_ms":-1}).limit(limit).build();
@@ -1642,7 +1646,8 @@ async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl
     items.reverse();
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
-async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+async fn get_vector_history(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<HistoryQuery>)->impl IntoResponse {
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
     let options=FindOptions::builder().sort(doc!{"stored_at":-1}).limit(limit).build();
@@ -1669,7 +1674,8 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     items.reverse();
     (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
 }
-async fn get_market_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse{
+async fn get_market_vector_history(State(s):State<AppState>,headers:HeaderMap,Query(q):Query<HistoryQuery>)->impl IntoResponse{
+    if let Err(error)=verify_firebase_id_token(&headers).await{return error;}
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(120).clamp(1,500);
     let mut filter=doc!{"symbol":&symbol};if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
@@ -2134,8 +2140,9 @@ async fn mark_variable_not_applicable(
     Ok(Json(serde_json::json!({"revision":revision,"progress":hub.progress(request.feature)})))
 }
 async fn get_variable_progress(
-    State(state):State<AppState>,Query(query):Query<VariableHubQuery>,
+    State(state):State<AppState>,headers:HeaderMap,Query(query):Query<VariableHubQuery>,
 )->Result<Json<serde_json::Value>,(StatusCode,Json<serde_json::Value>)>{
+    verify_firebase_id_token(&headers).await?;
     let hub=load_or_create_variable_hub(&state,&query.venue,&query.symbol,&query.timeframe).await
         .map_err(|error|(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":error}))))?;
     Ok(Json(serde_json::json!({"identity":hub.identity,"variables":hub.progress_all()})))
@@ -2635,8 +2642,10 @@ async fn evaluate_v2_relationships(
 
 async fn list_relationship_events(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<RelationshipLedgerQuery>,
 ) -> Result<Json<Vec<RelationshipLedgerEvent>>, (StatusCode, Json<serde_json::Value>)> {
+    verify_firebase_id_token(&headers).await?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let options = FindOptions::builder()
         .sort(doc!{"recorded_at_ms":-1,"event_id":1})
