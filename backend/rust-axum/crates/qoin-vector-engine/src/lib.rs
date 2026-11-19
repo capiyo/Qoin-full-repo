@@ -101,6 +101,7 @@ pub struct FeatureTrace {
     pub bearish_weighted_term: f64,
     pub directional_weight: f64,
     pub directional_contribution: f64,
+    pub interaction_contribution: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -138,6 +139,7 @@ pub struct Signal {
     /// Positive and negative directional score components, respectively.
     pub decision_vector: [f64; 2],
     pub magnitude: f64,
+    pub interaction_contribution: f64,
     pub diagnostics: DecisionDiagnostics,
 }
 
@@ -324,6 +326,7 @@ pub fn decide(
             bearish_weighted_term: attended[index] * -DIRECTIONAL_WEIGHTS[index],
             directional_weight: DIRECTIONAL_WEIGHTS[index],
             directional_contribution: attended[index] * DIRECTIONAL_WEIGHTS[index],
+            interaction_contribution: if index == 4 { interaction } else { 0.0 },
         }
     }).collect();
 
@@ -345,6 +348,7 @@ pub fn decide(
         feature_trace,
         decision_vector: [score.max(0.0), (-score).max(0.0)],
         magnitude: score.abs(),
+        interaction_contribution: interaction,
         diagnostics: DecisionDiagnostics {
             spread_present: input.spread_bps.is_some(),
             spread_within_limit,
