@@ -63,7 +63,14 @@ pub struct ExecutionStressScenario {
     pub fills_recomputed: bool,
 }
 #[derive(Debug, Clone, Serialize)]
-pub struct ReplayDecision { pub action: String, pub reason: String }
+pub struct ReplayDecision {
+    pub action: String,
+    pub reason: String,
+    pub score: Option<f64>,
+    pub alignment: Option<f64>,
+    pub angle_radians: Option<f64>,
+    pub feature_trace: Option<Vec<qoin_vector_engine::FeatureTrace>>,
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
     pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
@@ -140,7 +147,8 @@ pub fn replay_with_execution(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, 
             let decision = strategy.decide(symbol, state.ofi, state.funding_rate, state.spread_bps,
                 state.ewma_abs_return, state.event_intensity, state.liquidation_events,
                 state.last_liquidation_side.as_deref())?;
-            Ok(ReplayDecision { action: decision.action.to_owned(), reason: decision.reason })
+            Ok(ReplayDecision { action: decision.action.to_owned(), reason: decision.reason,
+                score: None, alignment: None, angle_radians: None, feature_trace: None })
         }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
 }
 
@@ -165,7 +173,9 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
             };
             let signal = decide_vector(observation, config, config_version, false)
                 .map_err(|error| error.to_string())?;
-            Ok(ReplayDecision { action: signal.action, reason: signal.rationale })
+            Ok(ReplayDecision { action: signal.action, reason: signal.rationale,
+                score: Some(signal.score), alignment: Some(signal.alignment),
+                angle_radians: Some(signal.angle_radians), feature_trace: Some(signal.feature_trace) })
         }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
 }
 
