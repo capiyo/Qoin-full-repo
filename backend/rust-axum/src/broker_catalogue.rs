@@ -27,7 +27,29 @@ pub fn catalogue() -> Value {
     ];
     let items: Vec<Value> = providers.iter().map(|(id,name,kind,assets,api,status,selectable)| json!({
         "id": id, "name": name, "provider_kind": kind, "asset_classes": assets,
-        "api": api, "execution_status": status, "selectable": selectable,
+        "api": api, "documentation_url": match *id {
+            "binance_usdm" => "https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info",
+            "coinbase_advanced_trade" => "https://docs.cdp.coinbase.com/advanced-trade/docs/welcome",
+            "kraken_spot" => "https://docs.kraken.com/api/",
+            "bybit" => "https://bybit-exchange.github.io/docs/v5/intro",
+            "okx" => "https://www.okx.com/docs-v5/en/",
+            "bitget" => "https://www.bitget.com/api-doc/common/intro",
+            "gate_io" => "https://www.gate.com/docs/developers/apiv4/en/",
+            "kucoin" => "https://www.kucoin.com/docs-new",
+            "deribit" => "https://docs.deribit.com/",
+            "hyperliquid" => "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api",
+            "interactive_brokers" => "https://www.interactivebrokers.com/campus/ibkr-api-page/",
+            "alpaca" => "https://docs.alpaca.markets/",
+            "oanda" => "https://developer.oanda.com/rest-live-v20/introduction/",
+            "saxo" => "https://www.developer.saxo/openapi/learn",
+            "ig" => "https://labs.ig.com/",
+            "fxcm" => "https://fxcm-api.readthedocs.io/",
+            "capital_com" => "https://open-api.capital.com/",
+            "deriv" => "https://api.deriv.com/",
+            "trading_212" => "https://docs.trading212.com/",
+            "xtb" => "https://xopenhub.pro/api/xapi/",
+            _ => ""
+        }, "execution_status": status, "selectable": selectable,
         "execution_ready": false,
         "note": if *id == "binance_usdm" {
             "A Binance USD-M executor exists in the legacy internal order path; generic multi-account adapter registration and account linking are not connected."
