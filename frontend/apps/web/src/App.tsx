@@ -184,7 +184,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
     </table></div>
     <div className="trace-gates">
       {gates && [
-        ["Spread supplied", yesNo(gates.spread_present)], ["Spread within limit", yesNo(gates.spread_within_limit)],
+        ["Spread supplied", yesNo(gates.spread_present)], ["Spread within limit", yesNo(gates.spread_within_limit)], ["Quote fresh", yesNo(gates.spread_fresh)],
         ["Alignment threshold", yesNo(gates.alignment_passed)], ["Magnitude threshold", yesNo(gates.magnitude_passed)],
         ["Angular threshold", yesNo(gates.angle_passed)],
       ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
@@ -1231,7 +1231,7 @@ export default function App() {
         <div className="modal-body">
           {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics"><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>Vector space</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Sets &amp; Ledger</button></div>}
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
-            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the pinned V1 strategy. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the same versioned seven-force engine used by live ingestion. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
             <section className="backtest-method-panel" aria-label="Historical replay mechanics">
               <div className="attention-heading"><strong>How the replay progresses</strong><span>Deterministic · event-time ordered</span></div>
               <ol>
@@ -1246,7 +1246,7 @@ export default function App() {
             </section>
             <VectorMap decision={vector} history={vectorHistory} />
             <FeatureSpace decision={vector} />
-            {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the active Rust vector strategy."}</p>}
+            {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the authoritative seven-force Rust engine."}</p>}
             <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
@@ -1316,7 +1316,7 @@ export default function App() {
               </section>
               <DecisionTracePanel decision={vector} />
 
-              <section className="attention-panel" aria-label="Six by six attention weight matrix">
+              <section className="attention-panel" aria-label="Seven by seven attention weight matrix">
                 <div className="attention-heading"><strong>Attention matrix</strong><span>Each row shows how one feature attends to the others</span></div>
                 <div className="attention-grid">
                   <span className="attention-corner" />
