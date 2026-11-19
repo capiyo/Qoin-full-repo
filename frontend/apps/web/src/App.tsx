@@ -294,6 +294,31 @@ function VectorSpaceMechanics({ decision }: { decision: QoinVectorDecision | nul
         </div>
       </div>
     </div>
+    <section className="decision-output-visual" aria-label="Resultant decision vector plotted in bullish and bearish output coordinates">
+      <div className="attention-heading"><strong>Resultant vector · decision space</strong><span>Actual persisted backend coordinates</span></div>
+      <div className="decision-output-layout">
+        <svg viewBox="0 0 100 100" role="img" aria-label={`Decision vector bullish ${output[0].toFixed(4)}, bearish ${output[1].toFixed(4)}`}>
+          <defs><marker id="qoin-resultant-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#2867DC"/></marker></defs>
+          {[15,30].map((radius)=><circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#DCE5F0" strokeDasharray="2 2" strokeWidth=".7"/>)}
+          <path d="M5 50H95 M50 5V95" stroke="#9AAAC0" strokeWidth=".8"/>
+          <path d="M50 50L50 7 M50 50L93 50" stroke="#B7C5D7" strokeWidth=".6"/>
+          <line x1="50" y1="50" x2={50 + Math.max(-1,Math.min(1,output[0]))*38} y2={50 - Math.max(-1,Math.min(1,output[1]))*38} stroke="#2867DC" strokeWidth="2.1" markerEnd="url(#qoin-resultant-arrow)"/>
+          <circle cx={50 + Math.max(-1,Math.min(1,output[0]))*38} cy={50 - Math.max(-1,Math.min(1,output[1]))*38} r="2.5" fill="#2867DC" stroke="#FFFFFF" strokeWidth="1"/>
+          <circle cx="50" cy="50" r="1.7" fill="#53677F"/>
+          <text x="95" y="56" textAnchor="end" fill="#2867DC" fontSize="4">Bullish +</text>
+          <text x="52" y="7" fill="#159B78" fontSize="4">Bearish +</text>
+          <text x="5" y="56" fill="#8794A7" fontSize="4">Bullish −</text>
+          <text x="52" y="96" fill="#8794A7" fontSize="4">Bearish −</text>
+        </svg>
+        <div className="decision-output-readout">
+          <div><span>Bullish coordinate</span><strong>{output[0].toFixed(6)}</strong></div>
+          <div><span>Bearish coordinate</span><strong>{output[1].toFixed(6)}</strong></div>
+          <div><span>Vector magnitude</span><strong>{Math.hypot(output[0],output[1]).toFixed(6)}</strong></div>
+          <div><span>Decision</span><strong className={decision?.action === "BUY" ? "decision-buy" : decision?.action === "SELL" ? "decision-sell" : ""}>{decision?.action?.toUpperCase() || "WAIT"}</strong></div>
+        </div>
+      </div>
+      <p className="disclaimer">The arrow is the stored two-coordinate decision vector, not a second signal calculation. The chart clips its display to the unit frame; the exact coordinates remain printed beside it.</p>
+    </section>
     <div className="vector-output-bridge">
       <div><span>Resultant decision vector · backend output</span><strong>({output[0].toFixed(5)}, {output[1].toFixed(5)})</strong></div>
       <span className="vector-output-arrow">→</span>
@@ -345,6 +370,29 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
         </div>
         <p className="set-venn-note">Observed event-ID membership overlap. Circle areas are illustrative and are not scaled to set size.</p>
       </div> : null}
+      <section className="set-cardinality-map" aria-label="Observed cardinality of all backend sets">
+        <div className="attention-heading"><strong>Set measure map</strong><span>Counting measure · |A|</span></div>
+        <div className="set-cardinality-axis"><span>0</span><span>{ledger.universe_count} events in universe</span></div>
+        {ledger.sets.map((item) => <div className="set-cardinality-row" key={item.set_id}>
+          <span title={item.label}>{item.label}</span>
+          <div className="set-cardinality-track"><i style={{width: ledger.universe_count ? (item.measure.counting_measure / ledger.universe_count * 100) + "%" : "0%"}} /></div>
+          <strong>{item.measure.counting_measure}</strong>
+        </div>)}
+        <p className="set-venn-note">Bars are exact cardinalities from returned event IDs. A zero-length bar means the set has no observed members in this universe.</p>
+      </section>
+      <section className="relation-flow-map" aria-label="Observed temporal relation graph">
+        <div className="attention-heading"><strong>Relation flow</strong><span>Source set → target set · observed edges</span></div>
+        {ledger.relations.map((item) => <div className="relation-flow-row" key={item.relation_id}>
+          <span>{item.source_set.replaceAll("_"," ")}</span>
+          <svg viewBox="0 0 100 24" role="img" aria-label={item.edge_count + " observed temporal precedence edges"}>
+            <defs><marker id={"relation-arrow-" + item.relation_id} markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" fill="#159B78"/></marker></defs>
+            <circle cx="7" cy="12" r="4" fill="#3985D6"/><line x1="12" y1="12" x2="87" y2="12" stroke="#159B78" strokeWidth={item.edge_count ? "1.5" : ".7"} strokeDasharray={item.edge_count ? "none" : "2 2"} markerEnd={"url(#relation-arrow-" + item.relation_id + ")"} opacity={item.edge_count ? "1" : ".45"}/><circle cx="93" cy="12" r="4" fill="#159B78"/>
+            <text x="50" y="8" textAnchor="middle" fill="#52637A" fontSize="5">{item.edge_count} edges</text>
+          </svg>
+          <span>{item.target_set.replaceAll("_"," ")}</span>
+        </div>)}
+        <p className="set-venn-note">An arrow means at least one ordered pair exists within the configured time window. It does not imply causation.</p>
+      </section>
       <div style={{ display: "grid", gap: 7 }}>
         <strong style={{ fontSize: 11 }}>Set membership &amp; measure</strong>
         {ledger.sets.map((item) => <details key={item.set_id} style={{ padding: "9px 10px", borderRadius: 10, background: "#FBFCFE", border: "1px solid #E8EDF4" }}>
