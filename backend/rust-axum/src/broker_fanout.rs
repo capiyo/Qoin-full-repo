@@ -680,6 +680,9 @@ pub async fn recover_interrupted_submissions(
     let Some(mut lifecycle) = load_fanout_lifecycle(collection, owner_scope, parent_order_id).await? else {
         return Ok(Vec::new());
     };
+    if now_ms < lifecycle.parent.updated_at_ms {
+        return Err(FanoutPersistenceError::InvalidRecords);
+    }
     let interrupted = lifecycle.children.iter()
         .filter(|child| child.status == ChildOrderStatus::Submitting)
         .map(|child| (child.child_order_id.clone(), child.client_order_id.clone()))
