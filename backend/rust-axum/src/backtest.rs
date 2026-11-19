@@ -785,3 +785,44 @@ mod tests {
         assert!(replay_with_execution(vec![event], &EdgeStrategy::baseline(), 1_000.0, 10.0, 9_999.0, 0, 0.5, 5.0).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod vector_engine_replay_tests {
+    use super::*;
+    use qoin_vector_engine::EngineConfig;
+
+    #[test]
+    fn historical_replay_uses_the_same_vector_engine_and_rejects_stale_quotes() {
+        let events = vec![
+            ReplayEvent {
+                event_id: "book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(5.0), ask_size: Some(5.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "trade-fresh".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "trade".into(), ts_ms: 2, price: Some(100.0), size: Some(1.0), side: Some("buy".into()),
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "trade-stale".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "trade".into(), ts_ms: 30_002, price: Some(100.1), size: Some(1.0), side: Some("buy".into()),
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+        ];
+        let result = replay_with_vector_engine(
+            events, &EngineConfig::default(), "seven-force-test-v1",
+            1_000.0, 0.0, 0.0, 0, 0.5, 0.0,
+        ).unwrap();
+
+        assert_eq!(result.strategy_key, "qoin-vector-baseline");
+        assert_eq!(result.strategy_version, "seven-force-test-v1");
+        let last = result.last_decision.unwrap();
+        assert_eq!(last.action, "wait");
+        assert!(last.reason.contains("stale"));
+    }
+}
