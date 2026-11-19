@@ -880,8 +880,8 @@ mod tests {
             Ok(spec)
         }
 
-        async fn required_margin_account_currency(&self, _order: &NormalizedOrder, _reference_price: Decimal) -> Result<Decimal, ContractError> {
-            Ok(d("100"))
+        async fn required_margin_account_currency(&self, order: &NormalizedOrder, _reference_price: Decimal) -> Result<Decimal, ContractError> {
+            Ok(if order.account_id == "margin-short" { d("6000") } else { d("100") })
         }
 
         async fn submit_order(&self, order: NormalizedOrder) -> Result<BrokerOrderReceipt, ContractError> {
@@ -937,6 +937,20 @@ mod tests {
             vec![selected_order("account-a"), selected_order("account-b")],
         ).await.unwrap();
         assert_eq!(prepared.len(), 2);
+        assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn broker_calculated_margin_shortfall_blocks_the_whole_selected_set() {
+        let submit_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let registry = BrokerRegistry::default();
+        registry.register(std::sync::Arc::new(MockAdapter { submit_calls: submit_calls.clone() })).unwrap();
+        let result = preflight_selected_orders(
+            &registry,
+            &PortfolioRiskPolicy::default(),
+            vec![selected_order("account-a"), selected_order("margin-short")],
+        ).await;
+        assert!(matches!(result, Err(ContractError::InvalidOrder(_))));
         assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
