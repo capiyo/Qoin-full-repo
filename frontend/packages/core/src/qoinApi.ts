@@ -186,7 +186,7 @@ export type QoinNewsItem = {
 };
 export type QoinNewsResponse = { source: string; status: string; items: QoinNewsItem[]; message?: string };
 export type QoinBrokerDirectoryItem = {
-  id: string; name: string; provider_kind: "broker" | "exchange"; asset_classes: string; api: string;
+  id: string; name: string; provider_kind: "broker" | "exchange"; asset_classes: string; api: string; documentation_url: string;
   execution_status: "execution_adapter_exists_not_connected" | "adapter_pending";
   selectable: boolean; execution_ready: boolean; note: string;
 };
