@@ -1287,7 +1287,8 @@ struct BacktestQuery {
     max_participation_rate: Option<f64>,
     market_impact_bps: Option<f64>,
 }
-async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
+async fn run_backtest(State(s): State<AppState>, headers: HeaderMap, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
+    if let Err(error) = verify_firebase_id_token(&headers).await { return error; }
     let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
     if symbol.trim().is_empty() {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol is required"})));
@@ -2521,8 +2522,10 @@ async fn append_relationship_event(
 
 // Keep the V2 append-only ledger read path explicit for integration verification.
 async fn plan_broker_allocations(
+    headers: HeaderMap,
     Json(request): Json<broker_router::AllocationRequest>,
 ) -> impl IntoResponse {
+    if let Err(error) = verify_firebase_id_token(&headers).await { return error; }
     match broker_router::build_equal_share_plan(request) {
         Ok(plan) => (StatusCode::OK, Json(serde_json::to_value(plan).unwrap_or_default())),
         Err(error) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error}))),
@@ -2531,8 +2534,10 @@ async fn plan_broker_allocations(
 
 async fn evaluate_v2_relationships(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<V2EvaluationQuery>,
 ) -> Result<Json<V2EvaluationReport>, (StatusCode, Json<serde_json::Value>)> {
+    verify_firebase_id_token(&headers).await?;
     let symbol = query.symbol.trim().to_owned();
     let venue = query.venue.trim().to_owned();
     let horizon_ms = query.horizon_ms.unwrap_or(5 * 60_000);
