@@ -781,8 +781,10 @@ async fn verify_firebase_id_token(headers: &HeaderMap) -> Result<FirebasePrincip
     if token.len() > 8192 {
         return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"invalid Firebase ID token"}))));
     }
+    let identity_toolkit_url = env::var("FIREBASE_IDENTITY_TOOLKIT_URL")
+        .unwrap_or_else(|_| "https://identitytoolkit.googleapis.com/v1/accounts:lookup".into());
     let response = reqwest::Client::new()
-        .post(format!("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={}", url::form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>()))
+        .post(format!("{}?key={}", identity_toolkit_url.trim_end_matches('?'), url::form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>()))
         .json(&serde_json::json!({"idToken":token}))
         .send().await
         .map_err(|error| {
