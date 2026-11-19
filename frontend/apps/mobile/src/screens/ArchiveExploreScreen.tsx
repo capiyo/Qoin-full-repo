@@ -36,6 +36,14 @@ type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"] as const;
 
+type PercentageWidth = `${number}%`;
+
+function percentageWidth(value: number, total: number): PercentageWidth {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return "0%";
+  const percentage = Math.max(0, Math.min(100, (value / total) * 100));
+  return `${percentage}%`;
+}
+
 function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
   const labels = ["OFI", "FUND", "DEPTH", "VOL", "EVENT", "LIQ"];
   const values = QOIN_FEATURE_NAMES.map((name) => Math.max(-1, Math.min(1, decision?.features?.[name] ?? 0)));
@@ -205,7 +213,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
         {ledger.sets.map((item) => <View key={"measure-"+item.set_id} style={{flexDirection:"row",alignItems:"center",gap:8}}>
           <Text numberOfLines={1} style={{width:112,color:"#52637A",fontSize:9}}>{item.label}</Text>
           <View style={{height:9,flex:1,borderRadius:8,backgroundColor:"#EAF0F6",overflow:"hidden"}}>
-            <View style={{height:9,width:ledger.universe_count ? (item.measure.counting_measure/ledger.universe_count*100)+"%" : "0%",borderRadius:8,backgroundColor:"#3985D6"}} />
+            <View style={{height:9,width:percentageWidth(item.measure.counting_measure,ledger.universe_count),borderRadius:8,backgroundColor:"#3985D6"}} />
           </View>
           <Text style={{width:24,textAlign:"right",color:"#243750",fontSize:10,fontWeight:"800"}}>{item.measure.counting_measure}</Text>
         </View>)}
@@ -873,7 +881,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View>:<View style={[styles.cardPager,{flexDirection:"column",alignItems:"stretch",gap:9}]}>
                 <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={styles.cardKicker}>RESEARCH MODEL 02</Text><Text style={styles.cardPagerStatus}>{cardLedger?"EVIDENCE LOADED":ledgerStatus==="loading"?"LOADING":ledgerStatus==="unavailable"?"UNAVAILABLE":"ON DEMAND"}</Text></View>
                 {cardLedger?<><View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{[["UNIVERSE",cardLedger.universe_count],["SETS",cardLedger.sets.length],["RELATIONS",cardLedger.relations.length]].map(([label,value])=><View key={String(label)} style={{flex:1,minWidth:72,padding:9,borderRadius:9,backgroundColor:"#F1F5F9"}}><Text style={styles.cardMetaLabel}>{label}</Text><Text style={styles.cardPagerValue}>{value}</Text></View>)}</View>
-                  {cardLedger.sets.slice(0,5).map((set)=><View key={set.set_id} style={{flexDirection:"row",alignItems:"center",gap:7}}><Text numberOfLines={1} style={{width:105,color:"#52637A",fontSize:8}}>{set.label}</Text><View style={{flex:1,height:7,borderRadius:6,backgroundColor:"#EAF0F6",overflow:"hidden"}}><View style={{height:7,width:cardLedger.universe_count?Math.min(100,set.measure.counting_measure/cardLedger.universe_count*100)+"%":"0%",backgroundColor:"#3985D6"}}/></View><Text style={{width:22,textAlign:"right",fontSize:9,color:"#243750"}}>{set.measure.counting_measure}</Text></View>)}
+                  {cardLedger.sets.slice(0,5).map((set)=><View key={set.set_id} style={{flexDirection:"row",alignItems:"center",gap:7}}><Text numberOfLines={1} style={{width:105,color:"#52637A",fontSize:8}}>{set.label}</Text><View style={{flex:1,height:7,borderRadius:6,backgroundColor:"#EAF0F6",overflow:"hidden"}}><View style={{height:7,width:percentageWidth(set.measure.counting_measure,cardLedger.universe_count),backgroundColor:"#3985D6"}}/></View><Text style={{width:22,textAlign:"right",fontSize:9,color:"#243750"}}>{set.measure.counting_measure}</Text></View>)}
                   <Text style={styles.cardMetaLabel}>{cardLedger.universe_truncated?"Evidence sample is capped.":"Membership is derived from persisted event IDs."}</Text></>:<View style={{gap:7}}><Text style={styles.cardReasonText}>{ledgerStatus==="loading"?"Loading persisted event memberships and measures…":ledgerStatus==="unavailable"?"V2 ledger evidence is unavailable for this instrument.":"Swipe to load the set and ledger model."}</Text>{ledgerStatus==="unavailable"?<Pressable onPress={()=>{setCardLedgerStatus((current)=>{const next={...current};delete next[item.symbol];return next;});loadCardLedger(item);}} style={styles.addButton}><Text style={styles.addText}>Retry evidence load</Text></Pressable>:null}</View>}
               </View>}
               <View style={styles.cardPagerFooter}><View style={styles.cardPagerDots}>
