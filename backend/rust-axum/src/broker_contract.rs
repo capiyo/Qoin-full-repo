@@ -808,7 +808,7 @@ mod tests {
         spec.quote_currency = "USD".into();
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
-            equity:d("10000"), available_margin:d("5000"), gross_exposure:Decimal::ZERO,
+            account_healthy:true, trading_enabled:true, equity:d("10000"), available_margin:d("5000"), gross_exposure:Decimal::ZERO,
             daily_realized_pnl:Decimal::ZERO, daily_unrealized_pnl:Decimal::ZERO,
             open_positions:0, observed_at_ms:10_000
         };
@@ -828,7 +828,7 @@ mod tests {
         let spec = instrument(AssetClass::Equity, "ABC", "1", "1");
         let account = BrokerAccountSnapshot {
             broker_id:"selected-broker".into(), account_id:"acct".into(), account_currency:"USD".into(),
-            equity:d("1000"), available_margin:d("1000"), gross_exposure:d("2000"),
+            account_healthy:true, trading_enabled:true, equity:d("1000"), available_margin:d("1000"), gross_exposure:d("2000"),
             daily_realized_pnl:Decimal::ZERO, daily_unrealized_pnl:Decimal::ZERO,
             open_positions:5, observed_at_ms:10_000
         };
@@ -864,7 +864,7 @@ mod tests {
         async fn account_snapshot(&self, account_id: &str) -> Result<BrokerAccountSnapshot, ContractError> {
             Ok(BrokerAccountSnapshot {
                 broker_id: "mock".into(), account_id: account_id.into(), account_currency: "USD".into(),
-                account_healthy: account_id != "unhealthy", trading_enabled: true, equity: d("10000"),
+                account_healthy: account_id != "unhealthy", trading_enabled: account_id != "disabled", equity: d("10000"),
                 available_margin: d("5000"), gross_exposure: Decimal::ZERO,
                 daily_realized_pnl: Decimal::ZERO, daily_unrealized_pnl: Decimal::ZERO,
                 open_positions: 0, observed_at_ms: 10_000,
@@ -948,7 +948,7 @@ mod tests {
         let result = preflight_selected_orders(
             &registry,
             &PortfolioRiskPolicy::default(),
-            vec![selected_order("account-a"), selected_order("unhealthy")],
+            vec![selected_order("account-a"), selected_order("unhealthy"), selected_order("disabled")],
         ).await;
         assert!(result.is_err());
         assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
