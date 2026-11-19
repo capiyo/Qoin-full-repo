@@ -1,40 +1,31 @@
 # Qoin container deployment baseline
 
-This repository includes a Docker Compose deployment topology with a public research gateway and a private Axum execution boundary. Live execution is disabled by default.
-
-- Drogon is the only published application service.
-- Axum is reachable only on the private Compose network.
-- MongoDB is reachable only on the private Compose network and requires authentication.
-- Axum and Drogon run as non-root users in their images.
-- Provider credentials are injected through the untracked root `.env` file or the deployment platform's secret manager.
+The Compose topology exposes Drogon as the public gateway, keeps Axum private, and keeps MongoDB on a private network. Research and market-data endpoints remain separate from the authenticated execution boundary.
 
 ## Required configuration
 
-Create a root `.env` file from `.env.example`. Generate both MongoDB passwords as 64-character hexadecimal strings (for example, `openssl rand -hex 32`) so they are safe to embed in the MongoDB URI. Use different values for the root and application passwords. If enabling the private execution route, generate `QOIN_EXECUTION_TOKEN` independently (for example, `openssl rand -hex 32`) and inject exchange credentials through the secret manager. Leave `QOIN_TRADING_MODE=disabled` unless intentionally enabling the operator-controlled route. Keep `.env` out of version control; the repository `.gitignore` excludes local environment files. Set `FINNHUB_API_KEY` only when the corresponding data entitlement is available. Binance public market data can be disabled independently.
+Create a root `.env` file from `.env.example`. Generate distinct MongoDB passwords and a private `QOIN_EXECUTION_TOKEN` using a cryptographically secure random generator. Set `QOIN_FIREBASE_PROJECT_ID` to the Firebase project ID used by both frontend apps. Keep all values in the deployment secret manager in production; never put provider credentials in source control or frontend environment variables.
 
-## Private execution route
+The Axum container receives `QOIN_FIREBASE_PROJECT_ID` and the private execution token. The Drogon gateway receives the same private execution token and injects it only on internal requests; clients must never receive it. Firebase ID tokens are forwarded from the client to Axum and verified against Google's Secure Token signing keys, issuer and audience. Axum derives the order owner UID from the verified token, never from the request body.
 
-The Axum service exposes these operator-only routes on the private Compose network; Drogon does not proxy them:
+## Broker-neutral execution routes
 
-- `POST /internal/orders` — submit one Binance USD-M market order with a mandatory side-correct protective stop for opening orders.
-- `GET /internal/orders/{client_order_id}/reconcile` — query the entry order and its protective stop at Binance and persist the observed status.
-- `POST /internal/trading/kill-switch` with `{"enabled":false}` — block new submissions immediately; `{"enabled":true}` reopens the entry gate. This does not cancel open orders or close positions.
+Drogon proxies the following routes to the private Axum service:
 
-All three require the `x-qoin-execution-token` header. New orders are blocked by default; explicitly enable the entry gate only after configuring and verifying the account. Every submission must use a unique 8–36 character `client_order_id`. The MongoDB ledger reserves that ID before any exchange request, so an uncertain result cannot be blindly retried. Use the reconciliation route to inspect it.
+- `POST /api/v1/orders` — submit one normalized order to the selected broker adapter.
+- `GET /api/v1/orders/{client_order_id}/reconcile` — reconcile the order through its originally selected adapter and only for the authenticated owner.
+- `GET /api/v1/trading/readiness` — inspect selected provider readiness; this route never submits orders.
+- `GET /api/v1/brokers` — read the provider discovery catalogue.
 
-Example request body:
+The order request carries a stable `broker_id`, provider account reference, Qoin canonical instrument ID, side, order type, native quantity, optional limit/trigger prices and a protective stop. The adapter supplies the trusted account snapshot, instrument metadata, fresh bid/ask quote, native margin and provider-specific capabilities. The server clock is authoritative. The protective stop is passed to the provider adapter as an attached native bracket instruction; opening orders are rejected if the provider cannot guarantee that protection.
 
-```json
-{
-  "symbol": "BTCUSDT",
-  "side": "BUY",
-  "quantity": 0.001,
-  "stop_price": 60000,
-  "client_order_id": "qoin-manual-000001"
-}
-```
+The backend persists the unique client order ID before submission. Duplicate requests are rejected, ambiguous timeouts require adapter-based reconciliation, and no retry is automatically issued. The execution kill switch is stored in MongoDB and defaults to disabled.
 
-For testnet, set `QOIN_TRADING_MODE=testnet` and the testnet confirmation string; the adapter selects and enforces the Binance Futures testnet host. For real-money operation, use `QOIN_TRADING_MODE=live` and the live confirmation string; the adapter enforces the production host. `BINANCE_FUTURES_BASE_URL` may be left blank so the selected mode supplies the correct host. Do not expose Axum's port publicly.
+## Current capability boundary
+
+The generic contract, adapter registry, account-currency risk gate, quote validation, Firebase owner authentication, gateway token injection, order ledger and reconciliation route are implemented on the feature branch. The registry is intentionally empty: the catalogue's Forex and crypto entries are discovery options, not implemented execution connectors. No broker account is connected and no provider is execution-ready. The readiness endpoint therefore reports no dispatch eligibility, and live dispatch must remain disabled.
+
+A provider must not be registered until its adapter implements and passes provider-specific tests for account ownership, credential isolation/rotation, market data, instrument and contract sizing, native attached protection, margin, order submit/cancel/status, complete client-order-ID history lookup, partial fills, fee/funding reporting and reconciliation. Test/sandbox verification and operator approval are release gates. Do not paste API keys into chat or expose them to web/mobile clients.
 
 ## Start
 
@@ -45,19 +36,4 @@ docker compose ps
 docker compose logs -f axum gateway
 ```
 
-The gateway health endpoint proxies the Axum health check. The Axum service is not published to the host. MongoDB data is held in the named `qoin-mongodb-data` volume.
-
-## Production deployment requirements
-
-This Compose file is a deployable baseline, not proof of production readiness. Before exposing the gateway publicly:
-
-1. Put it behind a TLS-terminating reverse proxy or managed ingress.
-2. Configure ingress-level rate limits, request-size limits, WebSocket connection limits, origin allowlists and DDoS controls.
-3. Use managed secrets rather than a checked-in or image-baked environment file.
-4. Use a managed MongoDB deployment with TLS, least-privilege database users, automated backups, point-in-time recovery and a tested restore procedure.
-5. Configure provider-specific credentials and verify contractual data entitlements, symbol mapping, timestamp semantics and historical coverage.
-6. Add external monitoring and alerting for gateway health, provider freshness, ingestion lag, MongoDB capacity and failed background tasks.
-7. Keep Axum private. Do not publish its port or permit direct internet ingress.
-8. Keep Axum private. The optional `POST /internal/orders` route is not proxied by Drogon and requires `QOIN_EXECUTION_TOKEN`, explicit live-mode confirmation, and Binance credentials. Configure the token through the deployment secret manager, not source control. The current route has durable client-order-ID deduplication and a protective-stop/emergency-close attempt, but it is not a complete portfolio risk engine or unattended production trading system; account reconciliation and an operational kill switch remain outstanding.
-
-The Compose deployment uses Docker build-time dependency resolution. For a reproducible release, generate and commit the Rust `Cargo.lock`, pin base images by digest, generate an SBOM, scan images and deploy immutable image tags.
+Only the gateway is published. Axum and MongoDB remain private. Before production exposure, add TLS ingress, rate and request-size limits, origin allowlists, managed secrets, managed MongoDB backups/PITR, monitoring and tested restore procedures.
