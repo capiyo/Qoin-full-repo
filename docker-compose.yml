@@ -67,8 +67,6 @@ services:
     environment:
       QOIN_AXUM_URL: http://axum:8081
       QOIN_AXUM_WS_URL: ws://axum:8081
-      QOIN_EXECUTION_TOKEN: ${QOIN_EXECUTION_TOKEN:-}
-      QOIN_LEDGER_MAINTENANCE_TOKEN: ${QOIN_LEDGER_MAINTENANCE_TOKEN:-}
       QOIN_DROGON_HOST: 0.0.0.0
       QOIN_DROGON_PORT: 8080
     depends_on:
