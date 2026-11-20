@@ -32,7 +32,7 @@ mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
-use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation};
+use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
