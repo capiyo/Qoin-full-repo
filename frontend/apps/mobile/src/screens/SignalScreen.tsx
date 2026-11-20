@@ -42,7 +42,7 @@ export function SignalScreen() {
   }, []);
 
   const activeCount = useMemo(
-    () => fields.filter(({ key }) => Math.abs(forces[key]) > 0.0001).length,
+    () => fields.filter(({ key }) => Math.abs(forces[key] ?? 0) > 0.0001).length,
     [forces],
   );
 
@@ -91,7 +91,7 @@ export function SignalScreen() {
               <TextInput
                 accessibilityLabel={label}
                 keyboardType="decimal-pad"
-                value={String(forces[key])}
+                value={String(forces[key] ?? 0)}
                 onChangeText={(value) => {
                   const parsed = Number(value);
                   if (value.trim() !== "" && Number.isFinite(parsed)) {
