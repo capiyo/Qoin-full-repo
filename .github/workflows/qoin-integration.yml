@@ -178,7 +178,7 @@ jobs:
           jq -e '.durable_history_complete == true and .relation_coverage_complete == true and .durable_observation_count == 4 and .truncated_relation_scans == 0' /tmp/set-ledger-after-backfill.json
           unauthenticated_backfill_status=$(curl -sS -X POST -o /tmp/unauthenticated-backfill.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/backfill?symbol=BTCUSDT&batch_size=10')
           test "$unauthenticated_backfill_status" = "401"
-          unauthenticated_correction_status=$(curl -sS -X POST -o /tmp/unauthenticated-correction.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' --data '{}')
+          unauthenticated_correction_status=$(curl -sS -X POST -o /tmp/unauthenticated-correction.json -w '%{http_code}' 'http://127.0.0.1:8080/api/v1/set-ledger/corrections' -H 'content-type: application/json' --data '{"symbol":"BTCUSDT","venue":"ci","event_id":"unauthenticated-correction","expected_source_hash":"0000000000000000000000000000000000000000000000000000000000000000","reason":"unauthenticated request must be rejected before source lookup","corrected_event":{"event_id":"unauthenticated-correction","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000100,"price":100.01,"size":1,"side":"buy"}}')
           test "$unauthenticated_correction_status" = "401"
           curl -fsS 'http://127.0.0.1:8080/api/v1/set-ledger?symbol=BTCUSDT&limit=100' >/tmp/set-ledger-before-correction.json
           source_hash=$(jq -r '.durable_records[] | select(.record_type == "observation" and .source_event_id == "ci-trade-1" and .venue == "ci") | .source_event_hash_sha256' /tmp/set-ledger-before-correction.json)
