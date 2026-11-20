@@ -234,3 +234,4 @@ jobs:
             jq . /tmp/algorithms.json || cat /tmp/algorithms.json
             exit 1
           fi
+          echo "All Qoin Axum-Drogon integration assertions passed."
