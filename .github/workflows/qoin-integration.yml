@@ -118,7 +118,35 @@ jobs:
             sleep 1
           done
           jq -e '.market_streams.binance_usdm_enabled == false and .market_streams.coinbase_advanced_trade_enabled == false and .market_streams.kraken_spot_enabled == false' /tmp/health-restarted.json
-          curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json
+          # Verify that the gateway survives an upstream restart and recovers its proxy route.
+          if ! kill -0 "$DROGON_PID" 2>/dev/null; then
+            echo "Drogon exited while Axum was restarting"
+            cat /tmp/qoin-drogon.log || true
+            cat /tmp/qoin-axum-restarted.log || true
+            ps -o pid,ppid,stat,cmd -p "$DROGON_PID","$AXUM_PID" || true
+            ss -ltnp || true
+            exit 1
+          fi
+          for attempt in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8080/api/v1/strategy >/tmp/strategy-reloaded.json; then break; fi
+            if ! kill -0 "$DROGON_PID" 2>/dev/null; then
+              echo "Drogon exited before its strategy proxy recovered"
+              cat /tmp/qoin-drogon.log || true
+              cat /tmp/qoin-axum-restarted.log || true
+              ps -o pid,ppid,stat,cmd -p "$DROGON_PID","$AXUM_PID" || true
+              ss -ltnp || true
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ ! -s /tmp/strategy-reloaded.json ]]; then
+            echo "Drogon stayed alive but its strategy proxy did not recover after Axum restarted"
+            cat /tmp/qoin-drogon.log || true
+            cat /tmp/qoin-axum-restarted.log || true
+            ps -o pid,ppid,stat,cmd -p "$DROGON_PID","$AXUM_PID" || true
+            ss -ltnp || true
+            exit 1
+          fi
           jq -e '.version == "edge-map-ci-smoke-v2"' /tmp/strategy-reloaded.json
           public_event_write_status=$(curl -sS -o /tmp/public-event-write.json -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/events -H 'content-type: application/json' --data '{"event_id":"public-forbidden","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000200,"price":100.03,"size":1,"side":"buy"}')
           test "$public_event_write_status" = "405"
