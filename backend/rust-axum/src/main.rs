@@ -624,7 +624,7 @@ async fn submit_live_order(
         Ok(receipt) => {
             let stored = mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null);
             if let Err(error) = s.orders.update_one(
-                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
                 doc!{"$set":{"status":"accepted","broker_receipt":stored,"updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
@@ -639,7 +639,7 @@ async fn submit_live_order(
         }
         Err(error) => {
             if let Err(ledger_error) = s.orders.update_one(
-                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
                 doc!{"$set":{"status":"reconciliation_required","execution_error":error.to_string(),"updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
@@ -679,6 +679,38 @@ async fn reconcile_live_order(
         Ok(value) => value,
         Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"stored broker order cannot be decoded"}))),
     };
+    let stored_broker_id=record.get_str("broker_id").unwrap_or_default();
+    let stored_account_id=record.get_str("account_id").unwrap_or_default();
+    if !stored_broker_id.eq_ignore_ascii_case(&submission.broker_id)
+        || stored_account_id != submission.order.account_id
+    {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error":"stored order ownership metadata does not match its immutable request",
+            "client_order_id":client_order_id,
+            "reconciliation_required":true
+        })));
+    }
+    let account_mapping=match s.broker_accounts.find_one(doc!{
+        "owner_uid":&owner_uid,"broker_id":stored_broker_id,"account_id":stored_account_id
+    },None).await {
+        Ok(Some(account))=>account,
+        Ok(None)=>return (StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error":"broker account is no longer mapped to this Firebase user",
+            "client_order_id":client_order_id,
+            "reconciliation_required":true
+        }))),
+        Err(error)=>{
+            tracing::error!(error=%error,"broker account mapping lookup failed during reconciliation");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker account mapping unavailable"})));
+        }
+    };
+    if !s.broker_environment.account_authorized(stored_broker_id,stored_account_id) {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"server-side broker credential allowlist is not configured for this account",
+            "client_order_id":client_order_id,
+            "reconciliation_required":true
+        })));
+    }
     let adapter = match s.broker_registry.resolve(&submission.broker_id) {
         Ok(adapter) => adapter,
         Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
@@ -690,7 +722,7 @@ async fn reconcile_live_order(
     ).await {
         Ok(Some(receipt)) => {
             if let Err(error) = s.orders.update_one(
-                doc!{"client_order_id":&client_order_id},
+                doc!{"client_order_id":&client_order_id,"owner_uid":&owner_uid},
                 doc!{"$set":{"status":"reconciled","broker_receipt":mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null),
                     "reconciled_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}},
                 None
@@ -727,6 +759,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
     let healthy=database_ok && recovery_ok;
     let strategy_version=s.signal_config_version.clone();
+    let registered_adapters=s.broker_registry.configured_brokers().unwrap_or_default();
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
        "mongodb":database_ok,
@@ -737,16 +770,10 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
           "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
-       "live_order_submission":if matches!(env::var("QOIN_TRADING_MODE").as_deref(),Ok("live")|Ok("testnet"))
-          && env::var("QOIN_EXECUTION_TOKEN").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_SECRET").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && ((env::var("QOIN_TRADING_MODE").as_deref()==Ok("live")
-                && env::var("QOIN_LIVE_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_REAL_MONEY_RISK").unwrap_or(false))
-              || (env::var("QOIN_TRADING_MODE").as_deref()==Ok("testnet")
-                && env::var("QOIN_TESTNET_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_TESTNET_ORDERS").unwrap_or(false)))
-          {"configured"}else{"disabled"},
-       "live_order_adapter":"binance_usdm_with_required_protective_stop",
+       "broker_execution":{"registered_adapter_count":registered_adapters.len(),
+          "registered_adapters":registered_adapters,
+          "configured_environment_provider_count":s.broker_environment.configured_provider_ids().len(),
+          "live_order_submission":"disabled_until_provider_adapter_conformance_and_explicit_enablement"},
        "new_order_entry_enabled":order_entry_enabled,
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
