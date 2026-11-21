@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipDocker
+    [switch]$SkipDocker,
+    [string]$LogPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,14 +19,44 @@ function Test-IsAdministrator {
 
 if (-not (Test-IsAdministrator)) {
     Write-Host "Requesting administrator privileges..."
+    if (-not $LogPath) {
+        $LogPath = Join-Path $Work "setup-qoin-tools-elevated.log"
+    }
+    if (Test-Path $LogPath) { Remove-Item -LiteralPath $LogPath -Force }
+
     $scriptPath = $PSCommandPath
-    $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "' + $scriptPath + '"'
-    if ($SkipDocker) { $argumentLine += " -SkipDocker" }
-    $process = Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $argumentLine -Wait -PassThru
+    $argumentList = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "`"$scriptPath`"",
+        "-LogPath", "`"$LogPath`""
+    )
+    if ($SkipDocker) { $argumentList += "-SkipDocker" }
+
+    try {
+        $process = Start-Process -FilePath (Join-Path $PSHOME "powershell.exe") -Verb RunAs -ArgumentList $argumentList -Wait -PassThru -ErrorAction Stop
+    } catch {
+        throw "Could not start the elevated installer. Windows reported: $($_.Exception.Message)"
+    }
+
     if ($process.ExitCode -ne 0) {
-        throw "Elevated installer failed with exit code $($process.ExitCode)."
+        if (Test-Path $LogPath) {
+            Write-Host "`n========== ELEVATED INSTALLER LOG ==========" -ForegroundColor Yellow
+            Get-Content -LiteralPath $LogPath
+        } else {
+            Write-Warning "The elevated process did not create its diagnostic log."
+        }
+        throw "Elevated installer failed with exit code $($process.ExitCode). See the log above."
+    }
+    if (Test-Path $LogPath) {
+        Write-Host "`n========== ELEVATED INSTALLER OUTPUT =========="
+        Get-Content -LiteralPath $LogPath
     }
     exit 0
+}
+
+if ($LogPath) {
+    Start-Transcript -LiteralPath $LogPath -Force | Out-Null
 }
 
 function Download-File([string]$Url, [string]$Path) {
@@ -212,3 +243,7 @@ Write-Host ""
 Write-Host "Qoin development toolchain installation completed." -ForegroundColor Green
 Write-Host "Restart Windows, open a new terminal, then run cargo --version, rustc --version, cmake --version, python --version and docker version."
 Write-Host "Then run scripts\check-backend.ps1 from the repository root."
+
+if ($LogPath) {
+    Stop-Transcript | Out-Null
+}
