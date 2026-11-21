@@ -255,7 +255,7 @@ export type QoinBrokerEnvironment = {
   items: Array<{
     broker_id: string;
     credentials_configured: boolean;
-    account_configured: boolean;
+    subaccounts_allowlisted: boolean;
     adapter_registered: boolean;
     execution_ready: false;
   }>;
