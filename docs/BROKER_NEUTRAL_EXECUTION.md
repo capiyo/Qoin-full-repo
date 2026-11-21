@@ -53,20 +53,20 @@ The public gateway continues to proxy the same internal order paths; the order p
 }
 ```
 
-Decimal fields are serialized as decimal strings by the Rust decimal serializer. The client supplies no reference quote or timestamp: the selected provider adapter returns fresh bid/ask and the Axum server supplies the current time. The protective stop is passed to the provider as an attached bracket instruction, not confused with a stop-entry trigger. The execution token is required at the internal service boundary.
+Decimal fields are serialized as decimal strings by the Rust decimal serializer. The client supplies no reference quote or timestamp: the selected provider adapter returns fresh bid/ask and the Axum server supplies the current time. The protective stop is passed to the provider as an attached bracket instruction, not confused with a stop-entry trigger. The caller must supply a Firebase Authentication ID token; Axum verifies it and derives the owner UID. Operator-only kill-switch changes remain protected by a separate server-side operator token.
 
 `GET /api/v1/orders/{client_order_id}/reconcile` resolves the same adapter from the persisted broker ID and calls its authoritative lookup method.
 
 ## Current honest capability state
 
-The generic contract, owner-scoped adapter interface, runtime registry, server-sourced quote preflight, native protective-stop submission contract, shared risk-checked submission sequence, durable intent-before-submit path, Firebase identity verification, and owner-scoped reconciliation route are implemented. The registry starts empty. No Forex or crypto provider adapter is currently registered, no authenticated broker-account connection registry is wired, and the readiness endpoint reports zero configured adapters and keeps dispatch disabled. The previous Binance-only order implementation has been removed rather than silently retained as the universal path.
+The generic contract, owner-scoped adapter interface, runtime registry, server-sourced quote preflight, native protective-stop submission contract, shared risk-checked submission sequence, durable intent-before-submit path, Firebase identity verification, and owner-scoped reconciliation route are implemented. The registry starts empty. No Forex or crypto provider adapter is currently registered, no provider adapter is registered and no Firebase-user-owned broker account mapping has been provisioned, and the readiness endpoint reports zero configured adapters and keeps dispatch disabled. The previous Binance-only order implementation has been removed rather than silently retained as the universal path.
 
 The broker catalogue is a discovery/selection directory, not a claim that all listed APIs are implemented. A provider becomes executable only after its adapter implements every required contract method, passes provider-specific conformance and sandbox tests, proves account ownership and trading permissions, and is registered by the backend from server-side credentials. Credentials must never be supplied by frontend payloads or pasted into chat.
 
 ## Release gates
 
 - Verify Firebase identity server-side and derive owner scope from the verified identity; never trust a client-supplied user ID.
-- Implement a separately tested adapter per provider/API family, including credential rotation and encrypted server-side secret storage.
+- Implement a separately tested adapter per provider/API family, including credential rotation and backend deployment environment secrets.
 - Verify account identity, permissions, instrument mapping, leverage/margin, lot/contract sizing, tick/step rules, fees, funding, protective orders, cancel/status and complete idempotency lookup.
 - Run sandbox conformance tests, partial-fill/rejection/timeout/restart tests, duplicate-submit tests, ledger reconciliation and kill-switch tests.
 - Keep live dispatch disabled until the operator explicitly authorizes the deployment after those gates pass.
@@ -79,5 +79,10 @@ No live-money readiness is implied by the presence of the generic route or provi
 - Added named Rust adapter types for all 20 directory providers, using the common `BrokerAdapter` contract.
 - Every scaffold returns `Unsupported` for account discovery, capabilities, instrument metadata, quotes, margin and order operations. The scaffolds are deliberately not registered in `BrokerRegistry`.
 - The catalogue reports `adapter_scaffolded`, while `execution_ready` remains false. A scaffold is not a provider integration and cannot submit, cancel or reconcile orders.
-- Provider credentials must be collected through an authenticated frontend flow, sent only over TLS to a dedicated backend connection endpoint, encrypted with a server-managed key, and stored separately from order intents. The browser must retain only an opaque connection ID.
+- Broker credentials are loaded only by the Rust backend from deployment environment secrets named `QOIN_BROKER_<PROVIDER>_API_TOKEN` or an `_API_KEY` + `_API_SECRET` pair, plus comma-separated `_ACCOUNT_IDS`; optional `_PASSPHRASE` and `_BASE_URL` are provider-specific. No frontend payload, browser storage, MongoDB credential collection, or public API response carries broker secrets.
+- External users authenticate exclusively with Firebase Authentication. The backend verifies the Firebase ID token and derives `owner_uid`; users do not authenticate with brokers.
+- A broker subaccount must be listed in the provider's backend `_ACCOUNT_IDS` secret and separately provisioned in the `broker_accounts` collection with `owner_uid`, `broker_id`, `account_id`, and `status: "active"`. Order submission checks both the Firebase-user mapping and the environment allowlist before adapter resolution. A unique `(broker_id, account_id)` index prevents the same broker subaccount from being assigned to multiple Firebase users. If Qoin later chooses to pool users into one broker account, it must first implement and audit a separate per-user subledger, reservation and capital-allocation model.
+- `GET /api/v1/brokers/configuration` returns only configured/not-configured status; it never returns keys, secrets, passphrases, account identifiers or base URLs.
+- Operators provision an individual user's broker subaccount through `POST /api/v1/admin/broker-accounts`, protected by the operator execution token. The request includes the Firebase UID, broker ID, allowlisted subaccount ID, account metadata, and an explicit `trading_enabled` flag. New mappings default to non-trading unless the operator explicitly enables them after verification. The route never accepts broker credentials.
+- User order submission and reconciliation are Firebase-authenticated. The operator token remains reserved for administrative kill-switch changes and maintenance.
 - Provider activation remains per-provider and fail-closed until API authentication, account ownership, instrument/precision mapping, fresh pricing, margin, native attached protection, cancellation, authoritative idempotency lookup and sandbox conformance are all verified.

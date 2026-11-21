@@ -603,7 +603,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
 
 
 const BROKER_DIRECTORY_PREVIEW = [
-  { id:"binance_usdm", name:"Binance USD-M", category:"Crypto exchange", status:"execution_adapter_exists_not_connected", detail:"USD-M executor exists; account linking and generic dispatch are not connected.", selectable:true },
+  { id:"binance_usdm", name:"Binance USD-M", category:"Crypto exchange", status:"adapter_pending", detail:"Server-side credentials and a conformance-tested Qoin adapter are required.", selectable:true },
   { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Crypto exchange", status:"adapter_pending", detail:"Advanced Trade REST/WebSocket; Qoin adapter pending.", selectable:true },
   { id:"kraken_spot", name:"Kraken Spot", category:"Crypto exchange", status:"adapter_pending", detail:"Spot REST/WebSocket; Qoin adapter pending.", selectable:true },
   { id:"bybit", name:"Bybit", category:"Crypto exchange", status:"adapter_pending", detail:"V5 REST/WebSocket; Qoin adapter pending.", selectable:true },
@@ -631,7 +631,7 @@ function BrokerCollectionPanel() {
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
   const [ready,setReady]=useState(false);
-  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
+  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;configured_environment_provider_count?:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
     void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
@@ -655,7 +655,7 @@ function BrokerCollectionPanel() {
   const valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <section className="broker-collection" aria-label="Broker collection and routing preferences">
-    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers to include in Qoin’s execution-readiness check. Account authorization is separate; trades remain blocked until every selected account is verified.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
+    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers for Qoin’s execution-readiness check. Users authenticate only with Firebase; Qoin operators provision broker credentials in backend environment secrets and map eligible accounts to user identities.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
     <div className="broker-directory-grid">{directory.map((broker)=><article className="broker-directory-card" key={broker.id}>
       <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
       <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
@@ -664,10 +664,10 @@ function BrokerCollectionPanel() {
       </div>
     </article>)}</div>
     <div className="broker-allocation-panel">
-      <div role="status" aria-live="polite"><strong>Trade connection status:</strong> {readiness?`${readiness.connected_account_count} connected accounts · ${readiness.execution_ready_count}/${readiness.selected_count} selected providers execution-ready · ${readiness.dispatch_enabled?"dispatch enabled":"dispatch blocked"}`:"Checking selected providers…"}<p>{readiness?.message||"Waiting for broker readiness API."}</p>{readiness?.blockers?.map((item)=><small key={item}>{item} </small>)}</div>
+      <div role="status" aria-live="polite"><strong>Trade connection status:</strong> {readiness?`${readiness.configured_environment_provider_count??0} providers configured in Qoin · ${readiness.execution_ready_count}/${readiness.selected_count} selected providers execution-ready · ${readiness.dispatch_enabled?"dispatch enabled":"dispatch blocked"}`:"Checking selected providers…"}<p>{readiness?.message||"Waiting for broker readiness API."}</p>{readiness?.blockers?.map((item)=><small key={item}>{item} </small>)}</div>
       <div className="broker-allocation-copy"><p className="eyebrow">ROUTING POLICY</p><h3>Capital-aware execution</h3><p>Qoin consolidates by default. It considers an equal split across every selected execution-ready account only when all child minimums, quantity steps, account health, margin and aggregate risk checks pass and measured fees, split-size slippage, FX costs and operational overhead justify it — or when a complete split is the only feasible route. This is a comparison preview, not a live order route.</p></div>
       <div className="broker-allocation-controls"><label htmlFor="qoin-allocation-currency">Portfolio currency</label><select id="qoin-allocation-currency" value={currency} onChange={(event)=>setCurrency(event.target.value)}><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>USDT</option></select><label htmlFor="qoin-allocation-capital">Portfolio notional · {currency}</label><input id="qoin-allocation-capital" inputMode="decimal" value={capital} onChange={(event)=>setCapital(event.target.value)} aria-invalid={!valid}/><div className="broker-allocation-result"><span>Selected venue preferences</span><strong>{selected.length}</strong><span>Illustrative equal-split target per selected venue · {currency}</span><strong>{perAccount==null?"—":perAccount.toLocaleString(undefined,{maximumFractionDigits:2})}</strong></div></div>
-      <p className="broker-allocation-footnote">{selected.length===0?"Select a provider to save a connection preference. No broker accounts are connected yet.":selected.length===1?"One venue preference selected. Account linking and backend eligibility checks are still required.":"Equal target is calculated before broker quantity-step rounding. The backend must reject any split that fails minimums, margin, risk or cost checks."} The equal-split figure is a comparison baseline only; consolidation remains the default route. Signed-in broker preferences are saved to the user profile; the selected provider IDs are also sent to the backend readiness API. This is not an order submission.</p>
+      <p className="broker-allocation-footnote">{selected.length===0?"Select a provider to save a routing preference. Broker accounts are provisioned by Qoin operators, not connected by end users.":selected.length===1?"One venue preference selected. Qoin must provision the account mapping and complete backend adapter eligibility checks.":"Equal target is calculated before broker quantity-step rounding. The backend must reject any split that fails minimums, margin, risk or cost checks."} The equal-split figure is a comparison baseline only; consolidation remains the default route. Signed-in broker preferences are saved to the user profile; the selected provider IDs are also sent to the backend readiness API. This is not an order submission.</p>
     </div>
   </section>;
 }

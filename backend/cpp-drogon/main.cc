@@ -318,19 +318,14 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/users/me");
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/broker-credentials/public-key", [](const drogon::HttpRequestPtr& req,
+    drogon::app().registerHandler("/api/v1/brokers/configuration", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        proxyGet(req, std::move(cb), "/internal/broker-credentials/public-key");
+        proxyGet(req, std::move(cb), "/internal/brokers/configuration");
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/broker-connections", [](const drogon::HttpRequestPtr& req,
+    drogon::app().registerHandler("/api/v1/admin/broker-accounts", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        if (req->method() == drogon::Get) proxyGet(req, std::move(cb), "/internal/broker-connections");
-        else proxyPostJson(req, std::move(cb), "/internal/broker-connections");
-    }, {drogon::Get, drogon::Post});
-    drogon::app().registerHandler("/api/v1/broker-connections/{1}", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb, const std::string& connectionId) {
-        proxyDelete(req, std::move(cb), "/internal/broker-connections/" + drogon::utils::urlEncode(connectionId));
-    }, {drogon::Delete});
+        proxyPostJson(req, std::move(cb), "/internal/admin/broker-accounts");
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/broker-accounts", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/broker-accounts");
