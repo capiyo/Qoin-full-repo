@@ -68,7 +68,11 @@ pub async fn load_owned_credentials(
         .ok_or_else(|| "owned broker credentials not found".to_string())?;
     let ciphertext = record.get_str("ciphertext_hex")
         .map_err(|_| "sealed credential payload missing".to_string())?;
-    cipher.decrypt_json(ciphertext)
+    let credentials = cipher.decrypt_json(ciphertext)?;
+    if !credentials.is_object() || credentials.as_object().is_some_and(|object| object.is_empty()) {
+        return Err("decrypted broker credential payload must be a non-empty JSON object".into());
+    }
+    Ok(credentials)
 }
 
 #[derive(Debug, Deserialize)]
