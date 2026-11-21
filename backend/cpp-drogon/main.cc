@@ -175,6 +175,33 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
     });
 }
 }
+
+void proxyDelete(const drogon::HttpRequestPtr& incoming,
+                 std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                 const std::string& path) {
+    auto client = drogon::HttpClient::newHttpClient(upstream());
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Delete);
+    request->setPath(path);
+    request->addHeader("accept", "application/json");
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    client->sendRequest(request, [callback = std::move(callback)](
+        drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
+
 int main() {
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
@@ -284,6 +311,25 @@ int main() {
             path += std::string(name) + "=" + drogon::utils::urlEncode(value);
         }
         proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+
+
+    drogon::app().registerHandler("/api/v1/me", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/users/me");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/broker-connections", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Get) proxyGet(req, std::move(cb), "/internal/broker-connections");
+        else proxyPostJson(req, std::move(cb), "/internal/broker-connections");
+    }, {drogon::Get, drogon::Post});
+    drogon::app().registerHandler("/api/v1/broker-connections/{1}", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb, const std::string& connectionId) {
+        proxyDelete(req, std::move(cb), "/internal/broker-connections/" + drogon::utils::urlEncode(connectionId));
+    }, {drogon::Delete});
+    drogon::app().registerHandler("/api/v1/broker-accounts", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/broker-accounts");
     }, {drogon::Get});
 
     drogon::app().registerHandler("/api/v1/orders", [](const drogon::HttpRequestPtr& req,
