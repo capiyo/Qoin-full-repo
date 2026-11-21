@@ -51,7 +51,7 @@ pub struct BrokerEnvironment {
 struct ProviderStatus {
     broker_id: String,
     credentials_configured: bool,
-    account_configured: bool,
+    subaccounts_allowlisted: bool,
     adapter_registered: bool,
     execution_ready: bool,
 }
@@ -111,7 +111,7 @@ impl BrokerEnvironment {
             ProviderStatus {
                 broker_id: (*broker_id).to_string(),
                 credentials_configured: self.providers.contains_key(*broker_id),
-                account_configured: self.providers.contains_key(*broker_id),
+                subaccounts_allowlisted: self.providers.contains_key(*broker_id),
                 // Credentials alone do not make an adapter production-ready.
                 adapter_registered: false,
                 execution_ready: false,
