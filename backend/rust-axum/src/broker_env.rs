@@ -61,6 +61,16 @@ struct ProviderStatus {
 
 /// Reject URL features that can redirect authenticated broker requests or leak
 /// credentials to an unexpected scheme. Provider adapters append their own API paths.
+fn validate_auth_method(key: &str, secret: &str, token: Option<&str>) -> Result<(), String> {
+    let has_key = !key.trim().is_empty();
+    let has_secret = !secret.trim().is_empty();
+    let has_token = token.is_some_and(|value| !value.trim().is_empty());
+    if has_key != has_secret || (has_key && has_token) || (!has_key && !has_token) {
+        return Err("configure exactly one authentication method: API_TOKEN or an API_KEY/API_SECRET pair".into());
+    }
+    Ok(())
+}
+
 fn validate_base_url(raw: &str) -> Result<String, String> {
     let parsed = url::Url::parse(raw.trim())
         .map_err(|_| "BASE_URL must be a valid absolute HTTPS URL".to_string())?;
@@ -113,11 +123,8 @@ impl BrokerEnvironment {
 
             let key = key.trim().to_string();
             let secret = secret.trim().to_string();
-            let has_key_pair = !key.is_empty() && !secret.is_empty();
-            if key.is_empty() != secret.is_empty() || (has_key_pair && token.is_some())
-                || (!has_key_pair && token.is_none()) {
-                return Err(format!("{prefix} requires exactly one authentication method: API_TOKEN or an API_KEY/API_SECRET pair"));
-            }
+            validate_auth_method(&key, &secret, token.as_deref())
+                .map_err(|error| format!("{prefix}: {error}"))?;
 
             let mut seen_accounts = HashSet::new();
             let account_ids: Vec<String> = account_ids_raw.split(',')
@@ -241,11 +248,12 @@ mod tests {
     }
 
     #[test]
-    fn environment_auth_methods_must_not_be_ambiguous() {
-        // The parser is kept pure at the validation boundary by testing the same
-        // exclusivity rule directly; runtime environment mutation is avoided.
-        let has_key_pair = true;
-        let has_token = true;
-        assert!(has_key_pair && has_token);
+    fn environment_auth_methods_must_be_exactly_one_unambiguous_method() {
+        assert!(validate_auth_method("key", "secret", None).is_ok());
+        assert!(validate_auth_method("", "", Some("token")).is_ok());
+        assert!(validate_auth_method("key", "", None).is_err());
+        assert!(validate_auth_method("", "secret", None).is_err());
+        assert!(validate_auth_method("key", "secret", Some("token")).is_err());
+        assert!(validate_auth_method("", "", None).is_err());
     }
 }
