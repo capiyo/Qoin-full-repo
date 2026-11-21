@@ -287,6 +287,27 @@ Install-WingetPackage "Rustlang.Rustup" "Rust and Cargo" "" "rustup.install"
 $vsOverride = "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.Windows10SDK.19041 --norestart"
 Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 2022 C++ Build Tools and Windows SDK" $vsOverride "visualstudio2022buildtools" "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.Windows10SDK.19041 --quiet --wait --norestart"
 
+# Chocolatey installs the Visual Studio Installer bootstrapper, not necessarily
+# the requested workload/components. Explicitly modify the Build Tools instance.
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vsInstaller = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vs_installer.exe"
+$vsInstallPath = $null
+if (Test-Path -LiteralPath $vswhere) {
+    $vsInstallPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+}
+if ($vsInstallPath -and (Test-Path -LiteralPath $vsInstaller)) {
+    Write-Host "Adding the Windows SDK to Visual Studio instance: $vsInstallPath"
+    $vsArgs = @("modify", "--installPath", $vsInstallPath, "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041", "--quiet", "--wait", "--norestart")
+    $vsProcess = Start-Process -FilePath $vsInstaller -ArgumentList $vsArgs -Wait -PassThru
+    if ($vsProcess.ExitCode -ne 0 -and $vsProcess.ExitCode -ne 3010 -and $vsProcess.ExitCode -ne 1641) {
+        $installFailures.Add("Visual Studio Windows SDK component installation (exit code $($vsProcess.ExitCode))")
+        Write-Warning "Visual Studio Installer could not add the Windows SDK (exit code $($vsProcess.ExitCode))."
+    }
+} else {
+    $installFailures.Add("Visual Studio C++ Build Tools instance or Visual Studio Installer not found")
+    Write-Warning "Could not locate a Visual Studio Build Tools instance to modify."
+}
+
 # cl.exe alone is not a usable Windows C/C++ toolchain: CMake also needs
 # the Windows SDK resource compiler (rc.exe) and manifest tool (mt.exe).
 $windowsSdkBin = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
@@ -308,7 +329,7 @@ if ($sdkTools.Count -gt 0) {
 
 Install-WingetPackage "Kitware.CMake" "CMake" "" "cmake.install"
 Install-WingetPackage "Ninja-build.Ninja" "Ninja" "" "ninja"
-Install-WingetPackage "Python.Python.3.12" "Python 3.12" "" "python"
+Install-WingetPackage "Python.Python.3.12" "Python 3.12" "" "python312"
 Install-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS" "" "nodejs-lts"
 Install-WingetPackage "jqlang.jq" "jq JSON CLI" "" "jq"
 
@@ -377,6 +398,14 @@ foreach ($name in @("python", "cmake", "ninja", "node")) {
     $command = Get-Command $name -ErrorAction SilentlyContinue
     if ($command) {
         Write-Host "$name : $($command.Source)"
+        if ($name -eq "python") {
+            $pythonVersion = (& $command.Source --version 2>&1 | Out-String).Trim()
+            Write-Host "Python version : $pythonVersion"
+            if ($pythonVersion -notmatch "^Python 3\.12\.") {
+                $installFailures.Add("Python 3.12 required; found $pythonVersion at $($command.Source)")
+                Write-Warning "Python 3.12 is required; the resolved interpreter is $pythonVersion."
+            }
+        }
     } else {
         $installFailures.Add("$name is not available on PATH")
         Write-Warning "$name is not available on PATH in this session."
