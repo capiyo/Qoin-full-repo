@@ -2,7 +2,7 @@ use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use mongodb::{
@@ -418,13 +418,13 @@ async fn submit_live_order(
     headers: HeaderMap,
     Json(submission): Json<BrokerOrderSubmission>,
 ) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
-    }
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid,
         Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order submission"}))),
     };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable; order rejected"})));
+    }
     let enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
         Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
         Ok(None) => false,
