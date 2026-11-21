@@ -123,6 +123,7 @@ Install-WingetPackage "Kitware.CMake" "CMake"
 Install-WingetPackage "Ninja-build.Ninja" "Ninja"
 Install-WingetPackage "Python.Python.3.12" "Python 3.12"
 Install-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS"
+Install-WingetPackage "jqlang.jq" "jq JSON CLI"
 
 # vcpkg builds Drogon and its native dependencies for the Windows MSVC toolchain.
 $vcpkgRoot = Join-Path $env:LOCALAPPDATA "vcpkg"
