@@ -1,4 +1,5 @@
 import { getQoinFirebaseIdToken } from "./firebaseAuth";
+import sodium from "libsodium-wrappers-sumo";
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
 export type MarketForceObservation = {
@@ -261,7 +262,7 @@ export type CreateQoinBrokerConnection = {
   broker_id: string;
   display_name?: string;
   auth_method: "api_key" | "oauth2";
-  /** Sent once over HTTPS; the backend encrypts it and never returns it. */
+  /** Encrypted in the client with the backend public key before transport. */
   credentials: Record<string, string>;
 };
 
@@ -278,11 +279,37 @@ export function getQoinBrokerConnections(): Promise<{ items: QoinBrokerConnectio
   return authenticatedQoinRequest("/api/v1/broker-connections");
 }
 
-/** Creates a pending, non-executable connection; it does not claim provider validation. */
-export function createQoinBrokerConnection(input: CreateQoinBrokerConnection): Promise<QoinBrokerConnection> {
+/** Encrypts broker credentials in the client using the backend's libsodium sealed-box public key. */
+async function sealQoinBrokerCredentials(credentials: Record<string, string>): Promise<string> {
+  await sodium.ready;
+  const key = await request<{ algorithm: string; public_key_hex: string; key_version: number }>(
+    "/api/v1/broker-credentials/public-key",
+  );
+  if (key.algorithm !== "libsodium_crypto_box_seal" || key.key_version !== 1) {
+    throw new Error("Unsupported broker credential encryption protocol");
+  }
+  const publicKey = sodium.from_hex(key.public_key_hex);
+  if (publicKey.length !== sodium.crypto_box_PUBLICKEYBYTES) {
+    throw new Error("Broker credential public key is invalid");
+  }
+  const plaintext = sodium.from_string(JSON.stringify(credentials));
+  try {
+    return sodium.to_hex(sodium.crypto_box_seal(plaintext, publicKey));
+  } finally {
+    sodium.memzero(plaintext);
+  }
+}
+
+/** Creates a pending, non-executable connection; plaintext credentials never leave this client. */
+export async function createQoinBrokerConnection(input: CreateQoinBrokerConnection): Promise<QoinBrokerConnection> {
+  const { credentials, ...connection } = input;
+  if (!credentials || Object.keys(credentials).length === 0) {
+    throw new Error("Broker credentials are required");
+  }
+  const sealed_credentials_hex = await sealQoinBrokerCredentials(credentials);
   return authenticatedQoinRequest("/api/v1/broker-connections", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...connection, sealed_credentials_hex }),
   });
 }
 
