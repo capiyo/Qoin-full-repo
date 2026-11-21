@@ -1059,7 +1059,7 @@ async fn create_dataset_manifest(State(s):State<AppState>, headers:HeaderMap, Js
         "max_gap_ms":request.max_gap_ms,"event_count":event_count,"invalid_event_count":invalid_count,
         "event_type_counts":event_types,"first_event_ts_ms":first_ts_ms,"last_event_ts_ms":last_ts_ms,
         "max_observed_gap_ms":max_observed_gap_ms,"gap_count":gap_count,"gap_detection_enabled":request.max_gap_ms.is_some(),
-        "quality_status":market_data_quality::quality_status(invalid_count,gap_count),
+        "quality_status":market_data_quality::quality_status(event_count,invalid_count,gap_count),
         "coverage_claim":"observed_source_events_only; does_not_prove_provider_completeness",
         "created_at":mongodb::bson::DateTime::now()
     });
