@@ -22,7 +22,7 @@ node --input-type=module -e 'import sodium from "libsodium-wrappers"; await sodi
 
 Store both values in the backend secret manager. The private key must never be put in frontend environment variables, source control, MongoDB, build artifacts, or client responses. The public key may be served by the backend endpoint.
 
-Both variables are required together. Axum rejects a mismatched keypair at startup. Keep the previous keypair available during a controlled ciphertext migration/rotation; ciphertext encrypted to an old public key cannot be opened with a newly rotated private key.
+Both variables are required together. Axum rejects a mismatched keypair at startup. The current backend loads one active keypair. Before replacing it, re-encrypt every stored credential with the new public key while the old private key is still available; do not rotate the environment variables until the migration is complete. Ciphertext encrypted to an old public key cannot be opened with a newly rotated private key.
 
 ## Request contract
 
