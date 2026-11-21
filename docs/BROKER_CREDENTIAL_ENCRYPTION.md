@@ -39,6 +39,8 @@ MongoDB stores ciphertext_hex, encryption_algorithm=libsodium_crypto_box_seal, a
 
 ## Operational notes
 
+- Legacy AES-GCM credential records from earlier development builds are not readable by the sealed-box implementation. If any such records exist, users must reconnect and re-enter those broker credentials before switching to this version; do not silently treat legacy ciphertext as a valid sealed box.
+
 - Use a distinct keypair per environment.
 - Rotate by versioning the key and re-encrypting existing records before retiring the old private key.
 - Never log request bodies, credential JSON, ciphertext payloads, or decrypted values.
