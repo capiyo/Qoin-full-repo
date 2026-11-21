@@ -448,6 +448,7 @@ async fn create_broker_connection(
             "error":"secure broker credential storage is not configured"
         }))),
     };
+    let connection_id = mongodb::bson::oid::ObjectId::new().to_hex();
     // The browser submits libsodium crypto_box_seal output. The backend stores
     // this opaque ciphertext and decrypts only when a provider call needs it.
     let ciphertext = match hex::decode(&request.sealed_credentials_hex) {
