@@ -551,9 +551,6 @@ async fn reconcile_live_order(
     Path(client_order_id): Path<String>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if !execution_token_authorized(&headers) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized or execution token not configured"})));
-    }
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid,
         Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order reconciliation"}))),
