@@ -272,7 +272,18 @@ async fn set_trading_enabled(
 #[derive(Deserialize)]
 struct BrokerReadinessQuery { brokers: Option<String> }
 
-async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<BrokerReadinessQuery>) -> impl IntoResponse {
+async fn get_broker_readiness(
+    State(s): State<AppState>,
+    Query(query): Query<BrokerReadinessQuery>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
     let catalogue = broker_catalogue::catalogue();
     let items = catalogue["items"].as_array().cloned().unwrap_or_default();
     let requested: Vec<String> = query.brokers.unwrap_or_default().split(',')
@@ -286,6 +297,32 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
                     "reason":"provider is not in the supported catalogue"}))
         }).collect();
     let ready_count = selected.iter().filter(|item| item["execution_ready"] == true).count();
+    let requested_set: HashSet<String> = requested.iter().cloned().collect();
+    let mut account_cursor = match s.broker_accounts.find(
+        doc!{"owner_uid":&owner_uid,"status":"active","trading_enabled":true}, None
+    ).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(error=%error, "user broker account readiness lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker account readiness unavailable"})));
+        }
+    };
+    let mut connected_account_count = 0usize;
+    loop {
+        match account_cursor.try_next().await {
+            Ok(Some(account)) => {
+                let broker_id = account.get_str("broker_id").unwrap_or_default();
+                if requested_set.is_empty() || requested_set.contains(broker_id) {
+                    connected_account_count += 1;
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                tracing::error!(error=%error, "user broker account readiness cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker account readiness unavailable"})));
+            }
+        }
+    }
     let configured = s.broker_registry.configured_brokers().unwrap_or_default();
     let configured_set: HashSet<String> = configured.iter().cloned().collect();
     let configured_count = selected.iter().filter(|item| item["id"].as_str().is_some_and(|id| configured_set.contains(id))).count();
@@ -303,7 +340,7 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
     Json(serde_json::json!({
         "selected_count": selected.len(),
         "execution_ready_count": ready_count,
-        "connected_account_count": 0,
+        "connected_account_count": connected_account_count,
         "configured_adapter_count": configured_count,
         "configured_environment_provider_count": s.broker_environment.configured_provider_ids().len(),
         "configured_adapters": configured,
