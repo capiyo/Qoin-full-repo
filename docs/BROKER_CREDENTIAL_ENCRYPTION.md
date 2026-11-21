@@ -22,7 +22,7 @@ node --input-type=module -e 'import sodium from "libsodium-wrappers"; await sodi
 
 Store both values in the backend secret manager. The private key must never be put in frontend environment variables, source control, MongoDB, build artifacts, or client responses. The public key may be served by the backend endpoint.
 
-Both variables are required together. Axum rejects a mismatched keypair at startup. The current backend loads one active keypair. Before replacing it, re-encrypt every stored credential with the new public key while the old private key is still available; do not rotate the environment variables until the migration is complete. Ciphertext encrypted to an old public key cannot be opened with a newly rotated private key.
+Both variables must be non-empty when enabling broker credential encryption. If both are unset or blank (as in the example environment and CI smoke test), encryption remains disabled and the credential-public-key / connection-create routes fail closed with HTTP 503. If only one key is supplied, or either supplied key is malformed, Axum rejects startup. A complete 32-byte public/private keypair is required to enable the feature. The current backend loads one active keypair. Before replacing it, re-encrypt every stored credential with the new public key while the old private key is still available; do not rotate the environment variables until the migration is complete. Ciphertext encrypted to an old public key cannot be opened with a newly rotated private key.
 
 ## Request contract
 

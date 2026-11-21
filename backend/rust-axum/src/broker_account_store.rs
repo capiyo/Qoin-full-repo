@@ -17,6 +17,28 @@ pub struct EncryptedCredential {
 }
 
 impl CredentialCipher {
+    /// Load the optional broker credential-encryption keypair.
+    ///
+    /// Compose and local .env files commonly expose configured-but-empty variables.
+    /// Treat two absent/blank values as disabled, while rejecting partial keypairs.
+    pub fn from_optional_hex_keys(
+        public_hex: Option<&str>,
+        secret_hex: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        let public_hex = public_hex.map(str::trim).filter(|value| !value.is_empty());
+        let secret_hex = secret_hex.map(str::trim).filter(|value| !value.is_empty());
+
+        match (public_hex, secret_hex) {
+            (None, None) => Ok(None),
+            (Some(public_hex), Some(secret_hex)) => {
+                Self::from_hex_keys(public_hex, secret_hex).map(Some)
+            }
+            _ => Err(
+                "both QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be non-empty when broker credential encryption is enabled".to_string()
+            ),
+        }
+    }
+
     pub fn from_hex_keys(public_hex: &str, secret_hex: &str) -> Result<Self, String> {
         sodiumoxide::init().map_err(|_| "libsodium initialization failed".to_string())?;
         let public = hex::decode(public_hex.trim())
@@ -111,6 +133,38 @@ impl CreateBrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_optional_keypair_disables_credential_encryption() {
+        assert!(CredentialCipher::from_optional_hex_keys(None, None)
+            .unwrap()
+            .is_none());
+        assert!(CredentialCipher::from_optional_hex_keys(Some(""), Some("  "))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn optional_keypair_rejects_partial_configuration() {
+        assert!(CredentialCipher::from_optional_hex_keys(Some("00"), None).is_err());
+        assert!(CredentialCipher::from_optional_hex_keys(None, Some("00")).is_err());
+        assert!(CredentialCipher::from_optional_hex_keys(Some("00"), Some("")).is_err());
+    }
+
+    #[test]
+    fn optional_keypair_accepts_valid_key_material() {
+        sodiumoxide::init().unwrap();
+        let (public, secret) = sodiumoxide::crypto::box_::gen_keypair();
+        let public_hex = hex::encode(public.0);
+        let secret_hex = hex::encode(secret.0);
+        let cipher = CredentialCipher::from_optional_hex_keys(
+            Some(&public_hex),
+            Some(&secret_hex),
+        )
+        .unwrap()
+        .expect("a complete keypair enables credential encryption");
+        assert_eq!(cipher.public_key_hex(), public_hex);
+    }
 
     #[test]
     fn libsodium_sealed_box_round_trip_and_rejects_tampering() {

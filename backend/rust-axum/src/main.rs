@@ -2351,17 +2351,14 @@ async fn main(){
     let broker_connections:Collection<Document>=db.collection("broker_connections");
     let broker_credentials:Collection<Document>=db.collection("broker_credentials");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
-    let credential_cipher = match (
-        env::var("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX"),
-        env::var("QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX"),
-    ) {
-        (Ok(public_key), Ok(secret_key)) => Some(Arc::new(
-            broker_account_store::CredentialCipher::from_hex_keys(&public_key, &secret_key)
-                .expect("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be a matching libsodium keypair"),
-        )),
-        (Err(_), Err(_)) => None,
-        _ => panic!("both QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be configured together"),
-    };
+    let credential_public_key = env::var("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX").ok();
+    let credential_secret_key = env::var("QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX").ok();
+    let credential_cipher = broker_account_store::CredentialCipher::from_optional_hex_keys(
+        credential_public_key.as_deref(),
+        credential_secret_key.as_deref(),
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .map(Arc::new);
     broker_connections.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"created_at":-1}).build(),None).await
         .expect("broker connection owner index");
