@@ -188,82 +188,79 @@ function Get-WingetPath {
 function Ensure-Winget {
     $existing = Get-WingetPath
     if ($existing) { return $existing }
+    return $null
+}
 
-    Write-Host "Winget is missing. Bootstrapping Microsoft's App Installer..."
+function Ensure-Chocolatey {
+    $command = Get-Command choco.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    Write-Host "WinGet is unavailable. Installing Chocolatey as the Windows package-manager fallback..."
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    $vclibs = Join-Path $Work "Microsoft.VCLibs.x64.appx"
-    $xaml = Join-Path $Work "Microsoft.UI.Xaml.2.8.x64.appx"
-    $winget = Join-Path $Work "Microsoft.DesktopAppInstaller.msixbundle"
-    $windowsAppRuntime = Join-Path $Work "WindowsAppRuntimeInstall-x64.exe"
-
-    Download-File "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" $vclibs
-    # The old aka.ms UI.Xaml alias now redirects to Bing in some environments.
-    # Use Microsoft's official GitHub release asset instead.
-    Download-File "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx" $xaml
-    Download-File "https://aka.ms/getwinget" $winget
-    # Official Microsoft Windows App SDK 1.8 x64 runtime installer.
-    # App Installer 1.29 declares WindowsAppRuntime.1.8 as a required framework.
-    Download-File "https://download.microsoft.com/download/8eb5473d-5663-4337-a1ca-aa5030b9b194/WindowsAppRuntimeInstall-x64.exe" $windowsAppRuntime
-
-    # Validate every package before invoking Windows deployment.
-    Assert-AppxPackage $vclibs
-    Assert-AppxPackage $xaml "249D2AFB41CC009494841372BD6DD2DF46F87386D535DDF8D9F32C97226D2E46"
-    Assert-AppxPackage $winget
-
-    $runtimeBytes = [System.IO.File]::ReadAllBytes($windowsAppRuntime)
-    if ($runtimeBytes.Length -lt 2 -or $runtimeBytes[0] -ne 0x4D -or $runtimeBytes[1] -ne 0x5A) {
-        throw "Windows App SDK runtime download is not a valid Windows executable: $windowsAppRuntime"
+    $bootstrap = Join-Path $Work "install-chocolatey.ps1"
+    Download-File "https://community.chocolatey.org/install.ps1" $bootstrap
+    $content = Get-Content -LiteralPath $bootstrap -Raw
+    if ($content -notmatch "ChocolateyInstall|choco") {
+        throw "Chocolatey bootstrap script failed its content validation."
     }
 
-    Install-Appx $vclibs
-    Install-Appx $xaml
-
-    Write-Host "Installing Microsoft Windows App SDK 1.8 x64 runtime..."
-    $runtimeProcess = Start-Process -FilePath $windowsAppRuntime -ArgumentList "--quiet" -Wait -PassThru
-    if ($runtimeProcess.ExitCode -ne 0) {
-        throw "Windows App SDK 1.8 runtime installer failed with exit code $($runtimeProcess.ExitCode)."
+    $env:ChocolateyInstall = Join-Path $env:ProgramData "chocolatey"
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    & $bootstrap
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Chocolatey bootstrap failed with exit code $LASTEXITCODE."
     }
 
-    $runtimePackage = Get-AppxPackage -Name "Microsoft.WindowsAppRuntime.1.8" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Version -ge [version]"8000.616.304.0" } |
-        Select-Object -First 1
-    if (-not $runtimePackage) {
-        throw "Windows App SDK runtime installer completed but Microsoft.WindowsAppRuntime.1.8 version 8000.616.304.0 or newer is not registered. Check Windows App SDK deployment logs and Windows compatibility."
+    $candidate = Join-Path $env:ChocolateyInstall "bin\choco.exe"
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        $candidate = Join-Path $env:ProgramData "chocolatey\bin\choco.exe"
     }
-
-    Write-Host "Windows App SDK runtime installed: $($runtimePackage.Version)"
-    Install-Appx $winget
-
-    $env:PATH = "$env:PATH;$env:LOCALAPPDATA\Microsoft\WindowsApps"
-    $existing = Get-WingetPath
-    if (-not $existing) {
-        throw "Winget bootstrap completed but winget.exe is still unavailable. Restart Windows and rerun this installer."
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        throw "Chocolatey bootstrap completed but choco.exe was not found."
     }
-    return $existing
+    $env:PATH = "$env:PATH;$env:ChocolateyInstall\bin"
+    return $candidate
 }
 
 $script:wingetPath = Ensure-Winget
-Write-Host "Using Winget: $script:wingetPath"
-& $script:wingetPath --version
-if ($LASTEXITCODE -ne 0) { throw "Winget could not report its version." }
+$script:chocoPath = $null
+if (-not $script:wingetPath) {
+    $script:chocoPath = Ensure-Chocolatey
+    Write-Host "Using Chocolatey: $script:chocoPath"
+    & $script:chocoPath --version
+    if ($LASTEXITCODE -ne 0) { throw "Chocolatey could not report its version." }
+} else {
+    Write-Host "Using Winget: $script:wingetPath"
+    & $script:wingetPath --version
+    if ($LASTEXITCODE -ne 0) { throw "Winget could not report its version." }
+}
 
 $installFailures = New-Object System.Collections.Generic.List[string]
 
-function Install-WingetPackage([string]$Id, [string]$Name, [string]$Override = "") {
+function Install-WingetPackage([string]$Id, [string]$Name, [string]$Override = "", [string]$ChocolateyId = "", [string]$ChocolateyParameters = "") {
     Write-Host ""
     Write-Host "========== Installing $Name ($Id) ==========" -ForegroundColor Cyan
 
-    $arguments = @(
-        "install", "--id", $Id, "--exact",
-        "--accept-package-agreements", "--accept-source-agreements",
-        "--silent"
-    )
-    if ($Override) {
-        $arguments += @("--override", $Override)
+    if ($script:wingetPath) {
+        $arguments = @(
+            "install", "--id", $Id, "--exact",
+            "--accept-package-agreements", "--accept-source-agreements",
+            "--silent"
+        )
+        if ($Override) { $arguments += @("--override", $Override) }
+        & $script:wingetPath @arguments
+    } else {
+        if (-not $ChocolateyId) {
+            $installFailures.Add("$Name (no Chocolatey package mapping)")
+            Write-Warning "$Name has no Chocolatey fallback mapping."
+            return
+        }
+        $arguments = @("install", $ChocolateyId, "--yes", "--no-progress", "--limit-output")
+        if ($ChocolateyParameters) {
+            $arguments += @("--package-parameters", $ChocolateyParameters)
+        }
+        & $script:chocoPath @arguments
     }
-
-    & $script:wingetPath @arguments
     $code = $LASTEXITCODE
 
     if ($code -eq 0) {
@@ -280,16 +277,16 @@ Write-Host "============================================"
 Write-Host " QOIN WINDOWS DEVELOPMENT TOOLCHAIN SETUP"
 Write-Host "============================================"
 
-Install-WingetPackage "Rustlang.Rustup" "Rust and Cargo"
+Install-WingetPackage "Rustlang.Rustup" "Rust and Cargo" "" "rustup.install"
 
 $vsOverride = "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --norestart"
-Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 2022 C++ Build Tools" $vsOverride
+Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 2022 C++ Build Tools" $vsOverride "visualstudio2022buildtools" "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --wait --norestart"
 
-Install-WingetPackage "Kitware.CMake" "CMake"
-Install-WingetPackage "Ninja-build.Ninja" "Ninja"
-Install-WingetPackage "Python.Python.3.12" "Python 3.12"
-Install-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS"
-Install-WingetPackage "jqlang.jq" "jq JSON CLI"
+Install-WingetPackage "Kitware.CMake" "CMake" "" "cmake.install"
+Install-WingetPackage "Ninja-build.Ninja" "Ninja" "" "ninja"
+Install-WingetPackage "Python.Python.3.12" "Python 3.12" "" "python"
+Install-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS" "" "nodejs-lts"
+Install-WingetPackage "jqlang.jq" "jq JSON CLI" "" "jq"
 
 # vcpkg builds Drogon and its native dependencies for the Windows MSVC toolchain.
 $vcpkgRoot = Join-Path $env:LOCALAPPDATA "vcpkg"
@@ -318,7 +315,7 @@ if (Test-Path $vcpkgExe) {
 }
 
 if (-not $SkipDocker) {
-    Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop"
+    Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop" "" "docker-desktop"
 }
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
