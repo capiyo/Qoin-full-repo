@@ -1,98 +1,61 @@
-//! User-owned broker connection metadata and authenticated credential encryption.
-//!
-//! Credentials are encrypted before persistence. The encryption key must be injected
-//! at runtime from a secret manager; it is never stored in MongoDB or returned by APIs.
-use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng, Payload, rand_core::RngCore},
-    Aes256Gcm, Nonce,
-};
+//! Frontend-to-backend broker credential encryption using libsodium sealed boxes.
+//! The frontend encrypts with the public key; only the backend holds the private key.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zeroize::Zeroize;
 
 #[derive(Clone)]
 pub struct CredentialCipher {
-    key: [u8; 32],
+    public_key: sodiumoxide::crypto::box_::PublicKey,
+    secret_key: sodiumoxide::crypto::box_::SecretKey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedCredential {
-    pub nonce_hex: String,
     pub ciphertext_hex: String,
     pub encryption_version: i32,
 }
 
 impl CredentialCipher {
-    pub fn from_hex_key(encoded: &str) -> Result<Self, String> {
-        let bytes = hex::decode(encoded.trim())
-            .map_err(|_| "credential encryption key must be 64 hexadecimal characters".to_string())?;
-        if bytes.len() != 32 {
-            return Err("credential encryption key must decode to exactly 32 bytes".into());
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes);
-        Ok(Self { key })
+    pub fn from_hex_keys(public_hex: &str, secret_hex: &str) -> Result<Self, String> {
+        sodiumoxide::init().map_err(|_| "libsodium initialization failed".to_string())?;
+        let public = hex::decode(public_hex.trim())
+            .map_err(|_| "credential public key must be 64 hexadecimal characters".to_string())?;
+        let secret = hex::decode(secret_hex.trim())
+            .map_err(|_| "credential private key must be 64 hexadecimal characters".to_string())?;
+        let public_key = sodiumoxide::crypto::box_::PublicKey::from_slice(&public)
+            .ok_or_else(|| "credential public key must decode to 32 bytes".to_string())?;
+        let secret_key = sodiumoxide::crypto::box_::SecretKey::from_slice(&secret)
+            .ok_or_else(|| "credential private key must decode to 32 bytes".to_string())?;
+        Ok(Self { public_key, secret_key })
     }
 
-    pub fn encrypt(&self, plaintext: &[u8], owner_uid: &str, connection_id: &str) -> Result<EncryptedCredential, String> {
-        if plaintext.is_empty() || plaintext.len() > 32 * 1024 {
-            return Err("broker credential payload must contain 1 to 32768 bytes".into());
-        }
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|_| "credential encryption is unavailable".to_string())?;
-        let mut nonce_bytes = [0u8; 12];
-        let mut rng = OsRng;
-        rng.fill_bytes(&mut nonce_bytes);
-        let aad = format!("qoin-broker-credential:v1:{}:{}", owner_uid, connection_id);
-        let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: plaintext, aad: aad.as_bytes() })
-            .map_err(|_| "broker credential encryption failed".to_string())?;
-        Ok(EncryptedCredential {
-            nonce_hex: hex::encode(nonce_bytes),
-            ciphertext_hex: hex::encode(ciphertext),
-            encryption_version: 1,
-        })
+    pub fn public_key_hex(&self) -> String {
+        hex::encode(self.public_key.0)
     }
 
-    pub fn decrypt(&self, encrypted: &EncryptedCredential, owner_uid: &str, connection_id: &str) -> Result<Vec<u8>, String> {
-        let nonce = hex::decode(&encrypted.nonce_hex).map_err(|_| "invalid credential nonce".to_string())?;
-        let ciphertext = hex::decode(&encrypted.ciphertext_hex).map_err(|_| "invalid credential ciphertext".to_string())?;
-        if nonce.len() != 12 || encrypted.encryption_version != 1 {
-            return Err("unsupported encrypted credential format".into());
+    pub fn decrypt_hex(&self, ciphertext_hex: &str) -> Result<Vec<u8>, String> {
+        if ciphertext_hex.is_empty() || ciphertext_hex.len() > 90_000 {
+            return Err("sealed broker credential payload must contain 1 to 45000 bytes".into());
         }
-        let cipher = Aes256Gcm::new_from_slice(&self.key).map_err(|_| "credential decryption is unavailable".to_string())?;
-        let aad = format!("qoin-broker-credential:v1:{}:{}", owner_uid, connection_id);
-        cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext.as_ref(), aad: aad.as_bytes() })
-            .map_err(|_| "credential authentication failed".to_string())
+        let ciphertext = hex::decode(ciphertext_hex)
+            .map_err(|_| "sealed broker credential payload is not valid hexadecimal".to_string())?;
+        sodiumoxide::crypto::sealedbox::open(&ciphertext, &self.public_key, &self.secret_key)
+            .map_err(|_| "broker credential authentication failed".to_string())
     }
-}
 
-
-pub async fn load_owned_credentials(
-    collection: &mongodb::Collection<mongodb::bson::Document>,
-    cipher: &CredentialCipher,
-    owner_uid: &str,
-    connection_id: &str,
-) -> Result<Value, String> {
-    use mongodb::bson::doc;
-    let record = collection.find_one(
-        doc!{"owner_uid":owner_uid,"connection_id":connection_id,"status":"active"}, None
-    ).await.map_err(|_| "credential store unavailable".to_string())?
-        .ok_or_else(|| "owned broker credentials not found".to_string())?;
-    let encrypted = EncryptedCredential {
-        nonce_hex: record.get_str("nonce_hex").map_err(|_| "credential nonce missing".to_string())?.to_string(),
-        ciphertext_hex: record.get_str("ciphertext_hex").map_err(|_| "credential ciphertext missing".to_string())?.to_string(),
-        encryption_version: record.get_i32("encryption_version").unwrap_or(0),
-    };
-    let mut plaintext = cipher.decrypt(&encrypted, owner_uid, connection_id)?;
-    let parsed = serde_json::from_slice(&plaintext)
-        .map_err(|_| "decrypted broker credential payload is invalid".to_string());
-    plaintext.zeroize();
-    parsed
+    pub fn decrypt_json(&self, ciphertext_hex: &str) -> Result<Value, String> {
+        let mut plaintext = self.decrypt_hex(ciphertext_hex)?;
+        let parsed = serde_json::from_slice(&plaintext)
+            .map_err(|_| "decrypted broker credential payload is invalid".to_string());
+        plaintext.zeroize();
+        parsed
+    }
 }
 
 impl Drop for CredentialCipher {
     fn drop(&mut self) {
-        self.key.zeroize();
+        self.secret_key.0.zeroize();
     }
 }
 
@@ -101,7 +64,7 @@ pub struct CreateBrokerConnection {
     pub broker_id: String,
     pub display_name: Option<String>,
     pub auth_method: String,
-    pub credentials: Value,
+    pub sealed_credentials_hex: String,
 }
 
 impl CreateBrokerConnection {
@@ -116,10 +79,10 @@ impl CreateBrokerConnection {
         if !matches!(auth_method.as_str(), "api_key" | "oauth2") {
             return Err("auth_method must be api_key or oauth2".into());
         }
-        if !self.credentials.is_object()
-            || self.credentials.as_object().is_some_and(|value| value.is_empty())
+        if self.sealed_credentials_hex.is_empty() || self.sealed_credentials_hex.len() > 90_000
+            || !self.sealed_credentials_hex.bytes().all(|b| b.is_ascii_hexdigit())
         {
-            return Err("credentials must be a non-empty JSON object".into());
+            return Err("sealed_credentials_hex must be a valid sealed-box hexadecimal payload".into());
         }
         let display_name = self.display_name.as_deref().unwrap_or(&broker_id).trim().to_string();
         if display_name.is_empty() || display_name.len() > 80 {
@@ -132,41 +95,40 @@ impl CreateBrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn credentials_are_authenticated_and_encrypted_with_unique_nonces() {
-        let cipher = CredentialCipher::from_hex_key(&"ab".repeat(32)).unwrap();
+    fn libsodium_sealed_box_round_trip_and_rejects_tampering() {
+        sodiumoxide::init().unwrap();
+        let (public, secret) = sodiumoxide::crypto::box_::gen_keypair();
+        let cipher = CredentialCipher { public_key: public, secret_key: secret };
         let payload = br#"{"api_key":"secret","api_secret":"private"}"#;
-        let first = cipher.encrypt(payload, "owner-1", "connection-1").unwrap();
-        let second = cipher.encrypt(payload, "owner-1", "connection-1").unwrap();
-        assert_ne!(first.nonce_hex, second.nonce_hex);
-        assert_ne!(first.ciphertext_hex, String::from_utf8_lossy(payload));
-        assert_eq!(cipher.decrypt(&first, "owner-1", "connection-1").unwrap(), payload);
-        assert!(cipher.decrypt(&first, "owner-2", "connection-1").is_err());
-        assert!(cipher.decrypt(&first, "owner-1", "connection-2").is_err());
-        let mut tampered = first.clone();
-        tampered.ciphertext_hex.replace_range(0..2, "00");
-        assert!(cipher.decrypt(&tampered, "owner-1", "connection-1").is_err());
+        let sealed = sodiumoxide::crypto::sealedbox::seal(payload, &cipher.public_key);
+        let encoded = hex::encode(&sealed);
+        assert_eq!(cipher.decrypt_hex(&encoded).unwrap(), payload);
+        let mut tampered = sealed;
+        tampered[0] ^= 1;
+        assert!(cipher.decrypt_hex(&hex::encode(tampered)).is_err());
     }
 
     #[test]
-    fn rejects_bad_keys_and_oversized_credentials() {
-        assert!(CredentialCipher::from_hex_key("not-a-key").is_err());
-        let cipher = CredentialCipher::from_hex_key(&"cd".repeat(32)).unwrap();
-        assert!(cipher.encrypt(&vec![0u8; 32 * 1024 + 1], "owner", "connection").is_err());
+    fn rejects_invalid_key_material_and_payloads() {
+        assert!(CredentialCipher::from_hex_keys("bad", "bad").is_err());
+        let (public, secret) = sodiumoxide::crypto::box_::gen_keypair();
+        let cipher = CredentialCipher { public_key: public, secret_key: secret };
+        assert!(cipher.decrypt_hex("not-hex").is_err());
+        assert!(cipher.decrypt_hex("").is_err());
     }
 
     #[test]
-    fn connection_validation_normalizes_provider_and_rejects_invalid_payloads() {
+    fn validates_frontend_sealed_payload_contract() {
         let request = CreateBrokerConnection {
             broker_id: " OANDA ".into(),
             display_name: Some(" Main OANDA ".into()),
             auth_method: "API_KEY".into(),
-            credentials: json!({"api_key":"not-empty"}),
+            sealed_credentials_hex: "ab".repeat(80),
         };
         assert_eq!(request.validate().unwrap(), ("oanda".into(), "api_key".into(), "Main OANDA".into()));
-        let invalid = CreateBrokerConnection { credentials: json!({}), ..request };
+        let invalid = CreateBrokerConnection { sealed_credentials_hex: String::new(), ..request };
         assert!(invalid.validate().is_err());
     }
 }
