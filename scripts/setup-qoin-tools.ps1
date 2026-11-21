@@ -242,7 +242,7 @@ if (-not $script:wingetPath) {
 
 $installFailures = New-Object System.Collections.Generic.List[string]
 
-function Install-WingetPackage([string]$Id, [string]$Name, [string]$Override = "", [string]$ChocolateyId = "", [string]$ChocolateyParameters = "") {
+function Install-WingetPackage([string]$Id, [string]$Name, [string]$Override = "", [string]$ChocolateyId = "", [string]$ChocolateyParameters = "", [switch]$Optional) {
     Write-Host ""
     Write-Host "========== Installing $Name ($Id) ==========" -ForegroundColor Cyan
 
@@ -273,7 +273,7 @@ function Install-WingetPackage([string]$Id, [string]$Name, [string]$Override = "
     } elseif ($code -eq 3010 -or $code -eq 1641) {
         Write-Warning "$Name installed; Windows restart is required."
     } else {
-        $installFailures.Add("$Name (exit code $code)")
+        if (-not $Optional) { $installFailures.Add("$Name (exit code $code)") }
         Write-Warning "$Name installation failed with exit code $code."
     }
 }
@@ -297,7 +297,10 @@ if (Test-Path -LiteralPath $vswhere) {
 }
 if ($vsInstallPath -and (Test-Path -LiteralPath $vsInstaller)) {
     Write-Host "Adding the Windows SDK to Visual Studio instance: $vsInstallPath"
-    $vsArgs = @("modify", "--installPath", $vsInstallPath, "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041", "--quiet", "--wait", "--norestart")
+    # setup.exe is the supported maintenance CLI. Unlike the edition bootstrapper,
+    # setup.exe does not support --wait; Start-Process -Wait provides synchronization.
+    # Quote installPath because Start-Process joins ArgumentList into one command line.
+    $vsArgs = @("modify", "--installPath", "`"$vsInstallPath`"", "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041", "--quiet", "--norestart")
     $vsProcess = Start-Process -FilePath $vsInstaller -ArgumentList $vsArgs -Wait -PassThru
     if ($vsProcess.ExitCode -ne 0 -and $vsProcess.ExitCode -ne 3010 -and $vsProcess.ExitCode -ne 1641) {
         $installFailures.Add("Visual Studio Windows SDK component installation (exit code $($vsProcess.ExitCode))")
@@ -364,7 +367,9 @@ if (Test-Path $vcpkgExe) {
 }
 
 if (-not $SkipDocker) {
-    Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop" "" "docker-desktop"
+    # Docker is an optional local-service runtime. A CDN outage must not block
+    # the compiler/toolchain setup; report it, but keep the core setup usable.
+    Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop" "" "docker-desktop" "" -Optional
 }
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
