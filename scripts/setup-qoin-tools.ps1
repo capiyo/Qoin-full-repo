@@ -72,7 +72,7 @@ function Download-File([string]$Url, [string]$Path) {
         try {
             if ($curl) {
                 Write-Host "  Attempt $attempt/4 using curl.exe"
-                & $curl.Source --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 30 --max-time 600 --output $Path $Url
+                & $curl.Source --fail --location --silent --show-error --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 600 --output $Path $Url
                 if ($LASTEXITCODE -ne 0) {
                     throw "curl.exe exited with code $LASTEXITCODE"
                 }
