@@ -290,7 +290,7 @@ Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 20
 # Chocolatey installs the Visual Studio Installer bootstrapper, not necessarily
 # the requested workload/components. Explicitly modify the Build Tools instance.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-$vsInstaller = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vs_installer.exe"
+$vsInstaller = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\setup.exe"
 $vsInstallPath = $null
 if (Test-Path -LiteralPath $vswhere) {
     $vsInstallPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
