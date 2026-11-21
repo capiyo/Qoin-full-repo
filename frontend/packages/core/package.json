@@ -6,9 +6,6 @@
   "types": "src/index.ts",
   "dependencies": {
     "firebase": "^10.14.1",
-    "libsodium-wrappers": "^0.7.15"
-  },
-  "devDependencies": {
-    "@types/libsodium-wrappers": "^0.7.13"
+    "libsodium-wrappers": "^0.8.4"
   }
 }
