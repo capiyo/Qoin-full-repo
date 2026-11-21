@@ -11,7 +11,7 @@ use mongodb::{
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
+use std::{collections::{BTreeMap, HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
@@ -32,6 +32,7 @@ mod broker_account_store;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
+mod market_data_quality;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -87,6 +88,7 @@ struct AppState {
     stream: broadcast::Sender<serde_json::Value>,
     database: mongodb::Database,
     events: Collection<Document>,
+    dataset_manifests: Collection<Document>,
     set_ledger_records: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
@@ -993,6 +995,112 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct DatasetManifestRequest { symbol: String, venue: String, from_ts_ms: i64, to_ts_ms: i64, #[serde(default)] max_gap_ms: Option<i64> }
+#[derive(Deserialize)]
+struct DatasetManifestQuery { symbol: Option<String>, venue: Option<String>, limit: Option<i64> }
+
+async fn create_dataset_manifest(State(s):State<AppState>, headers:HeaderMap, Json(request):Json<DatasetManifestRequest>) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED,Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    if request.symbol.trim().is_empty() || request.symbol.len()>96 || request.venue.trim().is_empty()
+        || request.venue.len()>64 || request.from_ts_ms<=0 || request.to_ts_ms<request.from_ts_ms
+        || request.max_gap_ms.is_some_and(|gap|gap<=0) {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"invalid dataset symbol, venue, time range, or max_gap_ms"})));
+    }
+    const MAX_DATASET_EVENTS:i64=250_000;
+    let filter=doc!{"symbol":&request.symbol,"venue":&request.venue,"ts_ms":{"$gte":request.from_ts_ms,"$lte":request.to_ts_ms}};
+    let options=FindOptions::builder().sort(doc!{"ts_ms":1,"event_id":1}).limit(MAX_DATASET_EVENTS+1).build();
+    let mut cursor=match s.events.find(filter,Some(options)).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,"dataset snapshot query failed");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"dataset source unavailable"})));}
+    };
+    let mut digest=market_data_quality::DatasetDigest::new(&request);
+    let mut event_count=0_i64;
+    let mut invalid_count=0_i64;
+    let mut event_types=BTreeMap::<String,i64>::new();
+    let mut first_ts_ms:Option<i64>=None;
+    let mut last_ts_ms:Option<i64>=None;
+    let mut max_observed_gap_ms=0_i64;
+    let mut gap_count=0_i64;
+    loop {
+        let mut document=match cursor.try_next().await {
+            Ok(Some(value))=>value,
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"dataset snapshot cursor failed");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"dataset source read failed"})));}
+        };
+        if event_count+invalid_count>=MAX_DATASET_EVENTS {
+            return (StatusCode::PAYLOAD_TOO_LARGE,Json(serde_json::json!({"error":"dataset exceeds the 250000 event snapshot limit; narrow the range","limit":MAX_DATASET_EVENTS})));
+        }
+        document.remove("_id");
+        let event=match mongodb::bson::from_document::<MarketEvent>(document) {
+            Ok(value)=>value,
+            Err(_)=>{invalid_count+=1;continue;}
+        };
+        if validate_event(&event).is_err(){invalid_count+=1;continue;}
+        if let Some(previous)=last_ts_ms {
+            let gap=event.ts_ms.saturating_sub(previous);
+            max_observed_gap_ms=max_observed_gap_ms.max(gap);
+            if request.max_gap_ms.is_some_and(|threshold|gap>threshold){gap_count+=1;}
+        }
+        first_ts_ms.get_or_insert(event.ts_ms);
+        last_ts_ms=Some(event.ts_ms);
+        *event_types.entry(event.event_type.clone()).or_default()+=1;
+        let encoded=match serde_json::to_vec(&event){Ok(value)=>value,Err(_)=>{invalid_count+=1;continue;}};
+        digest.update(&encoded);
+        event_count+=1;
+    }
+    let dataset_version=digest.finish();
+    let manifest=serde_json::json!({
+        "manifest_schema_version":1,"dataset_version":dataset_version,"hash_algorithm":"sha256",
+        "symbol":request.symbol,"venue":request.venue,"from_ts_ms":request.from_ts_ms,"to_ts_ms":request.to_ts_ms,
+        "max_gap_ms":request.max_gap_ms,"event_count":event_count,"invalid_event_count":invalid_count,
+        "event_type_counts":event_types,"first_event_ts_ms":first_ts_ms,"last_event_ts_ms":last_ts_ms,
+        "max_observed_gap_ms":max_observed_gap_ms,"gap_count":gap_count,"gap_detection_enabled":request.max_gap_ms.is_some(),
+        "quality_status":market_data_quality::quality_status(invalid_count,gap_count),
+        "coverage_claim":"observed_source_events_only; does_not_prove_provider_completeness",
+        "created_at":mongodb::bson::DateTime::now()
+    });
+    let document=match mongodb::bson::to_document(&manifest){Ok(value)=>value,Err(_)=>return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"manifest serialization failed"})))};
+    match s.dataset_manifests.insert_one(document,None).await {
+        Ok(_)=>(StatusCode::CREATED,Json(manifest)),
+        Err(error) if error.to_string().contains("E11000")=>{
+            match s.dataset_manifests.find_one(doc!{"dataset_version":&dataset_version},None).await {
+                Ok(Some(existing))=>(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(existing).unwrap_or_default())),
+                _=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"existing dataset manifest could not be read"})))
+            }
+        }
+        Err(error)=>{tracing::error!(error=%error,"immutable dataset manifest persistence failed");(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"dataset manifest persistence failed"})))}
+    }
+}
+
+async fn list_dataset_manifests(State(s):State<AppState>,Query(query):Query<DatasetManifestQuery>)->impl IntoResponse {
+    if query.symbol.as_deref().is_some_and(|v|v.trim().is_empty()||v.len()>96)
+        || query.venue.as_deref().is_some_and(|v|v.trim().is_empty()||v.len()>64) {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"invalid symbol or venue filter"})));
+    }
+    let limit=query.limit.unwrap_or(50).clamp(1,200);
+    let mut filter=doc!{};
+    if let Some(value)=query.symbol.as_deref(){filter.insert("symbol",value);}
+    if let Some(value)=query.venue.as_deref(){filter.insert("venue",value);}
+    let options=FindOptions::builder().sort(doc!{"created_at":-1,"dataset_version":1}).limit(limit).build();
+    let mut cursor=match s.dataset_manifests.find(filter,Some(options)).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,"dataset manifest listing failed");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"dataset manifests unavailable"})));}
+    };
+    let mut items=Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document))=>{document.remove("_id");items.push(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default());}
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,"dataset manifest cursor failed");return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"dataset manifest read failed"})));}
+        }
+    }
+    (StatusCode::OK,Json(serde_json::json!({"items":items,"count":items.len(),"limit":limit})))
+}
+
 
 #[derive(Deserialize)]
 struct BacktestQuery {
@@ -2341,6 +2449,7 @@ async fn main(){
     let db=client.database(&env::var("QOIN_MONGODB_DATABASE").unwrap_or_else(|_|"qoin".into()));
     db.run_command(doc!{"ping":1},None).await.expect("MongoDB ping");
     let events:Collection<Document>=db.collection("market_events");
+    let dataset_manifests:Collection<Document>=db.collection("market_dataset_manifests");
     let set_ledger_records:Collection<Document>=db.collection("set_relation_ledger");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
@@ -2383,6 +2492,8 @@ async fn main(){
     orders.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("owner-scoped order history index");
+    dataset_manifests.create_index(mongodb::IndexModel::builder().keys(doc!{"dataset_version":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("immutable dataset version index");
+    dataset_manifests.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"venue":1,"created_at":-1}).build(),None).await.expect("dataset manifest lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1}).build(),None).await.expect("V2 ledger backfill keyset index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_ms":-1,"record_type":1}).build(),None).await.expect("durable V2 ledger symbol/time index");
@@ -2447,7 +2558,7 @@ async fn main(){
         .expect("configure a valid Firebase project ID for authenticated trading routes");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
+        stream, database: db.clone(), events,dataset_manifests,set_ledger_records,states,decisions,strategies,orders,trading_controls,
         users, broker_connections, broker_credentials, broker_accounts, credential_cipher,
         broker_registry: broker_contract::BrokerRegistry::default(),
         firebase_verifier,
@@ -2477,6 +2588,7 @@ async fn main(){
         .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
          .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
+        .route("/internal/datasets",get(list_dataset_manifests).post(create_dataset_manifest))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))

@@ -55,3 +55,16 @@ These are candidates, not active integrations or guaranteed entitlements. Qoin m
 ## Production gates before market-data claims
 
 Do not describe the data layer as institution-grade or complete until it has measured freshness/uptime, gap and sequence monitoring, durable resumable backfill, immutable dataset versions, provider failover tests, clock-skew handling, symbol-master validation, licensed entitlements, and replay coverage reports.
+
+
+## Immutable research dataset manifests
+
+The Axum research API now exposes an operator-protected dataset snapshot endpoint:
+
+- `POST /internal/datasets` requires the existing `x-qoin-ledger-maintenance-token` header.
+- Request fields: `symbol`, `venue`, `from_ts_ms`, `to_ts_ms`, and optional `max_gap_ms`.
+- The endpoint scans the canonical immutable event log in deterministic event-time order, validates stored events, computes per-event-type counts and a SHA-256 content identity, and persists an immutable manifest in `market_dataset_manifests`.
+- Identical snapshots are idempotent through the unique dataset-version index.
+- `GET /internal/datasets` lists manifests and supports optional `symbol`, `venue`, and bounded `limit` filters.
+
+A manifest reports observed event counts, first/last timestamps, invalid stored rows, maximum observed inter-event gap and optional threshold breaches. Gap detection is opt-in because irregular trade events do not have a fixed expected cadence. The status `observed_clean` means only that the scanned stored events passed validation and the requested gap threshold; it does not prove the provider delivered every source event. These manifests version research inputs; they do not download missing history or establish exchange-side completeness.
