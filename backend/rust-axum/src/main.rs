@@ -2238,6 +2238,13 @@ async fn main(){
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let users:Collection<Document>=db.collection("qoin_users");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
+    broker_accounts.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
+        .expect("Firebase user broker-account listing index");
+    broker_accounts.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"broker_id":1,"account_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("a broker subaccount can belong to only one Firebase user");
     trading_controls.update_one(doc!{"_id":"execution"},
         doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
             "updated_at":mongodb::bson::DateTime::now()}},
