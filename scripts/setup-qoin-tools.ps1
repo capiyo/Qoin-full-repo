@@ -284,8 +284,27 @@ Write-Host "============================================"
 
 Install-WingetPackage "Rustlang.Rustup" "Rust and Cargo" "" "rustup.install"
 
-$vsOverride = "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --norestart"
-Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 2022 C++ Build Tools" $vsOverride "visualstudio2022buildtools" "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --wait --norestart"
+$vsOverride = "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.Windows10SDK.19041 --norestart"
+Install-WingetPackage "Microsoft.VisualStudio.2022.BuildTools" "Visual Studio 2022 C++ Build Tools and Windows SDK" $vsOverride "visualstudio2022buildtools" "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.Windows10SDK.19041 --quiet --wait --norestart"
+
+# cl.exe alone is not a usable Windows C/C++ toolchain: CMake also needs
+# the Windows SDK resource compiler (rc.exe) and manifest tool (mt.exe).
+$windowsSdkBin = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+$sdkTools = @()
+if (Test-Path -LiteralPath $windowsSdkBin) {
+    $sdkTools = @(Get-ChildItem -Path $windowsSdkBin -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | ForEach-Object {
+            $candidate = Join-Path $_.FullName "x64"
+            if ((Test-Path (Join-Path $candidate "rc.exe")) -and (Test-Path (Join-Path $candidate "mt.exe"))) { $candidate }
+        })
+}
+if ($sdkTools.Count -gt 0) {
+    $env:PATH = "$($sdkTools[0]);$env:PATH"
+    Write-Host "Windows SDK tools : $($sdkTools[0])" -ForegroundColor Green
+} else {
+    $installFailures.Add("Windows SDK x64 tools missing (rc.exe and/or mt.exe); Visual Studio Windows 10 SDK component 10.0.19041 is required")
+    Write-Warning "Windows SDK x64 tools were not found. CMake/vcpkg cannot build native dependencies without rc.exe and mt.exe."
+}
 
 Install-WingetPackage "Kitware.CMake" "CMake" "" "cmake.install"
 Install-WingetPackage "Ninja-build.Ninja" "Ninja" "" "ninja"
@@ -310,9 +329,13 @@ if (Test-Path $vcpkgBootstrap) {
 }
 $vcpkgExe = Join-Path $vcpkgRoot "vcpkg.exe"
 if (Test-Path $vcpkgExe) {
-    Write-Host "Installing Drogon and native dependencies through vcpkg..."
-    & $vcpkgExe install "drogon:x64-windows"
-    if ($LASTEXITCODE -ne 0) { $installFailures.Add("vcpkg drogon:x64-windows installation") }
+    if ($sdkTools.Count -gt 0) {
+        Write-Host "Installing Drogon and native dependencies through vcpkg..."
+        & $vcpkgExe install "drogon:x64-windows"
+        if ($LASTEXITCODE -ne 0) { $installFailures.Add("vcpkg drogon:x64-windows installation") }
+    } else {
+        Write-Warning "Skipping vcpkg Drogon build because the Windows SDK tools are missing; rerun after the SDK installation succeeds."
+    }
     [Environment]::SetEnvironmentVariable("VCPKG_ROOT", $vcpkgRoot, "User")
     $env:VCPKG_ROOT = $vcpkgRoot
 } else {
