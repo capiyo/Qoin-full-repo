@@ -41,7 +41,8 @@ impl CredentialCipher {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
             .map_err(|_| "credential encryption is unavailable".to_string())?;
         let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce_bytes);
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut nonce_bytes);
         let aad = format!("qoin-broker-credential:v1:{}:{}", owner_uid, connection_id);
         let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: plaintext, aad: aad.as_bytes() })
             .map_err(|_| "broker credential encryption failed".to_string())?;
