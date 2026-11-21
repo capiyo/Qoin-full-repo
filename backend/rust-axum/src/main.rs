@@ -415,6 +415,19 @@ async fn get_broker_connections(State(s): State<AppState>, headers: HeaderMap) -
     (StatusCode::OK, Json(serde_json::json!({"items":items})))
 }
 
+async fn get_broker_credential_public_key(State(s): State<AppState>) -> impl IntoResponse {
+    match s.credential_cipher.as_ref() {
+        Some(cipher) => (StatusCode::OK, Json(serde_json::json!({
+            "algorithm":"libsodium_crypto_box_seal",
+            "public_key_hex":cipher.public_key_hex(),
+            "key_version":1
+        }))),
+        None => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"broker credential encryption is not configured"
+        }))),
+    }
+}
+
 async fn create_broker_connection(
     State(s): State<AppState>, headers: HeaderMap,
     Json(request): Json<broker_account_store::CreateBrokerConnection>,
@@ -435,22 +448,18 @@ async fn create_broker_connection(
             "error":"secure broker credential storage is not configured"
         }))),
     };
-    let plaintext = match serde_json::to_vec(&request.credentials) {
+    // The browser submits libsodium crypto_box_seal output. The backend stores
+    // this opaque ciphertext and decrypts only when a provider call needs it.
+    let ciphertext = match hex::decode(&request.sealed_credentials_hex) {
         Ok(value) => value,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"credential payload is invalid"}))),
-    };
-    let connection_id = mongodb::bson::oid::ObjectId::new().to_hex();
-    let encrypted = match cipher.encrypt(&plaintext, &owner_uid, &connection_id) {
-        Ok(value) => value,
-        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"sealed credential payload is invalid"}))),
     };
     let credential_id = mongodb::bson::oid::ObjectId::new().to_hex();
     let now = mongodb::bson::DateTime::now();
     let credential = doc!{
         "_id":&credential_id,"owner_uid":&owner_uid,"connection_id":&connection_id,
-        "nonce_hex":encrypted.nonce_hex,"ciphertext_hex":encrypted.ciphertext_hex,
-        "encryption_version":encrypted.encryption_version,"status":"active",
-        "created_at":now,"updated_at":now
+        "ciphertext_hex":hex::encode(ciphertext),"encryption_version":1,"encryption_algorithm":"libsodium_crypto_box_seal",
+        "status":"active","created_at":now,"updated_at":now
     };
     if let Err(error) = s.broker_credentials.insert_one(credential, None).await {
         tracing::error!(error=%error, "encrypted broker credential persistence failed");
@@ -2341,10 +2350,16 @@ async fn main(){
     let broker_connections:Collection<Document>=db.collection("broker_connections");
     let broker_credentials:Collection<Document>=db.collection("broker_credentials");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
-    let credential_cipher = match env::var("QOIN_CREDENTIAL_ENCRYPTION_KEY_HEX") {
-        Ok(value) => Some(Arc::new(broker_account_store::CredentialCipher::from_hex_key(&value)
-            .expect("QOIN_CREDENTIAL_ENCRYPTION_KEY_HEX must be a valid 32-byte hex key"))),
-        Err(_) => None,
+    let credential_cipher = match (
+        env::var("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX"),
+        env::var("QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX"),
+    ) {
+        (Ok(public_key), Ok(secret_key)) => Some(Arc::new(
+            broker_account_store::CredentialCipher::from_hex_keys(&public_key, &secret_key)
+                .expect("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be a matching libsodium keypair"),
+        )),
+        (Err(_), Err(_)) => None,
+        _ => panic!("both QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be configured together"),
     };
     broker_connections.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"created_at":-1}).build(),None).await
@@ -2448,6 +2463,7 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
+        .route("/internal/broker-credentials/public-key",get(get_broker_credential_public_key))
         .route("/internal/broker-connections",get(get_broker_connections).post(create_broker_connection))
         .route("/internal/broker-connections/:connection_id",delete(delete_broker_connection))
         .route("/internal/broker-accounts",get(get_broker_accounts))
