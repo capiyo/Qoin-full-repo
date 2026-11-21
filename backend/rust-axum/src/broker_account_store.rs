@@ -6,8 +6,8 @@ use zeroize::Zeroize;
 
 #[derive(Clone)]
 pub struct CredentialCipher {
-    public_key: sodiumoxide::crypto::sealedbox::PublicKey,
-    secret_key: sodiumoxide::crypto::sealedbox::SecretKey,
+    public_key: sodiumoxide::crypto::box_::PublicKey,
+    secret_key: sodiumoxide::crypto::box_::SecretKey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn libsodium_sealed_box_round_trip_and_rejects_tampering() {
         sodiumoxide::init().unwrap();
-        let (public, secret) = sodiumoxide::crypto::sealedbox::gen_keypair();
+        let (public, secret) = sodiumoxide::crypto::box_::gen_keypair();
         let cipher = CredentialCipher { public_key: public, secret_key: secret };
         let payload = br#"{"api_key":"secret","api_secret":"private"}"#;
         let sealed = sodiumoxide::crypto::sealedbox::seal(payload, &cipher.public_key);
