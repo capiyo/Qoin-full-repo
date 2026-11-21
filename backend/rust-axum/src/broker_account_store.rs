@@ -71,12 +71,6 @@ pub async fn load_owned_credentials(
     cipher.decrypt_json(ciphertext)
 }
 
-impl Drop for CredentialCipher {
-    fn drop(&mut self) {
-        self.secret_key.0.zeroize();
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreateBrokerConnection {
     pub broker_id: String,
