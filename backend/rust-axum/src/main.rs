@@ -28,7 +28,7 @@ mod broker_contract;
 mod broker_adapter_skeleton;
 mod broker_catalogue;
 mod firebase_identity;
-mod broker_account_store;
+mod broker_env;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
@@ -94,11 +94,9 @@ struct AppState {
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
     users: Collection<Document>,
-    broker_connections: Collection<Document>,
-    broker_credentials: Collection<Document>,
     broker_accounts: Collection<Document>,
-    credential_cipher: Option<Arc<broker_account_store::CredentialCipher>>,
     broker_registry: broker_contract::BrokerRegistry,
+    broker_environment: Arc<broker_env::BrokerEnvironment>,
     firebase_verifier: Option<firebase_identity::FirebaseIdentityVerifier>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
@@ -355,20 +353,6 @@ async fn ensure_user_record(users: &Collection<Document>, owner_uid: &str) -> Re
     Ok(())
 }
 
-fn public_broker_connection(document: &Document) -> serde_json::Value {
-    serde_json::json!({
-        "connection_id": document.get_str("connection_id").unwrap_or_default(),
-        "broker_id": document.get_str("broker_id").unwrap_or_default(),
-        "display_name": document.get_str("display_name").unwrap_or_default(),
-        "auth_method": document.get_str("auth_method").unwrap_or_default(),
-        "status": document.get_str("status").unwrap_or("unknown"),
-        "validation_status": document.get_str("validation_status").unwrap_or("unknown"),
-        "executable": false,
-        "created_at": document.get_datetime("created_at").ok().map(|value| value.to_string()),
-        "updated_at": document.get_datetime("updated_at").ok().map(|value| value.to_string())
-    })
-}
-
 async fn get_qoin_me(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
@@ -386,133 +370,15 @@ async fn get_qoin_me(State(s): State<AppState>, headers: HeaderMap) -> impl Into
     })))
 }
 
-async fn get_broker_connections(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn get_broker_configuration(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
-        Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
     };
     if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
         return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
     }
-    let options = FindOptions::builder().sort(doc!{"created_at":-1}).limit(100).build();
-    let mut cursor = match s.broker_connections.find(doc!{"owner_uid":&owner_uid}, Some(options)).await {
-        Ok(cursor) => cursor,
-        Err(error) => {
-            tracing::error!(error=%error, "broker connection listing failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connections unavailable"})));
-        }
-    };
-    let mut items = Vec::new();
-    loop {
-        match cursor.try_next().await {
-            Ok(Some(document)) => items.push(public_broker_connection(&document)),
-            Ok(None) => break,
-            Err(error) => {
-                tracing::error!(error=%error, "broker connection cursor failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connections unavailable"})));
-            }
-        }
-    }
-    (StatusCode::OK, Json(serde_json::json!({"items":items})))
-}
-
-async fn get_broker_credential_public_key(State(s): State<AppState>) -> impl IntoResponse {
-    match s.credential_cipher.as_ref() {
-        Some(cipher) => (StatusCode::OK, Json(serde_json::json!({
-            "algorithm":"libsodium_crypto_box_seal",
-            "public_key_hex":cipher.public_key_hex(),
-            "key_version":1
-        }))),
-        None => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error":"broker credential encryption is not configured"
-        }))),
-    }
-}
-
-async fn create_broker_connection(
-    State(s): State<AppState>, headers: HeaderMap,
-    Json(request): Json<broker_account_store::CreateBrokerConnection>,
-) -> impl IntoResponse {
-    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
-        Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
-    };
-    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
-        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
-    }
-    let (broker_id, auth_method, display_name) = match request.validate() {
-        Ok(values) => values,
-        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
-    };
-    let cipher = match s.credential_cipher.as_ref() {
-        Some(cipher) => cipher,
-        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error":"secure broker credential storage is not configured"
-        }))),
-    };
-    let connection_id = mongodb::bson::oid::ObjectId::new().to_hex();
-    // The browser submits libsodium crypto_box_seal output. The backend stores
-    // this opaque ciphertext and decrypts only when a provider call needs it.
-    let ciphertext = match hex::decode(&request.sealed_credentials_hex) {
-        Ok(value) => value,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"sealed credential payload is invalid"}))),
-    };
-    let credential_id = mongodb::bson::oid::ObjectId::new().to_hex();
-    let now = mongodb::bson::DateTime::now();
-    let credential = doc!{
-        "_id":&credential_id,"owner_uid":&owner_uid,"connection_id":&connection_id,
-        "ciphertext_hex":hex::encode(ciphertext),"encryption_version":1,"encryption_algorithm":"libsodium_crypto_box_seal",
-        "status":"active","created_at":now,"updated_at":now
-    };
-    if let Err(error) = s.broker_credentials.insert_one(credential, None).await {
-        tracing::error!(error=%error, "encrypted broker credential persistence failed");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"secure credential storage unavailable"})));
-    }
-    let connection = doc!{
-        "_id":&connection_id,"connection_id":&connection_id,"owner_uid":&owner_uid,
-        "broker_id":&broker_id,"display_name":&display_name,"auth_method":&auth_method,
-        "credential_id":&credential_id,"status":"pending_validation",
-        "validation_status":"not_attempted","executable":false,"created_at":now,"updated_at":now
-    };
-    if let Err(error) = s.broker_connections.insert_one(connection.clone(), None).await {
-        let _ = s.broker_credentials.delete_one(doc!{"_id":&credential_id,"owner_uid":&owner_uid}, None).await;
-        tracing::error!(error=%error, "broker connection persistence failed; encrypted credential rolled back");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connection could not be persisted"})));
-    }
-    (StatusCode::CREATED, Json(public_broker_connection(&connection)))
-}
-
-async fn delete_broker_connection(
-    State(s): State<AppState>, Path(connection_id): Path<String>, headers: HeaderMap,
-) -> impl IntoResponse {
-    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
-        Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
-    };
-    if connection_id.len()!=24 || !connection_id.bytes().all(|value|value.is_ascii_hexdigit()) {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"broker connection not found"})));
-    }
-    let connection = match s.broker_connections.find_one(doc!{"connection_id":&connection_id,"owner_uid":&owner_uid},None).await {
-        Ok(Some(connection)) => connection,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"broker connection not found"}))),
-        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connection unavailable"}))),
-    };
-    if let Err(error) = s.broker_connections.update_one(
-        doc!{"connection_id":&connection_id,"owner_uid":&owner_uid},
-        doc!{"$set":{"status":"disconnected","validation_status":"revoked","executable":false,
-            "disconnected_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}},None
-    ).await {
-        tracing::error!(error=%error, "broker connection revocation failed");
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connection could not be revoked"})));
-    }
-    if let Ok(credential_id) = connection.get_str("credential_id") {
-        if let Err(error) = s.broker_credentials.delete_one(doc!{"_id":credential_id,"owner_uid":&owner_uid},None).await {
-            tracing::error!(error=%error, "revoked broker credential cleanup failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"connection revoked but encrypted credential cleanup needs operator attention"})));
-        }
-    }
-    let _ = s.broker_accounts.update_many(
-        doc!{"owner_uid":&owner_uid,"connection_id":&connection_id},
-        doc!{"$set":{"status":"disconnected","trading_enabled":false,"updated_at":mongodb::bson::DateTime::now()}},None
-    ).await;
-    (StatusCode::OK, Json(serde_json::json!({"connection_id":connection_id,"status":"disconnected","executable":false})))
+    (StatusCode::OK, Json(s.broker_environment.public_status()))
 }
 
 async fn get_broker_accounts(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
@@ -574,6 +440,23 @@ async fn submit_live_order(
     if broker_id.is_empty() || broker_id.len() > 64 {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"broker_id is required"})));
     }
+    let _owned_account = match s.broker_accounts.find_one(
+        doc!{"owner_uid":&owner_uid,"account_id":&submission.order.account_id,"broker_id":&broker_id,"status":"active"},
+        None
+    ).await {
+        Ok(Some(account)) => account,
+        Ok(None) => return (StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error":"selected broker account is not provisioned and active for this Firebase user",
+            "dispatch_started":false
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error, "broker account ownership lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"broker account ownership could not be verified; order rejected",
+                "dispatch_started":false
+            })));
+        }
+    };
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
         Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
@@ -2348,34 +2231,7 @@ async fn main(){
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let users:Collection<Document>=db.collection("qoin_users");
-    let broker_connections:Collection<Document>=db.collection("broker_connections");
-    let broker_credentials:Collection<Document>=db.collection("broker_credentials");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
-    let credential_cipher = match (
-        env::var("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX"),
-        env::var("QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX"),
-    ) {
-        (Ok(public_key), Ok(secret_key)) => Some(Arc::new(
-            broker_account_store::CredentialCipher::from_hex_keys(&public_key, &secret_key)
-                .expect("QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be a matching libsodium keypair"),
-        )),
-        (Err(_), Err(_)) => None,
-        _ => panic!("both QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX and QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX must be configured together"),
-    };
-    broker_connections.create_index(mongodb::IndexModel::builder()
-        .keys(doc!{"owner_uid":1,"created_at":-1}).build(),None).await
-        .expect("broker connection owner index");
-    broker_connections.create_index(mongodb::IndexModel::builder()
-        .keys(doc!{"connection_id":1,"owner_uid":1})
-        .options(IndexOptions::builder().unique(true).build()).build(),None).await
-        .expect("broker connection ownership index");
-    broker_credentials.create_index(mongodb::IndexModel::builder()
-        .keys(doc!{"connection_id":1})
-        .options(IndexOptions::builder().unique(true).build()).build(),None).await
-        .expect("one encrypted credential record per connection");
-    broker_accounts.create_index(mongodb::IndexModel::builder()
-        .keys(doc!{"owner_uid":1,"connection_id":1}).build(),None).await
-        .expect("broker account owner index");
     trading_controls.update_one(doc!{"_id":"execution"},
         doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
             "updated_at":mongodb::bson::DateTime::now()}},
@@ -2451,8 +2307,9 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
-        users, broker_connections, broker_credentials, broker_accounts, credential_cipher,
+        users, broker_accounts,
         broker_registry: broker_contract::BrokerRegistry::default(),
+        broker_environment: Arc::new(broker_env::BrokerEnvironment::from_env().expect("broker environment configuration must be valid")),
         firebase_verifier,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
@@ -2464,10 +2321,8 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
-        .route("/internal/broker-credentials/public-key",get(get_broker_credential_public_key))
-        .route("/internal/broker-connections",get(get_broker_connections).post(create_broker_connection))
-        .route("/internal/broker-connections/:connection_id",delete(delete_broker_connection))
         .route("/internal/broker-accounts",get(get_broker_accounts))
+        .route("/internal/brokers/configuration",get(get_broker_configuration))
         .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
