@@ -1455,14 +1455,14 @@ mod tests {
         let (mut parent, children) =
             build_fanout_intents(request(), &selected(), &split_plan(), risk()).unwrap();
         parent.aggregate_risk_approval.maximum_loss_at_stop_portfolio = Decimal::ZERO;
-        assert_eq!(
-            FanoutLifecycle::new(parent.clone(), children.clone()).unwrap_err(),
-            FanoutError::RiskApprovalMismatch
-        );
-        assert_eq!(
-            FanoutLifecycle::restore(parent, children).unwrap_err(),
-            FanoutError::RiskApprovalMismatch
-        );
+        assert!(matches!(
+            FanoutLifecycle::new(parent.clone(), children.clone()),
+            Err(FanoutError::RiskApprovalMismatch)
+        ));
+        assert!(matches!(
+            FanoutLifecycle::restore(parent, children),
+            Err(FanoutError::RiskApprovalMismatch)
+        ));
     }
 
     #[test]
