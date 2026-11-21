@@ -439,11 +439,11 @@ async fn create_broker_connection(
         Ok(value) => value,
         Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"credential payload is invalid"}))),
     };
-    let encrypted = match cipher.encrypt(&plaintext) {
+    let connection_id = mongodb::bson::oid::ObjectId::new().to_hex();
+    let encrypted = match cipher.encrypt(&plaintext, &owner_uid, &connection_id) {
         Ok(value) => value,
         Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
     };
-    let connection_id = mongodb::bson::oid::ObjectId::new().to_hex();
     let credential_id = mongodb::bson::oid::ObjectId::new().to_hex();
     let now = mongodb::bson::DateTime::now();
     let credential = doc!{

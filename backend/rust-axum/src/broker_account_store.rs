@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(cipher.decrypt_for_test(&first).unwrap(), payload);
         let mut tampered = first.clone();
         tampered.ciphertext_hex.replace_range(0..2, "00");
-        assert!(cipher.decrypt_for_test(&tampered).is_err());
+        assert!(cipher.decrypt(&tampered, "owner-1", "connection-1").is_err());
     }
 
     #[test]
