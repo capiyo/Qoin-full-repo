@@ -28,7 +28,15 @@ try {
 
     if (-not $SkipDrogon) {
         Require-Command "cmake"
-        Invoke-Check "Drogon configure" "cmake" @("-S", "backend/cpp-drogon", "-B", "build/drogon", "-DCMAKE_BUILD_TYPE=Release")
+        $DrogonConfigureArgs = @("-S", "backend/cpp-drogon", "-B", "build/drogon", "-DCMAKE_BUILD_TYPE=Release")
+        if ($env:VCPKG_ROOT) {
+            $VcpkgToolchain = Join-Path $env:VCPKG_ROOT "scripts/buildsystems/vcpkg.cmake"
+            if (Test-Path $VcpkgToolchain) {
+                $DrogonConfigureArgs += "-DCMAKE_TOOLCHAIN_FILE=$VcpkgToolchain"
+                $DrogonConfigureArgs += "-DVCPKG_TARGET_TRIPLET=x64-windows"
+            }
+        }
+        Invoke-Check "Drogon configure" "cmake" $DrogonConfigureArgs
         Invoke-Check "Drogon build" "cmake" @("--build", "build/drogon", "--config", "Release", "--parallel")
     }
 
