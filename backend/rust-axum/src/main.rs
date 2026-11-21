@@ -290,9 +290,9 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
     let configured_set: HashSet<String> = configured.iter().cloned().collect();
     let configured_count = selected.iter().filter(|item| item["id"].as_str().is_some_and(|id| configured_set.contains(id))).count();
     let mut blockers = vec![
-        "No authenticated broker-account connection registry is configured.".to_string(),
-        "Provider-specific credentials and account permissions have not been verified.".to_string(),
-        "Live dispatch remains disabled until account authorization and provider conformance tests pass.".to_string(),
+        "No provider-specific execution adapter is registered in this runtime.".to_string(),
+        "Environment credentials do not prove broker authentication, account permissions, or subaccount ownership.".to_string(),
+        "Live dispatch remains disabled until provider conformance, account mapping, and per-user risk controls pass.".to_string(),
     ];
     if s.firebase_verifier.is_none() {
         blockers.push("QOIN_FIREBASE_PROJECT_ID is not configured; server-side Firebase identity verification is unavailable.".into());
