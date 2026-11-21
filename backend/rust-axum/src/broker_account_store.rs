@@ -53,6 +53,24 @@ impl CredentialCipher {
     }
 }
 
+pub async fn load_owned_credentials(
+    collection: &mongodb::Collection<mongodb::bson::Document>,
+    cipher: &CredentialCipher,
+    owner_uid: &str,
+    connection_id: &str,
+) -> Result<Value, String> {
+    use mongodb::bson::doc;
+    let record = collection.find_one(
+        doc!{"owner_uid":owner_uid,"connection_id":connection_id,"status":"active",
+             "encryption_algorithm":"libsodium_crypto_box_seal","encryption_version":1},
+        None,
+    ).await.map_err(|_| "credential store unavailable".to_string())?
+        .ok_or_else(|| "owned broker credentials not found".to_string())?;
+    let ciphertext = record.get_str("ciphertext_hex")
+        .map_err(|_| "sealed credential payload missing".to_string())?;
+    cipher.decrypt_json(ciphertext)
+}
+
 impl Drop for CredentialCipher {
     fn drop(&mut self) {
         self.secret_key.0.zeroize();
