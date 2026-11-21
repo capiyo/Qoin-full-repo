@@ -382,6 +382,72 @@ async fn get_broker_configuration(State(s): State<AppState>, headers: HeaderMap)
     (StatusCode::OK, Json(s.broker_environment.public_status()))
 }
 
+#[derive(Debug, Deserialize)]
+struct ProvisionBrokerAccountRequest {
+    owner_uid: String,
+    broker_id: String,
+    account_id: String,
+    account_name: String,
+    account_type: String,
+    base_currency: String,
+    #[serde(default)]
+    trading_enabled: bool,
+}
+
+async fn provision_broker_account(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ProvisionBrokerAccountRequest>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"operator authorization required"})));
+    }
+    let owner_uid = request.owner_uid.trim();
+    let broker_id = request.broker_id.trim().to_ascii_lowercase();
+    let account_id = request.account_id.trim();
+    let account_name = request.account_name.trim();
+    let account_type = request.account_type.trim().to_ascii_lowercase();
+    let base_currency = request.base_currency.trim().to_ascii_uppercase();
+    if owner_uid.is_empty() || owner_uid.len() > 128
+        || broker_id.is_empty() || broker_id.len() > 64
+        || !broker_id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+        || account_id.is_empty() || account_id.len() > 256
+        || account_name.is_empty() || account_name.len() > 80
+        || !matches!(account_type.as_str(), "live" | "demo")
+        || base_currency.len() < 3 || base_currency.len() > 12
+        || !base_currency.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid broker account provisioning fields"})));
+    }
+    if !s.broker_environment.account_authorized(&broker_id, account_id) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error":"broker subaccount is not present in backend environment allowlist"})));
+    }
+    if let Err(status) = ensure_user_record(&s.users, owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"target Firebase user is unavailable"})));
+    }
+    let now = mongodb::bson::DateTime::now();
+    let account = doc!{
+        "owner_uid":owner_uid,"broker_id":&broker_id,"account_id":account_id,
+        "account_name":account_name,"account_type":&account_type,"base_currency":&base_currency,
+        "status":"active","trading_enabled":request.trading_enabled,
+        "created_at":now,"updated_at":now
+    };
+    match s.broker_accounts.insert_one(account, None).await {
+        Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({
+            "owner_uid":owner_uid,"broker_id":broker_id,"account_id":account_id,
+            "account_name":account_name,"account_type":account_type,"base_currency":base_currency,
+            "status":"active","trading_enabled":request.trading_enabled
+        }))),
+        Err(error) if error.to_string().contains("E11000") => {
+            (StatusCode::CONFLICT, Json(serde_json::json!({"error":"broker subaccount is already assigned to a Firebase user"})))
+        }
+        Err(error) => {
+            tracing::error!(error=%error, "broker account provisioning failed");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker account provisioning unavailable"})))
+        }
+    }
+}
+
 async fn get_broker_accounts(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
@@ -404,7 +470,7 @@ async fn get_broker_accounts(State(s): State<AppState>, headers: HeaderMap) -> i
                 "account_type":document.get_str("account_type").unwrap_or("unknown"),
                 "base_currency":document.get_str("base_currency").unwrap_or_default(),
                 "status":document.get_str("status").unwrap_or("unknown"),
-                "trading_enabled":false
+                "trading_enabled":document.get_bool("trading_enabled").unwrap_or(false)
             })),
             Ok(None) => break,
             Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker accounts unavailable"}))),
@@ -441,7 +507,7 @@ async fn submit_live_order(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"broker_id is required"})));
     }
     let _owned_account = match s.broker_accounts.find_one(
-        doc!{"owner_uid":&owner_uid,"account_id":&submission.order.account_id,"broker_id":&broker_id,"status":"active"},
+        doc!{"owner_uid":&owner_uid,"account_id":&submission.order.account_id,"broker_id":&broker_id,"status":"active","trading_enabled":true},
         None
     ).await {
         Ok(Some(account)) => account,
@@ -2332,6 +2398,7 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
         .route("/internal/broker-accounts",get(get_broker_accounts))
+        .route("/internal/admin/broker-accounts",post(provision_broker_account))
         .route("/internal/brokers/configuration",get(get_broker_configuration))
         .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/orders",post(submit_live_order))
