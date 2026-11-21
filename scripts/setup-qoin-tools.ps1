@@ -60,11 +60,40 @@ if ($LogPath) {
 }
 
 function Download-File([string]$Url, [string]$Path) {
+    # Windows PowerShell 5.1 can fail TLS handshakes against aka.ms on older
+    # Windows builds. Prefer the Windows curl client (Schannel), then retry
+    # with .NET using TLS 1.2. A transient failure must not abort bootstrap.
     Write-Host "Downloading $Url"
-    Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
-    if (-not (Test-Path $Path) -or (Get-Item $Path).Length -eq 0) {
-        throw "Download failed or produced an empty file: $Url"
+    $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+    $lastError = $null
+
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        if (Test-Path $Path) { Remove-Item -LiteralPath $Path -Force }
+        try {
+            if ($curl) {
+                Write-Host "  Attempt $attempt/4 using curl.exe"
+                & $curl.Source --fail --location --silent --show-error --retry 2 --retry-all-errors --connect-timeout 30 --max-time 600 --output $Path $Url
+                if ($LASTEXITCODE -ne 0) {
+                    throw "curl.exe exited with code $LASTEXITCODE"
+                }
+            } else {
+                Write-Host "  Attempt $attempt/4 using Invoke-WebRequest"
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 600
+            }
+
+            if ((Test-Path $Path) -and (Get-Item -LiteralPath $Path).Length -gt 0) {
+                return
+            }
+            throw "Download produced no file or an empty file."
+        } catch {
+            $lastError = $_
+            Write-Warning "Download attempt $attempt failed: $($_.Exception.Message)"
+            Start-Sleep -Seconds ([Math]::Min(5 * $attempt, 20))
+        }
     }
+
+    throw "Unable to download $Url after 4 attempts. Last error: $lastError"
 }
 
 function Install-Appx([string]$Path) {
