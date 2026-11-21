@@ -125,7 +125,53 @@ function Download-File([string]$Url, [string]$Path) {
     throw "Unable to download $Url using curl.exe, BITS, or Invoke-WebRequest after 3 rounds. Last error: $lastError. If all transports report a TLS/Schannel handshake failure, check Windows date/time, proxy/antivirus HTTPS inspection, and access to aka.ms."
 }
 
+function Assert-AppxPackage([string]$Path, [string]$ExpectedSha256 = "") {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Expected package does not exist: $Path"
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Length -lt 4) {
+        throw "Downloaded package is too small to be a valid AppX/MSIX archive: $Path"
+    }
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $signature = New-Object byte[] 4
+        [void]$stream.Read($signature, 0, 4)
+    } finally {
+        $stream.Dispose()
+    }
+
+    # AppX/MSIX packages are ZIP-based OPC archives. Reject HTML/error pages
+    # even when the HTTP request returned status 200.
+    if ($signature[0] -ne 0x50 -or $signature[1] -ne 0x4B) {
+        $preview = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($Path), 0, [Math]::Min(160, [int]$item.Length))
+        throw "Downloaded file is not an AppX/MSIX ZIP package: $Path. First bytes: $preview"
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        if ($archive.Entries.Count -lt 1) {
+            throw "Package archive is empty: $Path"
+        }
+    } finally {
+        $archive.Dispose()
+    }
+
+    if ($ExpectedSha256) {
+        $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        if ($actual -ne $ExpectedSha256) {
+            throw "SHA256 mismatch for $Path. Expected $ExpectedSha256, received $actual."
+        }
+    }
+
+    Write-Host "  Package validation passed: $($item.Name) ($($item.Length) bytes)."
+}
+
 function Install-Appx([string]$Path) {
+    Assert-AppxPackage $Path
     Write-Host "Installing AppX package: $Path"
     Add-AppxPackage -Path $Path
 }
@@ -151,8 +197,15 @@ function Ensure-Winget {
     $winget = Join-Path $Work "Microsoft.DesktopAppInstaller.msixbundle"
 
     Download-File "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" $vclibs
-    Download-File "https://aka.ms/Microsoft.UI.Xaml.2.8.x64.appx" $xaml
+    # The old aka.ms UI.Xaml alias now redirects to Bing in some environments.
+    # Use Microsoft's official GitHub release asset instead.
+    Download-File "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx" $xaml
     Download-File "https://aka.ms/getwinget" $winget
+
+    # Validate every download before invoking the Windows package installer.
+    Assert-AppxPackage $vclibs
+    Assert-AppxPackage $xaml "249D2AFB41CC009494841372BD6DD2DF46F87386D535DDF8D9F32C97226D2E46"
+    Assert-AppxPackage $winget
 
     Install-Appx $vclibs
     Install-Appx $xaml
