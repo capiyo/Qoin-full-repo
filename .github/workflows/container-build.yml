@@ -29,8 +29,6 @@ jobs:
       QOIN_MONGODB_APP_USERNAME: qoin_app
       QOIN_MONGODB_APP_PASSWORD: abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
       QOIN_MONGODB_DATABASE: qoin
-      # Disposable CI-only key; never reuse this value outside the ephemeral test stack.
-      QOIN_CREDENTIAL_ENCRYPTION_KEY_HEX: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       QOIN_BINANCE_STREAM_ENABLED: "false"
       QOIN_COINBASE_STREAM_ENABLED: "false"
       QOIN_KRAKEN_STREAM_ENABLED: "false"
