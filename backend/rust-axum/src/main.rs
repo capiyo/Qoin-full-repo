@@ -690,7 +690,7 @@ async fn reconcile_live_order(
             "reconciliation_required":true
         })));
     }
-    let account_mapping=match s.broker_accounts.find_one(doc!{
+    let _account_mapping=match s.broker_accounts.find_one(doc!{
         "owner_uid":&owner_uid,"broker_id":stored_broker_id,"account_id":stored_account_id
     },None).await {
         Ok(Some(account))=>account,
