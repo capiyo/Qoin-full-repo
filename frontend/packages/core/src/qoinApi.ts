@@ -234,6 +234,77 @@ export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
   return request<QoinBrokerCatalogue>("/api/v1/brokers");
 }
 
+
+
+export type QoinBrokerConnection = {
+  connection_id: string;
+  broker_id: string;
+  display_name: string;
+  auth_method: "api_key" | "oauth2";
+  status: "pending_validation" | "connected" | "degraded" | "disconnected" | string;
+  validation_status: string;
+  executable: false;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+export type QoinBrokerAccount = {
+  account_id: string;
+  connection_id: string;
+  broker_id: string;
+  account_name: string;
+  account_type: "live" | "demo" | "unknown" | string;
+  base_currency: string;
+  status: string;
+  trading_enabled: false;
+};
+export type CreateQoinBrokerConnection = {
+  broker_id: string;
+  display_name?: string;
+  auth_method: "api_key" | "oauth2";
+  /** Sent once over HTTPS; the backend encrypts it and never returns it. */
+  credentials: Record<string, string>;
+};
+
+async function authenticatedQoinRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const idToken = await getQoinFirebaseIdToken();
+  return request<T>(path, {
+    ...init,
+    headers: { ...init?.headers, authorization: \`Bearer \${idToken}\` },
+  });
+}
+
+/** Lists only broker connections owned by the signed-in Firebase user. */
+export function getQoinBrokerConnections(): Promise<{ items: QoinBrokerConnection[] }> {
+  return authenticatedQoinRequest("/api/v1/broker-connections");
+}
+
+/** Creates a pending, non-executable connection; it does not claim provider validation. */
+export function createQoinBrokerConnection(input: CreateQoinBrokerConnection): Promise<QoinBrokerConnection> {
+  return authenticatedQoinRequest("/api/v1/broker-connections", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Revokes an owned connection and removes its encrypted credential record. */
+export function disconnectQoinBrokerConnection(connectionId: string): Promise<{
+  connection_id: string; status: "disconnected"; executable: false;
+}> {
+  return authenticatedQoinRequest("/api/v1/broker-connections/" + encodeURIComponent(connectionId), {
+    method: "DELETE",
+  });
+}
+
+/** Lists provider-discovered accounts; an empty list is expected until adapters are connected. */
+export function getQoinBrokerAccounts(): Promise<{ items: QoinBrokerAccount[] }> {
+  return authenticatedQoinRequest("/api/v1/broker-accounts");
+}
+
+/** Returns the backend user record associated with the verified Firebase UID. */
+export function getQoinMe(): Promise<{ uid: string; status: string; created_at?: string | null }> {
+  return authenticatedQoinRequest("/api/v1/me");
+}
+
 export type QoinNormalizedOrder = {
   client_order_id: string;
   account_id: string;
