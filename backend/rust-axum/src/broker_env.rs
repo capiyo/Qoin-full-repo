@@ -22,8 +22,9 @@ impl Drop for Secret {
 }
 
 pub struct BrokerCredentials {
-    api_key: Secret,
-    api_secret: Secret,
+    api_key: Option<Secret>,
+    api_secret: Option<Secret>,
+    api_token: Option<Secret>,
     passphrase: Option<Secret>,
     account_ids: Vec<String>,
     base_url: Option<String>,
@@ -32,9 +33,11 @@ pub struct BrokerCredentials {
 impl BrokerCredentials {
     /// These accessors are intended for provider adapters only. Never log their output.
     #[allow(dead_code)]
-    pub(crate) fn api_key(&self) -> &str { self.api_key.expose() }
+    pub(crate) fn api_key(&self) -> Option<&str> { self.api_key.as_ref().map(Secret::expose) }
     #[allow(dead_code)]
-    pub(crate) fn api_secret(&self) -> &str { self.api_secret.expose() }
+    pub(crate) fn api_secret(&self) -> Option<&str> { self.api_secret.as_ref().map(Secret::expose) }
+    #[allow(dead_code)]
+    pub(crate) fn api_token(&self) -> Option<&str> { self.api_token.as_ref().map(Secret::expose) }
     #[allow(dead_code)]
     pub(crate) fn passphrase(&self) -> Option<&str> { self.passphrase.as_ref().map(Secret::expose) }
     #[allow(dead_code)]
@@ -63,29 +66,31 @@ impl BrokerEnvironment {
             let prefix = format!("QOIN_BROKER_{}", broker_id.to_ascii_uppercase());
             let key = env::var(format!("{prefix}_API_KEY")).unwrap_or_default();
             let secret = env::var(format!("{prefix}_API_SECRET")).unwrap_or_default();
+            let token = env::var(format!("{prefix}_API_TOKEN")).ok().filter(|v| !v.trim().is_empty());
             let account_ids_raw = env::var(format!("{prefix}_ACCOUNT_IDS")).unwrap_or_else(|_| env::var(format!("{prefix}_ACCOUNT_ID")).unwrap_or_default());
             let passphrase = env::var(format!("{prefix}_PASSPHRASE")).ok().filter(|v| !v.trim().is_empty());
             let base_url = env::var(format!("{prefix}_BASE_URL")).ok().filter(|v| !v.trim().is_empty());
 
-            let any_set = !key.is_empty() || !secret.is_empty() || !account_ids_raw.is_empty()
+            let any_set = !key.is_empty() || !secret.is_empty() || token.is_some() || !account_ids_raw.is_empty()
                 || passphrase.is_some() || base_url.is_some();
             if !any_set { continue; }
             let account_ids: Vec<String> = account_ids_raw.split(',').map(str::trim).filter(|value| !value.is_empty()).map(str::to_string).collect();
-            if key.trim().is_empty() || secret.trim().is_empty() || account_ids.is_empty() {
-                return Err(format!("{prefix} requires API_KEY, API_SECRET and at least one ACCOUNT_IDS entry"));
+            if key.is_empty() != secret.is_empty() || (key.trim().is_empty() && token.is_none()) || account_ids.is_empty() {
+                return Err(format!("{prefix} requires either API_TOKEN or an API_KEY/API_SECRET pair, plus ACCOUNT_IDS"));
             }
             if account_ids.len() > 100 || account_ids.iter().any(|id| id.len() > 256) {
                 return Err(format!("{prefix}_ACCOUNT_IDS must contain 1 to 100 account IDs of at most 256 characters"));
             }
-            if key.len() > 4096 || secret.len() > 8192
+            if key.len() > 4096 || secret.len() > 8192 || token.as_ref().is_some_and(|v| v.len() > 8192)
                 || passphrase.as_ref().is_some_and(|v| v.len() > 4096)
                 || base_url.as_ref().is_some_and(|v| v.len() > 2048)
             {
                 return Err(format!("{prefix} contains a value exceeding its configured maximum length"));
             }
             providers.insert((*broker_id).to_string(), BrokerCredentials {
-                api_key: Secret(key),
-                api_secret: Secret(secret),
+                api_key: if key.is_empty() { None } else { Some(Secret(key)) },
+                api_secret: if secret.is_empty() { None } else { Some(Secret(secret)) },
+                api_token: token.map(Secret),
                 passphrase: passphrase.map(Secret),
                 account_ids,
                 base_url,
@@ -137,8 +142,9 @@ mod tests {
         let env = BrokerEnvironment { providers: BTreeMap::from([(
             "oanda".to_string(),
             BrokerCredentials {
-                api_key: Secret("private-key".into()),
-                api_secret: Secret("private-secret".into()),
+                api_key: Some(Secret("private-key".into())),
+                api_secret: Some(Secret("private-secret".into())),
+                api_token: None,
                 passphrase: None,
                 account_ids: vec!["private-account".into()],
                 base_url: None,
@@ -157,8 +163,9 @@ mod tests {
         let env = BrokerEnvironment { providers: BTreeMap::from([(
             "oanda".to_string(),
             BrokerCredentials {
-                api_key: Secret("key".into()),
-                api_secret: Secret("secret".into()),
+                api_key: Some(Secret("key".into())),
+                api_secret: Some(Secret("secret".into())),
+                api_token: None,
                 passphrase: None,
                 account_ids: vec!["sub-100".into(), "sub-200".into()],
                 base_url: None,
