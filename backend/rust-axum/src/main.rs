@@ -457,6 +457,12 @@ async fn submit_live_order(
             })));
         }
     };
+    if !s.broker_environment.account_authorized(&broker_id, &submission.order.account_id) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error":"broker credentials or the selected subaccount are not configured by Qoin",
+            "dispatch_started":false
+        })));
+    }
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
         Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
