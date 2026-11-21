@@ -124,6 +124,32 @@ Install-WingetPackage "Ninja-build.Ninja" "Ninja"
 Install-WingetPackage "Python.Python.3.12" "Python 3.12"
 Install-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS"
 
+# vcpkg builds Drogon and its native dependencies for the Windows MSVC toolchain.
+$vcpkgRoot = Join-Path $env:LOCALAPPDATA "vcpkg"
+if (-not (Test-Path (Join-Path $vcpkgRoot "vcpkg.exe"))) {
+    if (Test-Path $vcpkgRoot) {
+        throw "A vcpkg directory exists but vcpkg.exe is missing: $vcpkgRoot. Remove or repair that directory before rerunning."
+    }
+    Write-Host "Cloning Microsoft's vcpkg package manager..."
+    & git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+    if ($LASTEXITCODE -ne 0) { $installFailures.Add("vcpkg clone") }
+}
+$vcpkgBootstrap = Join-Path $vcpkgRoot "bootstrap-vcpkg.bat"
+if (Test-Path $vcpkgBootstrap) {
+    & $vcpkgBootstrap -disableMetrics
+    if ($LASTEXITCODE -ne 0) { $installFailures.Add("vcpkg bootstrap") }
+}
+$vcpkgExe = Join-Path $vcpkgRoot "vcpkg.exe"
+if (Test-Path $vcpkgExe) {
+    Write-Host "Installing Drogon and native dependencies through vcpkg..."
+    & $vcpkgExe install "drogon:x64-windows"
+    if ($LASTEXITCODE -ne 0) { $installFailures.Add("vcpkg drogon:x64-windows installation") }
+    [Environment]::SetEnvironmentVariable("VCPKG_ROOT", $vcpkgRoot, "User")
+    $env:VCPKG_ROOT = $vcpkgRoot
+} else {
+    $installFailures.Add("vcpkg.exe missing after bootstrap")
+}
+
 if (-not $SkipDocker) {
     Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop"
 }
