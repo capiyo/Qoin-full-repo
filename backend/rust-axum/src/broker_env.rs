@@ -31,10 +31,15 @@ pub struct BrokerCredentials {
 
 impl BrokerCredentials {
     /// These accessors are intended for provider adapters only. Never log their output.
+    #[allow(dead_code)]
     pub(crate) fn api_key(&self) -> &str { self.api_key.expose() }
+    #[allow(dead_code)]
     pub(crate) fn api_secret(&self) -> &str { self.api_secret.expose() }
+    #[allow(dead_code)]
     pub(crate) fn passphrase(&self) -> Option<&str> { self.passphrase.as_ref().map(Secret::expose) }
+    #[allow(dead_code)]
     pub(crate) fn account_ids(&self) -> &[String] { &self.account_ids }
+    #[allow(dead_code)]
     pub(crate) fn base_url(&self) -> Option<&str> { self.base_url.as_deref() }
 }
 
@@ -94,7 +99,7 @@ impl BrokerEnvironment {
     }
 
     pub fn account_authorized(&self, broker_id: &str, account_id: &str) -> bool {
-        self.credentials(broker_id).is_some_and(|credentials| credentials.account_ids.iter().any(|configured| configured == account_id))
+        self.credentials(broker_id).is_some_and(|credentials| credentials.account_ids.iter().any(|configured| configured == account_id.trim()))
     }
 
     pub fn configured_provider_ids(&self) -> Vec<String> {
