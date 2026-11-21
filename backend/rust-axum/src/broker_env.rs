@@ -59,8 +59,8 @@ struct ProviderStatus {
     execution_ready: bool,
 }
 
-/// Reject URL features that can redirect authenticated broker requests or leak
-/// credentials to an unexpected scheme. Provider adapters append their own API paths.
+/// Validate optional operator-supplied API endpoints before adapters attach credentials.
+/// This blocks insecure schemes, URL user-info, redirects via query/fragment, and local hosts.
 fn validate_auth_method(key: &str, secret: &str, token: Option<&str>) -> Result<(), String> {
     let has_key = !key.trim().is_empty();
     let has_secret = !secret.trim().is_empty();
