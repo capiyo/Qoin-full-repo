@@ -269,7 +269,7 @@ async function authenticatedQoinRequest<T>(path: string, init?: RequestInit): Pr
   const idToken = await getQoinFirebaseIdToken();
   return request<T>(path, {
     ...init,
-    headers: { ...init?.headers, authorization: \`Bearer \${idToken}\` },
+    headers: { ...init?.headers, authorization: `Bearer ${idToken}` },
   });
 }
 
