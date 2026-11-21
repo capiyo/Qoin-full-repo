@@ -206,19 +206,24 @@ function Ensure-Chocolatey {
 
     $env:ChocolateyInstall = Join-Path $env:ProgramData "chocolatey"
     Set-ExecutionPolicy Bypass -Scope Process -Force
-    & $bootstrap
-    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-        throw "Chocolatey bootstrap failed with exit code $LASTEXITCODE."
+    # The bootstrap script writes status text to the success pipeline; capture it
+    # so this function returns only the executable path.
+    $bootstrapOutput = @(& $bootstrap 2>&1)
+    $bootstrapExitCode = $LASTEXITCODE
+    if ($bootstrapExitCode -and $bootstrapExitCode -ne 0) {
+        $bootstrapOutput | ForEach-Object { Write-Host $_ }
+        throw "Chocolatey bootstrap failed with exit code $bootstrapExitCode."
     }
+    $bootstrapOutput | ForEach-Object { Write-Host $_ }
 
-    $candidate = Join-Path $env:ChocolateyInstall "bin\choco.exe"
+    $candidate = Join-Path $env:ProgramData "chocolatey\bin\choco.exe"
     if (-not (Test-Path -LiteralPath $candidate)) {
-        $candidate = Join-Path $env:ProgramData "chocolatey\bin\choco.exe"
+        $candidate = Join-Path $env:ChocolateyInstall "bin\choco.exe"
     }
     if (-not (Test-Path -LiteralPath $candidate)) {
-        throw "Chocolatey bootstrap completed but choco.exe was not found."
+        throw "Chocolatey bootstrap completed but choco.exe was not found under ProgramData or ChocolateyInstall."
     }
-    $env:PATH = "$env:PATH;$env:ChocolateyInstall\bin"
+    $env:PATH = "$env:PATH;$env:ProgramData\chocolatey\bin"
     return $candidate
 }
 
