@@ -318,6 +318,10 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/users/me");
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/broker-credentials/public-key", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/broker-credentials/public-key");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/broker-connections", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Get) proxyGet(req, std::move(cb), "/internal/broker-connections");
