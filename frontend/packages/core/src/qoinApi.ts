@@ -227,7 +227,7 @@ export type QoinBrokerReadiness = {
 /** Checks selected provider eligibility. This endpoint never submits an order. */
 export function getQoinBrokerReadiness(brokerIds: string[]): Promise<QoinBrokerReadiness> {
   const brokers = [...new Set(brokerIds)].slice(0, 20).join(",");
-  return request<QoinBrokerReadiness>("/api/v1/trading/readiness" + (brokers ? "?brokers=" + encodeURIComponent(brokers) : ""));
+  return authenticatedQoinRequest<QoinBrokerReadiness>("/api/v1/trading/readiness" + (brokers ? "?brokers=" + encodeURIComponent(brokers) : ""));
 }
 /** Public provider directory only; never creates credentials, links accounts or submits orders. */
 export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
