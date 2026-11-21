@@ -1,5 +1,5 @@
 import { getQoinFirebaseIdToken } from "./firebaseAuth";
-import sodium from "libsodium-wrappers-sumo";
+import sodium from "libsodium-wrappers";
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
 export type MarketForceObservation = {
