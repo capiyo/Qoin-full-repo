@@ -20,8 +20,8 @@ impl DatasetDigest {
     }
     pub fn finish(self)->String {format!("sha256:{}",hex::encode(self.0.finalize()))}
 }
-pub fn quality_status(invalid:i64,gaps:i64)->&'static str {
-    if invalid>0||gaps>0 {"degraded"} else {"observed_clean"}
+pub fn quality_status(events:i64,invalid:i64,gaps:i64)->&'static str {
+    if events==0 {"empty"} else if invalid>0||gaps>0 {"degraded"} else {"observed_clean"}
 }
 
 #[cfg(test)]
@@ -38,8 +38,9 @@ mod tests {
     }
     #[test]
     fn detected_quality_issues_are_never_marked_clean(){
-        assert_eq!(quality_status(0,0),"observed_clean");
-        assert_eq!(quality_status(1,0),"degraded");
-        assert_eq!(quality_status(0,1),"degraded");
+        assert_eq!(quality_status(1,0,0),"observed_clean");
+        assert_eq!(quality_status(0,0,0),"empty");
+        assert_eq!(quality_status(1,1,0),"degraded");
+        assert_eq!(quality_status(1,0,1),"degraded");
     }
 }
