@@ -337,7 +337,7 @@ async fn get_broker_readiness(
     if configured.is_empty() {
         blockers.push("No provider adapters are registered in this runtime.".into());
     }
-    Json(serde_json::json!({
+    (StatusCode::OK, Json(serde_json::json!({
         "selected_count": selected.len(),
         "execution_ready_count": ready_count,
         "connected_account_count": connected_account_count,
@@ -349,7 +349,7 @@ async fn get_broker_readiness(
         "items": selected,
         "blockers": blockers,
         "message": "Selection preferences are passed to the execution-readiness API, but no selected provider is currently eligible for order submission."
-    }))
+    })))
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
