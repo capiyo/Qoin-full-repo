@@ -148,6 +148,24 @@ mod tests {
     }
 
     #[test]
+    fn only_explicitly_configured_subaccounts_are_authorized() {
+        let env = BrokerEnvironment { providers: BTreeMap::from([(
+            "oanda".to_string(),
+            BrokerCredentials {
+                api_key: Secret("key".into()),
+                api_secret: Secret("secret".into()),
+                passphrase: None,
+                account_ids: vec!["sub-100".into(), "sub-200".into()],
+                base_url: None,
+            }
+        )]) };
+        assert!(env.account_authorized("OANDA", "sub-100"));
+        assert!(env.account_authorized("oanda", "sub-200"));
+        assert!(!env.account_authorized("oanda", "sub-300"));
+        assert!(!env.account_authorized("binance_usdm", "sub-100"));
+    }
+
+    #[test]
     fn unknown_brokers_never_resolve_credentials() {
         let env = BrokerEnvironment { providers: BTreeMap::new() };
         assert!(env.credentials("unknown").is_none());
