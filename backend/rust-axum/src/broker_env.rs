@@ -212,7 +212,7 @@ mod tests {
         assert!(!rendered.contains("private-key"));
         assert!(!rendered.contains("private-secret"));
         assert!(!rendered.contains("private-account"));
-        assert!(rendered.contains("\\"execution_ready\\":false"));
+        assert!(rendered.contains(r#""execution_ready":false"#));
     }
 
     #[test]
