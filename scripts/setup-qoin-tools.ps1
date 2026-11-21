@@ -60,40 +60,69 @@ if ($LogPath) {
 }
 
 function Download-File([string]$Url, [string]$Path) {
-    # Windows PowerShell 5.1 can fail TLS handshakes against aka.ms on older
-    # Windows builds. Prefer the Windows curl client (Schannel), then retry
-    # with .NET using TLS 1.2. A transient failure must not abort bootstrap.
+    # Do not let one broken transport prevent trying the others. curl.exe,
+    # BITS and Windows PowerShell use different download paths on Windows.
     Write-Host "Downloading $Url"
     $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
     $lastError = $null
 
-    for ($attempt = 1; $attempt -le 4; $attempt++) {
-        if (Test-Path $Path) { Remove-Item -LiteralPath $Path -Force }
-        try {
-            if ($curl) {
-                Write-Host "  Attempt $attempt/4 using curl.exe"
-                & $curl.Source --fail --location --silent --show-error --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 600 --output $Path $Url
-                if ($LASTEXITCODE -ne 0) {
-                    throw "curl.exe exited with code $LASTEXITCODE"
-                }
-            } else {
-                Write-Host "  Attempt $attempt/4 using Invoke-WebRequest"
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 600
+    # Windows PowerShell 5.1 otherwise negotiates older TLS defaults.
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    } catch {
+        Write-Warning "Could not set the .NET TLS 1.2 default: $($_.Exception.Message)"
+    }
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $transports = @()
+        if ($curl) { $transports += "curl" }
+        if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) { $transports += "bits" }
+        $transports += "webrequest"
+
+        foreach ($transport in $transports) {
+            if (Test-Path -LiteralPath $Path) {
+                Remove-Item -LiteralPath $Path -Force
             }
 
-            if ((Test-Path $Path) -and (Get-Item -LiteralPath $Path).Length -gt 0) {
-                return
+            try {
+                switch ($transport) {
+                    "curl" {
+                        Write-Host "  Attempt $attempt/3 using curl.exe"
+                        & $curl.Source --fail --location --silent --show-error --retry 2 --retry-delay 2 --connect-timeout 30 --max-time 600 --output $Path $Url
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "curl.exe exited with code $LASTEXITCODE"
+                        }
+                    }
+                    "bits" {
+                        Write-Host "  Attempt $attempt/3 using Background Intelligent Transfer Service"
+                        Start-BitsTransfer -TransferType Download -Source $Url -Destination $Path -ErrorAction Stop
+                    }
+                    "webrequest" {
+                        Write-Host "  Attempt $attempt/3 using Invoke-WebRequest (TLS 1.2)"
+                        Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop
+                    }
+                }
+
+                if ((Test-Path -LiteralPath $Path) -and (Get-Item -LiteralPath $Path).Length -gt 0) {
+                    Write-Host "  Download completed using $transport."
+                    return
+                }
+                throw "Download produced no file or an empty file."
+            } catch {
+                $lastError = $_
+                Write-Warning "  $transport failed: $($_.Exception.Message)"
+                if (Test-Path -LiteralPath $Path) {
+                    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+                }
             }
-            throw "Download produced no file or an empty file."
-        } catch {
-            $lastError = $_
-            Write-Warning "Download attempt $attempt failed: $($_.Exception.Message)"
-            Start-Sleep -Seconds ([Math]::Min(5 * $attempt, 20))
+        }
+
+        if ($attempt -lt 3) {
+            Start-Sleep -Seconds (5 * $attempt)
         }
     }
 
-    throw "Unable to download $Url after 4 attempts. Last error: $lastError"
+    throw "Unable to download $Url using curl.exe, BITS, or Invoke-WebRequest after 3 rounds. Last error: $lastError. If all transports report a TLS/Schannel handshake failure, check Windows date/time, proxy/antivirus HTTPS inspection, and access to aka.ms."
 }
 
 function Install-Appx([string]$Path) {
