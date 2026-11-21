@@ -422,8 +422,13 @@ async fn provision_broker_account(
     if !s.broker_environment.account_authorized(&broker_id, account_id) {
         return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error":"broker subaccount is not present in backend environment allowlist"})));
     }
-    if let Err(status) = ensure_user_record(&s.users, owner_uid).await {
-        return (status, Json(serde_json::json!({"error":"target Firebase user is unavailable"})));
+    match s.users.find_one(doc!{"_id":owner_uid,"status":"active"}, None).await {
+        Ok(Some(_)) => {},
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"target user must sign in to Qoin before account provisioning"}))),
+        Err(error) => {
+            tracing::error!(error=%error, "target user lookup failed during broker account provisioning");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"target user lookup unavailable"})));
+        }
     }
     let now = mongodb::bson::DateTime::now();
     let account = doc!{
