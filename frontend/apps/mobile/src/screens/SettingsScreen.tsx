@@ -42,7 +42,7 @@ export function SettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary, padding: 16 },
-  title: { color: colors.white, fontSize: 20, fontWeight: "700", marginBottom: 12 },
+  title: { color: colors.textPrimary, fontSize: 20, fontWeight: "700", marginBottom: 12 },
   card: { backgroundColor: colors.bgSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
   label: { color: colors.textPrimary, fontWeight: "600", fontSize: 14 },

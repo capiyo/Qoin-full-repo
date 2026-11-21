@@ -68,7 +68,7 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary, padding: 16 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  title: { color: colors.white, fontSize: 20, fontWeight: "700" },
+  title: { color: colors.textPrimary, fontSize: 20, fontWeight: "700" },
   watchlist: { flexGrow: 0, marginBottom: 12 },
   chip: { backgroundColor: colors.bgSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, marginRight: 8, minWidth: 100 },
   chipActive: { borderColor: colors.accentCyan },
@@ -76,5 +76,5 @@ const styles = StyleSheet.create({
   chipPct: { fontSize: 12, marginTop: 2, fontWeight: "600" },
   card: { backgroundColor: colors.bgSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16 },
   symbol: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  price: { color: colors.white, fontSize: 28, fontWeight: "700" },
+  price: { color: colors.textPrimary, fontSize: 28, fontWeight: "700" },
 });

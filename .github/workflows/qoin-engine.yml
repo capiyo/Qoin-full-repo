@@ -1,7 +1,7 @@
 name: Qoin engine checks
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map, qoin-engine-integration]
+    branches: [main, feat/mongodb-edge-strategy-map, qoin-engine-integration, qoin-archive-explore-vector-ui]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -15,6 +15,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Run reference tests
+        env:
+          PYTHONPATH: backend
         run: python -m unittest discover -s backend/tests -v
       - name: Validate event schema JSON
         run: python -c "import json; json.load(open('shared/contracts/market-event.schema.json'))"
@@ -26,3 +28,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and run Rust tests
         run: cargo test --manifest-path backend/rust-axum/Cargo.toml
+
+  firebase-rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install isolated Firebase emulator dependencies
+        run: |
+          mkdir -p "$RUNNER_TEMP/qoin-firebase"
+          npm install --prefix "$RUNNER_TEMP/qoin-firebase" --no-save firebase@11.0.2 @firebase/rules-unit-testing@4.0.1 firebase-tools@13.31.2
+          ln -s "$RUNNER_TEMP/qoin-firebase/node_modules" "$GITHUB_WORKSPACE/node_modules"
+      - name: Run Firestore security rules tests
+        run: |
+          "$RUNNER_TEMP/qoin-firebase/node_modules/.bin/firebase" emulators:exec --only firestore --project demo-qoin-firestore-rules "node firebase/firestore.rules.test.mjs"

@@ -50,7 +50,7 @@ export function PositionsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bgPrimary, padding: 16 },
-  title: { color: colors.white, fontSize: 20, fontWeight: "700", marginBottom: 12 },
+  title: { color: colors.textPrimary, fontSize: 20, fontWeight: "700", marginBottom: 12 },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
