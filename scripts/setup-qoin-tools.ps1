@@ -195,20 +195,44 @@ function Ensure-Winget {
     $vclibs = Join-Path $Work "Microsoft.VCLibs.x64.appx"
     $xaml = Join-Path $Work "Microsoft.UI.Xaml.2.8.x64.appx"
     $winget = Join-Path $Work "Microsoft.DesktopAppInstaller.msixbundle"
+    $windowsAppRuntime = Join-Path $Work "WindowsAppRuntimeInstall-x64.exe"
 
     Download-File "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" $vclibs
     # The old aka.ms UI.Xaml alias now redirects to Bing in some environments.
     # Use Microsoft's official GitHub release asset instead.
     Download-File "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx" $xaml
     Download-File "https://aka.ms/getwinget" $winget
+    # Official Microsoft Windows App SDK 1.8 x64 runtime installer.
+    # App Installer 1.29 declares WindowsAppRuntime.1.8 as a required framework.
+    Download-File "https://download.microsoft.com/download/8eb5473d-5663-4337-a1ca-aa5030b9b194/WindowsAppRuntimeInstall-x64.exe" $windowsAppRuntime
 
-    # Validate every download before invoking the Windows package installer.
+    # Validate every package before invoking Windows deployment.
     Assert-AppxPackage $vclibs
     Assert-AppxPackage $xaml "249D2AFB41CC009494841372BD6DD2DF46F87386D535DDF8D9F32C97226D2E46"
     Assert-AppxPackage $winget
 
+    $runtimeBytes = [System.IO.File]::ReadAllBytes($windowsAppRuntime)
+    if ($runtimeBytes.Length -lt 2 -or $runtimeBytes[0] -ne 0x4D -or $runtimeBytes[1] -ne 0x5A) {
+        throw "Windows App SDK runtime download is not a valid Windows executable: $windowsAppRuntime"
+    }
+
     Install-Appx $vclibs
     Install-Appx $xaml
+
+    Write-Host "Installing Microsoft Windows App SDK 1.8 x64 runtime..."
+    $runtimeProcess = Start-Process -FilePath $windowsAppRuntime -ArgumentList "--quiet" -Wait -PassThru
+    if ($runtimeProcess.ExitCode -ne 0) {
+        throw "Windows App SDK 1.8 runtime installer failed with exit code $($runtimeProcess.ExitCode)."
+    }
+
+    $runtimePackage = Get-AppxPackage -Name "Microsoft.WindowsAppRuntime.1.8" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Version -ge [version]"8000.616.304.0" } |
+        Select-Object -First 1
+    if (-not $runtimePackage) {
+        throw "Windows App SDK runtime installer completed but Microsoft.WindowsAppRuntime.1.8 version 8000.616.304.0 or newer is not registered. Check Windows App SDK deployment logs and Windows compatibility."
+    }
+
+    Write-Host "Windows App SDK runtime installed: $($runtimePackage.Version)"
     Install-Appx $winget
 
     $env:PATH = "$env:PATH;$env:LOCALAPPDATA\Microsoft\WindowsApps"
