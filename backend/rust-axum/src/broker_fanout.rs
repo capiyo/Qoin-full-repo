@@ -726,6 +726,103 @@ pub struct FanoutLifecycle {
     dispatch_started: bool,
 }
 
+fn validate_parent_allocation_and_risk(
+    parent: &ParentOrderIntent,
+    children: &[ChildOrderIntent],
+) -> Result<(), FanoutError> {
+    let approval = &parent.aggregate_risk_approval;
+    let expected_positions = if parent.reduce_only { 0 } else { children.len() };
+    if parent.parent_notional_portfolio <= Decimal::ZERO
+        || parent.allocated_notional_portfolio <= Decimal::ZERO
+        || parent.unallocated_remainder_portfolio < Decimal::ZERO
+        || parent.allocated_notional_portfolio
+            .checked_add(parent.unallocated_remainder_portfolio) != Some(parent.parent_notional_portfolio)
+        || approval.instrument_id != parent.instrument_id
+        || approval.parent_notional_portfolio != parent.parent_notional_portfolio
+        || approval.reduce_only != parent.reduce_only
+        || approval.additional_open_positions != expected_positions
+        || approval.projected_open_positions < expected_positions
+        || approval.maximum_loss_at_stop_portfolio < Decimal::ZERO
+        || (parent.reduce_only && approval.maximum_loss_at_stop_portfolio != Decimal::ZERO)
+        || (!parent.reduce_only && approval.maximum_loss_at_stop_portfolio <= Decimal::ZERO)
+        || approval.projected_gross_exposure_portfolio < Decimal::ZERO
+        || (!parent.reduce_only
+            && approval.projected_gross_exposure_portfolio < parent.parent_notional_portfolio)
+        || approval.projected_daily_loss_portfolio < approval.maximum_loss_at_stop_portfolio
+        || approval.remaining_daily_loss_budget_portfolio < Decimal::ZERO
+        || approval.snapshot_observed_at_ms <= 0
+        || approval.market_data_observed_at_ms <= 0
+        || approval.approved_at_ms < parent.created_at_ms
+        || approval.approved_at_ms < approval.snapshot_observed_at_ms
+        || approval.approved_at_ms < approval.market_data_observed_at_ms
+    {
+        return Err(FanoutError::RiskApprovalMismatch);
+    }
+
+    let mut allocated_total = Decimal::ZERO;
+    for child in children {
+        if child.target_notional_portfolio <= Decimal::ZERO
+            || child.target_notional_portfolio > parent.parent_notional_portfolio
+            || child.allocated_notional_portfolio <= Decimal::ZERO
+            || child.allocated_notional_portfolio > child.target_notional_portfolio
+        {
+            return Err(FanoutError::InvalidPlan(
+                "child target and allocated notionals are inconsistent".into(),
+            ));
+        }
+        allocated_total = allocated_total
+            .checked_add(child.allocated_notional_portfolio)
+            .ok_or(FanoutError::Arithmetic)?;
+    }
+    if allocated_total != parent.allocated_notional_portfolio {
+        return Err(FanoutError::InvalidPlan(
+            "persisted child notionals do not sum to the parent allocation".into(),
+        ));
+    }
+
+    let selected = parent.selected_accounts.iter()
+        .map(BrokerAccountKey::normalized)
+        .collect::<Result<Vec<_>, _>>()?;
+    let routed = parent.routed_accounts.iter()
+        .map(BrokerAccountKey::normalized)
+        .collect::<Result<Vec<_>, _>>()?;
+    let not_routed = parent.not_routed_accounts.iter().map(|item| {
+        if item.reason.trim().is_empty() {
+            return Err(FanoutError::InvalidPlan(
+                "not-routed selected account must include an explicit reason".into(),
+            ));
+        }
+        item.account.normalized()
+    }).collect::<Result<Vec<_>, _>>()?;
+    let child_keys = children.iter().map(|child| BrokerAccountKey {
+        broker_id: child.broker_id.trim().to_ascii_lowercase(),
+        account_id: child.account_id.trim().to_string(),
+    }).collect::<Vec<_>>();
+    let selected_set = selected.iter().cloned().collect::<HashSet<_>>();
+    let routed_set = routed.iter().cloned().collect::<HashSet<_>>();
+    let not_routed_set = not_routed.iter().cloned().collect::<HashSet<_>>();
+    let child_set = child_keys.iter().cloned().collect::<HashSet<_>>();
+    if selected.is_empty()
+        || selected.len() > 20
+        || routed.len() != children.len()
+        || selected_set.len() != selected.len()
+        || routed_set.len() != routed.len()
+        || not_routed_set.len() != not_routed.len()
+        || child_set.len() != child_keys.len()
+        || child_set != routed_set
+        || !routed_set.is_disjoint(&not_routed_set)
+        || routed_set.union(&not_routed_set).cloned().collect::<HashSet<_>>() != selected_set
+        || (parent.route_mode == FanoutRouteMode::Consolidated && routed.len() != 1)
+        || (parent.route_mode == FanoutRouteMode::EqualSplit
+            && (routed_set != selected_set || !not_routed_set.is_empty()))
+    {
+        return Err(FanoutError::InvalidPlan(
+            "selected, routed and not-routed accounts or child allocations are inconsistent".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl FanoutLifecycle {
     pub fn new(parent: ParentOrderIntent, children: Vec<ChildOrderIntent>) -> Result<Self, FanoutError> {
         if children.is_empty()
@@ -736,6 +833,7 @@ impl FanoutLifecycle {
         {
             return Err(FanoutError::InvalidPlan("parent and child records do not match".into()));
         }
+        validate_parent_allocation_and_risk(&parent, &children)?;
         let mut child_keys = HashSet::with_capacity(children.len());
         let mut child_ids = HashSet::with_capacity(children.len());
         for child in &children {
@@ -795,6 +893,8 @@ impl FanoutLifecycle {
         {
             return Err(FanoutError::InvalidPlan("persisted parent record is inconsistent".into()));
         }
+
+        validate_parent_allocation_and_risk(&parent, &children)?;
 
         let selected = parent.selected_accounts.iter()
             .map(BrokerAccountKey::normalized).collect::<Result<Vec<_>, _>>()?;
@@ -1333,6 +1433,36 @@ mod tests {
         assert_eq!(first[0].client_order_id, second[0].client_order_id);
         assert_ne!(first[0].client_order_id, first[1].client_order_id);
         assert_eq!(first[0].client_order_id.len(), 36);
+    }
+
+    #[test]
+    fn lifecycle_rejects_child_notional_totals_that_do_not_match_parent_allocation() {
+        let (parent, mut children) =
+            build_fanout_intents(request(), &selected(), &split_plan(), risk()).unwrap();
+        children[0].allocated_notional_portfolio = d("49");
+        assert!(matches!(
+            FanoutLifecycle::new(parent.clone(), children.clone()),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+        assert!(matches!(
+            FanoutLifecycle::restore(parent, children),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+    }
+
+    #[test]
+    fn lifecycle_rejects_inconsistent_aggregate_risk_approval() {
+        let (mut parent, children) =
+            build_fanout_intents(request(), &selected(), &split_plan(), risk()).unwrap();
+        parent.aggregate_risk_approval.maximum_loss_at_stop_portfolio = Decimal::ZERO;
+        assert_eq!(
+            FanoutLifecycle::new(parent.clone(), children.clone()).unwrap_err(),
+            FanoutError::RiskApprovalMismatch
+        );
+        assert_eq!(
+            FanoutLifecycle::restore(parent, children).unwrap_err(),
+            FanoutError::RiskApprovalMismatch
+        );
     }
 
     #[test]
