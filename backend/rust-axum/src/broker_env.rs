@@ -25,7 +25,7 @@ pub struct BrokerCredentials {
     api_key: Secret,
     api_secret: Secret,
     passphrase: Option<Secret>,
-    account_id: String,
+    account_ids: Vec<String>,
     base_url: Option<String>,
 }
 
@@ -34,7 +34,7 @@ impl BrokerCredentials {
     pub(crate) fn api_key(&self) -> &str { self.api_key.expose() }
     pub(crate) fn api_secret(&self) -> &str { self.api_secret.expose() }
     pub(crate) fn passphrase(&self) -> Option<&str> { self.passphrase.as_ref().map(Secret::expose) }
-    pub(crate) fn account_id(&self) -> &str { &self.account_id }
+    pub(crate) fn account_ids(&self) -> &[String] { &self.account_ids }
     pub(crate) fn base_url(&self) -> Option<&str> { self.base_url.as_deref() }
 }
 
@@ -58,17 +58,21 @@ impl BrokerEnvironment {
             let prefix = format!("QOIN_BROKER_{}", broker_id.to_ascii_uppercase());
             let key = env::var(format!("{prefix}_API_KEY")).unwrap_or_default();
             let secret = env::var(format!("{prefix}_API_SECRET")).unwrap_or_default();
-            let account_id = env::var(format!("{prefix}_ACCOUNT_ID")).unwrap_or_default();
+            let account_ids_raw = env::var(format!("{prefix}_ACCOUNT_IDS")).unwrap_or_else(|_| env::var(format!("{prefix}_ACCOUNT_ID")).unwrap_or_default());
             let passphrase = env::var(format!("{prefix}_PASSPHRASE")).ok().filter(|v| !v.trim().is_empty());
             let base_url = env::var(format!("{prefix}_BASE_URL")).ok().filter(|v| !v.trim().is_empty());
 
-            let any_set = !key.is_empty() || !secret.is_empty() || !account_id.is_empty()
+            let any_set = !key.is_empty() || !secret.is_empty() || !account_ids_raw.is_empty()
                 || passphrase.is_some() || base_url.is_some();
             if !any_set { continue; }
-            if key.trim().is_empty() || secret.trim().is_empty() || account_id.trim().is_empty() {
-                return Err(format!("{prefix} requires API_KEY, API_SECRET and ACCOUNT_ID together"));
+            let account_ids: Vec<String> = account_ids_raw.split(',').map(str::trim).filter(|value| !value.is_empty()).map(str::to_string).collect();
+            if key.trim().is_empty() || secret.trim().is_empty() || account_ids.is_empty() {
+                return Err(format!("{prefix} requires API_KEY, API_SECRET and at least one ACCOUNT_IDS entry"));
             }
-            if key.len() > 4096 || secret.len() > 8192 || account_id.len() > 256
+            if account_ids.len() > 100 || account_ids.iter().any(|id| id.len() > 256) {
+                return Err(format!("{prefix}_ACCOUNT_IDS must contain 1 to 100 account IDs of at most 256 characters"));
+            }
+            if key.len() > 4096 || secret.len() > 8192
                 || passphrase.as_ref().is_some_and(|v| v.len() > 4096)
                 || base_url.as_ref().is_some_and(|v| v.len() > 2048)
             {
@@ -78,7 +82,7 @@ impl BrokerEnvironment {
                 api_key: Secret(key),
                 api_secret: Secret(secret),
                 passphrase: passphrase.map(Secret),
-                account_id: account_id.trim().to_string(),
+                account_ids,
                 base_url,
             });
         }
@@ -87,6 +91,10 @@ impl BrokerEnvironment {
 
     pub fn credentials(&self, broker_id: &str) -> Option<&BrokerCredentials> {
         self.providers.get(&broker_id.trim().to_ascii_lowercase())
+    }
+
+    pub fn account_authorized(&self, broker_id: &str, account_id: &str) -> bool {
+        self.credentials(broker_id).is_some_and(|credentials| credentials.account_ids.iter().any(|configured| configured == account_id))
     }
 
     pub fn configured_provider_ids(&self) -> Vec<String> {
@@ -127,7 +135,7 @@ mod tests {
                 api_key: Secret("private-key".into()),
                 api_secret: Secret("private-secret".into()),
                 passphrase: None,
-                account_id: "private-account".into(),
+                account_ids: vec!["private-account".into()],
                 base_url: None,
             }
         )]) };
