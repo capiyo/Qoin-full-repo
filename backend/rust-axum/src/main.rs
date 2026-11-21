@@ -305,6 +305,7 @@ async fn get_broker_readiness(State(s): State<AppState>, Query(query): Query<Bro
         "execution_ready_count": ready_count,
         "connected_account_count": 0,
         "configured_adapter_count": configured_count,
+        "configured_environment_provider_count": s.broker_environment.configured_provider_ids().len(),
         "configured_adapters": configured,
         "can_submit": false,
         "dispatch_enabled": false,
@@ -398,8 +399,7 @@ async fn get_broker_accounts(State(s): State<AppState>, headers: HeaderMap) -> i
         match cursor.try_next().await {
             Ok(Some(document)) => items.push(serde_json::json!({
                 "account_id":document.get_str("account_id").unwrap_or_default(),
-                "connection_id":document.get_str("connection_id").unwrap_or_default(),
-                "broker_id":document.get_str("broker_id").unwrap_or_default(),
+                                "broker_id":document.get_str("broker_id").unwrap_or_default(),
                 "account_name":document.get_str("account_name").unwrap_or_default(),
                 "account_type":document.get_str("account_type").unwrap_or("unknown"),
                 "base_currency":document.get_str("base_currency").unwrap_or_default(),
