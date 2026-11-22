@@ -1234,6 +1234,7 @@ struct BacktestQuery {
     max_participation_rate: Option<f64>,
     market_impact_bps: Option<f64>,
     algorithm_id: Option<String>,
+    algorithm_version: Option<String>,
 }
 async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
     let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
@@ -1292,6 +1293,14 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
         })));
     }
     let algorithm_id=q.algorithm_id.as_deref().unwrap_or("qoin-vector-baseline");
+    let registered=algorithm_catalogue::registered_algorithms();
+    let manifest=registered.iter().find(|item|item.algorithm_id==algorithm_id&&item.status==algorithm_catalogue::AlgorithmStatus::Active);
+    let Some(manifest)=manifest else {
+        return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"algorithm ID is not registered for backtesting"})));
+    };
+    if q.algorithm_version.as_deref().is_some_and(|version|version!=manifest.version) {
+        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"requested algorithm version is no longer active","current_version":manifest.version})));
+    }
     match backtest::replay_with_algorithm(
         events,
         algorithm_id,

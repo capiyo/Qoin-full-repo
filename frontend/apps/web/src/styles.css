@@ -551,4 +551,4 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 
 .qoin-algorithm-picker{display:flex;align-items:center;gap:7px;margin-left:auto;padding:5px 9px;border:1px solid #dce5f2;border-radius:999px;background:#fff;min-width:0}
 .qoin-algorithm-picker span{color:#8794a7;font-size:8px;font-weight:800;letter-spacing:.6px}
-.qoin-algorithm-picker select{max-width:180px;min-width:0;border:0;outline:0;background:transparent;color:#2867dc;font:700 10px inherit;cursor:pointer}
+.qoin-algorithm-picker select{max-width:180px;min-width:0;border:0;outline:0;background:transparent;color:#2867dc;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer}

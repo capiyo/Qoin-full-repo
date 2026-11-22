@@ -74,6 +74,7 @@ pub struct ReplayDecision {
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
     pub symbol: String, pub venue: String, pub strategy_key: String, pub strategy_version: String,
+    pub algorithm_version: String,
     pub from_ts_ms: i64, pub to_ts_ms: i64, pub events_replayed: usize,
     pub max_event_gap_ms: i64, pub event_gaps_over_5m: usize,
     pub decisions: usize, pub buy_decisions: usize, pub sell_decisions: usize,
@@ -187,7 +188,8 @@ pub fn replay_with_algorithm(
 ) -> Result<ReplayResult, String> {
     match algorithm_id {
         "qoin-vector-baseline" => replay_with_vector_engine(events, config, config_version,
-            initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps),
+            initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
+            .map(|mut result| { result.algorithm_version="edge-map-v1".into(); result }),
         "qoin-flow-momentum" => replay_with_decider(events, "qoin-flow-momentum".into(), "flow-momentum-v1".into(),
             |_symbol, state, event| {
                 let score=0.65*state.ofi+0.20*state.liquidity_imbalance+0.15*state.liquidation_pressure.tanh();
@@ -196,7 +198,8 @@ pub fn replay_with_algorithm(
                 let action=if !spread_ok||!quote_fresh{"wait"}else if score>=0.35{"buy"}else if score<=-0.35{"sell"}else{"wait"};
                 let reason=if !spread_ok{"Spread exceeds the flow-momentum risk gate."}else if !quote_fresh{"Order-book quote is stale; the algorithm abstains."}else if action=="wait"{"Flow and liquidity evidence remain below the directional threshold."}else{"Directional flow and liquidity pressure crossed the momentum threshold."};
                 Ok(ReplayDecision{action:action.into(),reason:reason.into(),score:Some(score),alignment:Some(score.abs()),angle_radians:None,feature_trace:None})
-            },initial_capital,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps),
+            },initial_capital,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps)
+            .map(|mut result| { result.algorithm_version="flow-momentum-v1".into(); result }),
         _ => Err("algorithm ID is not registered for backtesting".into()),
     }
 }
@@ -475,7 +478,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             fills_recomputed: false,
         }
     }).collect();
-    Ok(ReplayResult{symbol,venue,strategy_key,strategy_version,
+    Ok(ReplayResult{symbol,venue,strategy_key,algorithm_version:strategy_version.clone(),strategy_version,
         from_ts_ms:events.first().unwrap().ts_ms,to_ts_ms:events.last().unwrap().ts_ms,events_replayed:events.len(),
         max_event_gap_ms:events.windows(2).map(|pair|pair[1].ts_ms-pair[0].ts_ms).max().unwrap_or(0),
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),

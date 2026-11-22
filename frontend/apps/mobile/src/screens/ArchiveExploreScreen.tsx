@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getInstrumentVector, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -295,7 +295,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
   </View>;
 }
 
-function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
+function MobileBacktestPanel({ symbol, venue, algorithmId, algorithmVersion, algorithmName, authenticated, onRequireAuth }: { symbol: string; venue: string; algorithmId: string; algorithmVersion: string; algorithmName: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital, setCapital] = useState("10000");
   const [fee, setFee] = useState("10");
   const [slippage, setSlippage] = useState("5");
@@ -329,7 +329,7 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
     setBusy(true); setStatus(""); setResult(null);
     try {
       const replay = await runQoinBacktest({
-        symbol, venue, from_ts_ms: fromMs, to_ts_ms: toMs, initial_capital: initialCapital,
+        symbol, venue, algorithm_id: algorithmId, algorithm_version: algorithmVersion, from_ts_ms: fromMs, to_ts_ms: toMs, initial_capital: initialCapital,
         fee_bps: feeBps, slippage_bps: slippageBps, latency_ms: latencyMs,
         max_participation_rate: participationRate, market_impact_bps: impactBps, limit: 10000,
       });
@@ -352,8 +352,8 @@ function MobileBacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { 
     ["To (YYYY-MM-DDTHH:mm)", to, setTo, "default"],
   ];
   return <View style={styles.mobileBacktest}>
-    <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Historical event replay</Text><Text style={styles.attentionCaption}>Paper only · no orders</Text></View>
-    <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. Empty dates use the stored range. The active Rust V1 strategy is replayed; no order is sent.</Text>
+    <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Historical event replay</Text><Text style={styles.attentionCaption}>{algorithmName} · paper only</Text></View>
+    <Text style={styles.disclaimer}>Uses stored events for {venue}. No missing history is downloaded. Empty dates use the stored range. Selected algorithm is replayed; no order is sent.</Text>
     <View style={styles.backtestInputs}>
       {fields.map(([label, value, setter, keyboardType]) => (
         <View key={label} style={styles.backtestInputWrap}>
@@ -544,6 +544,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string, 0 | 1>>({});
+  const [selectedAlgorithmBySymbol, setSelectedAlgorithmBySymbol] = useState<Record<string,string>>({});
+  const [algorithmDecisions, setAlgorithmDecisions] = useState<Record<string,QoinVectorDecision>>({});
+  const [algorithmPickerSymbol, setAlgorithmPickerSymbol] = useState<string|null>(null);
+  const selectedAlgorithmId = selected ? (selectedAlgorithmBySymbol[selected.engineSymbol] || "qoin-vector-baseline") : "qoin-vector-baseline";
+  const selectedAlgorithm = catalogue?.algorithms.find((item)=>item.algorithm_id===selectedAlgorithmId);
   const [cardLedgers, setCardLedgers] = useState<Record<string,QoinSetLedger>>({});
   const [cardLedgerStatus, setCardLedgerStatus] = useState<Record<string,"loading"|"unavailable">>({});
   const cardLedgerRequestsRef = useRef<Set<string>>(new Set());
@@ -620,6 +625,40 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       return () => { active = false; };
     }
   }, []);
+  useEffect(()=>{
+    let active=true;
+    if(!firebaseUser){setSelectedAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
+    getQoinAlgorithmSelections().then(({items})=>{
+      if(active)setSelectedAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));
+    }).catch((error:unknown)=>{if(active)Alert.alert("Algorithm selections unavailable",error instanceof Error?error.message:"Could not load saved algorithms.");});
+    return()=>{active=false;};
+  },[firebaseUser?.uid]);
+  useEffect(()=>{
+    if(!firebaseUser||!items.length){setAlgorithmDecisions({});return;}
+    let active=true;
+    const load=()=>{void Promise.all(items.map(async(item)=>{
+      try{return [item.symbol,await getQoinAlgorithmDecision(item.engineSymbol)] as const;}catch{return null;}
+    })).then((results)=>{if(active)setAlgorithmDecisions((current)=>({...current,...Object.fromEntries(results.filter((entry):entry is NonNullable<typeof entry>=>entry!==null))}));});};
+    load();const timer=setInterval(load,10000);
+    return()=>{active=false;clearInterval(timer);};
+  },[firebaseUser?.uid,items,selectedAlgorithmBySymbol]);
+  const selectCardAlgorithm=async(item:Instrument,algorithmId:string)=>{
+    if(!firebaseUser){requireAuthentication();return;}
+    const manifest=catalogue?.algorithms.find((candidate)=>candidate.algorithm_id===algorithmId&&candidate.status==="active");
+    if(!manifest)return;
+    const previous=selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline";
+    setSelectedAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:algorithmId}));
+    try{
+      await saveQoinAlgorithmSelection({symbol:item.engineSymbol,algorithm_id:manifest.algorithm_id,version:manifest.version});
+      const decision=await getQoinAlgorithmDecision(item.engineSymbol);
+      setAlgorithmDecisions((current)=>({...current,[item.symbol]:decision}));
+      if(selected?.symbol===item.symbol)setVector(decision);
+      setAlgorithmPickerSymbol(null);
+    }catch(error){
+      setSelectedAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:previous}));
+      Alert.alert("Algorithm switch failed",error instanceof Error?error.message:"The backend did not save this algorithm selection.");
+    }
+  };
   const chooseAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { Alert.alert("Photo access needed", "Allow Qoin to access your photo library to change your profile picture."); return; }
@@ -731,9 +770,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     setVector(null);
     setVectorError("");
     setVectorLoading(true);
-    getInstrumentVector(selected.engineSymbol).then((result) => {
+    getQoinAlgorithmDecision(selected.engineSymbol).then((result) => {
       if (!current) return;
-      if (result.decision_vector && result.features && result.attended_features) {
+      if (result.action || result.decision_vector) {
         setVector(result);
         setLiveBySymbol((current) => ({ ...current, [selected.engineSymbol.toUpperCase()]: { ...current[selected.engineSymbol.toUpperCase()], decision: result } }));
       } else {
@@ -745,7 +784,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       if (current) setVectorLoading(false);
     });
     return () => { current = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, selectedAlgorithmId]);
   useEffect(() => {
     if (!selected) { setVectorHistory([]); setRawEvents([]); setSetLedger(null); setSetLedgerStatus("Select an instrument to inspect V2 sets."); setMarketState(null); setLastEvent(null); return; }
     let active = true;
@@ -822,7 +861,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
             } as QoinMarketEvent, ...current].slice(0, 1000));
           }
           if (update.event) scheduleSetLedgerRefresh();
-          if (update.decision) {
+          if (update.decision && selectedAlgorithmId==="qoin-vector-baseline") {
             setVector(update.decision);
             setVectorHistory((current) => [...current.slice(-499), {
               symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
@@ -838,13 +877,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         if (selected) {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
-            getInstrumentVector(selected.engineSymbol),
+            getQoinAlgorithmDecision(selected.engineSymbol),
             getInstrumentVectorHistory(selected.engineSymbol, 500),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
             if (!active) return;
-            if (decision.decision_vector && decision.features && decision.attended_features) setVector(decision);
+            if (decision.action || decision.decision_vector) setVector(decision);
             setVectorHistory(history.items);
             setRawEvents(events.items.slice().reverse());
             setSetLedger(ledger);
@@ -856,7 +895,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       }
     }, setStreamStatus);
     return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
-  }, [items, selected?.engineSymbol]);
+  }, [items, selected?.engineSymbol, selectedAlgorithmId]);
 
   useEffect(() => {
     const current = selected ? liveBySymbol[selected.engineSymbol.toUpperCase()] : undefined;
@@ -903,7 +942,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
 
         {data.length ? data.map((item) => {
           const live=liveBySymbol[item.engineSymbol.toUpperCase()];
-          const decision=live?.decision;
+          const decision=algorithmDecisions[item.symbol] || live?.decision;
           const page=algorithmBySymbol[item.symbol]??0;
           const cardLedger=cardLedgers[item.symbol];
           const ledgerStatus=cardLedgerStatus[item.symbol]||"idle";
@@ -943,6 +982,21 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <View accessibilityRole="tablist" accessibilityLabel={item.name+" research mode"} style={{flexDirection:"row",alignItems:"center",gap:3,padding:3,borderRadius:999,borderWidth:1,borderColor:"#DCE5F2",backgroundColor:"#F5F8FD"}}>
                 {(["live","backtest"] as const).map((nextMode)=><Pressable key={nextMode} accessibilityRole="tab" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")===nextMode}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:nextMode}))} style={{paddingVertical:7,paddingHorizontal:11,borderRadius:999,backgroundColor:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#2867DC":"transparent"}}><Text style={{color:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#FFFFFF":"#718096",fontSize:9,fontWeight:"800"}}>{nextMode==="live"?"Live":"Backtesting"}</Text></Pressable>)}
               </View>
+              <Pressable onPress={()=>setAlgorithmPickerSymbol(item.symbol)} style={{paddingVertical:7,paddingHorizontal:10,borderRadius:18,borderWidth:1,borderColor:"#DCE5F2",backgroundColor:"#FFFFFF"}}>
+                <Text style={{color:"#2867DC",fontSize:9,fontWeight:"800"}}>ALGORITHM · {catalogue?.algorithms.find((entry)=>entry.algorithm_id===(selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline"))?.display_name || "Qoin Vector Baseline"} ▾</Text>
+              </Pressable>
+              <Modal visible={algorithmPickerSymbol===item.symbol} transparent animationType="fade" onRequestClose={()=>setAlgorithmPickerSymbol(null)}>
+                <Pressable onPress={()=>setAlgorithmPickerSymbol(null)} style={{flex:1,justifyContent:"center",padding:24,backgroundColor:"#17294366"}}>
+                  <View style={{padding:16,borderRadius:16,backgroundColor:"#FFFFFF",gap:8}}>
+                    <Text style={styles.attentionTitle}>Choose algorithm · {item.symbol}</Text>
+                    {catalogue?.algorithms.filter((entry)=>entry.status==="active").map((entry)=><Pressable key={entry.algorithm_id+entry.version} onPress={()=>void selectCardAlgorithm(item,entry.algorithm_id)} style={{paddingVertical:12,paddingHorizontal:10,borderRadius:10,backgroundColor:(selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline")===entry.algorithm_id?"#EAF1FF":"#F7F9FC"}}>
+                      <Text style={{color:"#243750",fontSize:11,fontWeight:"800"}}>{entry.display_name}</Text>
+                      <Text style={{color:"#8794A7",fontSize:8,marginTop:3}}>{entry.version} · {entry.execution_mode.replaceAll("_"," ")}</Text>
+                    </Pressable>)}
+                    <Pressable onPress={()=>setAlgorithmPickerSymbol(null)} style={{padding:10,alignItems:"center"}}><Text style={{color:"#8794A7",fontSize:10}}>Cancel</Text></Pressable>
+                  </View>
+                </Pressable>
+              </Modal>
               {mode==="Explore"?<Pressable onPress={()=>toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable>:null}
             </View>
           </View>;
@@ -1035,7 +1089,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; the authoritative seven-force Rust engine has not emitted a decision yet."}</Text>}
               <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-              <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+              <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : mechanicsTab === "vector" ? <>
             <Text style={styles.mapTitle}>Vector space · seven engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁷ feature state with attention interactions.</Text>
             <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />

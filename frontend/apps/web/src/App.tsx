@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
-import { getInstrumentVector, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -456,7 +456,7 @@ function SetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; stat
   </section>;
 }
 
-function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol: string; venue: string; authenticated: boolean; onRequireAuth: () => void }) {
+function BacktestPanel({ symbol, venue, algorithmId, algorithmVersion, algorithmName, authenticated, onRequireAuth }: { symbol: string; venue: string; algorithmId: string; algorithmVersion: string; algorithmName: string; authenticated: boolean; onRequireAuth: () => void }) {
   const [capital,setCapital]=useState("10000");
   const [fee,setFee]=useState("10");
   const [slippage,setSlippage]=useState("5");
@@ -484,7 +484,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
       if(!Number.isInteger(latencyMs) || latencyMs < 0 || latencyMs > 60000) throw new Error("Latency must be a whole number between 0 and 60000 milliseconds.");
       if(!Number.isFinite(participationRate) || participationRate <= 0 || participationRate > 1) throw new Error("Maximum liquidity participation must be greater than 0 and no more than 1.");
       if(!Number.isFinite(impactBps) || impactBps < 0 || impactBps > 1000 || slippageBps + impactBps >= 10000) throw new Error("Market impact must be 0–1000 bps and combined slippage/impact must stay below 10000 bps.");
-      const output=await runQoinBacktest({symbol,venue,from_ts_ms:fromMs,to_ts_ms:toMs,
+      const output=await runQoinBacktest({symbol,venue,algorithm_id:algorithmId,algorithm_version:algorithmVersion,from_ts_ms:fromMs,to_ts_ms:toMs,
         initial_capital:initialCapital,fee_bps:feeBps,slippage_bps:slippageBps,latency_ms:latencyMs,max_participation_rate:participationRate,market_impact_bps:impactBps,limit:10000});
       setResult(output);setStatus("Replay completed from persisted events.");
     } catch(error) {setStatus(error instanceof Error?error.message:"Backtest failed");}
@@ -494,7 +494,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
     if (authenticated && pendingRun && !busy) { setPendingRun(false); void run(); }
   }, [authenticated, pendingRun, busy]);
   return <section className="backtest-panel">
-    <div className="attention-heading"><strong>Historical event replay</strong><span>Paper simulation · no orders</span></div>
+    <div className="attention-heading"><strong>Historical event replay</strong><span>{algorithmName} · paper simulation</span></div>
     <p className="disclaimer">Replays only raw observations already stored in Qoin. It does not download missing history. Empty dates use the full stored range for this instrument.</p>
     <div className="backtest-controls">
       <label>From <input type="datetime-local" value={from} onChange={e=>setFrom(e.target.value)} /></label>
@@ -539,7 +539,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   </section>;
 }
 
-function InstrumentCard({ item, onOpen, action, live, mode, onSelectMode }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onSelectMode: (mode: InstrumentMode) => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
+function InstrumentCard({ item, onOpen, action, live, mode, onSelectMode, algorithmId, algorithms, onSelectAlgorithm }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onSelectMode: (mode: InstrumentMode) => void; algorithmId: string; algorithms: QoinAlgorithmCatalogue["algorithms"]; onSelectAlgorithm: (algorithmId: string) => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
   const [page,setPage]=useState<0|1>(0);
   const [ledger,setLedger]=useState<QoinSetLedger|null>(null);
   const [ledgerStatus,setLedgerStatus]=useState<"idle"|"loading"|"loaded"|"unavailable">("idle");
@@ -599,6 +599,9 @@ function InstrumentCard({ item, onOpen, action, live, mode, onSelectMode }: { it
         <button type="button" aria-pressed={mode==="live"} className={mode==="live"?"active":""} onClick={()=>onSelectMode("live")}>Live</button>
         <button type="button" aria-pressed={mode==="backtest"} className={mode==="backtest"?"active":""} onClick={()=>onSelectMode("backtest")}>Backtesting</button>
       </div>
+      <label className="qoin-algorithm-picker"><span>ALGORITHM</span><select aria-label={`${item.name} algorithm`} value={algorithmId} onChange={(event)=>onSelectAlgorithm(event.target.value)} onPointerDown={(event)=>event.stopPropagation()} onClick={(event)=>event.stopPropagation()}>
+        {algorithms.filter((algorithm)=>algorithm.status==="active").map((algorithm)=><option key={algorithm.algorithm_id+":"+algorithm.version} value={algorithm.algorithm_id}>{algorithm.display_name}</option>)}
+      </select></label>
       {action&&<button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </div>
   </article>;
@@ -705,6 +708,10 @@ export default function App() {
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
   const [catalogueStatus, setCatalogueStatus] = useState("loading");
+  const [algorithmBySymbol, setAlgorithmBySymbol] = useState<Record<string,string>>({});
+  const [algorithmDecisions, setAlgorithmDecisions] = useState<Record<string,QoinVectorDecision>>({});
+  const selectedAlgorithmId = selected ? (algorithmBySymbol[selected.engineSymbol] || "qoin-vector-baseline") : "qoin-vector-baseline";
+  const selectedAlgorithm = catalogue?.algorithms.find((item)=>item.algorithm_id===selectedAlgorithmId);
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
@@ -792,6 +799,21 @@ export default function App() {
   function selectCardMode(item: Instrument, mode: InstrumentMode) {
     rememberCardMode(item.symbol, mode);
   }
+  async function selectCardAlgorithm(item: Instrument, algorithmId: string) {
+    const manifest=catalogue?.algorithms.find((candidate)=>candidate.algorithm_id===algorithmId&&candidate.status==="active");
+    if(!manifest)return;
+    const previous=algorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline";
+    setAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:algorithmId}));
+    try{
+      await saveQoinAlgorithmSelection({symbol:item.engineSymbol,algorithm_id:manifest.algorithm_id,version:manifest.version});
+      const decision=await getQoinAlgorithmDecision(item.engineSymbol);
+      setAlgorithmDecisions((current)=>({...current,[item.engineSymbol.toUpperCase()]:decision}));
+      if(selected?.symbol===item.symbol)setVector(decision);
+    }catch(error){
+      setAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:previous}));
+      setAuthError(error instanceof Error?error.message:"Algorithm selection could not be saved.");
+    }
+  }
   function openInstrument(item: Instrument) {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
     setMechanicsTab("vector");
@@ -845,6 +867,23 @@ export default function App() {
   useEffect(() => { getQoinHealth().then(setHealth).catch(() => setHealth(null)); getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
   useEffect(() => { let active = true; getQoinAlgorithmCatalogue().then((data) => { if (active) { setCatalogue(data); setCatalogueStatus("loaded"); } }).catch(() => { if (active) setCatalogueStatus("unavailable"); }); return () => { active = false; }; }, []);
   useEffect(() => {
+    let active=true;
+    if(!firebaseUser){setAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
+    getQoinAlgorithmSelections().then(({items})=>{if(active)setAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));})
+      .catch((error:unknown)=>{if(active)setAuthError(error instanceof Error?error.message:"Could not load algorithm selections.");});
+    return()=>{active=false;};
+  },[firebaseUser?.uid]);
+  useEffect(()=>{
+    if(!firebaseUser||!instruments.length){setAlgorithmDecisions({});return;}
+    let active=true;
+    const load=()=>{void Promise.all(instruments.map(async(item)=>{
+      try{return [item.engineSymbol.toUpperCase(),await getQoinAlgorithmDecision(item.engineSymbol)] as const;}
+      catch{return null;}
+    })).then((results)=>{if(active)setAlgorithmDecisions((current)=>({...current,...Object.fromEntries(results.filter((entry):entry is NonNullable<typeof entry>=>entry!==null))}));});};
+    load();const timer=window.setInterval(load,10000);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[firebaseUser?.uid,instruments,algorithmBySymbol]);
+  useEffect(() => {
     let active = true;
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
@@ -897,9 +936,9 @@ export default function App() {
     setVector(null);
     setVectorError("");
     setVectorLoading(true);
-    getInstrumentVector(selected.engineSymbol).then((result) => {
+    getQoinAlgorithmDecision(selected.engineSymbol).then((result) => {
       if (!current) return;
-      if (result.decision_vector && result.features && result.attended_features) {
+      if (result.action || result.decision_vector) {
         setVector(result);
         setLiveBySymbol((current) => ({ ...current, [selected.engineSymbol.toUpperCase()]: { ...current[selected.engineSymbol.toUpperCase()], decision: result } }));
       } else {
@@ -911,7 +950,7 @@ export default function App() {
       if (current) setVectorLoading(false);
     });
     return () => { current = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, selectedAlgorithmId]);
 
 
   useEffect(() => {
@@ -984,7 +1023,7 @@ export default function App() {
             setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 1000));
           }
           if (update.event) scheduleSetLedgerRefresh();
-          if (update.decision) {
+          if (update.decision && selectedAlgorithmId==="qoin-vector-baseline") {
             setVector(update.decision);
             setVectorHistory((current) => [...current.slice(-499), {
               symbol: update.decision!.symbol, decision_vector: update.decision!.decision_vector || [0, 0],
@@ -1000,13 +1039,13 @@ export default function App() {
         if (selected) {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
-            getInstrumentVector(selected.engineSymbol),
+            getQoinAlgorithmDecision(selected.engineSymbol),
             getInstrumentVectorHistory(selected.engineSymbol, 500),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
             if (!active) return;
-            if (decision.decision_vector && decision.features && decision.attended_features) setVector(decision);
+            if (decision.action || decision.decision_vector) setVector(decision);
             setVectorHistory(history.items);
             setRawEvents(events.items.slice().reverse());
             setSetLedger(ledger);
@@ -1018,7 +1057,7 @@ export default function App() {
       }
     }, setStreamStatus);
     return () => { active = false; if (ledgerRefreshTimer) clearTimeout(ledgerRefreshTimer); unsubscribe(); };
-  }, [instruments, selected?.engineSymbol]);
+  }, [instruments, selected?.engineSymbol, selectedAlgorithmId]);
 
   useEffect(() => {
     const current = selected ? liveBySymbol[selected.engineSymbol.toUpperCase()] : undefined;
@@ -1137,7 +1176,7 @@ export default function App() {
             <section className="content-section">
                       <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
                       {archived.length ? <div className="archive-workspace">
-                        <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+                        <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} algorithmId={algorithmBySymbol[item.engineSymbol] || "qoin-vector-baseline"} algorithms={catalogue?.algorithms || []} onSelectAlgorithm={(algorithmId)=>void selectCardAlgorithm(item,algorithmId)} live={{...liveBySymbol[item.engineSymbol.toUpperCase()],decision:algorithmDecisions[item.engineSymbol.toUpperCase()] || liveBySymbol[item.engineSymbol.toUpperCase()]?.decision}} />)}</div>
                         <aside className="archive-market-sidebar" aria-label="Market pulse">
                           <div className="market-pulse-panel">
                             <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
@@ -1183,7 +1222,7 @@ export default function App() {
                         </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
                         <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
                       </section>
-                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} algorithmId={algorithmBySymbol[item.engineSymbol] || "qoin-vector-baseline"} algorithms={catalogue?.algorithms || []} onSelectAlgorithm={(algorithmId)=>void selectCardAlgorithm(item,algorithmId)} live={{...liveBySymbol[item.engineSymbol.toUpperCase()],decision:algorithmDecisions[item.engineSymbol.toUpperCase()] || liveBySymbol[item.engineSymbol.toUpperCase()]?.decision}} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
                       <section className="news-section">
                         <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
                         <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
@@ -1253,7 +1292,7 @@ export default function App() {
             {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the authoritative seven-force Rust engine."}</p>}
             <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-            <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+            <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : mechanicsTab === "vector" ? <>
           <div className="vector-intro"><div><strong>Vector space</strong><p>Actual seven-force engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />

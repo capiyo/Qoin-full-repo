@@ -654,7 +654,7 @@ export type QoinBacktestResult = {
   execution_stress_scenarios: QoinExecutionStressScenario[]; assumptions: string[];
 };
 export type QoinBacktestRequest = {
-  symbol: string; venue?: string; algorithm_id?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
+  symbol: string; venue?: string; algorithm_id?: string; algorithm_version?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
   initial_capital?: number; fee_bps?: number; slippage_bps?: number; latency_ms?: number; max_participation_rate?: number;
   market_impact_bps?: number;
 };
