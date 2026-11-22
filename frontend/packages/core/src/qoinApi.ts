@@ -603,7 +603,7 @@ export type QoinAlgorithmSelection = {
   algorithm_id: string;
   version: string;
   selected_at_ms: number;
-  config_fingerprint: string;
+  config_fingerprint?: string;
 };
 
 export type QoinStrategy = {

@@ -794,7 +794,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     setSetLedgerStatus("Loading set memberships and temporal relations…");
     getQoinMarketState(selected.engineSymbol).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
     getQoinSetLedger(selected.engineSymbol, 1000).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
-    getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
@@ -878,7 +878,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
             getQoinAlgorithmDecision(selected.engineSymbol),
-            getInstrumentVectorHistory(selected.engineSymbol, 500),
+            selectedAlgorithmId==="qoin-vector-baseline" ? getInstrumentVectorHistory(selected.engineSymbol, 500) : Promise.resolve({items:[]}),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
@@ -1091,7 +1091,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : mechanicsTab === "vector" ? <>
-            <Text style={styles.mapTitle}>Vector space · seven engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁷ feature state with attention interactions.</Text>
+            <Text style={styles.mapTitle}>{selectedAlgorithm?.display_name||selectedAlgorithmId} feature space</Text><Text style={styles.mapCopy}>Current algorithm inputs and selected decision output.</Text>
             <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
             <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>

@@ -849,6 +849,35 @@ mod vector_engine_replay_tests {
     use qoin_vector_engine::EngineConfig;
 
     #[test]
+    fn flow_momentum_replay_dispatches_its_own_versioned_decision_rule() {
+        let events = vec![
+            ReplayEvent {
+                event_id: "book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(10.0), ask_size: Some(1.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "buy-flow".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
+                event_type: "trade".into(), ts_ms: 2, price: Some(100.0), size: Some(1.0), side: Some("buy".into()),
+                bid: None, ask: None, bid_size: None, ask_size: None,
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+        ];
+        let result = replay_with_algorithm(
+            events.clone(), "qoin-flow-momentum", &EngineConfig::default(), "engine-config-v1",
+            1_000.0, 0.0, 0.0, 0, 1.0, 0.0,
+        ).unwrap();
+        assert_eq!(result.strategy_key, "qoin-flow-momentum");
+        assert_eq!(result.algorithm_version, "flow-momentum-v1");
+        assert_eq!(result.last_decision.unwrap().action, "buy");
+        assert!(replay_with_algorithm(
+            events, "not-registered", &EngineConfig::default(), "engine-config-v1",
+            1_000.0, 0.0, 0.0, 0, 1.0, 0.0,
+        ).is_err());
+    }
+
+    #[test]
     fn historical_replay_uses_the_same_vector_engine_and_rejects_stale_quotes() {
         let events = vec![
             ReplayEvent {

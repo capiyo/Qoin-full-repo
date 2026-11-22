@@ -962,7 +962,7 @@ export default function App() {
     setSetLedgerStatus("Loading derived set memberships and temporal relations…");
     getQoinMarketState(selected.engineSymbol).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
     getQoinSetLedger(selected.engineSymbol, 1000).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
-    getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined);
+    if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol]);
@@ -1040,7 +1040,7 @@ export default function App() {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
             getQoinAlgorithmDecision(selected.engineSymbol),
-            getInstrumentVectorHistory(selected.engineSymbol, 500),
+            selectedAlgorithmId==="qoin-vector-baseline" ? getInstrumentVectorHistory(selected.engineSymbol, 500) : Promise.resolve({items:[]}),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
@@ -1274,7 +1274,7 @@ export default function App() {
         <div className="modal-body">
           {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics"><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>Vector space</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Sets &amp; Ledger</button></div>}
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
-            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the same versioned seven-force engine used by live ingestion. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the algorithm chosen on its card. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
             <section className="backtest-method-panel" aria-label="Historical replay mechanics">
               <div className="attention-heading"><strong>How the replay progresses</strong><span>Deterministic · event-time ordered</span></div>
               <ol>
@@ -1294,7 +1294,7 @@ export default function App() {
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : mechanicsTab === "vector" ? <>
-          <div className="vector-intro"><div><strong>Vector space</strong><p>Actual seven-force engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
+          <div className="vector-intro"><div><strong>{selectedAlgorithm?.display_name||selectedAlgorithmId} feature space</strong><p>Current algorithm inputs, available feature interactions and selected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
           <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
           <VectorMap decision={vector} history={vectorHistory} />

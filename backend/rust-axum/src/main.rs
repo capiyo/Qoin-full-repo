@@ -497,9 +497,10 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         "selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,
         "action":action,"reason":reason,"score":score,"magnitude":score.abs(),
         "decision_vector":[score.max(0.0),(-score).max(0.0)],
-        "features":{"order_flow_imbalance":snapshot.order_flow_imbalance,"liquidity_imbalance":snapshot.liquidity_imbalance,
-            "liquidation_pressure":snapshot.liquidation_pressure,"event_intensity":snapshot.event_intensity,
-            "volatility":snapshot.ewma_abs_return,"funding_pressure":snapshot.funding_rate.unwrap_or(0.0)},
+        "features":{"ofi":snapshot.order_flow_imbalance,"liquidity":snapshot.liquidity_imbalance,
+            "volatility":snapshot.ewma_abs_return/0.01,"funding":snapshot.funding_rate.unwrap_or(0.0)*100.0,
+            "open_interest_change":snapshot.open_interest_change,"liquidation_pressure":snapshot.liquidation_pressure,
+            "basis":snapshot.basis_bps.unwrap_or(0.0)/25.0},
         "diagnostics":{"spread_ok":spread_ok,"quote_fresh":quote_fresh,"quote_age_ms":quote_age_ms,"threshold":0.35,"score":score},
         "input_event":{"event_ts_ms":snapshot.last_event_ts_ms,"event_id":snapshot.last_event_id,"venue":snapshot.last_event_venue,"state_event_count":snapshot.event_count},
         "research_only":true

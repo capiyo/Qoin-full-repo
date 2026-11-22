@@ -131,8 +131,10 @@ Use the repository's existing Axum routes, Drogon gateway conventions and shared
 - `GET /api/v1/algorithms` — catalogue plus the caller's read-only access state.
 - `GET /api/v1/algorithms/{algorithm_id}` — manifest, supported capabilities and published evaluation summary.
 - `GET /api/v1/me/entitlements` — effective grants and allowed capabilities for the authenticated user.
-- `GET /api/v1/me/algorithm-selection` — active algorithm and pinned version.
-- `PUT /api/v1/me/algorithm-selection` — validate entitlement and atomically change the active selection.
+- `GET /api/v1/me/algorithm-selections` — list the authenticated user's per-instrument algorithm selections.
+- `POST /api/v1/me/algorithm-selections` — validate an active registered algorithm ID/version and atomically upsert the selection for one canonical instrument.
+- `GET /api/v1/me/algorithm-decision?symbol=...` — evaluate the authenticated user's selected algorithm against the latest market state.
+- `GET /api/v1/backtest?...&algorithm_id=...&algorithm_version=...` — replay stored observations through the requested registered algorithm/version; a stale version is rejected.
 - `GET /api/v1/me/algorithms/{algorithm_id}/history` — only the caller's authorized history.
 - Payment checkout and webhook routes must be added only after the payment provider and its signature-verification contract are selected.
 
@@ -143,7 +145,7 @@ The gateway validates request shape and applies rate limits; Axum owns identity 
 - `algorithm_manifests`: unique `(algorithm_id, version)`; indexed by lifecycle status.
 - `algorithm_offers`: unique `offer_id`; versioned price/currency and explicit grant semantics.
 - `entitlement_grants`: indexed by `(user_id, status)`; unique provider transaction / grant idempotency key.
-- `user_algorithm_selections`: unique `user_id`; stores active algorithm ID, pinned version and update timestamp.
+- `user_algorithm_selections`: unique `(owner_uid, symbol)`; stores the active algorithm ID, pinned version and update timestamp for each instrument.
 - `algorithm_runs`: indexed by `(user_id, algorithm_id, instrument_id, timeframe, created_at)`; includes version, config fingerprint and trace reference.
 - `algorithm_audit_events`: append-only user, actor, action, before/after state and timestamp.
 
@@ -166,19 +168,18 @@ All user-owned queries must include the authenticated user scope. Unique indexes
 
 This foundation does not enable live broker orders, promise returns, invent algorithm performance, choose prices, or select a payment provider. A BUY/SELL output remains research information, not an instruction to place an order. Any future paper or live execution path must be separately authorized, risk-gated and evaluated.
 
-## Implemented foundation (2026-11-08)
+## Implemented algorithm switching (2026-11-21)
 
-The branch now contains:
+The branch now registers two independently identified research algorithms:
 
-- `backend/rust-axum/src/algorithm_catalogue.rs`: validated read-only manifest catalogue for the existing vector baseline, exposed at the internal Axum route `GET /internal/algorithms`.
-- `backend/rust-axum/src/algorithm_entitlements.rs`: pure fail-closed entitlement rules. Access requires a matching authenticated-user identity supplied by a trusted caller, an active grant, a positive verification timestamp, an effective start time, a non-expired grant, the requested algorithm ID and every required capability. Pending, unverified, expired, refunded, revoked and chargeback grants deny access.
-- Unit tests cover successful authorization, cross-user isolation, unverified/pending payments, expiry, future activation, missing capabilities, revoked/refunded/chargeback states and invalid identity/clock inputs.
+- `qoin-vector-baseline@edge-map-v1`: the existing seven-force vector baseline.
+- `qoin-flow-momentum@flow-momentum-v1`: a separate deterministic flow model using signed order-flow imbalance, liquidity imbalance and liquidation pressure, with a 0.35 directional threshold and spread / stale-book abstention gates.
 
-- `frontend/packages/core/src/qoinApi.ts`: shared TypeScript contracts for manifests, catalogue responses, entitlement projections and pinned selections. These are types only; no unavailable protected API is called by the client.
+The Axum API now verifies the Firebase ID token on per-user selection and live-decision requests. MongoDB persists one selection per `(owner_uid, symbol)` with a unique index and an upsert. A missing selection defaults to the vector baseline. The Drogon gateway exposes the GET/POST selection routes and forwards the caller's Authorization header.
 
-The entitlement module is currently a domain rule library, not a live authorization endpoint. It is deliberately not wired to caller-supplied user IDs, because this branch does not yet expose a verified Axum identity extractor or middleware. It is also not connected to payment webhooks or persisted grants. Do not use it to unlock paid access until the trusted identity, grant persistence, payment reconciliation and endpoint authorization layers are implemented and integration-tested.
+Both web and React Native instrument cards expose an algorithm picker independent of the Live / Backtesting mode switch. The chosen ID/version is persisted per canonical engine symbol, restored after sign-in, and used by the authenticated live-decision endpoint. Mechanics reads that same selected algorithm. Backtesting accepts both algorithm ID and version, rejects stale versions, and dispatches to the selected event-by-event replay implementation. Baseline vector history is not presented as Flow Momentum history.
 
-The new module and its registration have been committed, but GitHub Actions has not yet reported a run for these connector-created commits. The Rust tests have not yet been executed in this environment; compilation and test status remain unverified.
+The selection API is not a paid-entitlement system. `entitlements_enabled` remains false, and the two active research algorithms are currently selectable without a paid-access claim. The existing entitlement rules remain a domain library and are not connected to payment reconciliation or persisted grants. No broker orders are placed. Both algorithms remain research-only and have not been independently validated for profitability.
 
 
 ## Decision transparency payload (implemented 2026-11-08)
@@ -218,7 +219,7 @@ A read-only replay endpoint is now available through `GET /api/v1/backtest` (Axu
 
 The simulation currently models long-only, all-available-cash entries on BUY and full exits on SELL. Fee and slippage assumptions are explicit query parameters (basis points). For an open long position, each persisted perpetual-funding event settles a cashflow using the event mark price: positive rates are paid by longs and negative rates are received. The response reports fills, decision counts, net equity/P&L, drawdown, fees, slippage, net funding cashflow and settlement count, the largest gap between adjacent raw observations, the number of gaps longer than five minutes, strategy version and assumptions. These are raw-event gap diagnostics, not a claim that candle intervals or market sessions are continuously covered. It rejects invalid data/cost assumptions and caps a replay at 50,000 observations.
 
-Important limitations: this replays only raw events already present in MongoDB. It does not backfill Binance/Finnhub history or guarantee continuous coverage. Funding cashflows are only settled when a funding event includes its own valid mark price; the simulator never substitutes a stale trade or book price. Missing funding observations or mark prices are not inferred or interpolated. The model does not include short positions, leverage, borrow costs, liquidation, partial fills, latency or market impact. Fills require a current event price or valid bid/ask midpoint; a stale prior trade price is not reused as a new execution price. Open positions are marked to the latest available trade or book midpoint. Slippage assumptions must be below 10,000 basis points. The strategy is the currently active baseline snapshot at replay start; the response identifies its exact version. These results are research simulations, not live or expected performance. A dedicated historical provider/backfill pipeline, immutable strategy selection per historical timestamp, and richer execution simulator remain separate work.
+Important limitations: this replays only raw events already present in MongoDB. It does not backfill Binance/Finnhub history or guarantee continuous coverage. Funding cashflows are only settled when a funding event includes its own valid mark price; the simulator never substitutes a stale trade or book price. Missing funding observations or mark prices are not inferred or interpolated. The model does not include short positions, leverage, borrow costs, liquidation, partial fills, latency or market impact. Fills require a current event price or valid bid/ask midpoint; a stale prior trade price is not reused as a new execution price. Open positions are marked to the latest available trade or book midpoint. Slippage assumptions must be below 10,000 basis points. The requested algorithm ID/version is dispatched explicitly. The baseline uses its active seven-force configuration; Flow Momentum uses its own flow-led decision rule. The response identifies the strategy configuration version and the selected algorithm version. These results are research simulations, not live or expected performance. A dedicated historical provider/backfill pipeline, immutable strategy selection per historical timestamp, and richer execution simulator remain separate work.
 
 
 ## Market coverage tiers (preview design)
