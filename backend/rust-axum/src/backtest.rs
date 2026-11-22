@@ -17,6 +17,7 @@ struct ReplayState {
     ofi: f64, event_intensity: f64, ewma_abs_return: f64, funding_rate: Option<f64>,
     open_interest: Option<f64>, open_interest_change: f64, liquidation_pressure: f64,
     liquidation_events: usize, last_liquidation_side: Option<String>,
+    history: Vec<ReplayEvent>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -70,6 +71,7 @@ pub struct ReplayDecision {
     pub alignment: Option<f64>,
     pub angle_radians: Option<f64>,
     pub feature_trace: Option<Vec<qoin_vector_engine::FeatureTrace>>,
+    pub measure_trace: Option<serde_json::Value>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplayResult {
@@ -149,7 +151,7 @@ pub fn replay_with_execution(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, 
                 state.ewma_abs_return, state.event_intensity, state.liquidation_events,
                 state.last_liquidation_side.as_deref())?;
             Ok(ReplayDecision { action: decision.action.to_owned(), reason: decision.reason,
-                score: None, alignment: None, angle_radians: None, feature_trace: None })
+                score: None, alignment: None, angle_radians: None, feature_trace: None, measure_trace: None })
         }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
 }
 
@@ -176,8 +178,63 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
                 .map_err(|error| error.to_string())?;
             Ok(ReplayDecision { action: signal.action, reason: signal.rationale,
                 score: Some(signal.score), alignment: Some(signal.alignment),
-                angle_radians: Some(signal.angle_radians), feature_trace: Some(signal.feature_trace) })
+                angle_radians: Some(signal.angle_radians), feature_trace: Some(signal.feature_trace), measure_trace: None })
         }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
+}
+
+fn measure_ledger_v2_decision(state:&ReplayState,event:&ReplayEvent)->Result<ReplayDecision,String>{
+    let history=&state.history;
+    let trades:Vec<&ReplayEvent>=history.iter().filter(|e|e.event_type=="trade").collect();
+    let buys:Vec<&ReplayEvent>=trades.iter().copied().filter(|e|e.side.as_deref()==Some("buy")).collect();
+    let sells:Vec<&ReplayEvent>=trades.iter().copied().filter(|e|e.side.as_deref()==Some("sell")).collect();
+    let long_liq=history.iter().filter(|e|e.event_type=="liquidation"&&e.liquidation_side.as_deref()==Some("long")).count() as f64;
+    let short_liq=history.iter().filter(|e|e.event_type=="liquidation"&&e.liquidation_side.as_deref()==Some("short")).count() as f64;
+    let positive_funding=history.iter().filter(|e|e.funding_rate.is_some_and(|v|v>0.0)).count() as f64;
+    let negative_funding=history.iter().filter(|e|e.funding_rate.is_some_and(|v|v<0.0)).count() as f64;
+    let buy_volume:f64=buys.iter().filter_map(|e|e.size.filter(|v|v.is_finite()&&*v>=0.0)).sum();
+    let sell_volume:f64=sells.iter().filter_map(|e|e.size.filter(|v|v.is_finite()&&*v>=0.0)).sum();
+    let observed_sizes=trades.iter().filter(|e|e.size.is_some_and(|v|v.is_finite()&&v>=0.0)).count();
+    let buy_rel=buys.iter().map(|source|history.iter().filter(|target|target.event_type=="liquidation"&&(1..=60_000).contains(&target.ts_ms.saturating_sub(source.ts_ms))).count() as f64).sum::<f64>();
+    let sell_rel=sells.iter().map(|source|history.iter().filter(|target|target.event_type=="liquidation"&&(1..=60_000).contains(&target.ts_ms.saturating_sub(source.ts_ms))).count() as f64).sum::<f64>();
+    let trade_count=trades.len() as f64;
+    let count_imbalance=if trade_count>0.0{(buys.len() as f64-sells.len() as f64)/trade_count}else{0.0};
+    let volume_imbalance=if buy_volume+sell_volume>0.0{(buy_volume-sell_volume)/(buy_volume+sell_volume)}else{0.0};
+    let liq_total=long_liq+short_liq;
+    let liquidation_imbalance=if liq_total>0.0{(short_liq-long_liq)/liq_total}else{0.0};
+    let funding_total=positive_funding+negative_funding;
+    let funding_imbalance=if funding_total>0.0{(positive_funding-negative_funding)/funding_total}else{0.0};
+    let relation_imbalance=if buy_rel+sell_rel>0.0{(buy_rel-sell_rel)/(buy_rel+sell_rel)}else{0.0};
+    let mut weighted=0.0;let mut total_weight=0.0;
+    if trade_count>0.0{weighted+=0.25*count_imbalance;total_weight+=0.25;}
+    if observed_sizes>0{weighted+=0.35*volume_imbalance;total_weight+=0.35;}
+    if liq_total>0.0{weighted+=0.20*liquidation_imbalance;total_weight+=0.20;}
+    if funding_total>0.0{weighted+=0.10*funding_imbalance;total_weight+=0.10;}
+    if buy_rel+sell_rel>0.0{weighted+=0.10*relation_imbalance;total_weight+=0.10;}
+    let score=if total_weight>0.0{weighted/total_weight}else{0.0};
+    let spread_ok=state.spread_bps.map(|v|v.is_finite()&&v<=30.0).unwrap_or(true);
+    let quote_fresh=state.last_book_ts_ms.map(|ts|event.ts_ms.saturating_sub(ts)<=30_000).unwrap_or(true);
+    let ready=trade_count>=10.0&&history.len()>=20&&total_weight>0.0;
+    let action=if !ready||!spread_ok||!quote_fresh{"wait"}else if score>=0.15{"buy"}else if score<=-0.15{"sell"}else{"wait"};
+    let reason=if !ready{"Insufficient finite event measure for V2; the algorithm abstains."}
+        else if !spread_ok{"Observed spread exceeds the V2 risk gate; the algorithm abstains."}
+        else if !quote_fresh{"The latest order-book observation is stale; the algorithm abstains."}
+        else if action=="wait"{"The normalized empirical-measure score remains inside the neutral region."}
+        else{"The normalized empirical-measure score crossed the V2 directional threshold."};
+    let measure_trace=serde_json::json!({
+        "universe_count":history.len(),
+        "counting_measure":{"all_trades":trade_count,"buy_trades":buys.len(),"sell_trades":sells.len(),
+            "long_liquidations":long_liq,"short_liquidations":short_liq},
+        "trade_size_measure":{"buy_volume":buy_volume,"sell_volume":sell_volume,"observed_trade_sizes":observed_sizes,
+            "missing_trade_sizes":trades.len().saturating_sub(observed_sizes)},
+        "empirical_imbalances":{"trade_count":count_imbalance,"trade_size":volume_imbalance,
+            "liquidation":liquidation_imbalance,"funding_sign":funding_imbalance,"temporal_relation":relation_imbalance},
+        "temporal_relations":{"buy_trades_preceding_liquidations":buy_rel,
+            "sell_trades_preceding_liquidations":sell_rel,"window_ms":60_000},
+        "component_weights":{"trade_count":0.25,"trade_size":0.35,"liquidation":0.20,"funding_sign":0.10,"temporal_relation":0.10},
+        "observed_weight_total":total_weight,"normalized_score":score,"sample_ready":ready,
+        "interpretation":"Finite empirical measures over replay observations; temporal precedence is not causal evidence."
+    });
+    Ok(ReplayDecision{action:action.into(),reason:reason.into(),score:Some(score),alignment:Some(score.abs()),angle_radians:None,feature_trace:None,measure_trace:Some(measure_trace)})
 }
 
 /// Dispatch a versioned registered algorithm into the event-by-event execution simulator.
@@ -190,16 +247,10 @@ pub fn replay_with_algorithm(
         "qoin-vector-baseline" => replay_with_vector_engine(events, config, config_version,
             initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
             .map(|mut result| { result.algorithm_version="edge-map-v1".into(); result }),
-        "qoin-flow-momentum" => replay_with_decider(events, "qoin-flow-momentum".into(), "flow-momentum-v1".into(),
-            |_symbol, state, event| {
-                let score=0.65*state.ofi+0.20*state.liquidity_imbalance+0.15*state.liquidation_pressure.tanh();
-                let spread_ok=state.spread_bps.map(|v|v.is_finite()&&v<=30.0).unwrap_or(true);
-                let quote_fresh=state.last_book_ts_ms.map(|book|event.ts_ms.saturating_sub(book)<=30_000).unwrap_or(true);
-                let action=if !spread_ok||!quote_fresh{"wait"}else if score>=0.35{"buy"}else if score<=-0.35{"sell"}else{"wait"};
-                let reason=if !spread_ok{"Spread exceeds the flow-momentum risk gate."}else if !quote_fresh{"Order-book quote is stale; the algorithm abstains."}else if action=="wait"{"Flow and liquidity evidence remain below the directional threshold."}else{"Directional flow and liquidity pressure crossed the momentum threshold."};
-                Ok(ReplayDecision{action:action.into(),reason:reason.into(),score:Some(score),alignment:Some(score.abs()),angle_radians:None,feature_trace:None})
-            },initial_capital,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps)
-            .map(|mut result| { result.algorithm_version="flow-momentum-v1".into(); result }),
+        "qoin-measure-ledger-v2" => replay_with_decider(events, "qoin-measure-ledger-v2".into(), "measure-ledger-v2".into(),
+            |_symbol,state,event|measure_ledger_v2_decision(state,event),
+            initial_capital,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps)
+            .map(|mut result|{result.algorithm_version="measure-ledger-v2".into();result}),
         _ => Err("algorithm ID is not registered for backtesting".into()),
     }
 }
@@ -420,6 +471,8 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             state.ofi=(state.signed_flow/state.total_trade_size).clamp(-1.0,1.0);
         } else { state.ofi=0.0; }
         state.last_event_ts_ms=Some(state.last_event_ts_ms.unwrap_or(0).max(event.ts_ms));
+        state.history.push((*event).clone());
+        if state.history.len()>500 { state.history.remove(0); }
         let decision=decide(&symbol,&state,event)?;
         match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
         let mark = state.last_mark_price.or(state.last_price);
@@ -849,32 +902,14 @@ mod vector_engine_replay_tests {
     use qoin_vector_engine::EngineConfig;
 
     #[test]
-    fn flow_momentum_replay_dispatches_its_own_versioned_decision_rule() {
-        let events = vec![
-            ReplayEvent {
-                event_id: "book".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
-                event_type: "book".into(), ts_ms: 1, price: None, size: None, side: None,
-                bid: Some(99.99), ask: Some(100.01), bid_size: Some(10.0), ask_size: Some(1.0),
-                funding_rate: None, open_interest: None, liquidation_side: None,
-            },
-            ReplayEvent {
-                event_id: "buy-flow".into(), venue: "binance_usdm".into(), symbol: "BTCUSDT".into(),
-                event_type: "trade".into(), ts_ms: 2, price: Some(100.0), size: Some(1.0), side: Some("buy".into()),
-                bid: None, ask: None, bid_size: None, ask_size: None,
-                funding_rate: None, open_interest: None, liquidation_side: None,
-            },
-        ];
-        let result = replay_with_algorithm(
-            events.clone(), "qoin-flow-momentum", &EngineConfig::default(), "engine-config-v1",
-            1_000.0, 0.0, 0.0, 0, 1.0, 0.0,
-        ).unwrap();
-        assert_eq!(result.strategy_key, "qoin-flow-momentum");
-        assert_eq!(result.algorithm_version, "flow-momentum-v1");
-        assert_eq!(result.last_decision.unwrap().action, "buy");
-        assert!(replay_with_algorithm(
-            events, "not-registered", &EngineConfig::default(), "engine-config-v1",
-            1_000.0, 0.0, 0.0, 0, 1.0, 0.0,
-        ).is_err());
+    fn measure_ledger_v2_replay_uses_empirical_trade_measures() {
+        let mut events=Vec::new();
+        for index in 0..12 { events.push(ReplayEvent{event_id:format!("buy-{index}"),venue:"test".into(),symbol:"BTCUSDT".into(),event_type:"trade".into(),ts_ms:1_000+index,price:Some(100.0),size:Some(2.0),side:Some("buy".into()),bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,liquidation_side:None}); }
+        for index in 0..12 { events.push(ReplayEvent{event_id:format!("sell-{index}"),venue:"test".into(),symbol:"BTCUSDT".into(),event_type:"trade".into(),ts_ms:2_000+index,price:Some(100.0),size:Some(1.0),side:Some("sell".into()),bid:None,ask:None,bid_size:None,ask_size:None,funding_rate:None,open_interest:None,liquidation_side:None}); }
+        let result=replay_with_algorithm(events,"qoin-measure-ledger-v2",&EngineConfig::default(),"engine-config-v1",10_000.0,0.0,0.0,0,1.0,0.0).unwrap();
+        assert_eq!(result.strategy_key,"qoin-measure-ledger-v2");
+        assert_eq!(result.algorithm_version,"measure-ledger-v2");
+        assert_eq!(result.last_decision.unwrap().action,"buy");
     }
 
     #[test]

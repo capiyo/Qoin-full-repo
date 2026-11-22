@@ -378,6 +378,91 @@ pub fn build(symbol: &str, events: &[MarketEvent], skipped_invalid_events: usize
     }
 }
 
+
+/// V2 decision: a deterministic empirical-measure model over the bounded event
+/// universe. Counting measure and trade-size measure remain distinct; missing
+/// sizes are excluded, not imputed. Temporal edges are evidence of ordering,
+/// never interpreted as causal effects.
+pub fn evaluate_measure_ledger_v2(symbol: &str, events: &[MarketEvent]) -> Result<serde_json::Value, String> {
+    let ledger = build(symbol, events, 0, events.len(), false);
+    let find = |id: &str| ledger.sets.iter().find(|set| set.set_id == id)
+        .map(|set| set.measure.counting_measure as f64).unwrap_or(0.0);
+    let buy_count=find("buy_trades");
+    let sell_count=find("sell_trades");
+    let trade_count=find("trades");
+    let buy_volume=ledger.sets.iter().find(|set|set.set_id=="buy_trades").map(|set|set.measure.trade_size_measure).unwrap_or(0.0);
+    let sell_volume=ledger.sets.iter().find(|set|set.set_id=="sell_trades").map(|set|set.measure.trade_size_measure).unwrap_or(0.0);
+    let volume_observed=ledger.sets.iter().find(|set|set.set_id=="trades").map(|set|set.measure.trade_size_observed_count).unwrap_or(0);
+    let volume_missing=ledger.sets.iter().find(|set|set.set_id=="trades").map(|set|set.measure.trade_size_missing_count).unwrap_or(0);
+    let long_liq=find("long_liquidations");
+    let short_liq=find("short_liquidations");
+    let liquidation_count=long_liq+short_liq;
+    let positive_funding=find("positive_funding");
+    let negative_funding=find("negative_funding");
+    let funding_count=positive_funding+negative_funding;
+    let buy_relation=ledger.relations.iter().find(|r|r.relation_id=="buy_trades_before_liquidations").map(|r|r.edge_count as f64).unwrap_or(0.0);
+    let sell_relation=ledger.relations.iter().find(|r|r.relation_id=="sell_trades_before_liquidations").map(|r|r.edge_count as f64).unwrap_or(0.0);
+    let count_imbalance=if trade_count>0.0 {(buy_count-sell_count)/trade_count} else {0.0};
+    let volume_imbalance=if buy_volume+sell_volume>0.0 {(buy_volume-sell_volume)/(buy_volume+sell_volume)} else {0.0};
+    let liquidation_imbalance=if liquidation_count>0.0 {(short_liq-long_liq)/liquidation_count} else {0.0};
+    let funding_imbalance=if funding_count>0.0 {(positive_funding-negative_funding)/funding_count} else {0.0};
+    let relation_imbalance=if buy_relation+sell_relation>0.0 {(buy_relation-sell_relation)/(buy_relation+sell_relation)} else {0.0};
+    // Renormalize over observed measures only. Missing dimensions do not become zero evidence.
+    let mut weighted=0.0;
+    let mut weight_total=0.0;
+    let mut components=serde_json::Map::new();
+    let mut add=|name:&str,value:f64,weight:f64| {
+        if value.is_finite() {
+            weighted+=value*weight; weight_total+=weight;
+            components.insert(name.into(),serde_json::json!({"value":value,"weight":weight,"weighted_value":value*weight}));
+        }
+    };
+    if trade_count>0.0 { add("counting_measure_trade_imbalance",count_imbalance,0.25); }
+    if volume_observed>0 { add("trade_size_measure_imbalance",volume_imbalance,0.35); }
+    if liquidation_count>0.0 { add("liquidation_counting_measure_imbalance",liquidation_imbalance,0.20); }
+    if funding_count>0.0 { add("funding_measure_imbalance",funding_imbalance,0.10); }
+    if buy_relation+sell_relation>0.0 { add("temporal_relation_measure_imbalance",relation_imbalance,0.10); }
+    drop(add);
+    let score=if weight_total>0.0 {weighted/weight_total} else {0.0};
+    let latest=events.iter().max_by_key(|event|event.ts_ms);
+    let latest_book=events.iter().filter(|event|event.event_type=="book"&&event.bid.is_some()&&event.ask.is_some()).max_by_key(|event|event.ts_ms);
+    let spread_bps=latest_book.and_then(|event| {
+        let bid=event.bid?; let ask=event.ask?; let mid=(bid+ask)/2.0;
+        (bid.is_finite()&&ask.is_finite()&&mid>0.0&&ask>=bid).then_some((ask-bid)/mid*10_000.0)
+    });
+    let quote_age_ms=latest.zip(latest_book).map(|(last,book)|last.ts_ms.saturating_sub(book.ts_ms));
+    let spread_ok=spread_bps.map(|spread|spread<=30.0).unwrap_or(true);
+    let quote_fresh=quote_age_ms.map(|age|age<=30_000).unwrap_or(true);
+    let sample_ready=trade_count>=10.0 && ledger.universe_count>=20 && weight_total>0.0;
+    let action=if !sample_ready||!spread_ok||!quote_fresh {"wait"} else if score>=0.15 {"buy"} else if score<=-0.15 {"sell"} else {"wait"};
+    let reason=if !sample_ready {"Insufficient finite event measure for V2; the algorithm abstains."}
+        else if !spread_ok {"Observed spread exceeds the V2 risk gate; the algorithm abstains."}
+        else if !quote_fresh {"The latest order-book observation is stale; the algorithm abstains."}
+        else if action=="wait" {"The normalized empirical-measure score remains inside the neutral region."}
+        else {"The normalized empirical-measure score crossed the V2 directional threshold."};
+    let feature_values=serde_json::json!({
+        "counting_measure_trade_imbalance":count_imbalance,
+        "trade_size_measure_imbalance":if volume_observed>0 {Some(volume_imbalance)} else {None},
+        "liquidation_counting_measure_imbalance":if liquidation_count>0.0 {Some(liquidation_imbalance)} else {None},
+        "funding_measure_imbalance":if funding_count>0.0 {Some(funding_imbalance)} else {None},
+        "temporal_relation_measure_imbalance":if buy_relation+sell_relation>0.0 {Some(relation_imbalance)} else {None}
+    });
+    Ok(serde_json::json!({
+        "symbol":symbol,"strategy_key":"qoin-measure-ledger-v2","strategy_version":"measure-ledger-v2",
+        "selected_algorithm_id":"qoin-measure-ledger-v2","selected_algorithm_version":"measure-ledger-v2",
+        "model_version":"qoin-finite-measure-ledger-v2","action":action,"decision":action.to_uppercase(),
+        "reason":reason,"score":score,"magnitude":score.abs(),"alignment":score.abs(),
+        "decision_vector":[score.max(0.0),(-score).max(0.0)],
+        "features":feature_values,"measure_components":components,"measure_weight_total":weight_total,
+        "diagnostics":{"sample_ready":sample_ready,"trade_count":trade_count,"universe_count":ledger.universe_count,
+            "spread_bps":spread_bps,"spread_ok":spread_ok,"quote_age_ms":quote_age_ms,"quote_fresh":quote_fresh,
+            "threshold":0.15,"observed_trade_sizes":volume_observed,"missing_trade_sizes":volume_missing},
+        "input_event":{"event_ts_ms":latest.map(|event|event.ts_ms),"event_id":latest.map(|event|event.event_id.clone()),
+            "venue":latest.map(|event|event.venue.clone()),"state_event_count":ledger.universe_count},
+        "ledger":ledger,"research_only":true
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +485,30 @@ mod tests {
             open_interest: None,
             liquidation_side: None,
         }
+    }
+
+    #[test]
+    fn v2_uses_empirical_count_and_trade_size_measures_and_abstains_on_small_samples() {
+        let mut events=Vec::new();
+        for index in 0..12 {
+            let mut trade=event(&format!("buy-{index}"),"trade",1_000+index);
+            trade.side=Some("buy".into()); trade.size=Some(2.0);
+            events.push(trade);
+        }
+        for index in 0..12 {
+            let mut trade=event(&format!("sell-{index}"),"trade",2_000+index);
+            trade.side=Some("sell".into()); trade.size=Some(1.0);
+            events.push(trade);
+        }
+        let decision=evaluate_measure_ledger_v2("BTCUSDT",&events).unwrap();
+        assert_eq!(decision["strategy_key"],"qoin-measure-ledger-v2");
+        assert_eq!(decision["action"],"buy");
+        assert_eq!(decision["diagnostics"]["trade_count"].as_f64(),Some(24.0));
+        assert!(decision["ledger"]["sets"].is_array());
+        assert!(decision["measure_components"]["trade_size_measure_imbalance"].is_object());
+        let small=evaluate_measure_ledger_v2("BTCUSDT",&events[..4]).unwrap();
+        assert_eq!(small["action"],"wait");
+        assert_eq!(small["diagnostics"]["sample_ready"],false);
     }
 
     #[test]

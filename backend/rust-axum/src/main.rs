@@ -462,14 +462,15 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
     };
     let symbol=query.symbol.unwrap_or_else(||"BTCUSDT".into()).trim().to_ascii_uppercase();
     if symbol.is_empty() || symbol.len()>96 { return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"invalid instrument symbol"}))); }
-    let selection=match s.algorithm_selections.find_one(doc!{"owner_uid":&owner_uid,"symbol":&symbol},None).await {
+    let mut selection=match s.algorithm_selections.find_one(doc!{"owner_uid":&owner_uid,"symbol":&symbol},None).await {
         Ok(Some(d))=>StoredAlgorithmSelection{symbol:symbol.clone(),algorithm_id:d.get_str("algorithm_id").unwrap_or("qoin-vector-baseline").into(),version:d.get_str("version").unwrap_or("edge-map-v1").into(),selected_at_ms:d.get_i64("selected_at_ms").unwrap_or(0)},
         Ok(None)=>default_algorithm_selection(&symbol),
         Err(error)=>{tracing::error!(error=%error,"algorithm selection read failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"algorithm selection unavailable"})));}
     };
+    if selection.algorithm_id=="qoin-flow-momentum" { selection=default_algorithm_selection(&symbol); }
     if selection.algorithm_id=="qoin-vector-baseline" {
         if selection.version!="edge-map-v1" {
-            return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned baseline algorithm version is no longer active","current_version":"edge-map-v1"})));
+            return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned V1 vector algorithm version is no longer active","current_version":"edge-map-v1"})));
         }
         return match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
             Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");let mut value=mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default();
@@ -479,38 +480,42 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
             Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
         };
     }
-    if selection.algorithm_id!="qoin-flow-momentum" { return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"selected algorithm is not executable"}))); }
-    if selection.version!="flow-momentum-v1" {
-        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned Flow Momentum version is no longer active","current_version":"flow-momentum-v1"})));
+    if selection.algorithm_id!="qoin-measure-ledger-v2" {
+        return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"selected algorithm is not executable"})));
     }
-    let snapshot=if let Ok(memory)=s.memory.read(){memory.get(&symbol).cloned()}else{None};
-    let snapshot=match snapshot {
-        Some(state)=>state,
-        None=>match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
-            Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");match mongodb::bson::from_document::<SymbolState>(d){Ok(v)=>v,Err(_)=>return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"stored market state is invalid"})))}},
-            Ok(None)=>return(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,"action":"wait","reason":"No market state is available yet."}))),
-            Err(_)=>return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market state unavailable"})))
-        }
+    if selection.version!="measure-ledger-v2" {
+        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned V2 version is no longer active","current_version":"measure-ledger-v2"})));
+    }
+    let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1}).limit(251).build();
+    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+        Ok(value)=>value,
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"V2 measure ledger source query failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"V2 event ledger unavailable"})));}
     };
-    let quote_age_ms=snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book,latest)|latest.saturating_sub(book));
-    let score=0.65*snapshot.order_flow_imbalance+0.20*snapshot.liquidity_imbalance+0.15*snapshot.liquidation_pressure.tanh();
-    let spread_ok=snapshot.spread_bps.map(|v|v.is_finite()&&v<=30.0).unwrap_or(true);
-    let quote_fresh=quote_age_ms.map(|age|age<=30_000).unwrap_or(true);
-    let action=if !spread_ok||!quote_fresh{"wait"}else if score>=0.35{"buy"}else if score<=-0.35{"sell"}else{"wait"};
-    let reason=if !spread_ok{"Spread exceeds the flow-momentum risk gate."}else if !quote_fresh{"Order-book quote is stale; the algorithm abstains."}else if action=="wait"{"Flow and liquidity evidence remain below the directional threshold."}else{"Directional flow and liquidity pressure crossed the momentum threshold."};
-    (StatusCode::OK,Json(serde_json::json!({
-        "symbol":symbol,"strategy_key":"qoin-flow-momentum","strategy_version":selection.version,
-        "selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,
-        "action":action,"reason":reason,"score":score,"magnitude":score.abs(),
-        "decision_vector":[score.max(0.0),(-score).max(0.0)],
-        "features":{"ofi":snapshot.order_flow_imbalance,"liquidity":snapshot.liquidity_imbalance,
-            "volatility":snapshot.ewma_abs_return/0.01,"funding":snapshot.funding_rate.unwrap_or(0.0)*100.0,
-            "open_interest_change":snapshot.open_interest_change,"liquidation_pressure":snapshot.liquidation_pressure,
-            "basis":snapshot.basis_bps.unwrap_or(0.0)/25.0},
-        "diagnostics":{"spread_ok":spread_ok,"quote_fresh":quote_fresh,"quote_age_ms":quote_age_ms,"threshold":0.35,"score":score},
-        "input_event":{"event_ts_ms":snapshot.last_event_ts_ms,"event_id":snapshot.last_event_id,"venue":snapshot.last_event_venue,"state_event_count":snapshot.event_count},
-        "research_only":true
-    })))
+    let mut events=Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document))=>{
+                document.remove("_id");
+                match mongodb::bson::from_document::<MarketEvent>(document) {
+                    Ok(event) if validate_event(&event).is_ok()=>events.push(event),
+                    _=>{}
+                }
+            }
+            Ok(None)=>break,
+            Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"V2 event ledger cursor failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"V2 event ledger read failed"})));}
+        }
+    }
+    events.reverse();
+    match set_ledger::evaluate_measure_ledger_v2(&symbol,&events) {
+        Ok(mut value)=>{
+            if let Some(object)=value.as_object_mut() {
+                object.insert("selected_algorithm_id".into(),serde_json::json!(selection.algorithm_id));
+                object.insert("selected_algorithm_version".into(),serde_json::json!(selection.version));
+            }
+            (StatusCode::OK,Json(value))
+        }
+        Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"V2 measure-ledger evaluation failed");(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"V2 measure-ledger evaluation failed"})))}
+    }
 }
 
 async fn get_broker_connections(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {

@@ -56,6 +56,16 @@ export type QoinDecisionDiagnostics = {
   signal_threshold: number;
   alignment_threshold: number;
   angle_limit_radians: number;
+  universe_count?: number;
+  trade_count?: number;
+  spread_bps?: number | null;
+  spread_ok?: boolean;
+  quote_age_ms?: number | null;
+  quote_fresh?: boolean;
+  sample_ready?: boolean;
+  threshold?: number;
+  observed_trade_sizes?: number;
+  missing_trade_sizes?: number;
 };
 export type QoinStrategySnapshot = {
   strategy_key: string;
@@ -76,7 +86,7 @@ export type QoinDecisionInputEvent = {
   event_type: string;
   event_ts_ms: number;
   state_event_count: number;
-  state_last_event_ts_ms: number | null;
+  state_last_event_ts_ms?: number | null;
 };
 export type QoinVectorDecision = {
   symbol: string;
@@ -106,6 +116,11 @@ export type QoinVectorDecision = {
   action?: "buy" | "sell" | "wait" | string;
   reason?: string;
   research_only?: boolean;
+  selected_algorithm_id?: string;
+  selected_algorithm_version?: string;
+  measure_components?: Record<string, { value: number; weight: number; weighted_value: number }>;
+  measure_weight_total?: number;
+  ledger?: QoinSetLedger;
 };
 
 export const QOIN_FEATURE_NAMES = [
@@ -541,10 +556,9 @@ export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: st
 }
 
 
-/** Public, read-only metadata for an independently versioned research algorithm.
- * This is a data contract only; it does not imply that paid access or switching
- * endpoints are available until server-side identity and grants are integrated.
- */
+/** Public metadata for independently versioned research algorithms.
+ * User selection is authenticated and persisted per instrument; paid entitlements
+ * remain a separate, currently disabled capability. */
 export type QoinAlgorithmStatus = "active" | "preview" | "deprecated" | "disabled";
 export type QoinAlgorithmManifest = {
   algorithm_id: string;
@@ -603,7 +617,7 @@ export type QoinAlgorithmSelection = {
   algorithm_id: string;
   version: string;
   selected_at_ms: number;
-  config_fingerprint?: string;
+  config_fingerprint: string;
 };
 
 export type QoinStrategy = {
@@ -635,6 +649,7 @@ export type QoinBacktestFill = {
 export type QoinReplayDecision = {
   action: string; reason: string; score?: number | null; alignment?: number | null;
   angle_radians?: number | null; feature_trace?: QoinFeatureTrace[] | null;
+  measure_trace?: Record<string, unknown> | null;
 };
 export type QoinExecutionStressScenario = {
   name: string; cost_multiplier: number; fees_paid: number; slippage_paid: number;

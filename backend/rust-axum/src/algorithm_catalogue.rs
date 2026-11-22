@@ -60,7 +60,7 @@ impl AlgorithmManifest {
 pub fn registered_algorithms() -> Vec<AlgorithmManifest> {
     vec![AlgorithmManifest {
         algorithm_id: "qoin-vector-baseline",
-        display_name: "Qoin Vector Baseline",
+        display_name: "Qoin Vector Based · V1",
         description: "Deterministic multi-force vector research using order flow, liquidity, volatility, funding, positioning and liquidation context.",
         version: "edge-map-v1",
         status: AlgorithmStatus::Active,
@@ -75,19 +75,19 @@ pub fn registered_algorithms() -> Vec<AlgorithmManifest> {
         execution_mode: "research_only",
         evaluation_status: "not_independently_validated",
     }, AlgorithmManifest {
-        algorithm_id: "qoin-flow-momentum",
-        display_name: "Qoin Flow Momentum",
-        description: "Independent flow-led research model combining signed trade flow, displayed liquidity imbalance and liquidation pressure with explicit spread and quote-freshness gates.",
-        version: "flow-momentum-v1",
+        algorithm_id: "qoin-measure-ledger-v2",
+        display_name: "Qoin Measure Theory + Ledger · V2",
+        description: "Independent finite-measure research algorithm using counting measure, trade-size measure, empirical event partitions and bounded temporal-relation measures with an inspectable evidence ledger.",
+        version: "measure-ledger-v2",
         status: AlgorithmStatus::Active,
         supported_asset_classes: &["crypto", "equities", "fx", "indices", "commodities"],
         supported_market_data_providers: &["binance_public", "finnhub", "coinbase_public", "kraken_public"],
         supported_venues: &["binance_usdm", "finnhub", "coinbase_advanced_trade", "kraken_spot"],
-        supported_instrument_groups: &["crypto_perpetuals", "equities", "major_fx", "indices", "commodities"],
+        supported_instrument_groups: &["crypto_perpetuals", "crypto_spot", "equities", "major_fx", "indices", "commodities"],
         supported_timeframes: &["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
-        required_features: &["order_flow_imbalance"],
-        optional_features: &["liquidity_imbalance", "liquidation_pressure", "event_intensity", "volatility", "funding_pressure"],
-        risk_profile: "spread <= 30 bps when supplied; book quote <= 30 seconds when supplied; directional threshold 0.35",
+        required_features: &["counting_measure", "trade_size_measure", "event_set_partition"],
+        optional_features: &["funding_measure", "liquidation_measure", "temporal_relation_measure"],
+        risk_profile: "minimum 20 validated events and 10 trades; spread <= 30 bps and book quote <= 30 seconds when supplied; abstains when required measures are absent",
         execution_mode: "research_only",
         evaluation_status: "not_independently_validated",
     }]
@@ -180,7 +180,8 @@ mod tests {
         let algorithms = registered_algorithms();
         assert_eq!(algorithms.len(), 2);
         assert_eq!(algorithms[0].algorithm_id, "qoin-vector-baseline");
-        assert_eq!(algorithms[1].algorithm_id, "qoin-flow-momentum");
+        assert_eq!(algorithms[1].algorithm_id, "qoin-measure-ledger-v2");
+        assert_eq!(algorithms[1].version, "measure-ledger-v2");
         assert_eq!(algorithms[0].execution_mode, "research_only");
     }
 

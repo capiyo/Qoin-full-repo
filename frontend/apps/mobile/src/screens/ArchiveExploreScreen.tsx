@@ -186,6 +186,20 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   </View>;
 }
 
+function MobileMeasureLedgerDecisionPanel({decision}:{decision:QoinVectorDecision|null}) {
+  const components=Object.entries(decision?.measure_components||{});
+  return <View style={styles.tracePanel}>
+    <Text style={styles.attentionTitle}>V2 · Measure Theory + Ledger</Text>
+    <Text style={styles.attentionCaption}>Independent empirical-measure engine. Counting and trade-size measures are distinct. Missing sizes are not imputed; temporal precedence is not a causal claim.</Text>
+    <View style={styles.liveGrid}>
+      {[["Decision",decision?.action?.toUpperCase()||"WAIT"],["Measure score",decision?.score?.toFixed(4)??"—"],["Observed weight",decision?.measure_weight_total?.toFixed(2)??"—"],["Event universe",String(decision?.diagnostics?.universe_count??"—")]].map(([label,value])=><View key={label} style={styles.liveMetric}><Text style={styles.engineLabel}>{label}</Text><Text style={styles.engineValue}>{value}</Text></View>)}
+    </View>
+    {components.map(([name,item])=><View key={name} style={styles.strategyWeightRow}><Text style={styles.metricLabel}>{name.replaceAll("_"," ")}</Text><View style={styles.strategyWeightValues}><Text style={styles.attentionCaption}>Measure {item.value.toFixed(4)}</Text><Text style={styles.attentionCaption}>Weight {item.weight.toFixed(2)} · contribution {item.weighted_value.toFixed(4)}</Text></View></View>)}
+    <Text style={styles.disclaimer}>{decision?.reason||"Waiting for sufficient valid event evidence."}</Text>
+    {decision?.diagnostics?<Text selectable style={styles.traceJson}>{JSON.stringify(decision.diagnostics,null,2)}</Text>:null}
+  </View>;
+}
+
 function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null; status: string }) {
   const firstSet = ledger?.sets[0];
   const secondSet = ledger?.sets[1];
@@ -630,7 +644,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     if(!firebaseUser){setSelectedAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
     setSelectedAlgorithmBySymbol({});setAlgorithmDecisions({});
     getQoinAlgorithmSelections().then(({items})=>{
-      if(active)setSelectedAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));
+      if(active)setSelectedAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id==="qoin-flow-momentum"?"qoin-vector-baseline":item.algorithm_id])));
     }).catch((error:unknown)=>{if(active)Alert.alert("Algorithm selections unavailable",error instanceof Error?error.message:"Could not load saved algorithms.");});
     return()=>{active=false;};
   },[firebaseUser?.uid]);
@@ -653,7 +667,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       await saveQoinAlgorithmSelection({symbol:item.engineSymbol,algorithm_id:manifest.algorithm_id,version:manifest.version});
       const decision=await getQoinAlgorithmDecision(item.engineSymbol);
       setAlgorithmDecisions((current)=>({...current,[item.symbol]:decision}));
-      if(selected?.symbol===item.symbol)setVector(decision);
+      if(selected?.symbol===item.symbol){setVector(decision);setMechanicsTab(algorithmId==="qoin-measure-ledger-v2"?"sets":"vector");}
       setAlgorithmPickerSymbol(null);
     }catch(error){
       setSelectedAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:previous}));
@@ -687,7 +701,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   };
   const openInstrument = (item: Instrument) => {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
-    setMechanicsTab("vector");
+    setMechanicsTab((selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline")==="qoin-measure-ledger-v2"?"sets":"vector");
     setSelected(item);
   };
   const toggle = (symbol: string) => {
@@ -762,6 +776,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   useEffect(() => { getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
   const data = mode === "Archive" ? archived : discovered;
   useEffect(() => {
+    if(selected) setMechanicsTab(selectedAlgorithmId==="qoin-measure-ledger-v2"?"sets":"vector");
+  },[selected?.engineSymbol,selectedAlgorithmId]);
+
+  useEffect(() => {
     if (!selected) {
       setVector(null);
       setVectorError("");
@@ -798,7 +816,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
     return () => { active = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, selectedAlgorithmId]);
 
   useEffect(() => {
     const symbols = items.map((item) => item.engineSymbol);
@@ -879,7 +897,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
             getQoinAlgorithmDecision(selected.engineSymbol),
-            selectedAlgorithmId==="qoin-vector-baseline" ? getInstrumentVectorHistory(selected.engineSymbol, 500) : Promise.resolve({items:[]}),
+            getInstrumentVectorHistory(selected.engineSymbol, 500),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
@@ -1058,23 +1076,24 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
           <View style={styles.modalHeader}><View><Text style={styles.kicker}>{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</Text><Text style={styles.modalTitle}>{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</Text><Text style={styles.assetMeta}>{selected.symbol} · {selected.market}</Text></View><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Pressable onPress={() => setViewModeBySymbol((current) => ({ ...current, [selected.symbol]: selectedMode === "live" ? "backtest" : "live" }))} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#eaf1ff" }}><Text style={{ color: "#2458b8", fontSize: 9, fontWeight: "800" }}>{selectedMode === "live" ? "Backtest" : "Live"}</Text></Pressable><Pressable onPress={() => setSelected(null)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View></View>
           <ScrollView contentContainerStyle={styles.modalContent}>
             {selectedMode === "live" ? <View style={styles.mechanicsTabs}>
-              <Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "vector" }} style={[styles.mechanicsTab, mechanicsTab === "vector" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("vector")}><Text style={[styles.mechanicsTabText, mechanicsTab === "vector" && styles.mechanicsTabTextActive]}>Vector space</Text></Pressable>
-              <Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "sets" }} style={[styles.mechanicsTab, mechanicsTab === "sets" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("sets")}><Text style={[styles.mechanicsTabText, mechanicsTab === "sets" && styles.mechanicsTabTextActive]}>Sets &amp; Ledger</Text></Pressable>
+              {selectedAlgorithmId==="qoin-measure-ledger-v2" ? <View style={[styles.mechanicsTab,styles.mechanicsTabActive]}><Text style={styles.mechanicsTabTextActive}>V2 · Measure &amp; Ledger</Text></View> : <><Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "vector" }} style={[styles.mechanicsTab, mechanicsTab === "vector" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("vector")}><Text style={[styles.mechanicsTabText, mechanicsTab === "vector" && styles.mechanicsTabTextActive]}>V1 · Vector</Text></Pressable>
+              <Pressable accessibilityRole="tab" accessibilityState={{ selected: mechanicsTab === "sets" }} style={[styles.mechanicsTab, mechanicsTab === "sets" && styles.mechanicsTabActive]} onPress={() => setMechanicsTab("sets")}><Text style={[styles.mechanicsTabText, mechanicsTab === "sets" && styles.mechanicsTabTextActive]}>Measure Ledger</Text></Pressable></>}
             </View> : null}
             {selectedMode === "backtest" ? <View style={{ gap: 14 }}>
-              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Backtest mechanics</Text><Text style={styles.attentionCaption}>Historical V1 replay · deterministic event order · no orders</Text></View>
+              <View style={styles.liveHeading}><Text style={styles.attentionTitle}>Backtest mechanics</Text><Text style={styles.attentionCaption}>{selectedAlgorithm?.display_name||selectedAlgorithmId} · deterministic event order · no orders</Text></View>
               <View style={styles.tracePanel}>
                 <Text style={styles.attentionTitle}>How the replay progresses</Text>
                 {[
                   ["01 · Historical tape", "Load stored observations for this instrument and venue, ordered by event timestamp and event ID."],
-                  ["02 · State reconstruction", "Rebuild the same V1 state and normalized feature calculations used by the live research engine."],
-                  ["03 · Decision evaluation", "Apply the pinned strategy version and gates; record BUY, SELL and WAIT decisions."],
+                  ["02 · Evidence reconstruction", "Rebuild the selected algorithm's event state and empirical measures from observations available up to each timestamp."],
+                  ["03 · Decision evaluation", "Apply the pinned algorithm version and its own gates; record BUY, SELL and WAIT decisions."],
                   ["04 · Simulated execution", "Fill only on a strictly later eligible trade or book event. Buys use ask, sells use bid; latency and liquidity participation constrain fills."],
                   ["05 · Cost accounting", "Apply fees, slippage, market impact and recorded funding cashflows to equity and realized P/L."],
                   ["06 · Audit", "Inspect fills, pending orders, event gaps, assumptions and cost-stress scenarios. Nothing is sent to a broker."],
                 ].map(([title, description]) => <View key={title} style={{gap:3}}><Text style={styles.engineValue}>{title}</Text><Text style={styles.attentionCaption}>{description}</Text></View>)}
                 <Text style={styles.disclaimer}>Only persisted observations are replayed. Missing history remains missing; Qoin reports data gaps rather than fabricating candles or prices.</Text>
               </View>
+              {selectedAlgorithmId==="qoin-measure-ledger-v2" ? <MobileMeasureLedgerDecisionPanel decision={vector} /> : <>
               <View style={styles.mapWrap}>
                 <Svg viewBox="0 0 100 100" width="100%" height={220}>
                   <Rect x="0" y="0" width="100" height="100" fill="#ffffff" />
@@ -1089,10 +1108,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <FeatureSpace decision={vector} />
               {vector ? <DecisionTracePanel decision={vector} /> : <Text style={styles.disclaimer}>{vectorError || "No persisted vector is available yet; the authoritative seven-force Rust engine has not emitted a decision yet."}</Text>}
               <MobileResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+              </>}
               <MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-              <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
-            </View> : mechanicsTab === "vector" ? <>
-            <Text style={styles.mapTitle}>{selectedAlgorithm?.display_name||selectedAlgorithmId} feature space</Text><Text style={styles.mapCopy}>Current algorithm inputs and selected decision output.</Text>
+              <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||(selectedAlgorithmId==="qoin-measure-ledger-v2"?"measure-ledger-v2":"edge-map-v1")} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+            </View> : selectedAlgorithmId==="qoin-measure-ledger-v2" ? <><MobileMeasureLedgerDecisionPanel decision={vector} /><MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} /></> : mechanicsTab === "vector" ? <>
+            <Text style={styles.mapTitle}>Vector space · seven engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁷ feature state with attention interactions.</Text>
             <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
             <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>

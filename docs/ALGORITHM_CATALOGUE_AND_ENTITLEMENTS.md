@@ -168,6 +168,26 @@ All user-owned queries must include the authenticated user scope. Unique indexes
 
 This foundation does not enable live broker orders, promise returns, invent algorithm performance, choose prices, or select a payment provider. A BUY/SELL output remains research information, not an instruction to place an order. Any future paper or live execution path must be separately authorized, risk-gated and evaluated.
 
+## Current selectable algorithms
+
+The active instrument-card selector contains exactly these two independently versioned research algorithms:
+
+1. **V1 — Qoin Vector Based** (qoin-vector-baseline@edge-map-v1). Preserve the original seven-force vector engine and its existing decision equations, attention matrix, gates and calculation trace. V2 selection must never mutate V1 state or rewrite V1 decisions.
+2. **V2 — Qoin Measure Theory + Ledger** (qoin-measure-ledger-v2@measure-ledger-v2). A separate empirical finite-measure model built from the Version 2 event-set and temporal-relation ledger in backend/rust-axum/src/set_ledger.rs.
+
+V2 defines a bounded event universe and uses:
+- counting measure over buy trades, sell trades, liquidations and other event sets;
+- trade-size measure over observed trade sizes, with missing sizes kept explicit and excluded from the sum;
+- empirical imbalance measures for trade counts, trade sizes, liquidation sides and funding signs;
+- bounded temporal-precedence relation measures for buy/sell trades preceding liquidation observations;
+- an inspectable ledger of set membership, exact counts, volume totals, relation counts and source-event evidence.
+
+Its current normalized score uses observed components only: trade-count imbalance (0.25), trade-size imbalance (0.35), liquidation imbalance (0.20), funding-sign imbalance (0.10), and temporal-relation imbalance (0.10). Weights are renormalized over available components; unavailable measures are not silently imputed as zero. It abstains until at least 20 valid events and 10 trades are present, and applies spread (30 bps) and quote-freshness (30 seconds) safeguards when book observations are available. The directional threshold is ±0.15. Temporal precedence is descriptive evidence, not proof of causation.
+
+Live V2 evaluation reads the instrument's latest bounded raw-event window and returns the V2 decision together with the ledger projection and contribution trace. V2 historical replay recomputes its measures from events available up to each replay timestamp; it does not reuse V1 vectors. The card's selected algorithm ID and exact version are sent into the Mechanics and Backtesting paths. The selected algorithm is persisted per Firebase user and canonical instrument symbol.
+
+The temporary Flow Momentum entry introduced during an earlier implementation attempt is not part of the product lineup. Existing saved selections for that temporary ID are treated as V1 on read; new selections accept only V1 or V2.
+
 ## Implemented algorithm switching (2026-11-21)
 
 The branch now registers two independently identified research algorithms:

@@ -199,6 +199,25 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
   </section>;
 }
 
+function MeasureLedgerDecisionPanel({decision}:{decision:QoinVectorDecision|null}) {
+  const components=Object.entries(decision?.measure_components||{});
+  return <section className="decision-trace-panel" aria-label="V2 measure theory algorithm decision">
+    <div className="attention-heading"><strong>V2 · Measure Theory + Ledger</strong><span>{decision?.strategy_version||"measure-ledger-v2"}</span></div>
+    <p className="disclaimer">Independent empirical-measure engine. Counting measure, trade-size measure and observed temporal relations remain separate; missing observations are not imputed. Temporal precedence is not a causal claim.</p>
+    <div className="engine-metrics">
+      <div><span>Decision</span><strong>{decision?.action?.toUpperCase()||"WAIT"}</strong></div>
+      <div><span>Normalized measure score</span><strong>{decision?.score?.toFixed(4)??"—"}</strong></div>
+      <div><span>Measure weight observed</span><strong>{decision?.measure_weight_total?.toFixed(2)??"—"}</strong></div>
+      <div><span>Event universe</span><strong>{decision?.diagnostics?.universe_count??"—"}</strong></div>
+    </div>
+    <div className="contribution-panel"><div className="attention-heading"><strong>Empirical measure contributions</strong><span>Observed dimensions only</span></div>
+      {components.length?components.map(([name,item])=><div className="contribution-row" key={name}><strong>{name.replaceAll("_"," ")}</strong><span>Measure {item.value.toFixed(4)}</span><span>Weight {item.weight.toFixed(2)} · contribution {item.weighted_value.toFixed(4)}</span></div>):<p className="disclaimer">Waiting for sufficient valid event evidence.</p>}
+    </div>
+    <p className="disclaimer">{decision?.reason||"No V2 decision is available yet."}</p>
+    {decision?.diagnostics&&<pre>{JSON.stringify(decision.diagnostics,null,2)}</pre>}
+  </section>;
+}
+
 type LedgerRecord = { id: string; timestamp: number | null; kind: "decision" | "observation" | "history"; title: string; summary: string; reference: string };
 function ResearchLedger({ decision, history, events }: { decision: QoinVectorDecision | null; history: QoinVectorHistory[]; events: QoinMarketEvent[] }) {
   const records: LedgerRecord[] = [
@@ -786,7 +805,7 @@ export default function App() {
     window.history.pushState({ qoinInstrument: item.symbol, mode }, "", path);
     setRoutePath(path);
     setSelected(item);
-    setMechanicsTab("vector");
+    setMechanicsTab((algorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline")==="qoin-measure-ledger-v2"?"sets":"vector");
     rememberCardMode(item.symbol, mode);
   }
   function closeInstrument() {
@@ -809,7 +828,7 @@ export default function App() {
       await saveQoinAlgorithmSelection({symbol:item.engineSymbol,algorithm_id:manifest.algorithm_id,version:manifest.version});
       const decision=await getQoinAlgorithmDecision(item.engineSymbol);
       setAlgorithmDecisions((current)=>({...current,[item.engineSymbol.toUpperCase()]:decision}));
-      if(selected?.symbol===item.symbol)setVector(decision);
+      if(selected?.symbol===item.symbol){setVector(decision);setMechanicsTab(algorithmId==="qoin-measure-ledger-v2"?"sets":"vector");}
     }catch(error){
       setAlgorithmBySymbol((current)=>({...current,[item.engineSymbol]:previous}));
       setAuthError(error instanceof Error?error.message:"Algorithm selection could not be saved.");
@@ -871,7 +890,7 @@ export default function App() {
     let active=true;
     if(!firebaseUser){setAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
     setAlgorithmBySymbol({});setAlgorithmDecisions({});
-    getQoinAlgorithmSelections().then(({items})=>{if(active)setAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));})
+    getQoinAlgorithmSelections().then(({items})=>{if(active)setAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id==="qoin-flow-momentum"?"qoin-vector-baseline":item.algorithm_id])));})
       .catch((error:unknown)=>{if(active)setAuthError(error instanceof Error?error.message:"Could not load algorithm selections.");});
     return()=>{active=false;};
   },[firebaseUser?.uid]);
@@ -929,6 +948,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if(selected) setMechanicsTab(selectedAlgorithmId==="qoin-measure-ledger-v2"?"sets":"vector");
+  },[selected?.engineSymbol,selectedAlgorithmId]);
+
+  useEffect(() => {
     if (!selected) {
       setVector(null);
       setVectorError("");
@@ -967,7 +990,7 @@ export default function App() {
     if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
     return () => { active = false; };
-  }, [selected?.engineSymbol]);
+  }, [selected?.engineSymbol, selectedAlgorithmId]);
 
   useEffect(() => {
     const symbols = instruments.map((item) => item.engineSymbol);
@@ -1042,7 +1065,7 @@ export default function App() {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
             getQoinAlgorithmDecision(selected.engineSymbol),
-            selectedAlgorithmId==="qoin-vector-baseline" ? getInstrumentVectorHistory(selected.engineSymbol, 500) : Promise.resolve({items:[]}),
+            getInstrumentVectorHistory(selected.engineSymbol, 500),
             getQoinEvents(selected.engineSymbol, 1000),
             getQoinSetLedger(selected.engineSymbol, 1000),
           ]).then(([decision, history, events, ledger]) => {
@@ -1274,29 +1297,26 @@ export default function App() {
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeInstrument(); }}><section className="vector-modal mechanics-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
         <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close instrument workspace">×</button></div></header>
         <div className="modal-body">
-          {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics"><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>Vector space</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Sets &amp; Ledger</button></div>}
+          {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics">{selectedAlgorithmId==="qoin-measure-ledger-v2" ? <button type="button" role="tab" aria-selected className="active">V2 · Measure &amp; Ledger</button> : <><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>V1 · Vector</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Measure Ledger</button></>}</div>}
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
-            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the selected instrument's stored observations through the algorithm chosen on its card. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
+            <div className="vector-intro"><div><strong>Backtest mechanics</strong><p>Replay the algorithm selected on this instrument's card, pinned to its exact version. Every simulated decision and fill remains inspectable.</p></div><span className="preview-tag">RESEARCH ONLY</span></div>
             <section className="backtest-method-panel" aria-label="Historical replay mechanics">
               <div className="attention-heading"><strong>How the replay progresses</strong><span>Deterministic · event-time ordered</span></div>
               <ol>
                 <li><strong>Build the historical tape.</strong> Load persisted events for this instrument and selected venue, ordered by event timestamp and event ID.</li>
-                <li><strong>Reconstruct state.</strong> Feed each observation through the same V1 state and feature calculations used by the live research engine.</li>
-                <li><strong>Evaluate decisions.</strong> Apply the recorded strategy version and its gates; BUY, SELL and WAIT decisions are counted separately.</li>
+                <li><strong>Reconstruct evidence.</strong> Rebuild the selected algorithm's event state and empirical measures from observations available up to each timestamp.</li>
+                <li><strong>Evaluate decisions.</strong> Apply the pinned algorithm version and its own gates; BUY, SELL and WAIT decisions are counted separately.</li>
                 <li><strong>Simulate execution.</strong> A signal can fill only on a strictly later eligible trade or book event. Book buys use ask and sells use bid; latency and liquidity participation constrain fills.</li>
                 <li><strong>Account for costs.</strong> Fees, slippage, market impact and recorded funding cashflows flow into equity, realized P/L and drawdown.</li>
                 <li><strong>Audit the result.</strong> Inspect fills, pending orders, raw-event gaps, assumptions and cost-stress scenarios. No broker order is submitted.</li>
               </ol>
               <p className="disclaimer">This is a replay of events already stored by Qoin, not a complete historical market-data download. Missing observations remain missing; the replay reports gaps rather than inventing candles or prices.</p>
             </section>
-            <VectorMap decision={vector} history={vectorHistory} />
-            <FeatureSpace decision={vector} />
-            {vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No persisted decision is available yet. Backtest replay uses stored raw events and the authoritative seven-force Rust engine."}</p>}
-            <ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} />
+            {selectedAlgorithmId==="qoin-measure-ledger-v2" ? <MeasureLedgerDecisionPanel decision={vector} /> : <><VectorMap decision={vector} history={vectorHistory} /><FeatureSpace decision={vector} />{vector ? <DecisionTracePanel decision={vector} /> : <p className="disclaimer">{vectorError || "No decision is available for the selected algorithm yet."}</p>}<ResearchLedger decision={vector} history={vectorHistory} events={rawEvents} /></>}
             <SetLedgerPanel ledger={setLedger} status={setLedgerStatus} />
-            <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||"edge-map-v1"} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
-          </section> : mechanicsTab === "vector" ? <>
-          <div className="vector-intro"><div><strong>{selectedAlgorithm?.display_name||selectedAlgorithmId} feature space</strong><p>Current algorithm inputs, available feature interactions and selected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
+            <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||(selectedAlgorithmId==="qoin-measure-ledger-v2"?"measure-ledger-v2":"edge-map-v1")} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+          </section> : selectedAlgorithmId==="qoin-measure-ledger-v2" ? <><MeasureLedgerDecisionPanel decision={vector} /><SetLedgerPanel ledger={setLedger} status={setLedgerStatus} /></> : mechanicsTab === "vector" ? <>
+          <div className="vector-intro"><div><strong>Vector space</strong><p>Actual seven-force engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
           <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
           <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
           <VectorMap decision={vector} history={vectorHistory} />
