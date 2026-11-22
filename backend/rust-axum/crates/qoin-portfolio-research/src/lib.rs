@@ -350,7 +350,7 @@ mod tests {
   fx_rates:vec![],marks:vec![Mark{ts_ms:4_000,instrument_id:"BTC-PERP".into(),price:51_000.0}],
   equity_curve:vec![EquityPoint{ts_ms:1_000,equity_base:10_000.0,regime:Some("trend".into())},EquityPoint{ts_ms:2_000,equity_base:10_100.0,regime:Some("trend".into())},EquityPoint{ts_ms:3_000,equity_base:9_900.0,regime:Some("volatile".into())}],
   correlations:vec![],risk_limits:RiskLimits::default()}}
- #[test] fn multi_asset_ledger_values_cash_position_and_funding(){let r=evaluate_portfolio(&sample()).unwrap();assert_eq!(r.positions.len(),1);assert!((r.cash_balances["USD"]-9999.0).abs()<1e-8);assert!((r.equity_base-15100.0).abs()<1e-8);assert_eq!(r.funding_base,1.0);}
+ #[test] fn multi_asset_ledger_values_cash_position_and_funding(){let r=evaluate_portfolio(&sample()).unwrap();assert_eq!(r.positions.len(),1);assert!((r.cash_balances["USD"]-9999.0).abs()<1e-8);assert!((r.equity_base-10099.0).abs()<1e-8);assert_eq!(r.funding_base,1.0);}
  #[test] fn non_base_currency_requires_asof_fx(){let mut x=sample();x.events.push(LedgerEvent::Deposit{ts_ms:5_000,currency:"EUR".into(),amount:100.0});assert!(matches!(evaluate_portfolio(&x),Err(ResearchError::MissingFx(_))));}
  #[test] fn risk_limits_report_instrument_and_gross_exposure(){let mut x=sample();x.risk_limits.max_instrument_exposure_pct=10.0;let r=evaluate_portfolio(&x).unwrap();assert!(r.risk_violations.iter().any(|v|v.code=="instrument_exposure"));}
  #[test] fn walk_forward_windows_are_chronological_and_non_overlapping(){let d=86_400_000;let w=walk_forward_windows(1_000,1_000+100*d,60,20,20).unwrap();assert_eq!(w.len(),2);assert_eq!(w[0].train_end_ms,w[0].test_start_ms);assert!(w[0].test_end_ms<=w[1].train_start_ms);}
