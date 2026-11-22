@@ -189,19 +189,22 @@ fn measure_ledger_v2_decision(state:&ReplayState,event:&ReplayEvent)->Result<Rep
     let sells:Vec<&ReplayEvent>=trades.iter().copied().filter(|e|e.side.as_deref()==Some("sell")).collect();
     let long_liq=history.iter().filter(|e|e.event_type=="liquidation"&&e.liquidation_side.as_deref()==Some("long")).count() as f64;
     let short_liq=history.iter().filter(|e|e.event_type=="liquidation"&&e.liquidation_side.as_deref()==Some("short")).count() as f64;
+    let liquidation_count=history.iter().filter(|e|e.event_type=="liquidation").count() as f64;
     let positive_funding=history.iter().filter(|e|e.funding_rate.is_some_and(|v|v>0.0)).count() as f64;
     let negative_funding=history.iter().filter(|e|e.funding_rate.is_some_and(|v|v<0.0)).count() as f64;
+    let funding_count=history.iter().filter(|e|matches!(e.event_type.as_str(),"funding"|"mark_price")&&e.funding_rate.is_some()).count() as f64;
     let buy_volume:f64=buys.iter().filter_map(|e|e.size.filter(|v|v.is_finite()&&*v>=0.0)).sum();
     let sell_volume:f64=sells.iter().filter_map(|e|e.size.filter(|v|v.is_finite()&&*v>=0.0)).sum();
+    let total_trade_volume:f64=trades.iter().filter_map(|e|e.size.filter(|v|v.is_finite()&&*v>=0.0)).sum();
     let observed_sizes=trades.iter().filter(|e|e.size.is_some_and(|v|v.is_finite()&&v>=0.0)).count();
     let buy_rel=buys.iter().map(|source|history.iter().filter(|target|target.event_type=="liquidation"&&(1..=60_000).contains(&target.ts_ms.saturating_sub(source.ts_ms))).count() as f64).sum::<f64>();
     let sell_rel=sells.iter().map(|source|history.iter().filter(|target|target.event_type=="liquidation"&&(1..=60_000).contains(&target.ts_ms.saturating_sub(source.ts_ms))).count() as f64).sum::<f64>();
     let trade_count=trades.len() as f64;
     let count_imbalance=if trade_count>0.0{(buys.len() as f64-sells.len() as f64)/trade_count}else{0.0};
-    let volume_imbalance=if buy_volume+sell_volume>0.0{(buy_volume-sell_volume)/(buy_volume+sell_volume)}else{0.0};
-    let liq_total=long_liq+short_liq;
+    let volume_imbalance=if total_trade_volume>0.0{(buy_volume-sell_volume)/total_trade_volume}else{0.0};
+    let liq_total=liquidation_count;
     let liquidation_imbalance=if liq_total>0.0{(short_liq-long_liq)/liq_total}else{0.0};
-    let funding_total=positive_funding+negative_funding;
+    let funding_total=funding_count;
     let funding_imbalance=if funding_total>0.0{(positive_funding-negative_funding)/funding_total}else{0.0};
     let relation_imbalance=if buy_rel+sell_rel>0.0{(buy_rel-sell_rel)/(buy_rel+sell_rel)}else{0.0};
     let mut weighted=0.0;let mut total_weight=0.0;
@@ -224,7 +227,7 @@ fn measure_ledger_v2_decision(state:&ReplayState,event:&ReplayEvent)->Result<Rep
         "universe_count":history.len(),
         "counting_measure":{"all_trades":trade_count,"buy_trades":buys.len(),"sell_trades":sells.len(),
             "long_liquidations":long_liq,"short_liquidations":short_liq},
-        "trade_size_measure":{"buy_volume":buy_volume,"sell_volume":sell_volume,"observed_trade_sizes":observed_sizes,
+        "trade_size_measure":{"buy_volume":buy_volume,"sell_volume":sell_volume,"total_observed_volume":total_trade_volume,"observed_trade_sizes":observed_sizes,
             "missing_trade_sizes":trades.len().saturating_sub(observed_sizes)},
         "empirical_imbalances":{"trade_count":count_imbalance,"trade_size":volume_imbalance,
             "liquidation":liquidation_imbalance,"funding_sign":funding_imbalance,"temporal_relation":relation_imbalance},
