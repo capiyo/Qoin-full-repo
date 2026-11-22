@@ -325,6 +325,59 @@ pub fn evaluate_portfolio(input: &PortfolioInput) -> Result<PortfolioReport, Res
         "Walk-forward and out-of-sample evaluation must use chronologically separated input windows.".into()]})
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PositionSizingInput {
+    pub equity_base: f64,
+    pub entry_price_quote: f64,
+    pub stop_price_quote: f64,
+    pub quote_to_base: f64,
+    pub contract_multiplier: f64,
+    pub risk_budget_pct: f64,
+    pub max_notional_pct: f64,
+    pub existing_instrument_exposure_base: f64,
+    pub max_gross_leverage: f64,
+    pub current_gross_exposure_base: f64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PositionSize {
+    pub quantity: f64,
+    pub notional_base: f64,
+    pub loss_at_stop_base: f64,
+    pub risk_budget_base: f64,
+    pub binding_constraint: String,
+}
+/// Conservative long/short sizing from stop distance, portfolio risk budget,
+/// instrument concentration and remaining gross leverage. No order is submitted.
+pub fn size_position(input: &PositionSizingInput) -> Result<PositionSize, ResearchError> {
+    let values = [input.equity_base,input.entry_price_quote,input.stop_price_quote,input.quote_to_base,
+        input.contract_multiplier,input.risk_budget_pct,input.max_notional_pct,
+        input.existing_instrument_exposure_base,input.max_gross_leverage,input.current_gross_exposure_base];
+    if values.iter().any(|v| !finite(*v)) || input.equity_base<=0.0 || input.entry_price_quote<=0.0
+        || input.stop_price_quote<=0.0 || input.quote_to_base<=0.0 || input.contract_multiplier<=0.0
+        || input.risk_budget_pct<=0.0 || input.risk_budget_pct>100.0 || input.max_notional_pct<=0.0
+        || input.max_notional_pct>100.0 || input.existing_instrument_exposure_base<0.0
+        || input.max_gross_leverage<=0.0 || input.current_gross_exposure_base<0.0 {
+        return Err(ResearchError::Invalid("position sizing inputs and risk budgets must be finite and within valid bounds".into()));
+    }
+    let stop_distance=(input.entry_price_quote-input.stop_price_quote).abs();
+    if stop_distance<=0.0 {return Err(ResearchError::Invalid("entry and stop prices must differ".into()));}
+    let risk_budget=input.equity_base*input.risk_budget_pct/100.0;
+    let risk_per_unit=stop_distance*input.quote_to_base*input.contract_multiplier;
+    let quantity_by_risk=risk_budget/risk_per_unit;
+    let max_instrument=input.equity_base*input.max_notional_pct/100.0;
+    let remaining_instrument=(max_instrument-input.existing_instrument_exposure_base).max(0.0);
+    let remaining_gross=(input.equity_base*input.max_gross_leverage-input.current_gross_exposure_base).max(0.0);
+    let max_notional=remaining_instrument.min(remaining_gross);
+    let quantity_by_notional=max_notional/(input.entry_price_quote*input.quote_to_base*input.contract_multiplier);
+    let quantity=quantity_by_risk.min(quantity_by_notional);
+    if !finite(quantity)||quantity<=0.0 {return Err(ResearchError::Invalid("risk or exposure limits leave no position capacity".into()));}
+    let notional=quantity*input.entry_price_quote*input.quote_to_base*input.contract_multiplier;
+    let loss=quantity*risk_per_unit;
+    let binding=if quantity_by_risk<=quantity_by_notional {"stop_loss_risk_budget"} else if remaining_instrument<=remaining_gross {"instrument_concentration"} else {"gross_leverage"};
+    Ok(PositionSize{quantity,notional_base:notional,loss_at_stop_base:loss,risk_budget_base:risk_budget,binding_constraint:binding.into()})
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvaluationWindow { pub train_start_ms:i64, pub train_end_ms:i64, pub test_start_ms:i64, pub test_end_ms:i64 }
 pub fn walk_forward_windows(start_ms:i64,end_ms:i64,train_days:u32,test_days:u32,step_days:u32)->Result<Vec<EvaluationWindow>,ResearchError>{
