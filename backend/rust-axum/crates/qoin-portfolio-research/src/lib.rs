@@ -207,7 +207,7 @@ fn metric(curve: &[EquityPoint], turnover_pct: f64, holding_hours: Option<f64>) 
     }
 }
 
-/// Deterministic ledger valuation. FX and marks are point-in-time as-of the final ledger timestamp.
+/// Deterministic ledger valuation. Marks and FX are point-in-time as-of the latest supplied ledger-event or mark timestamp.
 pub fn evaluate_portfolio(input: &PortfolioInput) -> Result<PortfolioReport, ResearchError> {
     validate(input)?;
     if input.instruments.is_empty() { return Err(ResearchError::Invalid("at least one instrument is required".into())); }
