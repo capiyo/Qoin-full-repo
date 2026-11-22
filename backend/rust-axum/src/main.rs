@@ -863,6 +863,18 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
     let recovery_ok=s.recovery_skipped_events == 0;
     let order_entry_enabled=s.trading_controls.find_one(doc!{"_id":"execution"},None).await
         .ok().flatten().and_then(|control|control.get_bool("enabled").ok()).unwrap_or(false);
+    let configured_adapters=s.broker_registry.configured_brokers().unwrap_or_default();
+    let configured_adapter_count=configured_adapters.len();
+    let sole_configured_adapter=if configured_adapter_count==1 {
+        configured_adapters.first().cloned()
+    } else { None };
+    let live_order_status=if configured_adapters.is_empty() {
+        "disabled_no_execution_adapter"
+    } else if !order_entry_enabled {
+        "disabled_by_kill_switch"
+    } else {
+        "blocked_pending_account_preflight"
+    };
     let healthy=database_ok && recovery_ok;
     let strategy_version=s.signal_config_version.clone();
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
@@ -875,16 +887,9 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
           "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
-       "live_order_submission":if matches!(env::var("QOIN_TRADING_MODE").as_deref(),Ok("live")|Ok("testnet"))
-          && env::var("QOIN_EXECUTION_TOKEN").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && env::var("BINANCE_API_SECRET").map(|v|!v.trim().is_empty()).unwrap_or(false)
-          && ((env::var("QOIN_TRADING_MODE").as_deref()==Ok("live")
-                && env::var("QOIN_LIVE_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_REAL_MONEY_RISK").unwrap_or(false))
-              || (env::var("QOIN_TRADING_MODE").as_deref()==Ok("testnet")
-                && env::var("QOIN_TESTNET_TRADING_CONFIRM").map(|v|v=="I_UNDERSTAND_TESTNET_ORDERS").unwrap_or(false)))
-          {"configured"}else{"disabled"},
-       "live_order_adapter":"binance_usdm_with_required_protective_stop",
+       "execution_adapter_registry":{"configured":configured_adapters,"count":configured_adapter_count,
+          "sole_adapter":sole_configured_adapter},
+       "live_order_submission":live_order_status,
        "new_order_entry_enabled":order_entry_enabled,
        "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
 }
