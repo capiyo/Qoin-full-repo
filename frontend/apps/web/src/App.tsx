@@ -674,6 +674,8 @@ function BrokerCollectionPanel() {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
+  const [mobileChromeVisible, setMobileChromeVisible] = useState(true);
+  const lastWorkspaceScrollRef = useRef(0);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -688,7 +690,6 @@ export default function App() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
-  const pendingInstrumentRef = useRef<Instrument | null>(null);
   const [instruments, setInstruments] = useState(seed);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
@@ -745,11 +746,6 @@ export default function App() {
           pendingArchiveActionRef.current = null;
           archivedSymbolsRef.current = nextSymbols;
           setInstruments((items) => items.map((item) => ({ ...item, archived: nextSymbols.includes(item.symbol) })));
-          const pendingInstrument = pendingInstrumentRef.current;
-          if (pendingInstrument) {
-            pendingInstrumentRef.current = null;
-            navigateToInstrument({ ...pendingInstrument, archived: nextSymbols.includes(pendingInstrument.symbol) }, cardModesRef.current[pendingInstrument.symbol] || "live");
-          }
           if (pendingAction && nextSymbols !== symbols) {
             void saveQoinArchivedSymbols(nextSymbols).catch((error) => setAuthError(error instanceof Error ? error.message : "Could not save your archive."));
           }
@@ -790,7 +786,6 @@ export default function App() {
     rememberCardMode(item.symbol, (cardModeBySymbol[item.symbol] || "live") === "backtest" ? "live" : "backtest");
   }
   function openInstrument(item: Instrument) {
-    if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
     setMechanicsTab("vector");
     navigateToInstrument(item, cardModeBySymbol[item.symbol] || "live");
   }
@@ -811,7 +806,6 @@ export default function App() {
       if (!routePath.startsWith("/app/instrument/")) setSelected(null);
       return;
     }
-    if (!firebaseUser) return;
     const slug = decodeURIComponent(match[1]).toUpperCase();
     const item = instruments.find((candidate) => instrumentSlug(candidate.symbol) === slug);
     if (!item) return;
@@ -1027,6 +1021,14 @@ export default function App() {
   const decisionStrategy = strategy;
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
+  function handleWorkspaceScroll(event: React.UIEvent<HTMLElement>) {
+    const nextScroll = event.currentTarget.scrollTop;
+    const previousScroll = lastWorkspaceScrollRef.current;
+    if (nextScroll < 12 || nextScroll < previousScroll - 3) setMobileChromeVisible(true);
+    else if (nextScroll > previousScroll + 4) setMobileChromeVisible(false);
+    lastWorkspaceScrollRef.current = nextScroll;
+  }
+
   function toggleArchive(symbol: string) {
     const target = instruments.find((item) => item.symbol === symbol);
     if (!target) return;
@@ -1055,35 +1057,14 @@ export default function App() {
   }
 
   if (!authReady) {
-    return <main className="auth-gate" aria-live="polite"><section className="auth-gate-card"><span className="auth-gate-mark">q</span><p className="eyebrow">PRIVATE MARKET WORKSPACE</p><h1>Welcome to Qoin.</h1><p className="auth-gate-copy">Sign in to open your Archive, explore markets, and inspect the research behind each instrument.</p><div className="auth-gate-loading"><span /> Checking your session…</div></section></main>;
-  }
-
-  if (!firebaseUser) {
-    return (
-      <main className="auth-gate">
-        <section className="auth-gate-card">
-          <span className="auth-gate-mark">q</span>
-          <p className="eyebrow">YOUR MARKET WORKSPACE</p>
-          <h1>{authMode === "register" ? "Create your Qoin account." : "Welcome back."}</h1>
-          <p className="auth-gate-copy">Your Archive, selected instruments, and research workspace are available after you sign in.</p>
-          <form className="auth-gate-form" onSubmit={submitAuthentication}>
-            <label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" required /></label>
-            <label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>
-            {authError && <p role="alert" className="auth-gate-error">{authError}</p>}
-            <button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
-          </form>
-          <button type="button" className="auth-gate-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already have an account? Sign in" : "New to Qoin? Create an account"}</button>
-          <p className="auth-gate-footnote">Secure account access powered by Firebase Authentication.</p>
-        </section>
-      </main>
-    );
+    return <div className="loading-screen" role="status" aria-label="Loading"><span className="spinner" /></div>;
   }
 
   return (
-    <div className="qoin-shell">
+    <div className={mobileChromeVisible ? "qoin-shell" : "qoin-shell chrome-hidden"}>
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
-        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg><span className="desktop-header-nav-label">Archive</span></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg><span className="desktop-header-nav-label">Explore</span></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
           {firebaseUser ? <>
@@ -1114,23 +1095,44 @@ export default function App() {
       <div className="workspace qoin-workspace">
       <aside className="desktop-profile-sidebar" aria-label="Qoin workspace navigation">
         <div className="desktop-sidebar-profile">
-          <button className="desktop-profile-avatar" onClick={() => avatarInputRef.current?.click()} aria-label="Change profile picture">
+          <button className="desktop-profile-avatar" onClick={() => { if (firebaseUser) avatarInputRef.current?.click(); else { setAuthMode("signin"); setAuthPanelOpen(true); setAuthError(""); } }} aria-label={firebaseUser ? "Change profile picture" : "Sign in"}>
             {(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}
             <span aria-hidden="true">+</span>
           </button>
           <strong>{firebaseUser?.displayName || firebaseUser?.email?.split("@")[0] || "Qoin member"}</strong>
-          <small>{firebaseUser?.email}</small>
+          <small>{firebaseUser?.email || "Guest workspace"}</small>
           <button className="desktop-profile-link" onClick={() => setProfileOpen((value) => !value)}>View profile</button>
-          {profileOpen && <div className="desktop-profile-details"><span>Account</span><strong>{firebaseUser?.email}</strong><small>Signed in securely with Firebase</small></div>}
+          {profileOpen && <div className="desktop-profile-details"><span>Account</span><strong>{firebaseUser?.email || "Guest workspace"}</strong><small>{firebaseUser ? "Signed in securely with Firebase" : "Sign in to sync your archive across devices"}</small></div>}
+        </div>
+        <div className="desktop-sidebar-content">
+          <div className="desktop-sidebar-group">
+            <p className="desktop-sidebar-label">YOUR MARKETS</p>
+            {archived.slice(0, 7).map((item) => (
+              <button className="desktop-sidebar-market" key={item.symbol} onClick={() => openInstrument(item)}>
+                <span className="desktop-sidebar-market-mark" style={{ background: item.color }}>{item.symbol.slice(0, 1)}</span>
+                <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
+              </button>
+            ))}
+            {!archived.length && <p className="desktop-sidebar-empty">Your saved instruments will appear here.</p>}
+          </div>
+          <div className="desktop-sidebar-group">
+            <p className="desktop-sidebar-label">RESEARCH</p>
+            <button className="desktop-sidebar-market" onClick={() => { setMobileChromeVisible(true); lastWorkspaceScrollRef.current = 0; setTab("Explore"); }}>
+              <span className="desktop-sidebar-market-mark research-mark">⌕</span>
+              <span><strong>Explore markets</strong><small>Discover instruments</small></span>
+            </button>
+          </div>
         </div>
         <div className="desktop-sidebar-bottom">
           <button onClick={() => setNotificationsOpen((value) => !value)}><span aria-hidden="true">♧</span>Notifications{unreadNotifications > 0 && <small>{unreadNotifications}</small>}</button>
-          <button onClick={() => avatarInputRef.current?.click()}><span aria-hidden="true">◉</span>Change photo</button>
-          <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
+          {firebaseUser ? <>
+            <button onClick={() => avatarInputRef.current?.click()}><span aria-hidden="true">◉</span>Change photo</button>
+            <button onClick={() => { void signOutQoinUser().catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Sign out failed. Try again.")); }}><span aria-hidden="true">↗</span>Sign out</button>
+          </> : <button onClick={() => { setAuthMode("signin"); setAuthPanelOpen(true); setAuthError(""); }}><span aria-hidden="true">↗</span>Sign in</button>}
         </div>
       </aside>
         <main className="home-columns qoin-home-columns" aria-label="Qoin workspace">
-          <section className={`home-column archive-column ${tab === "Archive" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Archive">
+          <section className={`home-column archive-column ${tab === "Archive" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Archive" onScroll={handleWorkspaceScroll}>
             <section className="content-section">
                       <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
                       {archived.length ? <div className="archive-workspace">
@@ -1152,7 +1154,7 @@ export default function App() {
                       </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
                     </section>
           </section>
-          <section className={`home-column explore-column ${tab === "Explore" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Explore">
+          <section className={`home-column explore-column ${tab === "Explore" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Explore" onScroll={handleWorkspaceScroll}>
             <section className="content-section">
                       <div className="explore-workspace">
                       <div className="explore-main-column">
@@ -1221,8 +1223,8 @@ export default function App() {
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
       <nav className="floating-navigation" aria-label="Primary navigation">
-        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">◈</span></button>
-        <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true">⌕</span></button>
+        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></span><span className="floating-nav-label">Archive</span></button>
+        <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2" /></svg></span><span className="floating-nav-label">Explore</span></button>
       </nav>
 
 

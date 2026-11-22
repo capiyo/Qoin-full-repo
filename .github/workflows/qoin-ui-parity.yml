@@ -1,0 +1,45 @@
+name: Qoin Funspot UI parity
+
+on:
+  pull_request:
+    branches: [main, qoin/derivatives-suite]
+    paths:
+      - "frontend/apps/web/**"
+      - "frontend/apps/mobile/**"
+      - "frontend/packages/core/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/qoin-ui-parity.yml"
+  workflow_dispatch:
+
+jobs:
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build Qoin web
+        run: pnpm --filter @qoin/react-web build
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Typecheck Qoin mobile
+        run: pnpm --filter @qoin/mobile exec tsc --noEmit

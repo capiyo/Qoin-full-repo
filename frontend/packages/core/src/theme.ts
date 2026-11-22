@@ -1,21 +1,21 @@
 // Shared Qoin brand tokens for web and native clients.
 export const qoinColors = {
-  bgPrimary: "#F7F9FC",
-  bgSecondary: "#FFFFFF",
-  border: "#E6EBF2",
-  accentCyan: "#2867DC",
-  accent: "#2867DC",
-  bullish: "#2867DC",
+  bgPrimary: "#0E1612",
+  bgSecondary: "#161F1A",
+  border: "#FFFFFF14",
+  accentCyan: "#7DF162",
+  accent: "#7DF162",
+  bullish: "#7DF162",
   bearish: "#E05A67",
   warning: "#D99528",
-  textPrimary: "#24344D",
-  textMuted: "#8794A7",
+  textPrimary: "#EDF4EE",
+  textMuted: "#89968D",
   white: "#FFFFFF",
 } as const;
 
 export type QoinColorToken = keyof typeof qoinColors;
 
 export const fonts = {
-  heading: "'Manrope', sans-serif",
+  heading: "'DM Sans', sans-serif",
   body: "'DM Sans', sans-serif",
 } as const;
