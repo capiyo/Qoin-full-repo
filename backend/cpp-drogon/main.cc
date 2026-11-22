@@ -300,7 +300,7 @@ int main() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/backtest", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        const auto names = {"symbol", "venue", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps", "latency_ms", "max_participation_rate", "market_impact_bps"};
+        const auto names = {"symbol", "venue", "from_ts_ms", "to_ts_ms", "limit", "initial_capital", "fee_bps", "slippage_bps", "latency_ms", "max_participation_rate", "market_impact_bps", "algorithm_id"};
         std::string path = "/internal/backtest";
         bool first = true;
         for (const auto* name : names) {
@@ -317,6 +317,20 @@ int main() {
     drogon::app().registerHandler("/api/v1/me", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/users/me");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/me/algorithm-selections", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Get) {
+            const auto symbol = req->getParameter("symbol");
+            proxyGet(req, std::move(cb), "/internal/me/algorithm-selections" +
+                (symbol.empty() ? std::string{} : "?symbol=" + drogon::utils::urlEncode(symbol)));
+        } else proxyPostJson(req, std::move(cb), "/internal/me/algorithm-selections");
+    }, {drogon::Get, drogon::Post});
+    drogon::app().registerHandler("/api/v1/me/algorithm-decision", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto symbol = req->getParameter("symbol");
+        proxyGet(req, std::move(cb), "/internal/me/algorithm-decision" +
+            (symbol.empty() ? std::string{} : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/broker-credentials/public-key", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {

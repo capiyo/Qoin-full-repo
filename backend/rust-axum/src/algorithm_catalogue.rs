@@ -74,6 +74,22 @@ pub fn registered_algorithms() -> Vec<AlgorithmManifest> {
         risk_profile: "research_baseline; abstains when spread or event evidence is insufficient",
         execution_mode: "research_only",
         evaluation_status: "not_independently_validated",
+    }, AlgorithmManifest {
+        algorithm_id: "qoin-flow-momentum",
+        display_name: "Qoin Flow Momentum",
+        description: "Independent flow-led research model combining signed trade flow, displayed liquidity imbalance and liquidation pressure with explicit spread and quote-freshness gates.",
+        version: "flow-momentum-v1",
+        status: AlgorithmStatus::Active,
+        supported_asset_classes: &["crypto", "equities", "fx", "indices", "commodities"],
+        supported_market_data_providers: &["binance_public", "finnhub", "coinbase_public", "kraken_public"],
+        supported_venues: &["binance_usdm", "finnhub", "coinbase_advanced_trade", "kraken_spot"],
+        supported_instrument_groups: &["crypto_perpetuals", "equities", "major_fx", "indices", "commodities"],
+        supported_timeframes: &["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+        required_features: &["order_flow_imbalance"],
+        optional_features: &["liquidity_imbalance", "liquidation_pressure", "event_intensity", "volatility", "funding_pressure"],
+        risk_profile: "spread <= 30 bps when supplied; book quote <= 30 seconds when supplied; directional threshold 0.35",
+        execution_mode: "research_only",
+        evaluation_status: "not_independently_validated",
     }]
 }
 
@@ -148,9 +164,9 @@ pub async fn get_algorithms() -> impl IntoResponse {
         "market_access_tiers": market_access_tiers(),
         "market_access_tiers_enabled": false,
         "algorithms": algorithms,
-        "selection_enabled": false,
+        "selection_enabled": true,
         "entitlements_enabled": false,
-        "note": "Catalogue metadata only. User-specific access and selection require authenticated server-side entitlements."
+        "note": "Algorithm selection is authenticated and persisted per Firebase user and instrument. Paid entitlements are not active; registered research algorithms are selectable without a paid-access claim."
     })))
 }
 
@@ -162,8 +178,9 @@ mod tests {
     fn baseline_is_registered_and_valid() {
         assert!(validate_catalogue().is_ok());
         let algorithms = registered_algorithms();
-        assert_eq!(algorithms.len(), 1);
+        assert_eq!(algorithms.len(), 2);
         assert_eq!(algorithms[0].algorithm_id, "qoin-vector-baseline");
+        assert_eq!(algorithms[1].algorithm_id, "qoin-flow-momentum");
         assert_eq!(algorithms[0].execution_mode, "research_only");
     }
 

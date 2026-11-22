@@ -179,6 +179,28 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
         }, initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
 }
 
+/// Dispatch a versioned registered algorithm into the event-by-event execution simulator.
+pub fn replay_with_algorithm(
+    events: Vec<ReplayEvent>, algorithm_id: &str, config: &EngineConfig, config_version: &str,
+    initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
+    max_participation_rate: f64, market_impact_bps: f64,
+) -> Result<ReplayResult, String> {
+    match algorithm_id {
+        "qoin-vector-baseline" => replay_with_vector_engine(events, config, config_version,
+            initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps),
+        "qoin-flow-momentum" => replay_with_decider(events, "qoin-flow-momentum".into(), "flow-momentum-v1".into(),
+            |_symbol, state, event| {
+                let score=0.65*state.ofi+0.20*state.liquidity_imbalance+0.15*state.liquidation_pressure.tanh();
+                let spread_ok=state.spread_bps.map(|v|v.is_finite()&&v<=30.0).unwrap_or(true);
+                let quote_fresh=state.last_book_ts_ms.map(|book|event.ts_ms.saturating_sub(book)<=30_000).unwrap_or(true);
+                let action=if !spread_ok||!quote_fresh{"wait"}else if score>=0.35{"buy"}else if score<=-0.35{"sell"}else{"wait"};
+                let reason=if !spread_ok{"Spread exceeds the flow-momentum risk gate."}else if !quote_fresh{"Order-book quote is stale; the algorithm abstains."}else if action=="wait"{"Flow and liquidity evidence remain below the directional threshold."}else{"Directional flow and liquidity pressure crossed the momentum threshold."};
+                Ok(ReplayDecision{action:action.into(),reason:reason.into(),score:Some(score),alignment:Some(score.abs()),angle_radians:None,feature_trace:None})
+            },initial_capital,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps),
+        _ => Err("algorithm ID is not registered for backtesting".into()),
+    }
+}
+
 fn replay_with_decider<F>(mut events: Vec<ReplayEvent>, strategy_key: String, strategy_version: String,
               mut decide: F, initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
               max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String>

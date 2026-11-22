@@ -96,6 +96,7 @@ struct AppState {
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
     users: Collection<Document>,
+    algorithm_selections: Collection<Document>,
     broker_connections: Collection<Document>,
     broker_credentials: Collection<Document>,
     broker_accounts: Collection<Document>,
@@ -117,6 +118,8 @@ struct SignalRequest { observation: ForceObservation, has_open_position: bool }
 struct SymbolQuery { symbol: Option<String> }
 #[derive(Deserialize)]
 struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
+#[derive(Debug, Clone, Deserialize)]
+struct AlgorithmSelectionRequest { symbol: String, algorithm_id: String, version: String }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -385,6 +388,121 @@ async fn get_qoin_me(State(s): State<AppState>, headers: HeaderMap) -> impl Into
     (StatusCode::OK, Json(serde_json::json!({
         "uid":owner_uid,"status":user.get_str("status").unwrap_or("active"),
         "created_at":user.get_datetime("created_at").ok().map(|value|value.to_string())
+    })))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct StoredAlgorithmSelection { symbol: String, algorithm_id: String, version: String, selected_at_ms: i64 }
+fn default_algorithm_selection(symbol: &str) -> StoredAlgorithmSelection {
+    StoredAlgorithmSelection { symbol: symbol.into(), algorithm_id: "qoin-vector-baseline".into(), version: "edge-map-v1".into(), selected_at_ms: 0 }
+}
+async fn get_algorithm_selections(State(s): State<AppState>, headers: HeaderMap, Query(query): Query<SymbolQuery>) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
+    let mut filter = doc!{"owner_uid": &owner_uid};
+    if let Some(symbol) = query.symbol.as_deref() {
+        if symbol.trim().is_empty() || symbol.len() > 96 { return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid instrument symbol"}))); }
+        filter.insert("symbol", symbol);
+    }
+    let mut cursor = match s.algorithm_selections.find(filter, None).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "algorithm selection lookup failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"algorithm selections unavailable"}))); }
+    };
+    let mut items = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(document)) => items.push(serde_json::json!({
+                "symbol":document.get_str("symbol").unwrap_or_default(),
+                "algorithm_id":document.get_str("algorithm_id").unwrap_or("qoin-vector-baseline"),
+                "version":document.get_str("version").unwrap_or("edge-map-v1"),
+                "selected_at_ms":document.get_i64("selected_at_ms").unwrap_or(0)
+            })),
+            Ok(None) => break,
+            Err(error) => { tracing::error!(error=%error, "algorithm selection cursor failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"algorithm selections unavailable"}))); }
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"items":items})))
+}
+async fn put_algorithm_selection(State(s): State<AppState>, headers: HeaderMap, Json(request): Json<AlgorithmSelectionRequest>) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
+    let symbol=request.symbol.trim().to_ascii_uppercase();
+    let algorithm_id=request.algorithm_id.trim();
+    let version=request.version.trim();
+    if symbol.is_empty() || symbol.len()>96 || algorithm_id.is_empty() || algorithm_id.len()>96 || version.is_empty() || version.len()>64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol, algorithm ID and version are required and must be within their limits"})));
+    }
+    let manifest=algorithm_catalogue::registered_algorithms().into_iter()
+        .find(|item|item.algorithm_id==algorithm_id && item.version==version && item.status==algorithm_catalogue::AlgorithmStatus::Active);
+    let Some(manifest)=manifest else {
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error":"algorithm ID/version is not currently selectable"})));
+    };
+    let now=chrono::Utc::now().timestamp_millis();
+    let selection=doc!{"owner_uid":&owner_uid,"symbol":&symbol,"algorithm_id":manifest.algorithm_id,"version":manifest.version,
+        "selected_at_ms":now,"updated_at":mongodb::bson::DateTime::now()};
+    let options=UpdateOptions::builder().upsert(true).build();
+    if let Err(error)=s.algorithm_selections.update_one(doc!{"owner_uid":&owner_uid,"symbol":&symbol},
+        doc!{"$set":selection,"$setOnInsert":{"created_at":mongodb::bson::DateTime::now()}},Some(options)).await {
+        tracing::error!(error=%error,owner_uid=%owner_uid,symbol=%symbol,"algorithm selection persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"algorithm selection could not be saved"})));
+    }
+    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"algorithm_id":manifest.algorithm_id,"version":manifest.version,"selected_at_ms":now,"persisted":true})))
+}
+async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Query(query): Query<SymbolQuery>) -> impl IntoResponse {
+    let owner_uid=match firebase_uid_from_headers(s.firebase_verifier.as_ref(),&headers).await {
+        Ok(uid)=>uid,Err(status)=>return(status,Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    let symbol=query.symbol.unwrap_or_else(||"BTCUSDT".into()).trim().to_ascii_uppercase();
+    if symbol.is_empty() || symbol.len()>96 { return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"invalid instrument symbol"}))); }
+    let selection=match s.algorithm_selections.find_one(doc!{"owner_uid":&owner_uid,"symbol":&symbol},None).await {
+        Ok(Some(d))=>StoredAlgorithmSelection{symbol:symbol.clone(),algorithm_id:d.get_str("algorithm_id").unwrap_or("qoin-vector-baseline").into(),version:d.get_str("version").unwrap_or("edge-map-v1").into(),selected_at_ms:d.get_i64("selected_at_ms").unwrap_or(0)},
+        Ok(None)=>default_algorithm_selection(&symbol),
+        Err(error)=>{tracing::error!(error=%error,"algorithm selection read failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"algorithm selection unavailable"})));}
+    };
+    if selection.algorithm_id=="qoin-vector-baseline" {
+        return match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+            Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");let mut value=mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default();
+                if let Some(o)=value.as_object_mut(){o.insert("selected_algorithm_id".into(),serde_json::json!(selection.algorithm_id));o.insert("selected_algorithm_version".into(),serde_json::json!(selection.version));}
+                (StatusCode::OK,Json(value))},
+            Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"strategy_key":"qoin-vector-baseline","selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,"action":"wait","reason":"No vector decision is available yet."}))),
+            Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
+        };
+    }
+    if selection.algorithm_id!="qoin-flow-momentum" { return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"selected algorithm is not executable"}))); }
+    let snapshot=if let Ok(memory)=s.memory.read(){memory.get(&symbol).cloned()}else{None};
+    let snapshot=match snapshot {
+        Some(state)=>state,
+        None=>match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+            Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");match mongodb::bson::from_document::<SymbolState>(d){Ok(v)=>v,Err(_)=>return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"stored market state is invalid"})))}},
+            Ok(None)=>return(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,"action":"wait","reason":"No market state is available yet."}))),
+            Err(_)=>return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"market state unavailable"})))
+        }
+    };
+    let quote_age_ms=snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms).map(|(book,latest)|latest.saturating_sub(book));
+    let score=0.65*snapshot.order_flow_imbalance+0.20*snapshot.liquidity_imbalance+0.15*snapshot.liquidation_pressure.tanh();
+    let spread_ok=snapshot.spread_bps.map(|v|v.is_finite()&&v<=30.0).unwrap_or(true);
+    let quote_fresh=quote_age_ms.map(|age|age<=30_000).unwrap_or(true);
+    let action=if !spread_ok||!quote_fresh{"wait"}else if score>=0.35{"buy"}else if score<=-0.35{"sell"}else{"wait"};
+    let reason=if !spread_ok{"Spread exceeds the flow-momentum risk gate."}else if !quote_fresh{"Order-book quote is stale; the algorithm abstains."}else if action=="wait"{"Flow and liquidity evidence remain below the directional threshold."}else{"Directional flow and liquidity pressure crossed the momentum threshold."};
+    (StatusCode::OK,Json(serde_json::json!({
+        "symbol":symbol,"strategy_key":"qoin-flow-momentum","strategy_version":selection.version,
+        "selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,
+        "action":action,"reason":reason,"score":score,"magnitude":score.abs(),
+        "decision_vector":[score.max(0.0),(-score).max(0.0)],
+        "features":{"order_flow_imbalance":snapshot.order_flow_imbalance,"liquidity_imbalance":snapshot.liquidity_imbalance,
+            "liquidation_pressure":snapshot.liquidation_pressure,"event_intensity":snapshot.event_intensity,
+            "volatility":snapshot.ewma_abs_return,"funding_pressure":snapshot.funding_rate.unwrap_or(0.0)},
+        "diagnostics":{"spread_ok":spread_ok,"quote_fresh":quote_fresh,"quote_age_ms":quote_age_ms,"threshold":0.35,"score":score},
+        "input_event":{"event_ts_ms":snapshot.last_event_ts_ms,"event_id":snapshot.last_event_id,"venue":snapshot.last_event_venue,"state_event_count":snapshot.event_count},
+        "research_only":true
     })))
 }
 
@@ -1115,6 +1233,7 @@ struct BacktestQuery {
     latency_ms: Option<i64>,
     max_participation_rate: Option<f64>,
     market_impact_bps: Option<f64>,
+    algorithm_id: Option<String>,
 }
 async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>) -> impl IntoResponse {
     let symbol = q.symbol.unwrap_or_else(|| "BTCUSDT".to_string());
@@ -1172,8 +1291,10 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
             "truncated":true
         })));
     }
-    match backtest::replay_with_vector_engine(
+    let algorithm_id=q.algorithm_id.as_deref().unwrap_or("qoin-vector-baseline");
+    match backtest::replay_with_algorithm(
         events,
+        algorithm_id,
         &s.signal_config,
         &s.signal_config_version,
         q.initial_capital.unwrap_or(10_000.0),
@@ -2457,6 +2578,7 @@ async fn main(){
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let users:Collection<Document>=db.collection("qoin_users");
+    let algorithm_selections:Collection<Document>=db.collection("user_algorithm_selections");
     let broker_connections:Collection<Document>=db.collection("broker_connections");
     let broker_credentials:Collection<Document>=db.collection("broker_credentials");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
@@ -2468,6 +2590,12 @@ async fn main(){
     )
     .unwrap_or_else(|error| panic!("{error}"))
     .map(Arc::new);
+    algorithm_selections.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"symbol":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("one algorithm selection per user and instrument");
+    algorithm_selections.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
+        .expect("algorithm selection owner index");
     broker_connections.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"created_at":-1}).build(),None).await
         .expect("broker connection owner index");
@@ -2559,7 +2687,7 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,dataset_manifests,set_ledger_records,states,decisions,strategies,orders,trading_controls,
-        users, broker_connections, broker_credentials, broker_accounts, credential_cipher,
+        users, algorithm_selections, broker_connections, broker_credentials, broker_accounts, credential_cipher,
         broker_registry: broker_contract::BrokerRegistry::default(),
         firebase_verifier,
         memory:Arc::new(RwLock::new(restored_memory)),
@@ -2572,6 +2700,8 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
+        .route("/internal/me/algorithm-selections",get(get_algorithm_selections).post(put_algorithm_selection))
+        .route("/internal/me/algorithm-decision",get(get_algorithm_decision))
         .route("/internal/broker-credentials/public-key",get(get_broker_credential_public_key))
         .route("/internal/broker-connections",get(get_broker_connections).post(create_broker_connection))
         .route("/internal/broker-connections/:connection_id",delete(delete_broker_connection))
