@@ -216,10 +216,16 @@ pub fn evaluate_portfolio(input: &PortfolioInput) -> Result<PortfolioReport, Res
         LedgerEvent::Deposit{ts_ms,..}|LedgerEvent::Withdrawal{ts_ms,..}|LedgerEvent::Trade{ts_ms,..}
         |LedgerEvent::Funding{ts_ms,..}|LedgerEvent::Borrow{ts_ms,..}|LedgerEvent::Interest{ts_ms,..}=>*ts_ms
     });
-    let end_ts=events.last().map(|e| match e {
+    // Value the ledger at the latest supplied event/mark timestamp. A mark
+    // recorded after the last cash or trade event is still the correct
+    // valuation observation; restricting the clock to the last ledger event
+    // silently falls back to entry price and understates/overstates equity.
+    let last_event_ts=events.last().map(|e| match e {
         LedgerEvent::Deposit{ts_ms,..}|LedgerEvent::Withdrawal{ts_ms,..}|LedgerEvent::Trade{ts_ms,..}
         |LedgerEvent::Funding{ts_ms,..}|LedgerEvent::Borrow{ts_ms,..}|LedgerEvent::Interest{ts_ms,..}=>*ts_ms
-    }).unwrap_or_else(||input.marks.iter().map(|m|m.ts_ms).max().unwrap_or(1));
+    }).unwrap_or(0);
+    let last_mark_ts=input.marks.iter().map(|m|m.ts_ms).max().unwrap_or(0);
+    let end_ts=last_event_ts.max(last_mark_ts).max(1);
     let specs: BTreeMap<_,_>=input.instruments.iter().map(|i|(i.instrument_id.as_str(),i)).collect();
     let mut cash:BTreeMap<String,f64>=BTreeMap::new();
     let mut qty:BTreeMap<String,f64>=BTreeMap::new();
