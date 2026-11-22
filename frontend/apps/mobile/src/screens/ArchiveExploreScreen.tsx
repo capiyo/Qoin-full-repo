@@ -940,7 +940,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               </View><Text style={styles.cardSwipeHint}>SWIPE · TWO MODELS</Text></View>
             </View>
             <View style={{flexDirection:"row",alignItems:"center",gap:8,marginTop:9,marginLeft:48,flexWrap:"wrap"}}>
-              <Pressable accessibilityRole="button" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")==="backtest"}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:current[item.symbol]==="backtest"?"live":"backtest"}))} style={{paddingVertical:8,paddingHorizontal:11,borderRadius:10,backgroundColor:"#eaf1ff",borderWidth:1,borderColor:"#cbdcff"}}><Text style={{color:"#2458b8",fontSize:9,fontWeight:"800"}}>{(viewModeBySymbol[item.symbol]||"live")==="live"?"Switch to Backtest":"Switch to Live"}</Text></Pressable>
+              <View accessibilityRole="tablist" accessibilityLabel={item.name+" research mode"} style={{flexDirection:"row",alignItems:"center",gap:3,padding:3,borderRadius:999,borderWidth:1,borderColor:"#DCE5F2",backgroundColor:"#F5F8FD"}}>
+                {(["live","backtest"] as const).map((nextMode)=><Pressable key={nextMode} accessibilityRole="tab" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")===nextMode}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:nextMode}))} style={{paddingVertical:7,paddingHorizontal:11,borderRadius:999,backgroundColor:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#2867DC":"transparent"}}><Text style={{color:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#FFFFFF":"#718096",fontSize:9,fontWeight:"800"}}>{nextMode==="live"?"Live":"Backtesting"}</Text></Pressable>)}
+              </View>
               {mode==="Explore"?<Pressable onPress={()=>toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable>:null}
             </View>
           </View>;

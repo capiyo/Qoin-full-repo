@@ -209,6 +209,11 @@ html[data-qoin-platform="desktop"] button{user-select:none}
 .qoin-page-dots button{width:6px;height:6px;padding:0;border:0;border-radius:99px;background:#DCE4EF;transition:width .18s ease,background .18s ease}
 .qoin-page-dots button.active{width:18px;background:#2867DC}
 .qoin-card-footer .text-action{margin:0 0 0 auto;padding:4px 0;font-size:9px}
+.qoin-mode-switch{display:inline-flex;align-items:center;gap:2px;margin-left:auto;padding:3px;border:1px solid #dce5f2;border-radius:999px;background:#f5f8fd}
+.qoin-mode-switch button{padding:6px 10px;border:0;border-radius:999px;background:transparent;color:#718096;font-size:9px;font-weight:750;cursor:pointer;white-space:nowrap}
+.qoin-mode-switch button.active{background:#2867dc;color:#fff;box-shadow:0 2px 6px #2867dc26}
+.qoin-card-footer .qoin-mode-switch+.text-action{margin-left:0}
+@media(max-width:580px){.qoin-mode-switch button{padding:6px 8px;font-size:8px}.qoin-card-footer{flex-wrap:wrap}.qoin-card-footer>span{display:none}}
 @media(max-width:650px){
  .instrument-card.qoin-instrument-card{padding:13px 12px 11px;border-radius:16px;gap:8px}
  .qoin-instrument-card .asset-mark{width:37px;height:37px;border-radius:12px}

@@ -539,7 +539,7 @@ function BacktestPanel({ symbol, venue, authenticated, onRequireAuth }: { symbol
   </section>;
 }
 
-function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onToggleMode: () => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
+function InstrumentCard({ item, onOpen, action, live, mode, onSelectMode }: { item: Instrument; onOpen: () => void; action?: { label: string; onClick: () => void }; mode: "live" | "backtest"; onSelectMode: (mode: InstrumentMode) => void; live?: { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] } }) {
   const [page,setPage]=useState<0|1>(0);
   const [ledger,setLedger]=useState<QoinSetLedger|null>(null);
   const [ledgerStatus,setLedgerStatus]=useState<"idle"|"loading"|"loaded"|"unavailable">("idle");
@@ -595,7 +595,10 @@ function InstrumentCard({ item, onOpen, action, live, mode, onToggleMode }: { it
         <button type="button" aria-label="Show research model two" aria-pressed={page===1} className={page===1?"active":""} onClick={()=>setPage(1)}/>
       </div>
       <span>SWIPE · TWO MODELS</span>
-      <button type="button" className="text-action" aria-pressed={mode==="backtest"} onClick={onToggleMode}>{mode==="live"?"Backtest":"Live"}</button>
+      <div className="qoin-mode-switch" role="group" aria-label={`${item.name} research mode`}>
+        <button type="button" aria-pressed={mode==="live"} className={mode==="live"?"active":""} onClick={()=>onSelectMode("live")}>Live</button>
+        <button type="button" aria-pressed={mode==="backtest"} className={mode==="backtest"?"active":""} onClick={()=>onSelectMode("backtest")}>Backtesting</button>
+      </div>
       {action&&<button className="text-action" onClick={action.onClick}>{action.label}</button>}
     </div>
   </article>;
@@ -786,8 +789,8 @@ export default function App() {
     }
     setSelected(null);
   }
-  function toggleCardMode(item: Instrument) {
-    rememberCardMode(item.symbol, (cardModeBySymbol[item.symbol] || "live") === "backtest" ? "live" : "backtest");
+  function selectCardMode(item: Instrument, mode: InstrumentMode) {
+    rememberCardMode(item.symbol, mode);
   }
   function openInstrument(item: Instrument) {
     if (!firebaseUser) { pendingInstrumentRef.current = item; requireAuthentication(); return; }
@@ -1134,7 +1137,7 @@ export default function App() {
             <section className="content-section">
                       <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
                       {archived.length ? <div className="archive-workspace">
-                        <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
+                        <div className="instrument-grid">{archived.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} />)}</div>
                         <aside className="archive-market-sidebar" aria-label="Market pulse">
                           <div className="market-pulse-panel">
                             <div className="market-pulse-heading"><strong>Market pulse</strong><span>OBSERVED DATA</span></div>
@@ -1180,7 +1183,7 @@ export default function App() {
                         </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
                         <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
                       </section>
-                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onToggleMode={() => toggleCardMode(item)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} live={liveBySymbol[item.engineSymbol.toUpperCase()]} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
                       <section className="news-section">
                         <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
                         <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
