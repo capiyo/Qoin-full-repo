@@ -83,8 +83,8 @@ pub fn forward_value(i:ForwardInput)->Result<f64,DerivativesError>{
 pub struct SwapInput { pub notional:f64,pub fixed_rate:f64,pub discount_factors:[f64;16],pub accrual_fractions:[f64;16],pub periods:usize }
 pub fn payer_swap_npv(i:SwapInput)->Result<f64,DerivativesError>{
     if i.periods==0||i.periods>16||!finite(&[i.notional,i.fixed_rate])||i.notional<=0.0||i.fixed_rate<0.0{return Err(DerivativesError::InvalidParameter)}
-    let mut pv_fixed=0.0;let mut annuity=0.0;
-    for n in 0..i.periods {let df=i.discount_factors[n];let a=i.accrual_fractions[n];if !df.is_finite()||!a.is_finite()||df<=0.0||df>1.5||a<=0.0||a>2.0{return Err(DerivativesError::InvalidParameter)} annuity+=df*a;pv_fixed+=df*a*i.fixed_rate;}
+    let mut pv_fixed=0.0;
+    for n in 0..i.periods {let df=i.discount_factors[n];let a=i.accrual_fractions[n];if !df.is_finite()||!a.is_finite()||df<=0.0||df>1.5||a<=0.0||a>2.0{return Err(DerivativesError::InvalidParameter)} pv_fixed+=df*a*i.fixed_rate;}
     // Floating leg is represented by par-reset identity: 1 - final discount factor.
     Ok(i.notional*((1.0-i.discount_factors[i.periods-1])-pv_fixed))
 }
