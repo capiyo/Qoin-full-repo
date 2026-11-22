@@ -599,6 +599,7 @@ export type QoinAlgorithmEntitlement = {
   expires_at_ms?: number | null;
 };
 export type QoinAlgorithmSelection = {
+  symbol: string;
   algorithm_id: string;
   version: string;
   selected_at_ms: number;
@@ -653,7 +654,7 @@ export type QoinBacktestResult = {
   execution_stress_scenarios: QoinExecutionStressScenario[]; assumptions: string[];
 };
 export type QoinBacktestRequest = {
-  symbol: string; venue?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
+  symbol: string; venue?: string; algorithm_id?: string; from_ts_ms?: number; to_ts_ms?: number; limit?: number;
   initial_capital?: number; fee_bps?: number; slippage_bps?: number; latency_ms?: number; max_participation_rate?: number;
   market_impact_bps?: number;
 };
@@ -664,7 +665,16 @@ export function runQoinBacktest(input: QoinBacktestRequest): Promise<QoinBacktes
   return request<QoinBacktestResult>("/api/v1/backtest?" + query.toString());
 }
 
-/** Read-only algorithm and preview market coverage catalogue. */
+/** Read-only algorithm catalogue. */
 export function getQoinAlgorithmCatalogue(): Promise<QoinAlgorithmCatalogue> {
   return request<QoinAlgorithmCatalogue>("/api/v1/algorithms");
+}
+export function getQoinAlgorithmSelections(): Promise<{ items: QoinAlgorithmSelection[] }> {
+  return authenticatedQoinRequest("/api/v1/me/algorithm-selections");
+}
+export function saveQoinAlgorithmSelection(input: { symbol: string; algorithm_id: string; version: string }): Promise<QoinAlgorithmSelection & { persisted: boolean }> {
+  return authenticatedQoinRequest("/api/v1/me/algorithm-selections", { method: "POST", body: JSON.stringify(input) });
+}
+export function getQoinAlgorithmDecision(symbol: string): Promise<QoinVectorDecision> {
+  return authenticatedQoinRequest("/api/v1/me/algorithm-decision?symbol=" + encodeURIComponent(symbol));
 }
