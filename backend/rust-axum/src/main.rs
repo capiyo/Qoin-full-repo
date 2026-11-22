@@ -1170,11 +1170,28 @@ async fn create_dataset_manifest(State(s):State<AppState>, headers:HeaderMap, Js
             return (StatusCode::PAYLOAD_TOO_LARGE,Json(serde_json::json!({"error":"dataset exceeds the 250000 event snapshot limit; narrow the range","limit":MAX_DATASET_EVENTS})));
         }
         document.remove("_id");
+        // Invalid rows are part of the observed dataset too. Hash their stored
+        // BSON representation so a corrected or altered malformed row cannot
+        // retain the same dataset version merely because it still fails parsing.
+        let raw_document=match mongodb::bson::to_vec(&document) {
+            Ok(value)=>value,
+            Err(error)=>{
+                tracing::error!(error=%error,"could not canonicalize stored dataset row");
+                return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"stored dataset row cannot be fingerprinted"})));
+            }
+        };
+        let mut invalid_identity=Vec::with_capacity(raw_document.len()+1);
+        invalid_identity.push(0);
+        invalid_identity.extend_from_slice(&raw_document);
         let event=match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(value)=>value,
-            Err(_)=>{invalid_count+=1;continue;}
+            Err(_)=>{invalid_count+=1;digest.update(&invalid_identity);continue;}
         };
-        if validate_event(&event).is_err(){invalid_count+=1;continue;}
+        if validate_event(&event).is_err(){
+            invalid_count+=1;
+            digest.update(&invalid_identity);
+            continue;
+        }
         if let Some(previous)=last_ts_ms {
             let gap=event.ts_ms.saturating_sub(previous);
             max_observed_gap_ms=max_observed_gap_ms.max(gap);
@@ -1183,8 +1200,17 @@ async fn create_dataset_manifest(State(s):State<AppState>, headers:HeaderMap, Js
         first_ts_ms.get_or_insert(event.ts_ms);
         last_ts_ms=Some(event.ts_ms);
         *event_types.entry(event.event_type.clone()).or_default()+=1;
-        let encoded=match serde_json::to_vec(&event){Ok(value)=>value,Err(_)=>{invalid_count+=1;continue;}};
-        digest.update(&encoded);
+        let encoded=match serde_json::to_vec(&event){
+            Ok(value)=>value,
+            Err(error)=>{
+                tracing::error!(error=%error,"could not serialize validated dataset event");
+                return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"validated dataset event cannot be fingerprinted"})));
+            }
+        };
+        let mut valid_identity=Vec::with_capacity(encoded.len()+1);
+        valid_identity.push(1);
+        valid_identity.extend_from_slice(&encoded);
+        digest.update(&valid_identity);
         event_count+=1;
     }
     let dataset_version=digest.finish();
