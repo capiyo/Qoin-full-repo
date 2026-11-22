@@ -7,6 +7,8 @@ members = [
   "backend/rust-axum",
   "backend/rust-axum/crates/qoin-vector-motion",
   "backend/rust-axum/crates/qoin-domain-core",
+  "backend/rust-axum/crates/qoin-derivatives",
+  "backend/rust-axum/crates/qoin-insurance",
 ]
 
 [workspace.package]
