@@ -800,6 +800,7 @@ export default function App() {
     rememberCardMode(item.symbol, mode);
   }
   async function selectCardAlgorithm(item: Instrument, algorithmId: string) {
+    if(!firebaseUser){requireAuthentication();return;}
     const manifest=catalogue?.algorithms.find((candidate)=>candidate.algorithm_id===algorithmId&&candidate.status==="active");
     if(!manifest)return;
     const previous=algorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline";
@@ -869,6 +870,7 @@ export default function App() {
   useEffect(() => {
     let active=true;
     if(!firebaseUser){setAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
+    setAlgorithmBySymbol({});setAlgorithmDecisions({});
     getQoinAlgorithmSelections().then(({items})=>{if(active)setAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));})
       .catch((error:unknown)=>{if(active)setAuthError(error instanceof Error?error.message:"Could not load algorithm selections.");});
     return()=>{active=false;};

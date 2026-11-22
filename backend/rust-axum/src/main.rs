@@ -468,6 +468,9 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         Err(error)=>{tracing::error!(error=%error,"algorithm selection read failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"algorithm selection unavailable"})));}
     };
     if selection.algorithm_id=="qoin-vector-baseline" {
+        if selection.version!="edge-map-v1" {
+            return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned baseline algorithm version is no longer active","current_version":"edge-map-v1"})));
+        }
         return match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
             Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");let mut value=mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default();
                 if let Some(o)=value.as_object_mut(){o.insert("selected_algorithm_id".into(),serde_json::json!(selection.algorithm_id));o.insert("selected_algorithm_version".into(),serde_json::json!(selection.version));}
@@ -477,6 +480,9 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         };
     }
     if selection.algorithm_id!="qoin-flow-momentum" { return (StatusCode::UNPROCESSABLE_ENTITY,Json(serde_json::json!({"error":"selected algorithm is not executable"}))); }
+    if selection.version!="flow-momentum-v1" {
+        return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned Flow Momentum version is no longer active","current_version":"flow-momentum-v1"})));
+    }
     let snapshot=if let Ok(memory)=s.memory.read(){memory.get(&symbol).cloned()}else{None};
     let snapshot=match snapshot {
         Some(state)=>state,

@@ -628,6 +628,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   useEffect(()=>{
     let active=true;
     if(!firebaseUser){setSelectedAlgorithmBySymbol({});setAlgorithmDecisions({});return;}
+    setSelectedAlgorithmBySymbol({});setAlgorithmDecisions({});
     getQoinAlgorithmSelections().then(({items})=>{
       if(active)setSelectedAlgorithmBySymbol(Object.fromEntries(items.map((item)=>[item.symbol,item.algorithm_id])));
     }).catch((error:unknown)=>{if(active)Alert.alert("Algorithm selections unavailable",error instanceof Error?error.message:"Could not load saved algorithms.");});

@@ -124,7 +124,7 @@ Expose at least:
 
 Do not rank or market an algorithm using return alone. Do not present paper results as live results, backtests as expected future returns, or a more expensive tier as a performance guarantee. Small samples and unavailable metrics must be labelled, not hidden.
 
-## API shape (proposed)
+## API shape
 
 Use the repository's existing Axum routes, Drogon gateway conventions and shared TypeScript contracts when implementing these endpoints:
 
@@ -151,16 +151,16 @@ The gateway validates request shape and applies rate limits; Axum owns identity 
 
 All user-owned queries must include the authenticated user scope. Unique indexes and transactional updates should prevent duplicate grants and partially applied switches.
 
-## Rollout plan
+## Rollout plan and remaining access work
 
 1. Preserve the existing deterministic engine as the first registered algorithm without changing its current signal math.
 2. Define shared manifest, version, entitlement and selection contracts in Rust and shared TypeScript.
 3. Add a server-side registry and read-only catalogue endpoint.
 4. Add entitlement storage/resolution and denial tests before connecting payments.
-5. Add atomic per-user algorithm selection and persist pinned versions.
-6. Route the current engine through the algorithm interface as the first implementation.
-7. Add the next algorithm as an independent implementation with isolated state and tests.
-8. Add UI for algorithm discovery, access level, selection, version and transparent evaluation.
+5. [x] Add atomic per-user, per-instrument algorithm selection and persist pinned versions.
+6. [x] Route the baseline and Flow Momentum through distinct live and replay execution paths.
+7. [x] Add the cross-platform instrument-card picker and carry the selected version into Mechanics and replay.
+8. [ ] Add independent evaluation, entitlement grants, access-tier enforcement and protected run history.
 9. Integrate verified payment checkout/webhooks only after selecting a provider and confirming pricing/access semantics.
 10. Run parity, isolation, authorization, replay, switching, revocation, refund and cross-platform contract tests.
 
