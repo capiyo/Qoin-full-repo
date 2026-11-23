@@ -1065,6 +1065,7 @@ a { color: inherit; }
     font-size: 10px;
   }
   .qoin-shell .mobile-market-chip.active {
+    border-color: #ffffff20;
     background: #161f1a;
     color: #7df162;
   }
