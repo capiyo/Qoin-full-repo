@@ -530,6 +530,7 @@ function MobileBrokerCollectionPanel() {
 }
 
 export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibilityChange, headerVisible, onExploreRequested }: Props) {
+  const [visitedModes, setVisitedModes] = useState<Record<MainTab, boolean>>({ Archive: true, Explore: false });
   const archiveScrollRef = useRef<ScrollView | null>(null);
   const exploreScrollRef = useRef<ScrollView | null>(null);
   const scrollOffsetsRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
@@ -539,6 +540,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   useEffect(() => {
     Animated.timing(headerTranslateY, { toValue: headerVisible ? 0 : -112, duration: headerVisible ? 220 : 260, useNativeDriver: true }).start();
   }, [headerVisible, headerTranslateY]);
+  useEffect(() => {
+    setVisitedModes((current) => current[mode] ? current : { ...current, [mode]: true });
+  }, [mode]);
   useEffect(() => {
     lastScrollYRef.current[mode] = scrollOffsetsRef.current[mode];
     downScrollDistanceRef.current[mode] = 0;
@@ -1045,9 +1049,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         <ScrollView ref={archiveScrollRef} style={{ flex: 1, display: mode === "Archive" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Archive", event)} scrollEventThrottle={16}>
           {renderPaneContent("Archive")}
         </ScrollView>
-        <ScrollView ref={exploreScrollRef} style={{ flex: 1, display: mode === "Explore" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Explore", event)} scrollEventThrottle={16}>
+        {visitedModes.Explore ? <ScrollView ref={exploreScrollRef} style={{ flex: 1, display: mode === "Explore" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Explore", event)} scrollEventThrottle={16}>
           {renderPaneContent("Explore")}
-        </ScrollView>
+        </ScrollView> : null}
       </View>
 
       <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
