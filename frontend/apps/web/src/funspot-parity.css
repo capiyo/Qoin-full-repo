@@ -1022,7 +1022,7 @@ a { color: inherit; }
   flex: 0 0 auto;
   min-height: 30px;
   padding: 0 11px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
   color: #89968d;
@@ -1030,6 +1030,7 @@ a { color: inherit; }
   white-space: nowrap;
 }
 .qoin-shell .mobile-market-chip.active {
+  border-color: #ffffff20;
   background: #161f1a;
   color: #7df162;
 }
