@@ -1049,6 +1049,7 @@ a { color: inherit; }
     height: 60px;
     flex: 0 0 auto;
   }
+  .qoin-shell > .topbar .topbar-right > .connection-dot { display: none; }
   .qoin-shell .mobile-market-navigation {
     order: 3;
     flex: 0 0 100%;
