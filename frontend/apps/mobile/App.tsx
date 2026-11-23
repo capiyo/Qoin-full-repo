@@ -57,7 +57,7 @@ function MainTabs({ navigation }: MainTabsProps) {
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} />
+        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} />
       </View>
       <TabBar current={tab} onChange={(nextTab) => { setChromeVisible(true); setTab(nextTab); }} visible={chromeVisible} />
     </View>
