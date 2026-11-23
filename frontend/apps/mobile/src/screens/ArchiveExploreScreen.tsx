@@ -530,8 +530,8 @@ function MobileBrokerCollectionPanel() {
 }
 
 export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibilityChange, headerVisible, onExploreRequested }: Props) {
-  const scrollRef = useRef<ScrollView | null>(null);
-  const activeModeRef = useRef<MainTab>(mode);
+  const archiveScrollRef = useRef<ScrollView | null>(null);
+  const exploreScrollRef = useRef<ScrollView | null>(null);
   const scrollOffsetsRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
   const lastScrollYRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
   const downScrollDistanceRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
@@ -540,18 +540,17 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     Animated.timing(headerTranslateY, { toValue: headerVisible ? 0 : -112, duration: headerVisible ? 220 : 260, useNativeDriver: true }).start();
   }, [headerVisible, headerTranslateY]);
   useEffect(() => {
-    activeModeRef.current = mode;
     lastScrollYRef.current[mode] = scrollOffsetsRef.current[mode];
     downScrollDistanceRef.current[mode] = 0;
     onHeaderVisibilityChange(true);
+    const activeScrollRef = mode === "Archive" ? archiveScrollRef : exploreScrollRef;
     const frame = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ y: scrollOffsetsRef.current[mode], animated: false });
+      activeScrollRef.current?.scrollTo({ y: scrollOffsetsRef.current[mode], animated: false });
     });
     return () => cancelAnimationFrame(frame);
   }, [mode, onHeaderVisibilityChange]);
-  const handleWorkspaceScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+  const handleWorkspaceScroll = (currentMode: MainTab, event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const nextY = Math.max(0, event.nativeEvent.contentOffset.y);
-    const currentMode = activeModeRef.current;
     const previousY = lastScrollYRef.current[currentMode];
     if (nextY <= 0) {
       downScrollDistanceRef.current[currentMode] = 0;
@@ -771,7 +770,6 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     return () => { active = false; clearInterval(timer); };
   }, []);
   useEffect(() => { getQoinStrategy().then(setStrategy).catch(() => setStrategy(null)); }, []);
-  const data = mode === "Archive" ? archived : discovered;
   useEffect(() => {
     if (!selected) {
       setVector(null);
@@ -923,34 +921,14 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   const vectorX = 10 + (bullish / vectorScale) * 80;
   const vectorY = 90 - (bearish / vectorScale) * 80;
 
-  return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.topline, { paddingHorizontal: 17, opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
-        <Text style={styles.brand}>qoin</Text>
-        <View style={styles.topActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Notifications" onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
-            <Svg width={18} height={18} viewBox="0 0 24 24">
-              <Path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="#C5D0C7" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-            {unreadNotifications > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications}</Text></View> : null}
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable>
-        </View>
-      </Animated.View>
-      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.marketStrip, { opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.marketStripContent}>
-          {["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => (
-            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && styles.marketChipActive]}>
-              <Text style={[styles.marketChipText, market === name && styles.marketChipTextActive]}>{name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </Animated.View>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={handleWorkspaceScroll} scrollEventThrottle={16}>
+  const renderPaneContent = (paneMode: MainTab) => {
+    const paneData = paneMode === "Archive" ? archived : discovered;
+    return (
+      <>
         
-        <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
+        <View style={styles.headingRow}><View><Text style={styles.kicker}>{paneMode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{paneMode}</Text><Text style={styles.subheading}>{paneMode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{paneMode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
-        {mode === "Explore" ? (
+        {paneMode === "Explore" ? (
           <>
             <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#89968D" style={styles.searchInput} /></View>
             <View style={styles.coverageSection}>
@@ -971,7 +949,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
           </>
         ) : null}
 
-        {data.length ? data.map((item) => {
+        {paneData.length ? paneData.map((item) => {
           const live=liveBySymbol[item.engineSymbol.toUpperCase()];
           const decision=live?.decision;
           const page=algorithmBySymbol[item.symbol]??0;
@@ -1011,12 +989,12 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
             </View>
             <View style={{flexDirection:"row",alignItems:"center",gap:8,marginTop:9,marginLeft:48,flexWrap:"wrap"}}>
               <Pressable accessibilityRole="button" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")==="backtest"}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:current[item.symbol]==="backtest"?"live":"backtest"}))} style={{paddingVertical:8,paddingHorizontal:11,borderRadius:10,backgroundColor:"#243B28",borderWidth:0,borderColor:"transparent"}}><Text style={{color:"#7DF162",fontSize:9,fontWeight:"800"}}>{(viewModeBySymbol[item.symbol]||"live")==="live"?"Switch to Backtest":"Switch to Live"}</Text></Pressable>
-              {mode==="Explore"?<Pressable onPress={()=>toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable>:null}
+              {paneMode==="Explore"?<Pressable onPress={()=>toggle(item.symbol)} style={styles.addButton}><Text style={styles.addText}>＋ Add to archive</Text></Pressable>:null}
             </View>
           </View>;
-        }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{mode==="Archive"?"Explore instruments and add the ones you want to follow.":"Try another name or market."}</Text></View>}
+        }) : <View style={styles.empty}><Text style={styles.emptyTitle}>Nothing here yet.</Text><Text style={styles.emptyCopy}>{paneMode==="Archive"?"Explore instruments and add the ones you want to follow.":"Try another name or market."}</Text></View>}
 
-        {mode === "Explore" ? <View style={styles.newsSection}>
+        {paneMode === "Explore" ? <View style={styles.newsSection}>
           <Text style={styles.kicker}>GLOBAL FINANCIAL INTELLIGENCE</Text><Text style={styles.newsTitle}>News & macro events</Text>
           <Text style={styles.noteCopy}>Provider-attributed headlines with publication timestamps and original links.</Text>
           <View style={styles.filters}>{["general", "forex", "crypto", "merger"].map((category) => <Pressable key={category} onPress={() => setNewsCategory(category)} style={[styles.filter, newsCategory === category && styles.filterActive]}><Text style={[styles.filterText, newsCategory === category && styles.filterTextActive]}>{category}</Text></Pressable>)}</View>
@@ -1025,7 +1003,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
             <Text style={styles.newsHeadline}>{item.headline}</Text><Text style={styles.newsSummary} numberOfLines={3}>{item.summary}</Text>
           </Pressable>) : <Text style={styles.noteCopy}>{newsStatus === "loading" ? "Loading sourced headlines…" : newsStatus + ". Configure FINNHUB_API_KEY on the backend. No placeholder headlines are generated."}</Text>}
         </View> : null}
-        {mode === "Explore" ? <View style={styles.macroSection}>
+        {paneMode === "Explore" ? <View style={styles.macroSection}>
           <Text style={styles.kicker}>UPCOMING CATALYSTS</Text><Text style={styles.newsTitle}>Economic calendar</Text>
           <Text style={styles.noteCopy}>Scheduled releases, with actual, estimate and previous values where published.</Text>
           {macroEvents.length ? macroEvents.map((item,index) => <View key={item.time + item.country + item.event + index} style={styles.macroItem}>
@@ -1035,7 +1013,42 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         </View> : null}
 
         <Text style={styles.footer}>QOIN · RESEARCH MODE · NO LIVE EXECUTION</Text>
-      </ScrollView>
+
+      </>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.topline, { paddingHorizontal: 17, opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
+        <Text style={styles.brand}>qoin</Text>
+        <View style={styles.topActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Notifications" onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
+            <Svg width={18} height={18} viewBox="0 0 24 24">
+              <Path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="#C5D0C7" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            {unreadNotifications > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications}</Text></View> : null}
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable>
+        </View>
+      </Animated.View>
+      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.marketStrip, { opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.marketStripContent}>
+          {["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => (
+            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && styles.marketChipActive]}>
+              <Text style={[styles.marketChipText, market === name && styles.marketChipTextActive]}>{name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </Animated.View>
+      <View style={{ flex: 1 }}>
+        <ScrollView ref={archiveScrollRef} style={{ flex: 1, display: mode === "Archive" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Archive", event)} scrollEventThrottle={16}>
+          {renderPaneContent("Archive")}
+        </ScrollView>
+        <ScrollView ref={exploreScrollRef} style={{ flex: 1, display: mode === "Explore" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Explore", event)} scrollEventThrottle={16}>
+          {renderPaneContent("Explore")}
+        </ScrollView>
+      </View>
 
       <Modal visible={accountOpen} transparent animationType="fade" onRequestClose={() => setAccountOpen(false)}>
         <Pressable style={styles.accountShade} onPress={() => setAccountOpen(false)}><Pressable style={styles.accountSheet} onPress={(event) => event.stopPropagation()}>
