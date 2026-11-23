@@ -1240,6 +1240,16 @@ export default function App() {
                     </section>
           </section>
         </main>
+        {!selected && <section className="mechanics-empty-dock" aria-label="Mechanics workspace">
+          <div className="mechanics-empty-mark" aria-hidden="true">∑</div>
+          <p className="eyebrow">QOIN MECHANICS</p>
+          <h2>Understand the engine behind every decision.</h2>
+          <p>Select an instrument from your Archive to inspect its live vector state, seven-force feature interactions, decision trace, event ledger and historical replay.</p>
+          <div className="mechanics-empty-features">
+            <span>01 · Vector space</span><span>02 · Sets &amp; ledger</span><span>03 · Backtest arena</span>
+          </div>
+          <small>Research mode · No live order execution</small>
+        </section>}
       </div>
 
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
@@ -1252,7 +1262,7 @@ export default function App() {
 
 
       {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeInstrument(); }}><section className="vector-modal mechanics-modal" role="dialog" aria-modal="true" aria-labelledby="vector-title">
-        <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "INSTRUMENT SPACE"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close instrument workspace">×</button></div></header>
+        <header className="modal-header"><div><p className="eyebrow">{selectedMode === "backtest" ? "BACKTEST ARENA" : "MECHANICS"}</p><h2 id="vector-title">{selectedMode === "backtest" ? selected.name + " · Backtest" : selected.name}</h2><p>{selected.symbol} <i>·</i> {selected.market}</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><button className="text-action" onClick={() => switchInstrumentMode(selected, selectedMode === "live" ? "backtest" : "live")}>{selectedMode === "live" ? "Open Backtest Arena" : "Return to Live"}</button><button className="close-button" onClick={closeInstrument} aria-label="Close mechanics workspace">×</button></div></header>
         <div className="modal-body">
           {selectedMode === "live" && <div className="mechanics-tabs" role="tablist" aria-label="Instrument mechanics"><button type="button" role="tab" aria-selected={mechanicsTab === "vector"} className={mechanicsTab === "vector" ? "active" : ""} onClick={() => setMechanicsTab("vector")}>Vector space</button><button type="button" role="tab" aria-selected={mechanicsTab === "sets"} className={mechanicsTab === "sets" ? "active" : ""} onClick={() => setMechanicsTab("sets")}>Sets &amp; Ledger</button></div>}
           {selectedMode === "backtest" ? <section className="backtest-arena" style={{ display: "grid", gap: 16 }}>
