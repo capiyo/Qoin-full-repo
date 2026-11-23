@@ -675,7 +675,7 @@ function BrokerCollectionPanel() {
 export default function App() {
   const [tab, setTab] = useState<Tab>("Archive");
   const [mobileChromeVisible, setMobileChromeVisible] = useState(true);
-  const lastWorkspaceScrollRef = useRef(0);
+  const workspaceScrollStateRef = useRef(new WeakMap<HTMLElement, { lastOffset: number; downDistance: number }>());
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -1022,18 +1022,29 @@ export default function App() {
   const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
 
   function handleWorkspaceScroll(event: React.UIEvent<HTMLElement>) {
-    const nextScroll = event.currentTarget.scrollTop;
-    const previousScroll = lastWorkspaceScrollRef.current;
-    if (nextScroll < 12 || nextScroll < previousScroll - 3) setMobileChromeVisible(true);
-    else if (nextScroll > previousScroll + 4) setMobileChromeVisible(false);
-    lastWorkspaceScrollRef.current = nextScroll;
+    const target = event.currentTarget;
+    const nextOffset = Math.max(0, target.scrollTop);
+    const state = workspaceScrollStateRef.current.get(target) ?? { lastOffset: nextOffset, downDistance: 0 };
+    if (nextOffset <= 0) {
+      state.lastOffset = 0;
+      state.downDistance = 0;
+      setMobileChromeVisible(true);
+    } else {
+      const delta = nextOffset - state.lastOffset;
+      if (delta > 0) {
+        state.downDistance += delta;
+        if (state.downDistance >= 6) setMobileChromeVisible(false);
+      } else if (delta < 0) {
+        state.downDistance = 0;
+        setMobileChromeVisible(true);
+      }
+      state.lastOffset = nextOffset;
+    }
+    workspaceScrollStateRef.current.set(target, state);
   }
 
   function changeTab(nextTab: Tab) {
-    const nextPane = document.querySelector<HTMLElement>(
-      nextTab === "Archive" ? ".archive-column" : ".explore-column",
-    );
-    lastWorkspaceScrollRef.current = nextPane?.scrollTop ?? 0;
+    workspaceScrollStateRef.current = new WeakMap();
     setMobileChromeVisible(true);
     setTab(nextTab);
     closeInstrument();
