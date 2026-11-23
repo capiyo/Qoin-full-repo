@@ -1076,3 +1076,85 @@ a { color: inherit; }
     padding-top: 16px;
   }
 }
+
+
+/* The reference keeps the profile area in the phone workspace. Do not collapse
+   Qoin's sidebar to a clipped identity-only 66px strip. */
+@media (max-width: 650px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: 0 0 auto !important;
+    flex-direction: column !important;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px 16px !important;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+  .qoin-shell .desktop-sidebar-profile {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    column-gap: 11px;
+    row-gap: 2px;
+    width: 100%;
+    padding: 0;
+  }
+  .qoin-shell .desktop-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: 42px;
+    height: 42px;
+  }
+  .qoin-shell .desktop-sidebar-profile > strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    margin: 0;
+    font-size: 13px;
+  }
+  .qoin-shell .desktop-sidebar-profile > small {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    font-size: 10px;
+  }
+  .qoin-shell .desktop-profile-link {
+    display: inline-flex !important;
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
+    padding: 2px 0;
+    font-size: 10px;
+  }
+  .qoin-shell .desktop-profile-details {
+    display: block !important;
+    grid-column: 1 / -1;
+    padding: 8px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-content {
+    display: flex !important;
+    flex: 0 0 auto;
+    gap: 12px;
+    padding: 8px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-group {
+    gap: 3px;
+  }
+  .qoin-shell .desktop-sidebar-bottom {
+    display: flex !important;
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-bottom button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+}
