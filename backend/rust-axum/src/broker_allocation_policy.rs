@@ -81,6 +81,16 @@ pub struct BrokerCost {
     pub total_estimated_execution_cost_portfolio: Decimal,
 }
 
+/// Explicitly records every selected account that was not routed when the
+/// planner consolidates to one account. This prevents a successful plan from
+/// silently dropping an unavailable, undersized or more expensive selection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnroutedAccount {
+    pub broker_id: String,
+    pub account_id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum ExecutionPlan {
@@ -89,6 +99,10 @@ pub enum ExecutionPlan {
         account_id: String,
         allocation: EqualAllocation,
         cost: BrokerCost,
+        /// All selected accounts not used by this consolidated plan, with a
+        /// machine-readable reason. Empty only when a single account was selected.
+        #[serde(default)]
+        unrouted_accounts: Vec<UnroutedAccount>,
         reason: String,
     },
     EqualSplit {
@@ -372,6 +386,50 @@ fn comparable_cost_for_parent(
         .ok_or_else(|| RoutingError::Arithmetic("comparable execution cost overflow".into()))
 }
 
+fn unrouted_accounts_for_consolidation(
+    selected: &[BrokerExecutionQuote],
+    chosen_broker_id: &str,
+    chosen_account_id: &str,
+    parent_notional_portfolio: Decimal,
+) -> Vec<UnroutedAccount> {
+    selected.iter().filter_map(|quote| {
+        if quote.target.broker_id.eq_ignore_ascii_case(chosen_broker_id)
+            && quote.target.account_id == chosen_account_id
+        {
+            return None;
+        }
+
+        let reason = if !quote.adapter_ready {
+            "execution_adapter_not_ready"
+        } else if !quote.account_healthy {
+            "account_unhealthy"
+        } else {
+            match allocate_equal_notional(
+                parent_notional_portfolio,
+                std::slice::from_ref(&quote.target),
+            ) {
+                Err(AllocationError::BelowMinimum(_)) => "full_order_below_account_minimum",
+                Err(_) => "full_order_sizing_unavailable",
+                Ok(allocation) => match cost_for(
+                    quote,
+                    allocation.allocated_notional_portfolio,
+                    false,
+                ) {
+                    Err(RoutingError::NoFeasibleAccount) => "insufficient_margin_for_full_order",
+                    Err(_) => "single_account_cost_unavailable",
+                    Ok(_) => "consolidated_to_lower_cost_single_account",
+                },
+            }
+        };
+
+        Some(UnroutedAccount {
+            broker_id: quote.target.broker_id.trim().to_ascii_lowercase(),
+            account_id: quote.target.account_id.trim().to_string(),
+            reason: reason.to_string(),
+        })
+    }).collect()
+}
+
 /// Select a single suitable account unless splitting all selected accounts
 /// produces a lower estimated all-in cost after the configured hurdle.
 ///
@@ -438,6 +496,7 @@ pub fn choose_execution_plan(
                 account_id: single_cost.account_id.clone(),
                 allocation: single_allocation,
                 cost: single_cost,
+                unrouted_accounts: Vec::new(),
                 reason: "Only one selected account is available; consolidate execution".into(),
             }),
             None => Err(RoutingError::NoFeasibleAccount),
@@ -493,12 +552,19 @@ pub fn choose_execution_plan(
                         reason: "All selected accounts passed sizing and margin checks; cost is normalized to the same parent notional and beats the best single-account route after overhead and the saving hurdle".into(),
                     });
                 }
+                let unrouted_accounts = unrouted_accounts_for_consolidation(
+                    selected,
+                    &single_cost.broker_id,
+                    &single_cost.account_id,
+                    parent_notional_portfolio,
+                );
                 return Ok(ExecutionPlan::Consolidated {
                     broker_id: single_cost.broker_id.clone(),
                     account_id: single_cost.account_id.clone(),
                     allocation: single_allocation.clone(),
                     cost: single_cost.clone(),
-                    reason: "Consolidation is preferred: the equal split did not beat the best feasible single-account route after costs and overhead".into(),
+                    unrouted_accounts,
+                    reason: "Consolidation is preferred: the equal split did not beat the best feasible single-account route after costs and overhead; every other selected account is listed with its non-routing reason".into(),
                 });
             }
 
@@ -513,12 +579,19 @@ pub fn choose_execution_plan(
     }
 
     if let Some((single_cost, single_allocation, _)) = best_single {
+        let unrouted_accounts = unrouted_accounts_for_consolidation(
+            selected,
+            &single_cost.broker_id,
+            &single_cost.account_id,
+            parent_notional_portfolio,
+        );
         return Ok(ExecutionPlan::Consolidated {
             broker_id: single_cost.broker_id.clone(),
             account_id: single_cost.account_id.clone(),
             allocation: single_allocation,
             cost: single_cost,
-            reason: "Consolidation is preferred: multi-account sizing, readiness, margin, or estimated cost did not justify splitting".into(),
+            unrouted_accounts,
+            reason: "Consolidation is preferred: multi-account sizing, readiness, margin, or estimated cost did not justify splitting; every other selected account is listed with its non-routing reason".into(),
         });
     }
     Err(RoutingError::NoFeasibleMultiBrokerPlan)
@@ -736,6 +809,43 @@ mod tests {
         let quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", false)];
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
+    }
+
+    #[test]
+    fn consolidation_explicitly_lists_every_selected_account_not_routed() {
+        let mut quotes = vec![
+            quote(0, "1", "1", true),
+            quote(1, "1", "1", false),
+            quote(2, "20", "20", true),
+        ];
+        quotes[2].account_healthy = false;
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        match plan {
+            ExecutionPlan::Consolidated { broker_id, account_id, unrouted_accounts, .. } => {
+                assert_eq!(broker_id, "broker-0");
+                assert_eq!(account_id, "account-0");
+                assert_eq!(unrouted_accounts.len(), 2);
+                assert_eq!(unrouted_accounts[0].account_id, "account-1");
+                assert_eq!(unrouted_accounts[0].reason, "execution_adapter_not_ready");
+                assert_eq!(unrouted_accounts[1].account_id, "account-2");
+                assert_eq!(unrouted_accounts[1].reason, "account_unhealthy");
+            }
+            _ => panic!("expected consolidation with explicit non-routing dispositions"),
+        }
+    }
+
+    #[test]
+    fn consolidation_reports_selected_accounts_that_fail_full_order_margin() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[1].available_margin_portfolio = d("1");
+        let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
+        match plan {
+            ExecutionPlan::Consolidated { unrouted_accounts, .. } => {
+                assert_eq!(unrouted_accounts.len(), 1);
+                assert_eq!(unrouted_accounts[0].reason, "insufficient_margin_for_full_order");
+            }
+            _ => panic!("expected a consolidated plan"),
+        }
     }
 
     #[test]
