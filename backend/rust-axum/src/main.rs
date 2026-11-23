@@ -142,7 +142,20 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let state=guard.entry(event.symbol.clone()).or_default();
+        if state.last_event_ts_ms.is_some_and(|last_ts| event.ts_ms < last_ts) {
+            return (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status":"late_event_stored_not_applied",
+                    "event_id":event.event_id,
+                    "event_ts_ms":event.ts_ms,
+                    "last_applied_event_ts_ms":state.last_event_ts_ms
+                }))
+            );
+        }
+        apply(state,&event);
+        state.clone()
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
