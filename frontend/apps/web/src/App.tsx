@@ -1030,8 +1030,11 @@ export default function App() {
   }
 
   function changeTab(nextTab: Tab) {
+    const nextPane = document.querySelector<HTMLElement>(
+      nextTab === "Archive" ? ".archive-column" : ".explore-column",
+    );
+    lastWorkspaceScrollRef.current = nextPane?.scrollTop ?? 0;
     setMobileChromeVisible(true);
-    lastWorkspaceScrollRef.current = 0;
     setTab(nextTab);
     closeInstrument();
   }
