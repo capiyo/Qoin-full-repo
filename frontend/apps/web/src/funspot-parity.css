@@ -1166,9 +1166,9 @@ a { color: inherit; }
 .qoin-shell .topbar-notification-button {
   position: relative;
   display: inline-flex;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -1193,15 +1193,15 @@ a { color: inherit; }
   position: absolute;
   top: -1px;
   right: -2px;
-  min-width: 15px;
-  height: 15px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 3px;
   border-radius: 8px;
   background: #7df162;
   color: #061308;
   font-size: 9px;
   font-weight: 800;
-  line-height: 15px;
+  line-height: 16px;
   text-align: center;
 }
 
