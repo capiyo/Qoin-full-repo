@@ -552,7 +552,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
       activeScrollRef.current?.scrollTo({ y: scrollOffsetsRef.current[mode], animated: false });
     });
     return () => cancelAnimationFrame(frame);
-  }, [mode, onHeaderVisibilityChange]);
+  }, [mode, onHeaderVisibilityChange, visitedModes[mode]]);
   const handleWorkspaceScroll = (currentMode: MainTab, event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const nextY = Math.max(0, event.nativeEvent.contentOffset.y);
     const previousY = lastScrollYRef.current[currentMode];
