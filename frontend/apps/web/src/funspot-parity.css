@@ -993,13 +993,13 @@ a { color: inherit; }
 .qoin-shell * {
   border-color: transparent !important;
 }
-.qoin-shell .desktop-header-nav-item:focus-visible,
-.qoin-shell .desktop-sidebar-market:focus-visible,
-.qoin-shell .floating-nav-item:focus-visible,
-.qoin-shell .account-menu > button:focus-visible,
-.qoin-shell .close-button:focus-visible {
+.qoin-shell :is(button, a, [role="button"], input, select, textarea):focus-visible {
   background-color: #243b28 !important;
   color: #7df162 !important;
+}
+.qoin-shell :is(input, select, textarea):focus-visible {
+  background-color: #161f1a !important;
+  color: #edf4ee !important;
 }
 
 
