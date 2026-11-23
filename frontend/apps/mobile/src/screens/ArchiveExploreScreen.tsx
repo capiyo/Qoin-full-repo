@@ -1310,7 +1310,7 @@ const styles = StyleSheet.create({
   notificationBody: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 4 },
   notificationPayload: { color: "#89968D", fontSize: 7, lineHeight: 11, marginTop: 7 },
 
-  content: { paddingHorizontal: 17, paddingTop: 106, paddingBottom: 100 },
+  content: { paddingHorizontal: 17, paddingTop: 102, paddingBottom: 100 },
   topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 12, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#0E1612" },
   marketStrip: { position: "absolute", top: 60, left: 0, right: 0, zIndex: 11, height: 42, justifyContent: "center", backgroundColor: "#0E1612" },
   marketStripContent: { paddingHorizontal: 17, alignItems: "center", gap: 8 },
