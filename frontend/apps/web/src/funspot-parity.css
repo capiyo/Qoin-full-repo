@@ -987,3 +987,13 @@ a { color: inherit; }
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* Keyboard focus stays discoverable through a tonal state, not decorative rings. */
+.qoin-shell :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.qoin-shell * {
+  border-color: transparent !important;
+}
