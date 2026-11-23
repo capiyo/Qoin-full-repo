@@ -402,8 +402,10 @@ pub fn build_fanout_intents(
         }
     }
 
-    let (route_mode, allocation) = match plan {
-        ExecutionPlan::Consolidated { broker_id, account_id, allocation, cost, .. } => {
+    let (route_mode, allocation, plan_not_routed) = match plan {
+        ExecutionPlan::Consolidated {
+            broker_id, account_id, allocation, cost, unrouted_accounts, ..
+        } => {
             if allocation.children.len() != 1
                 || allocation.children[0].broker_id.trim().to_ascii_lowercase() != broker_id.trim().to_ascii_lowercase()
                 || allocation.children[0].account_id.trim() != account_id.trim()
@@ -411,7 +413,7 @@ pub fn build_fanout_intents(
                 return Err(FanoutError::InvalidPlan("consolidated plan must contain exactly its selected account".into()));
             }
             validate_cost_for_child(cost, &allocation.children[0])?;
-            (FanoutRouteMode::Consolidated, allocation)
+            (FanoutRouteMode::Consolidated, allocation, unrouted_accounts.clone())
         }
         ExecutionPlan::EqualSplit { allocation, costs, single_broker_comparator_cost_portfolio, .. } => {
             if allocation.children.len() != selected.len() || costs.len() != selected.len() {
@@ -435,7 +437,7 @@ pub fn build_fanout_intents(
                     return Err(FanoutError::InvalidPlan("split contains duplicate account cost estimates".into()));
                 }
             }
-            (FanoutRouteMode::EqualSplit, allocation)
+            (FanoutRouteMode::EqualSplit, allocation, Vec::new())
         }
     };
     let expected_additional_positions = if request.reduce_only { 0 } else { allocation.children.len() };
@@ -476,17 +478,37 @@ pub fn build_fanout_intents(
         return Err(FanoutError::InvalidPlan("equal split silently omits a selected account".into()));
     }
 
-    let not_routed_accounts = selected.iter().filter(|key| !routed_set.contains(*key))
-        .map(|key| NotRoutedAccount {
-            account: key.clone(),
-            reason: match route_mode {
-                FanoutRouteMode::Consolidated => format!(
-                    "Consolidated into {}/{}; this selected account receives no child order",
-                    routed[0].broker_id, routed[0].account_id
-                ),
-                FanoutRouteMode::EqualSplit => "Not routed".into(),
-            },
-        }).collect::<Vec<_>>();
+    let expected_not_routed = selected.iter()
+        .filter(|key| !routed_set.contains(*key))
+        .cloned()
+        .collect::<HashSet<_>>();
+    let mut recorded_not_routed = HashSet::with_capacity(plan_not_routed.len());
+    let mut not_routed_accounts = Vec::with_capacity(plan_not_routed.len());
+    for item in plan_not_routed {
+        let key = BrokerAccountKey {
+            broker_id: item.broker_id.trim().to_ascii_lowercase(),
+            account_id: item.account_id.trim().to_string(),
+        };
+        if key.broker_id.is_empty()
+            || key.account_id.is_empty()
+            || item.reason.trim().is_empty()
+            || !expected_not_routed.contains(&key)
+            || !recorded_not_routed.insert(key.clone())
+        {
+            return Err(FanoutError::InvalidPlan(
+                "consolidated plan contains an invalid, duplicate or unselected non-routing disposition".into()
+            ));
+        }
+        not_routed_accounts.push(NotRoutedAccount {
+            account: key,
+            reason: item.reason,
+        });
+    }
+    if recorded_not_routed != expected_not_routed {
+        return Err(FanoutError::InvalidPlan(
+            "consolidated plan must explicitly explain every selected account that receives no child order".into()
+        ));
+    }
     let parent_order_id = stable_id("qop", &[&owner_scope, &idempotency_key]);
     let mut children = Vec::with_capacity(allocation.children.len());
     for child in &allocation.children {
@@ -1342,6 +1364,11 @@ mod tests {
                 unallocated_remainder_portfolio: d("1"),
             },
             cost: BrokerCost { broker_id:"broker-a".into(), account_id:"account-a".into(), allocated_notional_portfolio:d("99"), estimated_fee_portfolio:Decimal::ZERO, estimated_slippage_portfolio:Decimal::ZERO, estimated_conversion_cost_portfolio:Decimal::ZERO, estimated_margin_required_portfolio:Decimal::ZERO, total_estimated_execution_cost_portfolio:Decimal::ZERO },
+            unrouted_accounts: vec![crate::broker_allocation_policy::UnroutedAccount {
+                broker_id: "broker-b".into(),
+                account_id: "account-b".into(),
+                reason: "consolidated_to_lower_cost_single_account".into(),
+            }],
             reason: "consolidate".into(),
         }
     }
@@ -1416,6 +1443,21 @@ mod tests {
     }
 
     #[test]
+    fn consolidated_route_rejects_missing_non_routed_dispositions() {
+        let mut plan = consolidated_plan();
+        if let ExecutionPlan::Consolidated { unrouted_accounts, .. } = &mut plan {
+            unrouted_accounts.clear();
+        }
+        let mut approval = risk();
+        approval.additional_open_positions = 1;
+        approval.projected_open_positions = 3;
+        assert!(matches!(
+            build_fanout_intents(request(), &selected(), &plan, approval),
+            Err(FanoutError::InvalidPlan(_))
+        ));
+    }
+
+    #[test]
     fn consolidated_route_records_selected_accounts_that_receive_no_child() {
         let mut approval = risk();
         approval.additional_open_positions = 1;
@@ -1423,6 +1465,7 @@ mod tests {
         let (parent, children) = build_fanout_intents(request(), &selected(), &consolidated_plan(), approval).unwrap();
         assert_eq!(children.len(), 1);
         assert_eq!(parent.not_routed_accounts.len(), 1);
+        assert_eq!(parent.not_routed_accounts[0].reason, "consolidated_to_lower_cost_single_account");
         assert!(parent.not_routed_accounts[0].reason.contains("receives no child order"));
     }
 
