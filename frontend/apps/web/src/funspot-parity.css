@@ -1416,3 +1416,26 @@ a { color: inherit; }
   .qoin-home-columns .instrument-grid { grid-template-columns:minmax(0,1fr); }
   .qoin-shell .vector-modal.mechanics-modal { max-height:90dvh; }
 }
+
+
+@media (min-width:651px) {
+  .mechanics-empty-dock {
+    display:flex; flex:1 1 auto; min-width:0; min-height:0;
+    flex-direction:column; align-items:flex-start; justify-content:center;
+    padding:clamp(28px,5vw,76px); overflow:auto; background:#0e1612;
+  }
+  .mechanics-empty-mark {
+    display:grid; width:56px; height:56px; place-items:center;
+    margin-bottom:24px; border-radius:18px; background:#17291f;
+    color:#7df162; font-size:30px; font-weight:700;
+  }
+  .mechanics-empty-dock .eyebrow { margin:0 0 12px; color:#7df162; font-size:9px; font-weight:800; letter-spacing:.16em; }
+  .mechanics-empty-dock h2 { max-width:520px; margin:0; color:#edf4ee; font-size:clamp(24px,3vw,38px); line-height:1.14; letter-spacing:-.045em; }
+  .mechanics-empty-dock > p:not(.eyebrow) { max-width:540px; margin:16px 0 0; color:#89968d; font-size:13px; line-height:1.8; }
+  .mechanics-empty-features { display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
+  .mechanics-empty-features span { padding:9px 12px; border-radius:9px; background:#161f1a; color:#c5d0c7; font-size:10px; font-weight:700; }
+  .mechanics-empty-dock > small { margin-top:28px; color:#687a70; font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+}
+@media (max-width:650px) {
+  .mechanics-empty-dock { display:none!important; }
+}
