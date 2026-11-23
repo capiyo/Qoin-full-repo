@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
-import { ChatWorkspace } from "./ChatWorkspace";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
 import { getInstrumentVector, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
@@ -28,7 +27,7 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
 ];
 
-type Tab = "Chats" | "Explore";
+type Tab = "Archive" | "Explore";
 type InstrumentMode = "live" | "backtest";
 function instrumentSlug(symbol: string): string { return symbol.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase(); }
 function instrumentRoute(item: Instrument, mode: InstrumentMode): string { return `/app/instrument/${encodeURIComponent(instrumentSlug(item.symbol))}/${mode === "backtest" ? "backtest" : "vector"}`; }
@@ -674,7 +673,7 @@ function BrokerCollectionPanel() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("Chats");
+  const [tab, setTab] = useState<Tab>("Archive");
   const [mobileChromeVisible, setMobileChromeVisible] = useState(true);
   const workspaceScrollStateRef = useRef(new WeakMap<HTMLElement, { lastOffset: number; downDistance: number }>());
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -1087,7 +1086,7 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
         <button type="button" className="topbar-menu-button" aria-label="Open menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
-        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button type="button" className="topbar-notification-button" aria-label={unreadNotifications ? "Notifications, " + unreadNotifications + " unread" : "Notifications"} onClick={() => setNotificationsOpen((value) => !value)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>{unreadNotifications > 0 && <span className="topbar-notification-badge">{unreadNotifications}</span>}</button><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg><span className="desktop-header-nav-label">Archive</span></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg><span className="desktop-header-nav-label">Explore</span></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><button type="button" className="topbar-notification-button" aria-label={unreadNotifications ? "Notifications, " + unreadNotifications + " unread" : "Notifications"} onClick={() => setNotificationsOpen((value) => !value)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>{unreadNotifications > 0 && <span className="topbar-notification-badge">{unreadNotifications}</span>}</button><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => changeTab("Archive")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg><span className="desktop-header-nav-label">Archive</span></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg><span className="desktop-header-nav-label">Explore</span></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         <nav className="mobile-market-navigation" aria-label="Market categories">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} type="button" className={market === name ? "mobile-market-chip active" : "mobile-market-chip"} aria-current={market === name ? "true" : undefined} onClick={() => { setMarket(name); changeTab("Explore"); }}>{name}</button>)}</nav>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
@@ -1155,9 +1154,8 @@ export default function App() {
           </> : <button onClick={() => { setAuthMode("signin"); setAuthPanelOpen(true); setAuthError(""); }}><span aria-hidden="true">↗</span>Sign in</button>}
         </div>
       </aside>
-        <div className={tab === "Chats" ? "qoin-chat-desktop mobile-tab-active" : "qoin-chat-desktop mobile-tab-hidden"}><ChatWorkspace /></div>
-        <main className={tab === "Explore" ? "home-columns qoin-home-columns mobile-tab-active" : "home-columns qoin-home-columns mobile-tab-hidden"} aria-label="Qoin workspace">
-          <section className="home-column archive-column mobile-tab-hidden" aria-label="Archive" onScroll={handleWorkspaceScroll}>
+        <main className="home-columns qoin-home-columns mobile-tab-active" aria-label="Qoin workspace">
+          <section className={`home-column archive-column ${tab === "Archive" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Archive" onScroll={handleWorkspaceScroll}>
             <section className="content-section">
                       <div className="section-heading"><div><p className="eyebrow">YOUR COLLECTION</p><h2>Archive</h2><p>Every instrument you follow, in one place.</p></div><span className="count-label">{archived.length} INSTRUMENTS</span></div>
                       {archived.length ? <div className="archive-workspace">
@@ -1247,7 +1245,7 @@ export default function App() {
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
       <nav className="floating-navigation" aria-label="Primary navigation">
-        <button type="button" className={tab === "Chats" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Chats" title="Chats" aria-current={tab === "Chats" ? "page" : undefined} onClick={() => changeTab("Chats")}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17.5-3.5Z" /><path d="M8 11h8M8 14h5" /></svg></span><span className="floating-nav-label">Chats</span></button>
+        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => changeTab("Archive")}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></span><span className="floating-nav-label">Archive</span></button>
         <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2" /></svg></span><span className="floating-nav-label">Explore</span></button>
       </nav>
 
