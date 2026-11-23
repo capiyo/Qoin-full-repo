@@ -52,8 +52,8 @@ function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (t
   );
 }
 
-function MainTabs({ navigation }: MainTabsProps) {
-  const [tab, setTab] = useState<MainTab>("Archive");
+function MainTabs({ navigation, signedIn }: MainTabsProps) {
+  const [tab, setTab] = useState<MainTab>("Chats");
   const [chromeVisible, setChromeVisible] = useState(true);
   return (
     <View style={styles.main}>
