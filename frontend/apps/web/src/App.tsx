@@ -1171,7 +1171,6 @@ export default function App() {
                       <div className="explore-main-column">
                       <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
                       <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
-                      <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
                       <section className="coverage-preview" aria-label="Market access tier preview">
                         <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
                         {catalogue?.market_access_tiers?.length ? <div className="coverage-grid">{catalogue.market_access_tiers.map((tier) => <article className="coverage-card" key={tier.tier_id}>
