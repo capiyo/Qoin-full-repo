@@ -940,8 +940,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
       <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.marketStrip, { opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.marketStripContent}>
           {["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => (
-            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name && mode === "Explore" }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && mode === "Explore" && styles.marketChipActive]}>
-              <Text style={[styles.marketChipText, market === name && mode === "Explore" && styles.marketChipTextActive]}>{name}</Text>
+            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && styles.marketChipActive]}>
+              <Text style={[styles.marketChipText, market === name && styles.marketChipTextActive]}>{name}</Text>
             </Pressable>
           ))}
         </ScrollView>
