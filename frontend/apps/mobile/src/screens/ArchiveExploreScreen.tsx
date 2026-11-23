@@ -940,7 +940,6 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         {mode === "Explore" ? (
           <>
             <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#89968D" style={styles.searchInput} /></View>
-            <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
             <View style={styles.coverageSection}>
               <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
               {catalogue?.market_access_tiers?.length ? catalogue.market_access_tiers.map((tier) => <View key={tier.tier_id} style={styles.coverageCard}>
