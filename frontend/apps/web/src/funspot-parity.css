@@ -1043,6 +1043,8 @@ a { color: inherit; }
     flex-basis: 102px;
     flex-wrap: wrap;
     align-content: flex-start;
+    row-gap: 0;
+    column-gap: 12px;
     padding: 0 14px;
   }
   .qoin-shell > .topbar .topbar-right {
