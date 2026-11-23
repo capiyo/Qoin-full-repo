@@ -12,18 +12,19 @@ import { getReactNativePersistence } from "firebase/auth";
 import { colors } from "./src/theme";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { ArchiveExploreScreen } from "./src/screens/ArchiveExploreScreen";
+import { ChatScreen } from "./src/screens/ChatScreen";
 import { initializeQoinFirebase, subscribeQoinAuth } from "@qoin/core";
 
 export type RootStackParamList = { Login: { mode?: "signin" | "register" } | undefined; Dashboard: undefined };
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
-type MainTab = "Archive" | "Explore";
-type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard">;
+type MainTab = "Chats" | "Explore";
+type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard"> & { signedIn: boolean };
 
 function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (tab: MainTab) => void; visible: boolean }) {
   return (
     <Animated.View pointerEvents={visible ? "auto" : "none"} style={[styles.tabBar, { opacity: visible ? 1 : 0, transform: [{ translateY: visible ? 0 : 72 }] }]} accessibilityRole="tablist">
-      {(["Archive", "Explore"] as MainTab[]).map((tab) => {
+      {(["Chats", "Explore"] as MainTab[]).map((tab) => {
         const active = current === tab;
         return (
           <Pressable
@@ -34,9 +35,9 @@ function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (t
             onPress={() => onChange(tab)}
             style={[styles.tabItem, active && styles.tabItemActive]}
           >
-            {tab === "Archive" ? (
+            {tab === "Chats" ? (
               <Svg width={19} height={19} viewBox="0 0 24 24">
-                <Path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                <Path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17.5-3.5Z M8 11h8M8 14h5" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             ) : (
               <Svg width={19} height={19} viewBox="0 0 24 24">
@@ -57,7 +58,7 @@ function MainTabs({ navigation }: MainTabsProps) {
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} />
+        {tab === "Explore" ? <ArchiveExploreScreen mode="Explore" onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} /> : <ChatScreen signedIn={signedIn} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} />}
       </View>
       <TabBar current={tab} onChange={(nextTab) => { setChromeVisible(true); setTab(nextTab); }} visible={chromeVisible} />
     </View>
@@ -100,7 +101,7 @@ export default function App() {
           <StatusBar style="light" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator initialRouteName="Dashboard" screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Dashboard" component={MainTabs} />
+              <Stack.Screen name="Dashboard">{(props) => <MainTabs {...props} signedIn={signedIn} />}</Stack.Screen>
               {!signedIn ? (
                 <Stack.Screen name="Login">
                   {(props) => <LoginScreen {...props} configurationError={authError} />}
