@@ -361,7 +361,7 @@ a { color: inherit; }
     min-width: 300px;
     flex-basis: 300px;
   }
-  .qoin-shell > .topbar .avatar { display: none; }
+  .qoin-shell > .topbar .avatar { display: flex; }
 }
 @media (max-width: 1099px) {
   .qoin-workspace > .desktop-profile-sidebar {
@@ -1157,4 +1157,47 @@ a { color: inherit; }
     padding: 6px 8px;
     font-size: 10px;
   }
+}
+
+
+.qoin-shell .topbar-notification-button {
+  position: relative;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #89968d;
+}
+.qoin-shell .topbar-notification-button:hover {
+  background: #161f1a;
+  color: #7df162;
+}
+.qoin-shell .topbar-notification-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qoin-shell .topbar-notification-badge {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #7df162;
+  color: #061308;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
 }
