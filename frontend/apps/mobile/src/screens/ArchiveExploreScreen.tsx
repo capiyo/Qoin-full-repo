@@ -1297,7 +1297,7 @@ const styles = StyleSheet.create({
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center" },
   notificationGlyph: { color: "#7DF162", fontSize: 18 },
-  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#7DF162", alignItems: "center", justifyContent: "center" },
+  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#7DF162", alignItems: "center", justifyContent: "center" },
   notificationBadgeText: { color: "#161F1A", fontSize: 7, fontWeight: "800" },
   notificationModal: { maxHeight: "88%", backgroundColor: "#161F1A", borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: "hidden" },
   notificationActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 0, borderBottomColor: "transparent" },
