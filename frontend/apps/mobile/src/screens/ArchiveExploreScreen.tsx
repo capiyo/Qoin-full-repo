@@ -534,6 +534,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   const activeModeRef = useRef<MainTab>(mode);
   const scrollOffsetsRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
   const lastScrollYRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
+  const downScrollDistanceRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(headerTranslateY, { toValue: headerVisible ? 0 : -112, duration: headerVisible ? 220 : 260, useNativeDriver: true }).start();
@@ -541,6 +542,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   useEffect(() => {
     activeModeRef.current = mode;
     lastScrollYRef.current[mode] = scrollOffsetsRef.current[mode];
+    downScrollDistanceRef.current[mode] = 0;
     onHeaderVisibilityChange(true);
     const frame = requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ y: scrollOffsetsRef.current[mode], animated: false });
@@ -548,11 +550,22 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     return () => cancelAnimationFrame(frame);
   }, [mode, onHeaderVisibilityChange]);
   const handleWorkspaceScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const nextY = event.nativeEvent.contentOffset.y;
+    const nextY = Math.max(0, event.nativeEvent.contentOffset.y);
     const currentMode = activeModeRef.current;
     const previousY = lastScrollYRef.current[currentMode];
-    if (nextY < 12 || nextY < previousY - 3) onHeaderVisibilityChange(true);
-    else if (nextY > previousY + 4) onHeaderVisibilityChange(false);
+    if (nextY <= 0) {
+      downScrollDistanceRef.current[currentMode] = 0;
+      onHeaderVisibilityChange(true);
+    } else {
+      const delta = nextY - previousY;
+      if (delta > 0) {
+        downScrollDistanceRef.current[currentMode] += delta;
+        if (downScrollDistanceRef.current[currentMode] >= 6) onHeaderVisibilityChange(false);
+      } else if (delta < 0) {
+        downScrollDistanceRef.current[currentMode] = 0;
+        onHeaderVisibilityChange(true);
+      }
+    }
     scrollOffsetsRef.current[currentMode] = nextY;
     lastScrollYRef.current[currentMode] = nextY;
   };
