@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from "@expo-google-fonts/dm-sans";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { View, Pressable, Text, StyleSheet } from "react-native";
+import { Animated, View, Pressable, StyleSheet } from "react-native";
+import Svg, { Path, Circle } from "react-native-svg";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getReactNativePersistence } from "firebase/auth";
@@ -18,32 +20,52 @@ const queryClient = new QueryClient();
 type MainTab = "Archive" | "Explore";
 type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
-function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainTab) => void }) {
+function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (tab: MainTab) => void; visible: boolean }) {
   return (
-    <View style={styles.tabBar}>
-      {(["Archive", "Explore"] as MainTab[]).map((tab) => (
-        <Pressable key={tab} onPress={() => onChange(tab)} style={styles.tabItem}>
-          <Text style={[styles.tabText, current === tab && styles.tabTextActive]}>{tab}</Text>
-          {current === tab ? <View style={styles.activeMark} /> : null}
-        </Pressable>
-      ))}
-    </View>
+    <Animated.View pointerEvents={visible ? "auto" : "none"} style={[styles.tabBar, { opacity: visible ? 1 : 0, transform: [{ translateY: visible ? 0 : 72 }] }]} accessibilityRole="tablist">
+      {(["Archive", "Explore"] as MainTab[]).map((tab) => {
+        const active = current === tab;
+        return (
+          <Pressable
+            key={tab}
+            accessibilityRole="tab"
+            accessibilityLabel={tab}
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(tab)}
+            style={[styles.tabItem, active && styles.tabItemActive]}
+          >
+            {tab === "Archive" ? (
+              <Svg width={19} height={19} viewBox="0 0 24 24">
+                <Path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            ) : (
+              <Svg width={19} height={19} viewBox="0 0 24 24">
+                <Circle cx={10.8} cy={10.8} r={6.3} fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} />
+                <Path d="m15.5 15.5 4.2 4.2" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" />
+              </Svg>
+            )}
+          </Pressable>
+        );
+      })}
+    </Animated.View>
   );
 }
 
 function MainTabs({ navigation }: MainTabsProps) {
   const [tab, setTab] = useState<MainTab>("Archive");
+  const [chromeVisible, setChromeVisible] = useState(true);
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} />
+        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} />
       </View>
-      <TabBar current={tab} onChange={setTab} />
+      <TabBar current={tab} onChange={(nextTab) => { setChromeVisible(true); setTab(nextTab); }} visible={chromeVisible} />
     </View>
   );
 }
 
 export default function App() {
+  useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_700Bold });
   const [authReady, setAuthReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -77,14 +99,13 @@ export default function App() {
         <NavigationContainer>
           <StatusBar style="light" backgroundColor={colors.bgPrimary} />
           {authReady ? (
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              {signedIn ? (
-                <Stack.Screen name="Dashboard" component={MainTabs} />
-              ) : (
+            <Stack.Navigator initialRouteName="Dashboard" screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Dashboard">{(props) => <MainTabs {...props} />}</Stack.Screen>
+              {!signedIn ? (
                 <Stack.Screen name="Login">
                   {(props) => <LoginScreen {...props} configurationError={authError} />}
                 </Stack.Screen>
-              )}
+              ) : null}
             </Stack.Navigator>
           ) : null}
         </NavigationContainer>
@@ -96,9 +117,7 @@ export default function App() {
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: colors.bgPrimary },
   screen: { flex: 1 },
-  tabBar: { position: "absolute", left: 28, right: 28, bottom: 18, height: 52, flexDirection: "row", alignItems: "center", backgroundColor: "#17291f", borderWidth: 1, borderColor: "#365b41", borderRadius: 28, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
-  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
-  tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
-  tabTextActive: { color: colors.accent, fontWeight: "800" },
-  activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accent },
+  tabBar: { position: "absolute", alignSelf: "center", bottom: 16, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#17291F", borderWidth: 0, borderRadius: 999, padding: 4, zIndex: 20, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  tabItem: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: "transparent" },
+  tabItemActive: { backgroundColor: "#7DF162" },
 });
