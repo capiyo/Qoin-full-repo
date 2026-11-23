@@ -1029,6 +1029,13 @@ export default function App() {
     lastWorkspaceScrollRef.current = nextScroll;
   }
 
+  function changeTab(nextTab: Tab) {
+    setMobileChromeVisible(true);
+    lastWorkspaceScrollRef.current = 0;
+    setTab(nextTab);
+    closeInstrument();
+  }
+
   function toggleArchive(symbol: string) {
     const target = instruments.find((item) => item.symbol === symbol);
     if (!target) return;
@@ -1064,7 +1071,7 @@ export default function App() {
     <div className={mobileChromeVisible ? "qoin-shell" : "qoin-shell chrome-hidden"}>
       <header className="topbar">
         <a className="brand" href="/" aria-label="Qoin home"><span className="brand-mark">q</span><span>qoin</span></a>
-        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg><span className="desktop-header-nav-label">Archive</span></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg><span className="desktop-header-nav-label">Explore</span></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
+        <div className="topbar-right"><span className={"connection-dot " + (health ? "connected" : "")} /><span>{health ? "Research engine connected" : "Research workspace"}</span><nav className="desktop-header-navigation" aria-label="Workspace"><button type="button" className={tab === "Archive" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => changeTab("Archive")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg><span className="desktop-header-nav-label">Archive</span></button><button type="button" className={tab === "Explore" ? "desktop-header-nav-item active" : "desktop-header-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2M8.2 13.2l2.1-4.8 2.9 2.8z" /></svg><span className="desktop-header-nav-label">Explore</span></button></nav><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{(avatarUrl || firebaseUser?.photoURL) ? <img src={avatarUrl || firebaseUser?.photoURL || ""} alt="" /> : (firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</button></div>
         {accountOpen && <section className="account-menu" aria-label="Account menu">
           <div className="account-identity"><strong>{firebaseUser?.displayName || firebaseUser?.email || "Guest"}</strong><small>{firebaseUser ? "Signed in with Firebase" : "Not signed in"}</small></div>
           {firebaseUser ? <>
@@ -1117,7 +1124,7 @@ export default function App() {
           </div>
           <div className="desktop-sidebar-group">
             <p className="desktop-sidebar-label">RESEARCH</p>
-            <button className="desktop-sidebar-market" onClick={() => { setMobileChromeVisible(true); lastWorkspaceScrollRef.current = 0; setTab("Explore"); }}>
+            <button className="desktop-sidebar-market" onClick={() => changeTab("Explore")}>
               <span className="desktop-sidebar-market-mark research-mark">⌕</span>
               <span><strong>Explore markets</strong><small>Discover instruments</small></span>
             </button>
@@ -1151,7 +1158,7 @@ export default function App() {
                             <p className="market-pulse-footnote">Unavailable or stale provider values remain blank; Qoin does not synthesize prices.</p>
                           </div>
                         </aside>
-                      </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => setTab("Explore")}>Explore instruments</button></div>}
+                      </div> : <div className="empty-state"><strong>Your archive is clear.</strong><p>Explore instruments and add the ones you want to follow.</p><button className="primary-button" onClick={() => changeTab("Explore")}>Explore instruments</button></div>}
                     </section>
           </section>
           <section className={`home-column explore-column ${tab === "Explore" ? "mobile-tab-active" : "mobile-tab-hidden"}`} aria-label="Explore" onScroll={handleWorkspaceScroll}>
@@ -1223,8 +1230,8 @@ export default function App() {
       <footer className="footer"><span>QOIN · MARKET INTELLIGENCE</span><span>RESEARCH MODE · NO LIVE EXECUTION</span></footer>
 
       <nav className="floating-navigation" aria-label="Primary navigation">
-        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => { setTab("Archive"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></span><span className="floating-nav-label">Archive</span></button>
-        <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => { setTab("Explore"); closeInstrument(); }}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2" /></svg></span><span className="floating-nav-label">Explore</span></button>
+        <button type="button" className={tab === "Archive" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Archive" title="Archive" aria-current={tab === "Archive" ? "page" : undefined} onClick={() => changeTab("Archive")}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" /></svg></span><span className="floating-nav-label">Archive</span></button>
+        <button type="button" className={tab === "Explore" ? "floating-nav-item active" : "floating-nav-item"} aria-label="Explore" title="Explore" aria-current={tab === "Explore" ? "page" : undefined} onClick={() => changeTab("Explore")}><span className="floating-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m15.5 15.5 4.2 4.2" /></svg></span><span className="floating-nav-label">Explore</span></button>
       </nav>
 
 
