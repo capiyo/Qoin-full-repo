@@ -570,11 +570,7 @@ a { color: inherit; }
 }
 
 
-/* On phones Funspot replaces the profile sidebar with the app-header avatar
-   and profile sheet; do not render a second profile row below the header. */
-@media (max-width: 650px) {
-  .qoin-workspace > .desktop-profile-sidebar { display: none !important; }
-}
+/* The phone layout keeps Funspot's compact identity strip beneath the app header. */
 
 
 /* The instrument Mechanics surface follows the same dark, borderless modal
@@ -996,4 +992,19 @@ a { color: inherit; }
 }
 .qoin-shell * {
   border-color: transparent !important;
+}
+
+
+/* Preserve the reference app's compact profile row on phones. The header is
+   overlaid so it can hide on scroll; reserve its height before the identity row. */
+@media (max-width: 650px) {
+  .qoin-workspace {
+    padding-top: 60px;
+  }
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: flex !important;
+  }
+  .qoin-home-columns .content-section {
+    padding-top: 16px;
+  }
 }
