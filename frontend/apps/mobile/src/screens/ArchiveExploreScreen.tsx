@@ -1027,23 +1027,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
       <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.topline, { paddingHorizontal: 17, opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
         <Text style={styles.brand}>qoin</Text>
         <View style={styles.topActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Notifications" onPress={() => setNotificationsOpen(true)} style={styles.notificationButton}>
-            <Svg width={18} height={18} viewBox="0 0 24 24">
-              <Path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="#C5D0C7" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+          <Pressable accessibilityRole="button" accessibilityLabel="Open menu" onPress={() => setAccountOpen(true)} style={styles.notificationButton}>
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="#C5D0C7" strokeWidth={1.8} strokeLinecap="round" />
             </Svg>
-            {unreadNotifications > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications}</Text></View> : null}
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable>
         </View>
-      </Animated.View>
-      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.marketStrip, { opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.marketStripContent}>
-          {["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => (
-            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && styles.marketChipActive]}>
-              <Text style={[styles.marketChipText, market === name && styles.marketChipTextActive]}>{name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
       </Animated.View>
       <View style={{ flex: 1 }}>
         <ScrollView ref={archiveScrollRef} style={{ flex: 1, display: mode === "Archive" ? "flex" : "none" }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={(event) => handleWorkspaceScroll("Archive", event)} scrollEventThrottle={16}>
