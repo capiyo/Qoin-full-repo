@@ -32,7 +32,8 @@ const seed: Instrument[] = [
   { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#8895A7" },
 ];
 
-type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void; onHeaderVisibilityChange: (visible: boolean) => void; headerVisible: boolean };
+type MainTab = "Archive" | "Explore";
+type Props = { mode: MainTab; onAuthRequested: (mode: "signin" | "register") => void; onHeaderVisibilityChange: (visible: boolean) => void; headerVisible: boolean; onExploreRequested: () => void };
 
 function Text(props: TextProps) {
   const flattened = StyleSheet.flatten(props.style);
@@ -528,18 +529,32 @@ function MobileBrokerCollectionPanel() {
   </View>;
 }
 
-export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibilityChange, headerVisible }: Props) {
-  const lastScrollYRef = useRef(0);
+export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibilityChange, headerVisible, onExploreRequested }: Props) {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const activeModeRef = useRef<MainTab>(mode);
+  const scrollOffsetsRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
+  const lastScrollYRef = useRef<Record<MainTab, number>>({ Archive: 0, Explore: 0 });
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(headerTranslateY, { toValue: headerVisible ? 0 : -72, duration: headerVisible ? 220 : 260, useNativeDriver: true }).start();
+    Animated.timing(headerTranslateY, { toValue: headerVisible ? 0 : -112, duration: headerVisible ? 220 : 260, useNativeDriver: true }).start();
   }, [headerVisible, headerTranslateY]);
+  useEffect(() => {
+    activeModeRef.current = mode;
+    lastScrollYRef.current[mode] = scrollOffsetsRef.current[mode];
+    onHeaderVisibilityChange(true);
+    const frame = requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: scrollOffsetsRef.current[mode], animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mode, onHeaderVisibilityChange]);
   const handleWorkspaceScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const nextY = event.nativeEvent.contentOffset.y;
-    const previousY = lastScrollYRef.current;
+    const currentMode = activeModeRef.current;
+    const previousY = lastScrollYRef.current[currentMode];
     if (nextY < 12 || nextY < previousY - 3) onHeaderVisibilityChange(true);
     else if (nextY > previousY + 4) onHeaderVisibilityChange(false);
-    lastScrollYRef.current = nextY;
+    scrollOffsetsRef.current[currentMode] = nextY;
+    lastScrollYRef.current[currentMode] = nextY;
   };
   const [items, setItems] = useState(seed);
   const [query, setQuery] = useState("");
@@ -909,7 +924,16 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
           <Pressable accessibilityRole="button" accessibilityLabel="Open account menu" onPress={() => setAccountOpen(true)} style={styles.avatar}>{(avatarUrl || firebaseUser?.photoURL) ? <Image source={{ uri: avatarUrl || firebaseUser?.photoURL || "" }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(firebaseUser?.displayName || firebaseUser?.email || "Q").slice(0,1).toUpperCase()}</Text>}</Pressable>
         </View>
       </Animated.View>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={handleWorkspaceScroll} scrollEventThrottle={16}>
+      <Animated.View pointerEvents={headerVisible ? "auto" : "none"} style={[styles.marketStrip, { opacity: headerVisible ? 1 : 0, transform: [{ translateY: headerTranslateY }] }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.marketStripContent}>
+          {["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => (
+            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: market === name && mode === "Explore" }} onPress={() => { setMarket(name); onExploreRequested(); }} style={[styles.marketChip, market === name && mode === "Explore" && styles.marketChipActive]}>
+              <Text style={[styles.marketChipText, market === name && mode === "Explore" && styles.marketChipTextActive]}>{name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </Animated.View>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" onScroll={handleWorkspaceScroll} scrollEventThrottle={16}>
         
         <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
@@ -1274,8 +1298,14 @@ const styles = StyleSheet.create({
   notificationBody: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 4 },
   notificationPayload: { color: "#89968D", fontSize: 7, lineHeight: 11, marginTop: 7 },
 
-  content: { paddingHorizontal: 17, paddingTop: 60, paddingBottom: 100 },
-  topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#0E1612" },
+  content: { paddingHorizontal: 17, paddingTop: 106, paddingBottom: 100 },
+  topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 12, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#0E1612" },
+  marketStrip: { position: "absolute", top: 60, left: 0, right: 0, zIndex: 11, height: 42, justifyContent: "center", backgroundColor: "#0E1612" },
+  marketStripContent: { paddingHorizontal: 17, alignItems: "center", gap: 8 },
+  marketChip: { minHeight: 30, justifyContent: "center", paddingHorizontal: 11, borderRadius: 18, backgroundColor: "#161F1A" },
+  marketChipActive: { backgroundColor: "#243B28" },
+  marketChipText: { color: "#89968D", fontSize: 10, fontWeight: "600" },
+  marketChipTextActive: { color: "#7DF162" },
   brand: { color: "#7DF162", fontSize: 21, fontWeight: "900", letterSpacing: -1 },
   avatar: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#7DF162", fontWeight: "800" },
