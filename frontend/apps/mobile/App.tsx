@@ -18,7 +18,7 @@ export type RootStackParamList = { Login: { mode?: "signin" | "register" } | und
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 type MainTab = "Archive" | "Explore";
-type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard"> & { signedIn: boolean };
+type MainTabsProps = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
 function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (tab: MainTab) => void; visible: boolean }) {
   return (
@@ -36,7 +36,7 @@ function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (t
           >
             {tab === "Archive" ? (
               <Svg width={19} height={19} viewBox="0 0 24 24">
-                <Path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17.5-3.5Z M8 11h8M8 14h5" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                <Path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             ) : (
               <Svg width={19} height={19} viewBox="0 0 24 24">
@@ -51,13 +51,13 @@ function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (t
   );
 }
 
-function MainTabs({ navigation, signedIn }: MainTabsProps) {
+function MainTabs({ navigation }: MainTabsProps) {
   const [tab, setTab] = useState<MainTab>("Archive");
   const [chromeVisible, setChromeVisible] = useState(true);
   return (
     <View style={styles.main}>
       <View style={styles.screen}>
-        {<ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} />}
+        <ArchiveExploreScreen mode={tab} onAuthRequested={(mode) => navigation.navigate("Login", { mode })} onHeaderVisibilityChange={setChromeVisible} headerVisible={chromeVisible} onExploreRequested={() => { setChromeVisible(true); setTab("Explore"); }} />
       </View>
       <TabBar current={tab} onChange={(nextTab) => { setChromeVisible(true); setTab(nextTab); }} visible={chromeVisible} />
     </View>
@@ -100,7 +100,7 @@ export default function App() {
           <StatusBar style="light" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator initialRouteName="Dashboard" screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Dashboard">{(props) => <MainTabs {...props} signedIn={signedIn} />}</Stack.Screen>
+              <Stack.Screen name="Dashboard">{(props) => <MainTabs {...props} />}</Stack.Screen>
               {!signedIn ? (
                 <Stack.Screen name="Login">
                   {(props) => <LoginScreen {...props} configurationError={authError} />}
