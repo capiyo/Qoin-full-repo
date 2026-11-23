@@ -1005,9 +1005,49 @@ a { color: inherit; }
 
 /* Preserve the reference app's compact profile row on phones. The header is
    overlaid so it can hide on scroll; reserve its height before the identity row. */
+.qoin-shell .mobile-market-navigation { display: none; }
+
 @media (max-width: 650px) {
+  .qoin-shell > .topbar {
+    height: 102px;
+    min-height: 102px;
+    flex-basis: 102px;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding: 0 14px;
+  }
+  .qoin-shell > .topbar .topbar-right {
+    height: 60px;
+    flex: 1 1 auto;
+  }
+  .qoin-shell .mobile-market-navigation {
+    display: flex;
+    order: 3;
+    width: 100%;
+    height: 42px;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .qoin-shell .mobile-market-navigation::-webkit-scrollbar { display: none; }
+  .qoin-shell .mobile-market-chip {
+    flex: 0 0 auto;
+    min-height: 30px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 18px;
+    background: #161f1a;
+    color: #89968d;
+    font-size: 10px;
+  }
+  .qoin-shell .mobile-market-chip.active {
+    background: #243b28;
+    color: #7df162;
+  }
   .qoin-workspace {
-    padding-top: 60px;
+    padding-top: 102px;
   }
   .qoin-workspace > .desktop-profile-sidebar {
     display: flex !important;
