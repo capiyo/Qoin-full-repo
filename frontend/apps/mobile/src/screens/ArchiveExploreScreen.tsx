@@ -1314,7 +1314,7 @@ const styles = StyleSheet.create({
   topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 12, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#0E1612" },
   marketStrip: { position: "absolute", top: 60, left: 0, right: 0, zIndex: 11, height: 42, justifyContent: "center", backgroundColor: "#0E1612" },
   marketStripContent: { paddingHorizontal: 17, alignItems: "center", gap: 8 },
-  marketChip: { minHeight: 30, justifyContent: "center", paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: "transparent", borderRadius: 0, backgroundColor: "transparent" },
+  marketChip: { minHeight: 30, justifyContent: "center", paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: 1.5, borderBottomColor: "transparent", borderRadius: 0, backgroundColor: "transparent" },
   marketChipActive: { borderBottomColor: "#7DF162", backgroundColor: "transparent" },
   marketChipText: { color: "#89968D", fontSize: 10, fontWeight: "500" },
   marketChipTextActive: { color: "#7DF162" },
