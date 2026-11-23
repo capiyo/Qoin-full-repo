@@ -71,6 +71,8 @@ struct AppState {
 }
 #[derive(Deserialize)]
 struct SymbolQuery { symbol: Option<String> }
+#[derive(Deserialize)]
+struct VectorHistoryQuery { symbol: String, at_ms: i64 }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -140,7 +142,20 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let state=guard.entry(event.symbol.clone()).or_default();
+        if is_late_event(state.last_event_ts_ms, event.ts_ms) {
+            return (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status":"late_event_stored_not_applied",
+                    "event_id":event.event_id,
+                    "event_ts_ms":event.ts_ms,
+                    "last_applied_event_ts_ms":state.last_event_ts_ms
+                }))
+            );
+        }
+        apply(state,&event);
+        state.clone()
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
@@ -203,6 +218,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":e})))
     };
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
+    decision_doc.insert("event_ts_ms", event.ts_ms);
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
@@ -227,6 +243,55 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
+/// Return the latest Qoin market-state vector whose source event timestamp is
+/// at or before the requested memory timestamp. This is the historical lookup
+/// used by Axon; it must never silently fall back to the current vector.
+async fn get_vector_history(
+    State(s): State<AppState>,
+    Query(q): Query<VectorHistoryQuery>,
+) -> impl IntoResponse {
+    let symbol = q.symbol.trim().to_ascii_uppercase();
+    if symbol.is_empty() || q.at_ms <= 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"symbol and positive at_ms are required"})),
+        );
+    }
+    let filter = doc! {
+        "symbol": &symbol,
+        "event_ts_ms": { "$lte": q.at_ms }
+    };
+    let options = FindOneOptions::builder()
+        .sort(doc! {"event_ts_ms": -1})
+        .build();
+    match s.decisions.find_one(filter, options).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            document.remove("stored_at");
+            (
+                StatusCode::OK,
+                Json(mongodb::bson::from_document::<serde_json::Value>(document)
+                    .unwrap_or_default()),
+            )
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error":"no Qoin market vector exists at or before this timestamp",
+                "symbol":symbol,
+                "at_ms":q.at_ms
+            })),
+        ),
+        Err(error) => {
+            tracing::error!(%error, "historical Qoin vector lookup failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error":"historical vector storage unavailable"})),
+            )
+        }
+    }
+}
+
 async fn get_jepa_prediction(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     if s.jepa_client.is_none() {
@@ -284,6 +349,7 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_ts_ms":-1}).build(),None).await.expect("historical vector lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     jepa_predictions.create_index(mongodb::IndexModel::builder()
@@ -329,6 +395,7 @@ async fn main(){
     };
     let app=Router::new().route("/health",get(health)).route("/internal/events",post(ingest))
         .route("/internal/state",get(get_state)).route("/internal/vector",get(get_vector))
+        .route("/internal/vector/history",get(get_vector_history))
         .route("/internal/jepa",get(get_jepa_prediction))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .with_state(state).layer(TraceLayer::new_for_http());
@@ -336,4 +403,22 @@ async fn main(){
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
+}
+
+
+fn is_late_event(last_event_ts_ms: Option<i64>, event_ts_ms: i64) -> bool {
+    last_event_ts_ms.is_some_and(|last_ts| event_ts_ms < last_ts)
+}
+
+#[cfg(test)]
+mod event_time_tests {
+    use super::is_late_event;
+
+    #[test]
+    fn late_events_do_not_rewind_causal_state() {
+        assert!(is_late_event(Some(2_000), 1_999));
+        assert!(!is_late_event(Some(2_000), 2_000));
+        assert!(!is_late_event(Some(2_000), 2_001));
+        assert!(!is_late_event(None, 1_000));
+    }
 }
