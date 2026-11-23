@@ -1023,7 +1023,7 @@ a { color: inherit; }
   min-height: 30px;
   padding: 0 11px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 9px;
   background: transparent;
   color: #89968d;
   font-size: 11px;
@@ -1058,12 +1058,12 @@ a { color: inherit; }
   .qoin-shell .mobile-market-chip {
     min-height: 30px;
     padding: 0 11px;
-    border-radius: 18px;
-    background: #161f1a;
+    border-radius: 9px;
+    background: transparent;
     font-size: 10px;
   }
   .qoin-shell .mobile-market-chip.active {
-    background: #243b28;
+    background: #161f1a;
     color: #7df162;
   }
   .qoin-workspace {
