@@ -143,7 +143,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
         let state=guard.entry(event.symbol.clone()).or_default();
-        if state.last_event_ts_ms.is_some_and(|last_ts| event.ts_ms < last_ts) {
+        if is_late_event(state.last_event_ts_ms, event.ts_ms) {
             return (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -403,4 +403,22 @@ async fn main(){
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
     axum::serve(listener,app).await.expect("Axum server failed");
+}
+
+
+fn is_late_event(last_event_ts_ms: Option<i64>, event_ts_ms: i64) -> bool {
+    last_event_ts_ms.is_some_and(|last_ts| event_ts_ms < last_ts)
+}
+
+#[cfg(test)]
+mod event_time_tests {
+    use super::is_late_event;
+
+    #[test]
+    fn late_events_do_not_rewind_causal_state() {
+        assert!(is_late_event(Some(2_000), 1_999));
+        assert!(!is_late_event(Some(2_000), 2_000));
+        assert!(!is_late_event(Some(2_000), 2_001));
+        assert!(!is_late_event(None, 1_000));
+    }
 }
