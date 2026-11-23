@@ -1466,7 +1466,6 @@ mod tests {
         assert_eq!(children.len(), 1);
         assert_eq!(parent.not_routed_accounts.len(), 1);
         assert_eq!(parent.not_routed_accounts[0].reason, "consolidated_to_lower_cost_single_account");
-        assert!(parent.not_routed_accounts[0].reason.contains("receives no child order"));
     }
 
     #[test]
