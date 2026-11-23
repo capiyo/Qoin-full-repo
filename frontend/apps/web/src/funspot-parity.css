@@ -1201,3 +1201,20 @@ a { color: inherit; }
   line-height: 15px;
   text-align: center;
 }
+
+
+/* Match the reference workspace's measured desktop/tablet gutters. */
+@media (min-width: 901px) {
+  .qoin-workspace > .desktop-profile-sidebar { padding: 16px !important; }
+}
+@media (min-width: 651px) and (max-width: 900px) {
+  .qoin-workspace > .desktop-profile-sidebar { padding: 14px !important; }
+  .qoin-home-columns .content-section { padding: 16px 12px 30px; }
+}
+@media (max-width: 650px) {
+  .qoin-shell > .floating-navigation {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 5px;
+    gap: 6px;
+  }
+}
