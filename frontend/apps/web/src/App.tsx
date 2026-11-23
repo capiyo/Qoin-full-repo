@@ -1240,7 +1240,7 @@ export default function App() {
                     </section>
           </section>
         </main>
-        {!selected && <section className="mechanics-empty-dock" aria-label="Mechanics workspace">
+        {!selected && tab === "Archive" && <section className="mechanics-empty-dock" aria-label="Mechanics workspace">
           <div className="mechanics-empty-mark" aria-hidden="true">∑</div>
           <p className="eyebrow">QOIN MECHANICS</p>
           <h2>Understand the engine behind every decision.</h2>
