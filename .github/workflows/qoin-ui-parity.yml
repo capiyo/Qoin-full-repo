@@ -43,3 +43,5 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Typecheck Qoin mobile
         run: pnpm --filter @qoin/mobile exec tsc --noEmit
+      - name: Bundle Qoin mobile for Android and iOS
+        run: pnpm --filter @qoin/mobile exec expo export --platform all --output-dir dist
