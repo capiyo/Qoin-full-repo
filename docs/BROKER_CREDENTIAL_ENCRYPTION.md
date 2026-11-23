@@ -8,7 +8,7 @@ Qoin uses one credential-transport and storage encryption protocol: **libsodium 
 2. GET /api/v1/broker-credentials/public-key returns only the public key and protocol version.
 3. Web and React Native clients use the shared @qoin/core createQoinBrokerConnection function. It fetches the public key, seals the JSON credential object in the client, and sends only sealed_credentials_hex over HTTPS.
 4. Axum stores the opaque sealed ciphertext. It never receives plaintext credentials on the create-connection route.
-5. Broker adapters retrieve credentials through the owner-scoped load_owned_credentials helper. Decrypted values remain server-side and must never be logged or returned to a client.
+5. A new credential record starts in `pending_validation`. The owner-scoped `load_owned_credentials` helper checks both the credential and its connection; it decrypts only when the connection is `active`, `validation_status=validated`, and `executable=true`. Decrypted values remain server-side and must never be logged or returned to a client.
 
 Sealed boxes are anonymous encryption, not sender authentication. Firebase ID-token verification and owner-scoped database queries remain mandatory for all connection writes and reads. HTTPS is also mandatory; sealed boxes do not replace transport security.
 
@@ -45,3 +45,10 @@ MongoDB stores ciphertext_hex, encryption_algorithm=libsodium_crypto_box_seal, a
 - Rotate by versioning the key and re-encrypting existing records before retiring the old private key.
 - Never log request bodies, credential JSON, ciphertext payloads, or decrypted values.
 - Do not treat a successful decrypt as broker authentication; each adapter must validate credentials with the provider API before the connection can be marked connected.
+
+## Validation and revocation gates
+
+- Connection creation stores ciphertext as `pending_validation`; it does not imply that a provider accepted the credentials or that an account was discovered.
+- The generic credential loader refuses pending, disconnected, revoked, unvalidated, or non-executable connections. A future provider-validation workflow must use a narrowly scoped validation path and only activate the connection after authenticated provider checks and account mapping succeed.
+- Disconnect first marks the connection revoked and non-executable, then marks the credential record revoked before attempting ciphertext deletion, and finally disables linked account records. A cleanup failure returns HTTP 503 with operator-attention context; the connection remains revoked.
+- No provider validation flow is currently wired. New connections therefore remain pending validation and cannot be used for order submission.

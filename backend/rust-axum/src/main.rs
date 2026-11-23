@@ -592,7 +592,9 @@ async fn create_broker_connection(
     let credential = doc!{
         "_id":&credential_id,"owner_uid":&owner_uid,"connection_id":&connection_id,
         "ciphertext_hex":hex::encode(ciphertext),"encryption_version":1,"encryption_algorithm":"libsodium_crypto_box_seal",
-        "status":"active","created_at":now,"updated_at":now
+        // Credentials are not usable until a provider-specific validation flow
+        // proves the connection and atomically activates both records.
+        "status":"pending_validation","created_at":now,"updated_at":now
     };
     if let Err(error) = s.broker_credentials.insert_one(credential, None).await {
         tracing::error!(error=%error, "encrypted broker credential persistence failed");
@@ -634,16 +636,44 @@ async fn delete_broker_connection(
         tracing::error!(error=%error, "broker connection revocation failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"broker connection could not be revoked"})));
     }
-    if let Ok(credential_id) = connection.get_str("credential_id") {
-        if let Err(error) = s.broker_credentials.delete_one(doc!{"_id":credential_id,"owner_uid":&owner_uid},None).await {
-            tracing::error!(error=%error, "revoked broker credential cleanup failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"connection revoked but encrypted credential cleanup needs operator attention"})));
+    let credential_id = match connection.get_str("credential_id") {
+        Ok(value) => value,
+        Err(_) => {
+            tracing::error!(connection_id=%connection_id, "revoked broker connection has no credential reference");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"connection revoked but credential reference is missing; operator cleanup is required"
+            })));
         }
+    };
+    // Revoke before deleting. If physical deletion fails, the owner-scoped
+    // credential loader still refuses this ciphertext.
+    if let Err(error) = s.broker_credentials.update_one(
+        doc!{"_id":credential_id,"owner_uid":&owner_uid,"connection_id":&connection_id},
+        doc!{"$set":{"status":"revoked","revoked_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}},
+        None
+    ).await {
+        tracing::error!(error=%error, connection_id=%connection_id, "broker credential revocation marker failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"connection revoked but credential revocation marker could not be persisted; operator attention is required"
+        })));
     }
-    let _ = s.broker_accounts.update_many(
+    if let Err(error) = s.broker_credentials.delete_one(
+        doc!{"_id":credential_id,"owner_uid":&owner_uid,"connection_id":&connection_id},None
+    ).await {
+        tracing::error!(error=%error, connection_id=%connection_id, "revoked broker credential cleanup failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"connection and credential revoked but ciphertext cleanup needs operator attention"
+        })));
+    }
+    if let Err(error) = s.broker_accounts.update_many(
         doc!{"owner_uid":&owner_uid,"connection_id":&connection_id},
         doc!{"$set":{"status":"disconnected","trading_enabled":false,"updated_at":mongodb::bson::DateTime::now()}},None
-    ).await;
+    ).await {
+        tracing::error!(error=%error, connection_id=%connection_id, "disconnected broker account cleanup failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"connection and credentials revoked but linked account cleanup needs operator attention"
+        })));
+    }
     (StatusCode::OK, Json(serde_json::json!({"connection_id":connection_id,"status":"disconnected","executable":false})))
 }
 

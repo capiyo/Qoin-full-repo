@@ -75,13 +75,37 @@ impl CredentialCipher {
     }
 }
 
+/// Credential decryption is allowed only after a provider-specific validation
+/// flow has marked the owner-scoped connection active, validated and executable.
+pub fn connection_allows_credential_use(
+    status: &str,
+    validation_status: &str,
+    executable: bool,
+) -> bool {
+    status == "active" && validation_status == "validated" && executable
+}
+
 pub async fn load_owned_credentials(
+    connections: &mongodb::Collection<mongodb::bson::Document>,
     collection: &mongodb::Collection<mongodb::bson::Document>,
     cipher: &CredentialCipher,
     owner_uid: &str,
     connection_id: &str,
 ) -> Result<Value, String> {
     use mongodb::bson::doc;
+    let connection = connections.find_one(
+        doc!{"owner_uid":owner_uid,"connection_id":connection_id},
+        None,
+    ).await.map_err(|_| "broker connection store unavailable".to_string())?
+        .ok_or_else(|| "owned broker connection not found".to_string())?;
+    if !connection_allows_credential_use(
+        connection.get_str("status").unwrap_or(""),
+        connection.get_str("validation_status").unwrap_or(""),
+        connection.get_bool("executable").unwrap_or(false),
+    ) {
+        return Err("broker connection has not passed provider validation or is not executable".into());
+    }
+
     let record = collection.find_one(
         doc!{"owner_uid":owner_uid,"connection_id":connection_id,"status":"active",
              "encryption_algorithm":"libsodium_crypto_box_seal","encryption_version":1},
@@ -133,6 +157,15 @@ impl CreateBrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_require_a_validated_executable_connection() {
+        assert!(!connection_allows_credential_use("pending_validation", "not_attempted", false));
+        assert!(!connection_allows_credential_use("active", "pending", false));
+        assert!(!connection_allows_credential_use("disconnected", "validated", true));
+        assert!(!connection_allows_credential_use("active", "validated", false));
+        assert!(connection_allows_credential_use("active", "validated", true));
+    }
 
     #[test]
     fn empty_optional_keypair_disables_credential_encryption() {
