@@ -117,7 +117,7 @@ export default function App() {
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: colors.bgPrimary },
   screen: { flex: 1 },
-  tabBar: { position: "absolute", alignSelf: "center", bottom: 18, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#17291F", borderWidth: 0, borderRadius: 999, padding: 4, zIndex: 20, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  tabBar: { position: "absolute", alignSelf: "center", bottom: 16, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#17291F", borderWidth: 0, borderRadius: 999, padding: 4, zIndex: 20, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   tabItem: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: "transparent" },
   tabItemActive: { backgroundColor: "#7DF162" },
 });
