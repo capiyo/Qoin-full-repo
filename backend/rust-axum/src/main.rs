@@ -33,6 +33,7 @@ mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
 mod market_data_quality;
+mod market_data_backfill;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -89,6 +90,7 @@ struct AppState {
     database: mongodb::Database,
     events: Collection<Document>,
     dataset_manifests: Collection<Document>,
+    market_backfill_jobs: Collection<Document>,
     set_ledger_records: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
@@ -1160,6 +1162,471 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 
 #[derive(Deserialize)]
 struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+
+
+async fn fetch_binance_aggregate_trade_page(
+    client: &reqwest::Client,
+    params: &[(String, String)],
+) -> Result<Vec<serde_json::Value>, String> {
+    const ENDPOINT: &str = "https://fapi.binance.com/fapi/v1/aggTrades";
+    for attempt in 0..4_u32 {
+        let response = match client.get(ENDPOINT).query(params).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                if attempt < 3 {
+                    tokio::time::sleep(Duration::from_millis(500_u64 << attempt)).await;
+                    continue;
+                }
+                return Err(format!("Binance aggregate-trade request failed: {error}"));
+            }
+        };
+        let status = response.status();
+        if status.is_success() {
+            return response.json::<Vec<serde_json::Value>>().await
+                .map_err(|error| format!("Binance aggregate-trade response was not valid JSON: {error}"));
+        }
+        let retry_after_ms = response.headers().get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|seconds| seconds.saturating_mul(1_000).min(10_000));
+        let body = response.text().await.unwrap_or_default();
+        if (status.as_u16() == 429 || status.is_server_error()) && attempt < 3 {
+            tokio::time::sleep(Duration::from_millis(
+                retry_after_ms.unwrap_or(500_u64 << attempt)
+            )).await;
+            continue;
+        }
+        return Err(format!(
+            "Binance aggregate-trade endpoint returned HTTP {}: {}",
+            status,
+            body.chars().take(300).collect::<String>()
+        ));
+    }
+    Err("Binance aggregate-trade retry budget exhausted".into())
+}
+
+async fn release_market_backfill_lease(
+    collection: &Collection<Document>,
+    job_id: &str,
+    lease_owner: &str,
+    status: &str,
+    error: Option<&str>,
+) {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let mut set = doc! {"status":status,"updated_at_ms":now_ms};
+    if let Some(message) = error {
+        set.insert("last_error", message.chars().take(500).collect::<String>());
+    }
+    let update = doc! {
+        "$set":set,
+        "$unset":{"lease_owner":"","lease_expires_at_ms":""}
+    };
+    if let Err(database_error) = collection.update_one(
+        doc!{"job_id":job_id,"lease_owner":lease_owner},
+        update,
+        None,
+    ).await {
+        tracing::error!(error=%database_error,job_id=%job_id,
+            "market backfill lease release failed; it will expire for safe recovery");
+    }
+}
+
+fn market_backfill_public_document(mut document: Document) -> serde_json::Value {
+    document.remove("_id");
+    document.remove("lease_owner");
+    document.remove("lease_expires_at_ms");
+    mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default()
+}
+
+async fn get_market_backfill_job(
+    State(s): State<AppState>,
+    Path(job_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    if job_id.trim().is_empty()
+        || job_id.len() > 64
+        || !job_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid job_id"})));
+    }
+    match s.market_backfill_jobs.find_one(doc!{"job_id":&job_id},None).await {
+        Ok(Some(document)) => (StatusCode::OK, Json(serde_json::json!({
+            "job":market_backfill_public_document(document)
+        }))),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"market backfill job not found"}))),
+        Err(error) => {
+            tracing::error!(error=%error,job_id=%job_id,"market backfill job lookup failed");
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job store unavailable"})))
+        }
+    }
+}
+
+async fn backfill_binance_usdm_aggregate_trades(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<market_data_backfill::BinanceBackfillRequest>,
+) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let request = match request.validate(now_ms) {
+        Ok(value) => value,
+        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+    };
+    let job_id = request.job_id.clone()
+        .unwrap_or_else(|| mongodb::bson::oid::ObjectId::new().to_hex());
+
+    let existing = match s.market_backfill_jobs.find_one(doc!{"job_id":&job_id},None).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(error=%error,job_id=%job_id,"market backfill job lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job store unavailable"})));
+        }
+    };
+    if existing.is_none() {
+        let job = doc!{
+            "job_id":&job_id,
+            "provider":"binance_usdm",
+            "venue":"binance_usdm",
+            "data_type":"aggregate_trades",
+            "symbol":&request.symbol,
+            "from_ts_ms":request.from_ts_ms,
+            "to_ts_ms":request.to_ts_ms,
+            "page_limit":i64::from(request.page_limit),
+            "next_from_id":mongodb::bson::Bson::Null,
+            "last_ts_ms":mongodb::bson::Bson::Null,
+            "pages_completed":0_i64,
+            "rows_seen":0_i64,
+            "events_seen":0_i64,
+            "events_inserted":0_i64,
+            "status":"queued",
+            "created_at_ms":now_ms,
+            "updated_at_ms":now_ms,
+        };
+        if let Err(error) = s.market_backfill_jobs.insert_one(job,None).await {
+            if !error.to_string().contains("E11000") {
+                tracing::error!(error=%error,job_id=%job_id,"market backfill job creation failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job could not be created"})));
+            }
+        }
+    }
+
+    let job = match s.market_backfill_jobs.find_one(doc!{"job_id":&job_id},None).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job disappeared during creation"}))),
+        Err(error) => {
+            tracing::error!(error=%error,job_id=%job_id,"market backfill job reload failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job could not be loaded"})));
+        }
+    };
+    let same_request = job.get_str("provider").ok() == Some("binance_usdm")
+        && job.get_str("symbol").ok() == Some(request.symbol.as_str())
+        && job.get_i64("from_ts_ms").ok() == Some(request.from_ts_ms)
+        && job.get_i64("to_ts_ms").ok() == Some(request.to_ts_ms)
+        && job.get_i64("page_limit").ok() == Some(i64::from(request.page_limit));
+    if !same_request {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error":"job_id already belongs to a different immutable backfill request",
+            "job_id":job_id
+        })));
+    }
+    if job.get_str("status").ok() == Some("complete") {
+        return (StatusCode::OK, Json(serde_json::json!({
+            "job":market_backfill_public_document(job)
+        })));
+    }
+    if job.get_str("status").ok() == Some("limit_reached") {
+        return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"backfill job reached its hard event/page limit; create a narrower job",
+            "job":market_backfill_public_document(job)
+        })));
+    }
+
+    let lease_owner = mongodb::bson::oid::ObjectId::new().to_hex();
+    let lease_expiry = now_ms.saturating_add(120_000);
+    let claim_filter = doc!{
+        "job_id":&job_id,
+        "$or":[
+            {"status":{"$in":["queued","paused"]}},
+            {"status":"running","lease_expires_at_ms":{"$lte":now_ms}},
+            {"status":"running","lease_expires_at_ms":{"$exists":false}}
+        ]
+    };
+    let claim = match s.market_backfill_jobs.update_one(
+        claim_filter,
+        doc!{"$set":{
+            "status":"running",
+            "lease_owner":&lease_owner,
+            "lease_expires_at_ms":lease_expiry,
+            "updated_at_ms":now_ms
+        }},
+        None,
+    ).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(error=%error,job_id=%job_id,"market backfill lease claim failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill lease unavailable"})));
+        }
+    };
+    if claim.matched_count != 1 {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error":"market backfill job is already leased or is not resumable",
+            "job_id":job_id
+        })));
+    }
+
+    let job = match s.market_backfill_jobs.find_one(
+        doc!{"job_id":&job_id,"lease_owner":&lease_owner},None
+    ).await {
+        Ok(Some(value)) => value,
+        _ => {
+            release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",
+                Some("job could not be reloaded after lease claim")).await;
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job could not be reloaded"})));
+        }
+    };
+    let mut next_from_id = job.get_str("next_from_id").ok()
+        .and_then(|value|value.parse::<u64>().ok());
+    let mut pages_completed = job.get_i64("pages_completed").unwrap_or(0);
+    let mut rows_seen = job.get_i64("rows_seen").unwrap_or(0);
+    let mut events_seen = job.get_i64("events_seen").unwrap_or(0);
+    let mut events_inserted = job.get_i64("events_inserted").unwrap_or(0);
+    let mut last_ts_ms = job.get_i64("last_ts_ms").ok();
+    if pages_completed >= market_data_backfill::MAX_TOTAL_PAGES_PER_JOB
+        || events_seen >= market_data_backfill::MAX_EVENTS_PER_JOB
+    {
+        release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"limit_reached",
+            Some("hard per-job page or event limit reached")).await;
+        return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({
+            "error":"backfill job reached its hard event/page limit; create a narrower job",
+            "job_id":job_id
+        })));
+    }
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("QoinMarketDataBackfill/1.0")
+        .build() {
+        Ok(value) => value,
+        Err(error) => {
+            release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",
+                Some("HTTP client initialization failed")).await;
+            tracing::error!(error=%error,"market backfill HTTP client initialization failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"market backfill client unavailable"})));
+        }
+    };
+
+    let mut completed = false;
+    let mut limit_reached = false;
+    for page_index in 0..request.max_pages {
+        if pages_completed >= market_data_backfill::MAX_TOTAL_PAGES_PER_JOB
+            || events_seen >= market_data_backfill::MAX_EVENTS_PER_JOB
+        {
+            limit_reached = true;
+            break;
+        }
+        let mut params = vec![
+            ("symbol".to_string(),request.symbol.clone()),
+            ("limit".to_string(),request.page_limit.to_string()),
+            ("endTime".to_string(),request.to_ts_ms.to_string()),
+        ];
+        if let Some(cursor) = next_from_id {
+            params.push(("fromId".to_string(),cursor.to_string()));
+        } else {
+            params.push(("startTime".to_string(),request.from_ts_ms.to_string()));
+        }
+        let rows = match fetch_binance_aggregate_trade_page(&client,&params).await {
+            Ok(value) => value,
+            Err(message) => {
+                release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",Some(&message)).await;
+                tracing::warn!(job_id=%job_id,symbol=%request.symbol,error=%message,
+                    "Binance historical aggregate-trade page failed; job can be resumed");
+                return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                    "error":"Binance historical data provider is temporarily unavailable",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+        };
+        let page = match market_data_backfill::parse_aggregate_trade_page(
+            &request.symbol,&rows,request.from_ts_ms,request.to_ts_ms,request.page_limit
+        ) {
+            Ok(value) => value,
+            Err(message) => {
+                release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",Some(&message)).await;
+                tracing::error!(job_id=%job_id,symbol=%request.symbol,error=%message,
+                    "Binance aggregate-trade page failed validation");
+                return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                    "error":"Binance returned an invalid or unordered historical page",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+        };
+        if events_seen.saturating_add(page.trades.len() as i64)
+            > market_data_backfill::MAX_EVENTS_PER_JOB
+        {
+            limit_reached = true;
+            break;
+        }
+
+        for trade in &page.trades {
+            let event = MarketEvent {
+                event_id:trade.event_id.clone(),
+                venue:"binance_usdm".into(),
+                symbol:trade.symbol.clone(),
+                event_type:"trade".into(),
+                ts_ms:trade.ts_ms,
+                price:Some(trade.price),
+                size:Some(trade.size),
+                side:Some(trade.side.into()),
+                bid:None,ask:None,bid_size:None,ask_size:None,
+                funding_rate:None,open_interest:None,liquidation_side:None,
+            };
+            if let Err(message) = validate_event(&event) {
+                release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",Some(&message)).await;
+                return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                    "error":"normalized historical event failed canonical validation",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+            let mut event_document = match mongodb::bson::to_document(&event) {
+                Ok(value) => value,
+                Err(error) => {
+                    release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",
+                        Some("historical event serialization failed")).await;
+                    tracing::error!(error=%error,job_id=%job_id,"historical event serialization failed");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"historical event serialization failed","job_id":job_id})));
+                }
+            };
+            // Historical-only rows are available to dataset snapshots and replay,
+            // but are excluded from live V1 rolling-state recovery.
+            event_document.insert("historical_only",true);
+            event_document.insert("backfill_job_id",&job_id);
+            let filter = doc!{
+                "venue":"binance_usdm",
+                "symbol":&event.symbol,
+                "event_id":&event.event_id
+            };
+            let update = doc!{"$setOnInsert":event_document};
+            let options = UpdateOptions::builder().upsert(true).build();
+            if let Err(error) = s.events.update_one(filter,update,Some(options)).await {
+                release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",
+                    Some("historical event persistence failed; retry is idempotent")).await;
+                tracing::error!(error=%error,job_id=%job_id,event_id=%event.event_id,
+                    "historical market event persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"historical event storage unavailable; resume the same job",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+        }
+
+        pages_completed += 1;
+        rows_seen = rows_seen.saturating_add(page.rows_seen as i64);
+        events_seen = events_seen.saturating_add(page.trades.len() as i64);
+        last_ts_ms = page.last_ts_ms.or(last_ts_ms);
+        next_from_id = page.next_from_id;
+        events_inserted = match s.events.count_documents(doc!{"backfill_job_id":&job_id},None).await {
+            Ok(value) => i64::try_from(value).unwrap_or(i64::MAX),
+            Err(error) => {
+                release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",
+                    Some("inserted-event count failed; retry is idempotent")).await;
+                tracing::error!(error=%error,job_id=%job_id,"market backfill event count failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"market backfill progress could not be counted",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+        };
+        completed = !page.has_more;
+
+        let checkpoint_status = if completed {"complete"} else {"running"};
+        let checkpoint = doc!{"$set":{
+            "status":checkpoint_status,
+            "next_from_id":next_from_id.map(|value|value.to_string()).map(mongodb::bson::Bson::String)
+                .unwrap_or(mongodb::bson::Bson::Null),
+            "last_ts_ms":last_ts_ms.map(mongodb::bson::Bson::Int64).unwrap_or(mongodb::bson::Bson::Null),
+            "pages_completed":pages_completed,
+            "rows_seen":rows_seen,
+            "events_seen":events_seen,
+            "events_inserted":events_inserted,
+            "last_error":mongodb::bson::Bson::Null,
+            "updated_at_ms":chrono::Utc::now().timestamp_millis(),
+            "lease_expires_at_ms":chrono::Utc::now().timestamp_millis().saturating_add(120_000)
+        }};
+        let saved = match s.market_backfill_jobs.update_one(
+            doc!{"job_id":&job_id,"lease_owner":&lease_owner},
+            checkpoint,
+            None,
+        ).await {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::error!(error=%error,job_id=%job_id,
+                    "market backfill checkpoint persistence failed after idempotent event upserts");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"backfill events were stored but the checkpoint could not be saved; resume after the lease expires",
+                    "job_id":job_id,
+                    "resumable":true
+                })));
+            }
+        };
+        if saved.matched_count != 1 {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({
+                "error":"market backfill lease was lost after page persistence; resume after checking job status",
+                "job_id":job_id,
+                "resumable":true
+            })));
+        }
+        if completed {
+            break;
+        }
+        if page_index + 1 < request.max_pages {
+            // Binance USD-M aggTrades has a comparatively high request weight.
+            // Pace pages instead of exhausting the public IP request budget.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    let final_status = if limit_reached {
+        "limit_reached"
+    } else if completed {
+        "complete"
+    } else {
+        "paused"
+    };
+    release_market_backfill_lease(
+        &s.market_backfill_jobs,
+        &job_id,
+        &lease_owner,
+        final_status,
+        if limit_reached {Some("hard per-job page or event limit reached")} else {None},
+    ).await;
+
+    let final_job = match s.market_backfill_jobs.find_one(doc!{"job_id":&job_id},None).await {
+        Ok(Some(value)) => value,
+        _ => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"backfill completed but final job status could not be loaded",
+            "job_id":job_id
+        }))),
+    };
+    let response = serde_json::json!({
+        "job":market_backfill_public_document(final_job),
+        "coverage_note":"Binance USD-M aggregate trades only; historical-only rows are excluded from live V1 state recovery and do not include historical order books, funding, liquidation or open-interest series. Provider retention and endpoint limits apply. Run the separate V2 set-ledger backfill after market events are imported."
+    });
+    if limit_reached {
+        (StatusCode::PAYLOAD_TOO_LARGE, Json(response))
+    } else {
+        (StatusCode::OK, Json(response))
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct DatasetManifestRequest { symbol: String, venue: String, from_ts_ms: i64, to_ts_ms: i64, #[serde(default)] max_gap_ms: Option<i64> }
@@ -2653,6 +3120,7 @@ async fn main(){
     db.run_command(doc!{"ping":1},None).await.expect("MongoDB ping");
     let events:Collection<Document>=db.collection("market_events");
     let dataset_manifests:Collection<Document>=db.collection("market_dataset_manifests");
+    let market_backfill_jobs:Collection<Document>=db.collection("market_backfill_jobs");
     let set_ledger_records:Collection<Document>=db.collection("set_relation_ledger");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
@@ -2703,6 +3171,9 @@ async fn main(){
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("owner-scoped order history index");
     dataset_manifests.create_index(mongodb::IndexModel::builder().keys(doc!{"dataset_version":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("immutable dataset version index");
+    market_backfill_jobs.create_index(mongodb::IndexModel::builder().keys(doc!{"job_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique market backfill job index");
+    market_backfill_jobs.create_index(mongodb::IndexModel::builder().keys(doc!{"status":1,"lease_expires_at_ms":1}).build(),None).await.expect("market backfill lease index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"backfill_job_id":1}).build(),None).await.expect("market backfill job event count index");
     dataset_manifests.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"venue":1,"created_at":-1}).build(),None).await.expect("dataset manifest lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1}).build(),None).await.expect("historical replay time index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1}).build(),None).await.expect("V2 ledger backfill keyset index");
@@ -2734,7 +3205,7 @@ async fn main(){
     let replay_options = FindOptions::builder()
         .sort(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1})
         .build();
-    let mut event_cursor = events.find(None, Some(replay_options)).await
+    let mut event_cursor = events.find(doc!{"historical_only":{"$ne":true}}, Some(replay_options)).await
         .expect("open immutable market event log for recovery");
     let mut restored_memory: HashMap<String, SymbolState> = HashMap::new();
     let mut replayed_events: u64 = 0;
@@ -2768,7 +3239,7 @@ async fn main(){
         .expect("configure a valid Firebase project ID for authenticated trading routes");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,dataset_manifests,set_ledger_records,states,decisions,strategies,orders,trading_controls,
+        stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,states,decisions,strategies,orders,trading_controls,
         users, algorithm_selections, broker_connections, broker_credentials, broker_accounts, credential_cipher,
         broker_registry: broker_contract::BrokerRegistry::default(),
         firebase_verifier,
@@ -2801,6 +3272,8 @@ async fn main(){
          .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/datasets",get(list_dataset_manifests).post(create_dataset_manifest))
+        .route("/internal/market-data/backfill/binance-usdm",post(backfill_binance_usdm_aggregate_trades))
+        .route("/internal/market-data/backfill/:job_id",get(get_market_backfill_job))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))

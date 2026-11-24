@@ -35,7 +35,7 @@ Every new adapter must:
 - Binance is the only current source for funding, liquidation and open-interest observations in the engine.
 - Finnhub's availability depends on a real key, plan, exchange coverage and symbol entitlement. A registry row is not proof that a quote is available.
 - The current instrument registry is curated, not a full instrument master. Symbol aliases, currency conversion and contract metadata still need a versioned reference-data service.
-- There is no resumable historical backfill service yet. WebSocket streams provide live observations, not complete historical datasets.
+- A bounded, resumable Binance USD-M aggregate-trade backfill is available through the internal operator route. It covers aggregate trades only; Coinbase, Kraken and Finnhub historical backfills are not implemented, and it does not provide historical order books, funding, liquidation or open-interest series.
 - There is no automatic best-source arbitration or quote failover. Venue histories remain isolated intentionally to prevent invalid mixed-feed backtests.
 - Provider health currently reports configured/enabled state, not a complete measured SLO, last-message freshness, sequence-gap rate or entitlement validation.
 
@@ -68,3 +68,19 @@ The Axum research API now exposes an operator-protected dataset snapshot endpoin
 - `GET /internal/datasets` lists manifests and supports optional `symbol`, `venue`, and bounded `limit` filters.
 
 A manifest reports observed event counts, first/last timestamps, invalid stored rows, maximum observed inter-event gap and optional threshold breaches. Gap detection is opt-in because irregular trade events do not have a fixed expected cadence. The status `observed_clean` means only that the scanned stored events passed validation and the requested gap threshold; it does not prove the provider delivered every source event. These manifests version research inputs; they do not download missing history or establish exchange-side completeness.
+
+
+## Bounded Binance USD-M historical aggregate-trade backfill
+
+The internal Axum operator API provides a resumable, public-market-data import for Binance USD-M aggregate trades:
+
+- POST /internal/market-data/backfill/binance-usdm requires the x-qoin-ledger-maintenance-token header.
+- GET /internal/market-data/backfill/{job_id} returns the persisted progress record with the same operator token.
+- The request accepts symbol, from_ts_ms, to_ts_ms, optional job_id, page_limit (1–1000, default 1000), and max_pages (1–10 per call, default 5).
+- to_ts_ms must be at least five minutes behind server time. This avoids intentionally overlapping the live WebSocket window.
+- Jobs are immutable by ID and request parameters. Repeating the same job_id resumes from the persisted aggregate-trade ID. Each page is upserted by provider-scoped event identity before its checkpoint is advanced, so retrying a page after a crash is idempotent.
+- Each job is capped at 1,000 pages and 1,000,000 in-range observations. A call is bounded to at most 10 pages and uses request pacing plus bounded retries for rate limits and transient server errors.
+- Imported rows are marked historical_only. They are available to dataset manifests, raw history and historical replay, but are excluded from the live V1 rolling-state rebuild. This prevents a late historical import from silently changing the live signal state.
+- Run the existing operator-protected V2 set-ledger backfill after importing raw events; this market-data endpoint does not claim that V2 relation records have already been rebuilt.
+
+This is a first historical source, not a complete market-data backfill system. It does not establish Binance source completeness, does not download historical order books/funding/liquidations/open interest, and does not provide Coinbase/Kraken/Finnhub history or automatic provider failover. Dataset coverage remains limited to observed source records.
