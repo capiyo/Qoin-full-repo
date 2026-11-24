@@ -22,7 +22,11 @@ function TabBar({ current, onChange }: { current: MainTab; onChange: (tab: MainT
   return (
     <View style={styles.tabBar}>
       {(["Archive", "Explore"] as MainTab[]).map((tab) => (
-        <Pressable key={tab} onPress={() => onChange(tab)} style={styles.tabItem}>
+        <Pressable
+          key={tab}
+          onPress={() => onChange(tab)}
+          style={[styles.tabItem, current === tab && styles.tabItemActive]}
+        >
           <Text style={[styles.tabText, current === tab && styles.tabTextActive]}>{tab}</Text>
           {current === tab ? <View style={styles.activeMark} /> : null}
         </Pressable>
@@ -75,7 +79,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <NavigationContainer>
-          <StatusBar style="light" backgroundColor={colors.bgPrimary} />
+          <StatusBar style="dark" backgroundColor={colors.bgPrimary} />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               {signedIn ? (
@@ -96,8 +100,30 @@ export default function App() {
 const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: colors.bgPrimary },
   screen: { flex: 1 },
-  tabBar: { position: "absolute", left: 28, right: 28, bottom: 18, height: 52, flexDirection: "row", alignItems: "center", backgroundColor: "#17291f", borderWidth: 1, borderColor: "#365b41", borderRadius: 28, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
-  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5 },
+  tabBar: {
+    position: "absolute",
+    left: 28,
+    right: 28,
+    bottom: 18,
+    height: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.bgSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 28,
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    paddingBottom: 4,
+    shadowColor: "#24344D",
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+    zIndex: 20,
+  },
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 5, minHeight: 42, borderRadius: 22 },
+  tabItemActive: { backgroundColor: "#EAF1FF" },
   tabText: { color: colors.textMuted, fontSize: 11, fontWeight: "600" },
   tabTextActive: { color: colors.accent, fontWeight: "800" },
   activeMark: { width: 15, height: 2, borderRadius: 2, backgroundColor: colors.accent },
