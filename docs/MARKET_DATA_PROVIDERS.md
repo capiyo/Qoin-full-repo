@@ -36,6 +36,7 @@ Every new adapter must:
 - Finnhub's availability depends on a real key, plan, exchange coverage and symbol entitlement. A registry row is not proof that a quote is available.
 - The current instrument registry is curated, not a full instrument master. Symbol aliases, currency conversion and contract metadata still need a versioned reference-data service.
 - A bounded, resumable Binance USD-M aggregate-trade backfill is available through the internal operator route. It covers aggregate trades only; Coinbase, Kraken and Finnhub historical backfills are not implemented, and it does not provide historical order books, funding, liquidation or open-interest series.
+- Live ingestion stores a server receipt timestamp. An operator-protected per-venue/per-symbol endpoint reports measured ingestion age and source-event lag; historical-only rows are excluded. This is observation telemetry, not an exchange heartbeat or completeness guarantee.
 - There is no automatic best-source arbitration or quote failover. Venue histories remain isolated intentionally to prevent invalid mixed-feed backtests.
 - Provider health currently reports configured/enabled state, not a complete measured SLO, last-message freshness, sequence-gap rate or entitlement validation.
 
@@ -84,3 +85,10 @@ The internal Axum operator API provides a resumable, public-market-data import f
 - Run the existing operator-protected V2 set-ledger backfill after importing raw events; this market-data endpoint does not claim that V2 relation records have already been rebuilt.
 
 This is a first historical source, not a complete market-data backfill system. It does not establish Binance source completeness, does not download historical order books/funding/liquidations/open interest, and does not provide Coinbase/Kraken/Finnhub history or automatic provider failover. Dataset coverage remains limited to observed source records.
+
+
+## Measured live-ingestion freshness
+
+The operator-protected `GET /internal/market-data/providers/health?venue=binance_usdm&symbol=BTCUSDT` endpoint reports the count of stored live observations, the latest event and server receipt timestamps, ingestion age, source-event lag, and a conservative freshness status. `max_age_ms` may be supplied from 100 to 600000 (default 5000). It uses server receipt time, not an exchange heartbeat, and excludes rows tagged `historical_only`.
+
+Older live rows written before receipt timestamps were added are reported as unmeasured rather than being assumed fresh. Statuses such as `fresh` and `stale` describe only the latest server-observed ingestion for the requested venue and symbol. They do not prove provider uptime, exchange-side sequence continuity, source completeness, subscription entitlement or executable broker capability. This endpoint is diagnostic only: it does not arbitrate quotes, switch sources or trigger failover.

@@ -34,6 +34,7 @@ mod broker_allocation_policy;
 mod broker_fanout;
 mod market_data_quality;
 mod market_data_backfill;
+mod market_data_health;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -1035,7 +1036,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     } else {
         return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})));
     }
-    let raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    let received_at_ms = chrono::Utc::now().timestamp_millis();
+    let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
+    raw.insert("received_at_ms", received_at_ms);
     let newly_inserted = match s.events.insert_one(raw,None).await{
         Ok(_)=>true,
         Err(e) if e.to_string().contains("E11000")=>false,
@@ -1262,6 +1265,101 @@ async fn get_market_backfill_job(
             (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market backfill job store unavailable"})))
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProviderHealthQuery {
+    venue: Option<String>,
+    symbol: Option<String>,
+    max_age_ms: Option<i64>,
+}
+
+/// Reports measured live ingestion only. It never claims exchange-side
+/// completeness or switches providers; historical backfill rows are excluded.
+async fn get_market_provider_health(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ProviderHealthQuery>,
+) -> impl IntoResponse {
+    if !ledger_maintenance_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"unauthorized"})));
+    }
+    let venue = query.venue.unwrap_or_default().trim().to_string();
+    let symbol = query.symbol.unwrap_or_default().trim().to_string();
+    let max_age_ms = query.max_age_ms.unwrap_or(market_data_health::DEFAULT_MAX_INGEST_AGE_MS);
+    if venue.is_empty() || venue.len() > 64 || symbol.is_empty() || symbol.len() > 96
+        || !(100..=market_data_health::MAX_INGEST_AGE_MS).contains(&max_age_ms)
+    {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error":"venue and symbol are required; max_age_ms must be between 100 and 600000"
+        })));
+    }
+
+    let filter = doc! {
+        "venue": &venue,
+        "symbol": &symbol,
+        "historical_only": {"$ne": true}
+    };
+    let live_event_count = match s.events.count_documents(filter.clone(), None).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(error=%error,venue=%venue,symbol=%symbol,"provider health count failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"provider health data unavailable"})));
+        }
+    };
+    let latest = match s.events.find_one(
+        filter,
+        Some(FindOneOptions::builder().sort(doc!{"received_at_ms":-1,"ts_ms":-1}).build()),
+    ).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(error=%error,venue=%venue,symbol=%symbol,"provider health latest-event lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"provider health data unavailable"})));
+        }
+    };
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let Some(document) = latest else {
+        return (StatusCode::OK, Json(serde_json::json!({
+            "venue":venue,
+            "symbol":symbol,
+            "live_event_count":live_event_count,
+            "freshness_status":"no_observations",
+            "max_ingest_age_ms":max_age_ms,
+            "observed_at_ms":now_ms,
+            "coverage_note":"no live observations found; this does not establish provider entitlement or source completeness"
+        })));
+    };
+    let last_received_at_ms = document.get_i64("received_at_ms").ok();
+    let last_event_ts_ms = document.get_i64("ts_ms").ok();
+    let freshness_status = market_data_health::classify(
+        now_ms,
+        last_received_at_ms,
+        last_event_ts_ms,
+        max_age_ms,
+    );
+    let ingest_age_ms = last_received_at_ms.map(|received| now_ms.saturating_sub(received));
+    let source_event_lag_ms = match (last_received_at_ms,last_event_ts_ms) {
+        (Some(received),Some(event_time)) => Some(received.saturating_sub(event_time)),
+        _ => None,
+    };
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "venue":venue,
+            "symbol":symbol,
+            "live_event_count":live_event_count,
+            "last_event_id":document.get_str("event_id").ok(),
+            "last_event_type":document.get_str("event_type").ok(),
+            "last_event_ts_ms":last_event_ts_ms,
+            "last_received_at_ms":last_received_at_ms,
+            "ingest_age_ms":ingest_age_ms,
+            "source_event_lag_ms":source_event_lag_ms,
+            "freshness_status":freshness_status,
+            "max_ingest_age_ms":max_age_ms,
+            "observed_at_ms":now_ms,
+            "coverage_note":"measures server-observed live ingestion only; it does not prove exchange-side completeness, sequence continuity, entitlement, uptime or automatic failover"
+        }))
+    )
 }
 
 async fn backfill_binance_usdm_aggregate_trades(
@@ -3181,6 +3279,8 @@ async fn main(){
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"record_type":1,"relation_id":1}).build(),None).await.expect("durable V2 relation lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"received_at_ms":-1})
+        .build(),None).await.expect("provider live-ingestion freshness index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
@@ -3272,6 +3372,7 @@ async fn main(){
          .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
         .route("/internal/datasets",get(list_dataset_manifests).post(create_dataset_manifest))
+        .route("/internal/market-data/providers/health",get(get_market_provider_health))
         .route("/internal/market-data/backfill/binance-usdm",post(backfill_binance_usdm_aggregate_trades))
         .route("/internal/market-data/backfill/:job_id",get(get_market_backfill_job))
         .route("/internal/backtest",get(run_backtest)).route("/internal/instruments",get(get_instruments))
