@@ -574,7 +574,10 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         "Long-only, all-available-cash entries and full exits on SELL; no leverage or shorting.".into(),
         "Fees and slippage are constant user-supplied basis-point assumptions; slippage must be below 10,000 bps. Positive perpetual funding rates are paid by long positions and negative rates are received only when that funding event carries its own valid mark price.".into(),
         "Trade fills use the observed trade price; book fills use ask for buys and bid for sells. Equity is marked to the latest trade or book midpoint. No forced liquidation or borrow cost model.".into(),
-        "Results are a research simulation, not live or expected performance.".into()]})
+        "Results are a research simulation, not live or expected performance.".into(),
+        "Annualized return uses 365.25 calendar days; volatility, Sharpe and Sortino use calendar-day dailyized equity returns; Sharpe assumes a zero risk-free rate. Ratios are null when the sample or denominator is insufficient.".into(),
+        "Win rate and profit factor aggregate only fully filled SELL order cycles; realized P&L is net of allocated entry and exit fees. Partial fills for the same exit order are aggregated before counting a completed trade.".into(),
+        "The buy-and-hold comparison is the first-to-last observed mark price for this same instrument and venue; it is not an external benchmark or a portfolio benchmark.".into()]})
 }
 #[cfg(test)]
 mod tests {
