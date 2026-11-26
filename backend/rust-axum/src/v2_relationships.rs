@@ -6,10 +6,10 @@ use qoin_set_theoretic_attention::{
 use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
-struct RelationshipLedgerQuery { limit: Option<i64> }
+pub(super) struct RelationshipLedgerQuery { limit: Option<i64> }
 
 #[derive(Deserialize)]
-struct DiscoverRelationshipsRequest {
+pub(super) struct DiscoverRelationshipsRequest {
     query: EvidenceSet,
     candidates: Vec<EvidenceSet>,
     model_version: String,

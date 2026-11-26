@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Deserialize)]
-struct BrokerReadinessQuery { brokers: Option<String> }
+pub(super) struct BrokerReadinessQuery { brokers: Option<String> }
 
 pub(super) async fn get_broker_readiness(
     State(s): State<AppState>,
@@ -97,7 +97,7 @@ pub(super) async fn get_broker_configuration(State(s): State<AppState>, headers:
 
 
 #[derive(Debug, Deserialize)]
-struct ProvisionBrokerAccountRequest {
+pub(super) struct ProvisionBrokerAccountRequest {
     owner_uid: String,
     broker_id: String,
     account_id: String,
