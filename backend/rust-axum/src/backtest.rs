@@ -925,6 +925,48 @@ mod vector_engine_replay_tests {
     use qoin_vector_engine::EngineConfig;
 
     #[test]
+    fn replay_reports_annualized_risk_metrics_and_buy_and_hold_benchmark() {
+        let day = 86_400_000_i64;
+        let start = 1_700_000_000_000_i64;
+        let events = vec![
+            ReplayEvent {
+                event_id: "day-0".into(), venue: "venue-a".into(), symbol: "ASSET-USD".into(),
+                event_type: "book".into(), ts_ms: start, price: None, size: None, side: None,
+                bid: Some(99.99), ask: Some(100.01), bid_size: Some(10.0), ask_size: Some(10.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "day-1".into(), venue: "venue-a".into(), symbol: "ASSET-USD".into(),
+                event_type: "book".into(), ts_ms: start + day, price: None, size: None, side: None,
+                bid: Some(100.99), ask: Some(101.01), bid_size: Some(10.0), ask_size: Some(10.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+            ReplayEvent {
+                event_id: "day-2".into(), venue: "venue-a".into(), symbol: "ASSET-USD".into(),
+                event_type: "book".into(), ts_ms: start + 2 * day, price: None, size: None, side: None,
+                bid: Some(101.99), ask: Some(102.01), bid_size: Some(10.0), ask_size: Some(10.0),
+                funding_rate: None, open_interest: None, liquidation_side: None,
+            },
+        ];
+        let result = replay_with_vector_engine(
+            events, &EngineConfig::default(), "metrics-test-v1",
+            1_000.0, 10.0, 5.0, 0, 0.1, 5.0,
+        ).unwrap();
+        assert!(result.annualized_return_pct.is_some());
+        assert!(result.annualized_return_pct.unwrap().abs() < 1e-9);
+        assert!(result.volatility_pct.is_none());
+        assert!(result.sharpe_ratio.is_none());
+        assert!(result.sortino_ratio.is_none());
+        assert!(result.calmar_ratio.is_none());
+        assert_eq!(result.completed_trades, 0);
+        assert!(result.win_rate_pct.is_none());
+        assert!(result.profit_factor.is_none());
+        assert_eq!(result.max_gross_exposure_pct, 0.0);
+        assert_eq!(result.transaction_costs, 0.0);
+        assert!((result.buy_and_hold_return_pct.unwrap() - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn historical_replay_uses_the_same_vector_engine_and_rejects_stale_quotes() {
         let events = vec![
             ReplayEvent {
