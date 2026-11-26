@@ -1191,6 +1191,112 @@ async fn get_paper_session(State(s): State<AppState>, headers: HeaderMap) -> imp
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
 
+#[derive(Deserialize)]
+struct PaperHistoryQuery {
+    #[serde(default)] cycle_id: Option<String>,
+    #[serde(default)] limit: Option<i64>,
+}
+
+async fn get_paper_trade_history(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PaperHistoryQuery>,
+) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
+    if query.cycle_id.as_ref().is_some_and(|id| id.trim().is_empty() || id.len() > 128) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"cycle_id is invalid"})));
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=500).contains(&limit) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"limit must be between 1 and 500"})));
+    }
+    let mut filter = doc!{"owner_uid":&owner_uid};
+    if let Some(cycle_id) = query.cycle_id.as_deref() {
+        filter.insert("cycle_id", cycle_id);
+    }
+    let options = FindOptions::builder().sort(doc!{"exit_ts_ms":-1}).limit(limit).build();
+    let mut cursor = match s.paper_session_trades.find(filter, Some(options)).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(error=%error, owner_uid=%owner_uid, "paper trade history query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"})));
+        }
+    };
+    let mut items = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document)) => {
+                document.remove("_id");
+                document.remove("owner_uid");
+                document.remove("stored_at");
+                items.push(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or(serde_json::Value::Null));
+            }
+            Ok(None) => break,
+            Err(error) => {
+                tracing::error!(error=%error, owner_uid=%owner_uid, "paper trade history cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"})));
+            }
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"items":items,"limit":limit})))
+}
+
+async fn get_paper_decision_history(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PaperHistoryQuery>,
+) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
+    if query.cycle_id.as_ref().is_some_and(|id| id.trim().is_empty() || id.len() > 128) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"cycle_id is invalid"})));
+    }
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=500).contains(&limit) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"limit must be between 1 and 500"})));
+    }
+    let mut filter = doc!{"owner_uid":&owner_uid};
+    if let Some(cycle_id) = query.cycle_id.as_deref() {
+        filter.insert("cycle_id", cycle_id);
+    }
+    let options = FindOptions::builder().sort(doc!{"ts_ms":-1}).limit(limit).build();
+    let mut cursor = match s.paper_session_decisions.find(filter, Some(options)).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(error=%error, owner_uid=%owner_uid, "paper decision history query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper decision history unavailable"})));
+        }
+    };
+    let mut items = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document)) => {
+                document.remove("_id");
+                document.remove("owner_uid");
+                document.remove("stored_at");
+                items.push(mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or(serde_json::Value::Null));
+            }
+            Ok(None) => break,
+            Err(error) => {
+                tracing::error!(error=%error, owner_uid=%owner_uid, "paper decision history cursor failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper decision history unavailable"})));
+            }
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"items":items,"limit":limit})))
+}
+
 async fn start_paper_session(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -2990,6 +3096,8 @@ async fn main(){
         .route("/internal/brokers/configuration",get(get_broker_configuration))
         .route("/internal/trading/readiness",get(get_broker_readiness))
         .route("/internal/paper-session",get(get_paper_session))
+        .route("/internal/paper-session/trades",get(get_paper_trade_history))
+        .route("/internal/paper-session/decisions",get(get_paper_decision_history))
         .route("/internal/paper-session/start",post(start_paper_session))
         .route("/internal/paper-session/stop",post(stop_paper_session))
         .route("/internal/orders",post(submit_live_order))
