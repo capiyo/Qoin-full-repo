@@ -1,5 +1,4 @@
 import { getQoinFirebaseIdToken } from "./firebaseAuth";
-import sodium from "libsodium-wrappers";
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
 export type MarketForceObservation = {
@@ -243,7 +242,7 @@ export type QoinBrokerReadiness = {
 /** Checks selected provider eligibility. This endpoint never submits an order. */
 export function getQoinBrokerReadiness(brokerIds: string[]): Promise<QoinBrokerReadiness> {
   const brokers = [...new Set(brokerIds)].slice(0, 20).join(",");
-  return request<QoinBrokerReadiness>("/api/v1/trading/readiness" + (brokers ? "?brokers=" + encodeURIComponent(brokers) : ""));
+  return authenticatedQoinRequest<QoinBrokerReadiness>("/api/v1/trading/readiness" + (brokers ? "?brokers=" + encodeURIComponent(brokers) : ""));
 }
 /** Public provider directory only; never creates credentials, links accounts or submits orders. */
 export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
@@ -252,20 +251,8 @@ export function getQoinBrokerCatalogue(): Promise<QoinBrokerCatalogue> {
 
 
 
-export type QoinBrokerConnection = {
-  connection_id: string;
-  broker_id: string;
-  display_name: string;
-  auth_method: "api_key" | "oauth2";
-  status: "pending_validation" | "connected" | "degraded" | "disconnected" | string;
-  validation_status: string;
-  executable: false;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
 export type QoinBrokerAccount = {
   account_id: string;
-  connection_id: string;
   broker_id: string;
   account_name: string;
   account_type: "live" | "demo" | "unknown" | string;
@@ -273,12 +260,20 @@ export type QoinBrokerAccount = {
   status: string;
   trading_enabled: false;
 };
-export type CreateQoinBrokerConnection = {
-  broker_id: string;
-  display_name?: string;
-  auth_method: "api_key" | "oauth2";
-  /** Encrypted in the client with the backend public key before transport. */
-  credentials: Record<string, string>;
+
+export type QoinBrokerEnvironment = {
+  authentication_model: "firebase_user_identity_and_server_environment_broker_credentials" | string;
+  credential_storage: "deployment_environment_secrets" | string;
+  user_supplied_broker_credentials: false;
+  configured_provider_count: number;
+  execution_enabled: false;
+  items: Array<{
+    broker_id: string;
+    credentials_configured: boolean;
+    subaccounts_allowlisted: boolean;
+    adapter_registered: boolean;
+    execution_ready: false;
+  }>;
 };
 
 async function authenticatedQoinRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -289,57 +284,14 @@ async function authenticatedQoinRequest<T>(path: string, init?: RequestInit): Pr
   });
 }
 
-/** Lists only broker connections owned by the signed-in Firebase user. */
-export function getQoinBrokerConnections(): Promise<{ items: QoinBrokerConnection[] }> {
-  return authenticatedQoinRequest("/api/v1/broker-connections");
-}
-
-/** Encrypts broker credentials in the client using the backend's libsodium sealed-box public key. */
-async function sealQoinBrokerCredentials(credentials: Record<string, string>): Promise<string> {
-  await sodium.ready;
-  const key = await request<{ algorithm: string; public_key_hex: string; key_version: number }>(
-    "/api/v1/broker-credentials/public-key",
-  );
-  if (key.algorithm !== "libsodium_crypto_box_seal" || key.key_version !== 1) {
-    throw new Error("Unsupported broker credential encryption protocol");
-  }
-  const publicKey = sodium.from_hex(key.public_key_hex);
-  if (publicKey.length !== sodium.crypto_box_PUBLICKEYBYTES) {
-    throw new Error("Broker credential public key is invalid");
-  }
-  const plaintext = sodium.from_string(JSON.stringify(credentials));
-  try {
-    return sodium.to_hex(sodium.crypto_box_seal(plaintext, publicKey));
-  } finally {
-    sodium.memzero(plaintext);
-  }
-}
-
-/** Creates a pending, non-executable connection; plaintext credentials never leave this client. */
-export async function createQoinBrokerConnection(input: CreateQoinBrokerConnection): Promise<QoinBrokerConnection> {
-  const { credentials, ...connection } = input;
-  if (!credentials || Object.keys(credentials).length === 0) {
-    throw new Error("Broker credentials are required");
-  }
-  const sealed_credentials_hex = await sealQoinBrokerCredentials(credentials);
-  return authenticatedQoinRequest("/api/v1/broker-connections", {
-    method: "POST",
-    body: JSON.stringify({ ...connection, sealed_credentials_hex }),
-  });
-}
-
-/** Revokes an owned connection and removes its encrypted credential record. */
-export function disconnectQoinBrokerConnection(connectionId: string): Promise<{
-  connection_id: string; status: "disconnected"; executable: false;
-}> {
-  return authenticatedQoinRequest("/api/v1/broker-connections/" + encodeURIComponent(connectionId), {
-    method: "DELETE",
-  });
-}
-
-/** Lists provider-discovered accounts; an empty list is expected until adapters are connected. */
+/** Lists only broker accounts explicitly mapped to the signed-in Firebase UID. */
 export function getQoinBrokerAccounts(): Promise<{ items: QoinBrokerAccount[] }> {
   return authenticatedQoinRequest("/api/v1/broker-accounts");
+}
+
+/** Returns secret-free status for broker credentials configured by the deployment operator. */
+export function getQoinBrokerConfiguration(): Promise<QoinBrokerEnvironment> {
+  return authenticatedQoinRequest("/api/v1/brokers/configuration");
 }
 
 /** Returns the backend user record associated with the verified Firebase UID. */

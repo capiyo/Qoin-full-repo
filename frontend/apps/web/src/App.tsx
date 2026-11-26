@@ -628,7 +628,7 @@ function InstrumentCard({ item, onOpen, action, live, mode, onSelectMode, algori
 
 
 const BROKER_DIRECTORY_PREVIEW = [
-  { id:"binance_usdm", name:"Binance USD-M", category:"Crypto exchange", status:"execution_adapter_exists_not_connected", detail:"USD-M executor exists; account linking and generic dispatch are not connected.", selectable:true },
+  { id:"binance_usdm", name:"Binance USD-M", category:"Crypto exchange", status:"adapter_pending", detail:"Server-side credentials and a conformance-tested Qoin adapter are required.", selectable:true },
   { id:"coinbase_advanced_trade", name:"Coinbase Advanced Trade", category:"Crypto exchange", status:"adapter_pending", detail:"Advanced Trade REST/WebSocket; Qoin adapter pending.", selectable:true },
   { id:"kraken_spot", name:"Kraken Spot", category:"Crypto exchange", status:"adapter_pending", detail:"Spot REST/WebSocket; Qoin adapter pending.", selectable:true },
   { id:"bybit", name:"Bybit", category:"Crypto exchange", status:"adapter_pending", detail:"V5 REST/WebSocket; Qoin adapter pending.", selectable:true },
@@ -656,7 +656,7 @@ function BrokerCollectionPanel() {
   const [capital,setCapital]=useState("100");
   const [currency,setCurrency]=useState("USD");
   const [ready,setReady]=useState(false);
-  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
+  const [readiness,setReadiness]=useState<{selected_count:number;execution_ready_count:number;connected_account_count:number;configured_environment_provider_count?:number;can_submit:boolean;dispatch_enabled:boolean;message:string;blockers:string[]}|null>(null);
   useEffect(()=>{
     let active=true;
     void getQoinBrokerCatalogue().then((catalogue)=>{if(active)setDirectory(catalogue.items.map((broker)=>({id:broker.id,name:broker.name,category:broker.provider_kind==="exchange"?"Crypto exchange":"Forex broker",status:broker.execution_status,detail:broker.note,selectable:broker.selectable})));}).catch(()=>undefined);
@@ -680,7 +680,7 @@ function BrokerCollectionPanel() {
   const valid=Number.isFinite(amount)&&amount>0;
   const perAccount=valid&&selected.length?amount/selected.length:null;
   return <section className="broker-collection" aria-label="Broker collection and routing preferences">
-    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers to include in Qoin’s execution-readiness check. Account authorization is separate; trades remain blocked until every selected account is verified.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
+    <div className="coverage-heading"><div><p className="eyebrow">EXECUTION VENUES</p><h3>Broker collection</h3><p>Select providers for Qoin’s execution-readiness check. Users authenticate only with Firebase; broker credentials are provisioned by the operator and never entered here.</p></div><span className="coverage-status">{selected.length} SELECTED · MAX 20</span></div>
     <div className="broker-directory-grid">{directory.map((broker)=><article className="broker-directory-card" key={broker.id}>
       <div className="broker-directory-top"><span className="broker-logo-mark">{broker.name.split(" ").map((part)=>part[0]).join("").slice(0,3)}</span><span className={"broker-status "+broker.status}>{broker.status.replaceAll("_"," ")}</span></div>
       <h3>{broker.name}</h3><p className="broker-market-label">{broker.category}</p><p className="broker-detail">{broker.detail}</p>
