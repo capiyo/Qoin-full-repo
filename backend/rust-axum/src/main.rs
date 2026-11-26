@@ -1312,6 +1312,24 @@ async fn start_paper_session(
     if request.cycle_id.trim().is_empty() || request.cycle_id.len() > 128 {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"cycle_id must contain 1 to 128 characters"})));
     }
+    let mut sessions = s.active_paper_sessions.lock().await;
+    if let Some(current) = sessions.get_mut(&owner_uid) {
+        if current.is_active() {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"a paper session is already active; stop it before starting or resuming"})));
+        }
+        if current.cycle_id() == Some(request.cycle_id.as_str()) {
+            current.resume();
+            if let Err(error) = persist_paper_session(&s, &owner_uid, current).await {
+                tracing::error!(error=%error, owner_uid=%owner_uid, "paper session resume persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+            }
+            let snapshot = current.snapshot();
+            return (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()));
+        }
+        if current.has_unsettled_state() {
+            return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"the previous paper session has an open position or pending action; resume that cycle before creating another"})));
+        }
+    }
     let session = match PaperSession::start(request.cycle_id, &request.accounts) {
         Ok(session) => session,
         Err(error) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error}))),
@@ -1321,7 +1339,7 @@ async fn start_paper_session(
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
     }
     let snapshot = session.snapshot();
-    s.active_paper_sessions.lock().await.insert(owner_uid, session);
+    sessions.insert(owner_uid, session);
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
 
