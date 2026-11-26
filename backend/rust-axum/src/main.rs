@@ -1013,7 +1013,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     decision_doc.insert("venue",&event.venue);
     decision_doc.insert("strategy_key","qoin-vector-baseline");
     decision_doc.insert("event_id",&event.event_id);
-    decision_doc.insert("input_event",mongodb::bson::to_document(&event).unwrap_or_default());
+    let mut input_event=mongodb::bson::to_document(&event).unwrap_or_default();
+    input_event.insert("event_ts_ms",event.ts_ms);
+    decision_doc.insert("input_event",input_event);
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
@@ -2131,7 +2133,7 @@ async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl
         }
     }
     items.reverse();
-    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"items":items,"count":items.len(),"limit":limit})))
+    (StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":q.venue,"items":items,"count":items.len(),"limit":limit})))
 }
 #[derive(Deserialize)]
 struct LedgerCorrectionRequest {
@@ -2831,8 +2833,10 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
     }
 
     let limit=q.limit.unwrap_or(120).clamp(1,500);
+    let mut filter=doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"};
+    if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
     let options=FindOptions::builder().sort(doc!{"stored_at":-1}).limit(limit).build();
-    let mut cursor=match s.decisions.find(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},Some(options)).await {
+    let mut cursor=match s.decisions.find(filter,Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,"vector history query failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"vector history unavailable","symbol":symbol}))); }
