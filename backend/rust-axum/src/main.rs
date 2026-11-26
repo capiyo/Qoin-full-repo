@@ -1076,34 +1076,35 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
     let (paper_result, paper_snapshot) = {
-            let mut paper = s.active_paper_session.lock().await;
-            let result = paper.process_event(&event, &paper_decision);
+        let mut paper = s.active_paper_session.lock().await;
+        let result = paper.process_event(&event, &paper_decision);
         (result, paper.clone())
     };
     if let Some((mirror, trade)) = paper_result {
-            let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
+        let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
+            Ok(document) => document,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
+        };
+        mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+        if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+            tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror decision persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror decision persistence failed","event_persisted":true,"decision_persisted":true})));
+        }
+        if let Some(trade) = trade {
+            let mut trade_doc = match mongodb::bson::to_document(&trade) {
                 Ok(document) => document,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
             };
-            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
-            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
-                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror decision persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror decision persistence failed","event_persisted":true,"decision_persisted":true})));
+            trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
             }
-            if let Some(trade) = trade {
-                let mut trade_doc = match mongodb::bson::to_document(&trade) {
-                    Ok(document) => document,
-                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
-                };
-                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
-                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
-                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
-                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
-                }
-            }
+        }
         if let Err(error) = persist_paper_session(&s, &paper_snapshot).await {
             tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
+        }
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
