@@ -1,10 +1,10 @@
 # Qoin readiness and completion evidence
 
-**Candidate branch:** `qoin/full-integration-rework-paper`  
-**Last source-code commit:** `4f9007ab6b` (Drogon paper-session/cycle routes); the subsequent workflow/docs commits are separately tracked  
-**Current PR head:** PR #16 live head (the latest evidence snapshot below was taken on `99357fbb67f1dbd4285d352dcce40a3b13cf470a`; subsequent commits may be documentation-only)  
-**Base snapshot:** PR #15 head `280d8481a939a9f12c4cfcd8f9f0fbbd0bb6f0a7`  
-**Safety posture:** real-money execution disabled by code policy; no merge to `main` and no production deployment.
+**Active integration branch:** `qoin/backend-completion-auth`  
+**Current PR:** #32 (draft; based on `main`)  
+**Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
+**Current branch head at this update:** `e7234e8f612e89c35b3fe022e75ebf57376e60df`  
+**Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
 
@@ -132,3 +132,30 @@ No unclassified work is considered complete. The backlog lists unfinished engine
 - Add and pass tests for registry failure rendering, no fabricated instruments, HTTP non-2xx propagation, cross-client API contract parity, Firebase token verification, UID isolation and Archive synchronization.
 - Record exact final commit SHA and completed workflow/job results. No older CI run is accepted as evidence for this branch.
 
+
+## Current backend completion pass — 2026-11-26
+
+| Area | Current state | Evidence / remaining boundary |
+|---|---|---|
+| Repository integration | Active isolated branch and draft PR #32; no frontend application source was imported from feature branches | GitHub branch and PR history |
+| JEPA retirement | Removed from the integrated backend runtime, research package, workflow and active version documentation | Source tree and CI workflow tree |
+| Rust vector engine | Existing authoritative Rust `Signal` pipeline retained; historical event-time lookup and causal late-event protection retained | `qoin-vector-engine`, flow-engine tests |
+| Paper trading | Paper-session module consumes the authoritative `qoin-vector-engine::Signal`; MongoDB session/decision/trade collections and Axum/Drogon routes added | Rust workspace tests passed on commit `3a4ff25bbf241f63bb89d6ef065d3a10fbe2bf53`; simulator is currently a shared system session, not a per-user portfolio |
+| Credential vault | AES-256-GCM envelope encryption, key IDs, previous-key decryption and tamper tests added; user connection records are UID-scoped and credential material is omitted from responses | Rust workspace tests passed on `3a4ff25...`; deployment key must be configured before writes are enabled |
+| Firebase identity | Server-side Google JWKS signature, issuer, audience and time-claim validation integrated | Firebase revocation watermark/check against Firebase Admin user metadata remains outstanding |
+| Broker provider scope | Exact 10 crypto + 10 FX/CFD provider directory retained; adapter types are explicit fail-closed scaffolds and the runtime registry remains empty | See `BROKER_PROVIDER_SCOPE.md`; no provider is execution-ready |
+| Broker account lifecycle | Encrypted connection create/list/rotate/revoke routes exist; new/rotated connections remain `pending_validation` and disabled | Per-user credentials are not yet consumed by concrete adapters; account discovery/validation is not implemented |
+| Drogon gateway | Auth forwarding, paper-session and broker-connection proxy routes added | Drogon gateway CI passed on `a467e55...`; the newest route update is awaiting its own CI result |
+| MongoDB integration | User-owned broker connection and audit collections/indexes added; event log and existing state recovery retained | Latest Axum/Drogon/Mongo integration and container runs were still in progress when this evidence was written |
+| Paper execution realism | Fees, spread/slippage and quote-side execution exist in the session simulator | Partial fills, liquidity participation and per-user portfolio isolation still need implementation and tests |
+| Live execution | Disabled by code policy; no provider adapter is registered | No live-money execution is authorized by this branch |
+
+### Latest completed verification evidence
+
+- `cargo test --workspace` passed on commit `3a4ff25bbf241f63bb89d6ef065d3a10fbe2bf53`, including the Rust workspace tests present at that commit.
+- The Drogon gateway workflow passed on commit `a467e55b167462e97b504d1ccee3369d8ee25b90`.
+- The paper-session and credential-vault test additions were included in the successful Rust workspace run.
+- The gateway routes and environment documentation changed after those completed runs; those exact latest commits still require CI confirmation.
+- No local MongoDB runtime, live broker sandbox, production Firebase project, or deployment environment was exercised in this session.
+
+This section supersedes earlier branch/PR labels in the historical readiness notes below. Historical test results remain historical and must not be treated as verification of the current branch head.
