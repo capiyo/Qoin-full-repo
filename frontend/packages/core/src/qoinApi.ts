@@ -1,3 +1,4 @@
+import type { QoinMarketVector } from "./marketVector";
 import { getQoinFirebaseIdToken } from "./firebaseAuth";
 declare const process: { env?: { EXPO_PUBLIC_QOIN_API_URL?: string; EXPO_PUBLIC_QOIN_WS_URL?: string } };
 
@@ -304,6 +305,20 @@ export type QoinStoredNotification = {
   read: boolean;
   details: string;
 };
+export type QoinMarketVectorResponse = QoinMarketVector | {
+  status: "warming_up";
+  symbol: string;
+  venue?: string;
+  schema_version: 1;
+  observed_dimensions: 0;
+};
+export function getQoinMarketVector(symbol: string, venue: string): Promise<QoinMarketVectorResponse> {
+  return authenticatedQoinRequest("/api/v1/market-vector?symbol=" + encodeURIComponent(symbol) + "&venue=" + encodeURIComponent(venue));
+}
+export function getQoinMarketVectorHistory(symbol: string, venue: string, limit = 120): Promise<{ symbol: string; venue: string; items: QoinMarketVector[]; count: number; limit: number }> {
+  return authenticatedQoinRequest("/api/v1/market-vector/history?symbol=" + encodeURIComponent(symbol) + "&venue=" + encodeURIComponent(venue) + "&limit=" + limit);
+}
+
 export type QoinNotificationPreferences = {
   market_alerts: boolean;
   security_alerts: boolean;
