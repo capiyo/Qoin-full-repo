@@ -79,3 +79,25 @@ The web and React Native clients now expose a notification centre fed directly b
 On web, users may opt into browser desktop notifications from the notification centre. Those browser notifications are emitted only while the page is running and has an active WebSocket connection. The mobile app currently shows in-app notifications while the app is running; it does not yet register FCM/APNs/Expo push tokens or deliver background notifications.
 
 Notification history is currently in-memory and resets when the app process/page is restarted. It is not stored per user in MongoDB, synchronized across devices, or backed by a server-side notification queue. Those capabilities require authenticated user identity, device-token registration, durable notification storage, delivery retries, and user-configurable alert preferences. Do not describe the current client layer as remote push delivery.
+
+
+## Forest-green workspace visual system (2026-11-17)
+
+- Applied the shared Qoin visual direction across web, desktop and React Native: deep forest background `#0e1612`, raised surfaces `#14221a` / `#19291f`, emerald accent `#70d99d`, warm off-white text `#e6f1e9`, muted sage text `#9cb2a2`, and restrained green borders `#2b4032`.
+- Web desktop mirrors Funspot's Home workspace structure: a full-width app header, a persistent profile sidebar, and Archive / Explore as two side-by-side independently scrollable content panes. Desktop workspace controls are icon-only beside the profile control; there are no visible Archive / Explore text labels in the header.
+- Mobile web uses one active page pane at a time, selected by a detached circular icon-only Archive / Explore floating pill. The profile rail is hidden, the app header remains, and the content pane scrolls independently. The responsive breakpoint is 650px, matching Funspot web.
+- Archive and Explore keep their Qoin-specific instrument cards, filters, provider-attributed news, macro calendar, and market research content; only the page composition and navigation behavior are ported from Funspot.
+- React Native uses the same palette and a floating rounded Archive / Explore navigation pill; status bar switches to light content for the dark workspace.
+- Vector chart grid, axes, trajectory and current-vector marker use the forest/emerald palette.
+- The two algorithm concepts remain distinct in product design: Version 1 is the implemented deterministic vector baseline; Version 2 Set & Ledger remains a future/preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
+- No broker selection, order submission or live execution was added. Research/paper-only safety boundary is unchanged.
+
+
+## Instrument mechanics workspaces and Archive card modes (2026-11-18)
+
+- Each Archive card keeps a per-instrument view mode: Vector (default) or Backtest. Switching the card mode does not open the workspace; tapping the card opens the mechanics page for the selected mode.
+- Web routes are addressable and refresh-safe: `/app/instrument/{SYMBOL-SLUG}/vector` and `/app/instrument/{SYMBOL-SLUG}/backtest` (for example, `/app/instrument/BTC-USD/backtest`). Browser back/forward restores the selected instrument and mode. The mode preference is stored locally in browser storage.
+- The web build includes a Netlify SPA rewrite for `/app/*` so direct links and refreshes reach the Vite entry point. Other hosting providers must provide the equivalent history fallback.
+- React Native presents the selected instrument mechanics as a full-screen, safe-area-aware workspace. Its per-instrument mode preference is persisted with AsyncStorage; Android hardware back closes the workspace.
+- The Backtest workspace explains the replay pipeline before the controls/results: persisted event tape, deterministic ordering, V1 state reconstruction, strategy evaluation, strictly-later-event execution eligibility, bid/ask execution, latency/liquidity constraints, fees/slippage/impact/funding, and audit outputs.
+- Vector and Backtest are two views over the same instrument and existing V1 research strategy. Backtest remains a historical paper simulation only; no broker orders are submitted. V2 Set & Ledger remains a separate read-only research projection and cannot influence V1 decisions.

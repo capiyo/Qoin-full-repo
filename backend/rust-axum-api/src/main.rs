@@ -57,7 +57,8 @@ async fn main() {
     // Validate configuration before opening the HTTP listener.
     qoin_vector_engine::decide(
         ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
+            spread_bps: None, spread_age_ms: None },
         &config, &config_version, false,
     ).expect("Qoin engine configuration must be valid");
     let state = Arc::new(AppState { config, config_version });

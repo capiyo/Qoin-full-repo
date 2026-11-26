@@ -9,6 +9,7 @@
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::broker_allocation::{
     allocate_equal_notional, AllocationError, AllocationTarget, EqualAllocation,
@@ -41,6 +42,9 @@ pub struct BrokerExecutionQuote {
     pub split_slippage_bps: Decimal,
     /// Currency conversion cost in bps, excluding the conversion rate itself.
     pub conversion_cost_bps: Decimal,
+    /// Age of the oldest account, instrument, market-depth, fee or FX input
+    /// used to build this quote. The caller computes this from source timestamps.
+    pub oldest_input_age_ms: i64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -51,6 +55,8 @@ pub struct AllocationPolicy {
     /// Require this additional estimated saving after overhead. Zero means
     /// any strictly positive saving is enough.
     pub minimum_saving_portfolio: Decimal,
+    /// All inputs to every selected account quote must be this fresh or fresher.
+    pub max_quote_age_ms: i64,
 }
 
 impl Default for AllocationPolicy {
@@ -58,6 +64,7 @@ impl Default for AllocationPolicy {
         Self {
             multi_broker_overhead_portfolio: Decimal::ZERO,
             minimum_saving_portfolio: Decimal::ZERO,
+            max_quote_age_ms: 5_000,
         }
     }
 }
@@ -100,6 +107,8 @@ pub enum RoutingError {
     NoFeasibleMultiBrokerPlan,
     Allocation(String),
     Arithmetic(String),
+    AggregateRiskRejected(String),
+    StaleQuote(String),
 }
 
 impl std::fmt::Display for RoutingError {
@@ -110,12 +119,192 @@ impl std::fmt::Display for RoutingError {
             Self::NoFeasibleMultiBrokerPlan => write!(f, "selected accounts cannot all accept an equal allocation"),
             Self::Allocation(message) => write!(f, "allocation failed: {message}"),
             Self::Arithmetic(message) => write!(f, "routing arithmetic failed: {message}"),
+            Self::AggregateRiskRejected(message) => write!(f, "aggregate portfolio risk rejected: {message}"),
+            Self::StaleQuote(message) => write!(f, "broker quote is stale: {message}"),
         }
     }
 }
 impl std::error::Error for RoutingError {}
 
-fn validate_quote(quote: &BrokerExecutionQuote) -> Result<(), RoutingError> {
+
+/// A single portfolio-level snapshot aggregated across every account and
+/// normalized into the portfolio currency. The caller must source it from
+/// fresh authenticated broker snapshots; this module never fabricates it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregatePortfolioSnapshot {
+    pub equity_portfolio: Decimal,
+    pub gross_exposure_portfolio: Decimal,
+    pub daily_loss_portfolio: Decimal,
+    pub open_positions: usize,
+    pub observed_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct AggregateRiskPolicy {
+    pub max_risk_fraction: Decimal,
+    pub max_order_notional_fraction: Decimal,
+    pub max_gross_leverage: Decimal,
+    pub max_daily_loss_fraction: Decimal,
+    pub max_open_positions: usize,
+    pub max_snapshot_age_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateRiskRequest {
+    pub instrument_id: String,
+    pub parent_notional_portfolio: Decimal,
+    /// Maximum loss at the protective stop, already converted to portfolio currency.
+    /// Set to zero only for a broker-enforced reduce-only order.
+    pub maximum_loss_at_stop_portfolio: Decimal,
+    pub market_data_observed_at_ms: i64,
+    pub now_ms: i64,
+    pub reduce_only: bool,
+    /// Number of new broker-account positions this parent can open. Must be
+    /// zero for reduce-only and equal the routed child count otherwise.
+    pub additional_open_positions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AggregateRiskApproval {
+    pub instrument_id: String,
+    pub parent_notional_portfolio: Decimal,
+    pub maximum_loss_at_stop_portfolio: Decimal,
+    pub reduce_only: bool,
+    pub projected_gross_exposure_portfolio: Decimal,
+    /// Current daily loss plus this order's maximum stop loss.
+    pub projected_daily_loss_portfolio: Decimal,
+    pub additional_open_positions: usize,
+    pub projected_open_positions: usize,
+    /// Daily-loss headroom remaining after reserving this order's stop loss.
+    pub remaining_daily_loss_budget_portfolio: Decimal,
+    pub snapshot_observed_at_ms: i64,
+    pub market_data_observed_at_ms: i64,
+    pub approved_at_ms: i64,
+}
+
+/// Validate total portfolio risk once, before any child is dispatched. Per-child
+/// adapter risk checks remain mandatory as a second independent gate.
+pub fn validate_aggregate_portfolio_risk(
+    snapshot: &AggregatePortfolioSnapshot,
+    policy: AggregateRiskPolicy,
+    request: &AggregateRiskRequest,
+) -> Result<AggregateRiskApproval, RoutingError> {
+    if snapshot.equity_portfolio <= Decimal::ZERO
+        || snapshot.gross_exposure_portfolio < Decimal::ZERO
+        || snapshot.daily_loss_portfolio < Decimal::ZERO
+        || snapshot.observed_at_ms <= 0
+    {
+        return Err(RoutingError::AggregateRiskRejected("portfolio snapshot contains invalid values".into()));
+    }
+    if policy.max_risk_fraction <= Decimal::ZERO
+        || policy.max_risk_fraction > Decimal::ONE
+        || policy.max_order_notional_fraction <= Decimal::ZERO
+        || policy.max_order_notional_fraction > Decimal::ONE
+        || policy.max_gross_leverage <= Decimal::ZERO
+        || policy.max_daily_loss_fraction <= Decimal::ZERO
+        || policy.max_daily_loss_fraction > Decimal::ONE
+        || policy.max_open_positions == 0
+        || policy.max_snapshot_age_ms < 0
+    {
+        return Err(RoutingError::InvalidPolicy("aggregate risk policy is invalid".into()));
+    }
+    if request.instrument_id.trim().is_empty()
+        || request.parent_notional_portfolio <= Decimal::ZERO
+        || request.maximum_loss_at_stop_portfolio < Decimal::ZERO
+        || (!request.reduce_only && request.maximum_loss_at_stop_portfolio <= Decimal::ZERO)
+        || (request.reduce_only && request.maximum_loss_at_stop_portfolio != Decimal::ZERO)
+        || (request.reduce_only && request.additional_open_positions != 0)
+        || (!request.reduce_only && request.additional_open_positions == 0)
+        || request.additional_open_positions > MAX_FANOUT_ACCOUNTS
+        || request.now_ms <= 0
+        || request.market_data_observed_at_ms <= 0
+        || snapshot.observed_at_ms > request.now_ms
+        || request.market_data_observed_at_ms > request.now_ms
+        || request.now_ms - snapshot.observed_at_ms > policy.max_snapshot_age_ms
+        || request.now_ms - request.market_data_observed_at_ms > policy.max_snapshot_age_ms
+    {
+        return Err(RoutingError::AggregateRiskRejected("identity, order risk or snapshot freshness is invalid".into()));
+    }
+
+    let notional_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_order_notional_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate notional cap overflow".into()))?;
+    let leverage_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_gross_leverage)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate leverage cap overflow".into()))?;
+    let daily_loss_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_daily_loss_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate daily loss cap overflow".into()))?;
+    let risk_cap = snapshot.equity_portfolio
+        .checked_mul(policy.max_risk_fraction)
+        .ok_or_else(|| RoutingError::Arithmetic("aggregate risk cap overflow".into()))?;
+
+    if !request.reduce_only && request.parent_notional_portfolio > notional_cap {
+        return Err(RoutingError::AggregateRiskRejected("parent notional exceeds the portfolio order budget".into()));
+    }
+    if !request.reduce_only && request.maximum_loss_at_stop_portfolio > risk_cap {
+        return Err(RoutingError::AggregateRiskRejected("parent stop loss exceeds the portfolio risk budget".into()));
+    }
+    let projected_daily_loss = snapshot.daily_loss_portfolio
+        .checked_add(request.maximum_loss_at_stop_portfolio)
+        .ok_or_else(|| RoutingError::Arithmetic("projected daily loss overflow".into()))?;
+    if !request.reduce_only && projected_daily_loss >= daily_loss_cap {
+        return Err(RoutingError::AggregateRiskRejected(
+            "current daily loss plus this order's stop loss would reach or exceed the daily loss limit".into()
+        ));
+    }
+    let projected_open_positions = snapshot.open_positions
+        .checked_add(request.additional_open_positions)
+        .ok_or_else(|| RoutingError::Arithmetic("projected open-position count overflow".into()))?;
+    if !request.reduce_only && projected_open_positions > policy.max_open_positions {
+        return Err(RoutingError::AggregateRiskRejected(
+            "parent order would exceed the portfolio open-position limit across its routed children".into()
+        ));
+    }
+
+    // A reduce-only flag must also be enforced by the broker. Without a
+    // position-level snapshot, do not assume that a closing order reduces
+    // exposure by a guessed amount; conservatively leave gross exposure flat.
+    let projected_gross = if request.reduce_only {
+        snapshot.gross_exposure_portfolio
+    } else {
+        snapshot.gross_exposure_portfolio
+            .checked_add(request.parent_notional_portfolio)
+            .ok_or_else(|| RoutingError::Arithmetic("aggregate gross exposure overflow".into()))?
+    };
+    if !request.reduce_only && projected_gross > leverage_cap {
+        return Err(RoutingError::AggregateRiskRejected("projected gross exposure exceeds portfolio leverage limit".into()));
+    }
+    let remaining_daily = if projected_daily_loss >= daily_loss_cap {
+        Decimal::ZERO
+    } else {
+        daily_loss_cap.checked_sub(projected_daily_loss)
+            .ok_or_else(|| RoutingError::Arithmetic("remaining daily loss budget underflow".into()))?
+    };
+
+    Ok(AggregateRiskApproval {
+        instrument_id: request.instrument_id.trim().to_string(),
+        parent_notional_portfolio: request.parent_notional_portfolio,
+        maximum_loss_at_stop_portfolio: request.maximum_loss_at_stop_portfolio,
+        reduce_only: request.reduce_only,
+        projected_gross_exposure_portfolio: projected_gross,
+        projected_daily_loss_portfolio: projected_daily_loss,
+        additional_open_positions: request.additional_open_positions,
+        projected_open_positions,
+        remaining_daily_loss_budget_portfolio: remaining_daily,
+        snapshot_observed_at_ms: snapshot.observed_at_ms,
+        market_data_observed_at_ms: request.market_data_observed_at_ms,
+        approved_at_ms: request.now_ms,
+    })
+}
+
+fn validate_quote(quote: &BrokerExecutionQuote, max_quote_age_ms: i64) -> Result<(), RoutingError> {
+    if quote.oldest_input_age_ms < 0 || quote.oldest_input_age_ms > max_quote_age_ms {
+        return Err(RoutingError::StaleQuote(format!(
+            "{}/{} input age {}ms exceeds {}ms",
+            quote.target.broker_id, quote.target.account_id, quote.oldest_input_age_ms, max_quote_age_ms
+        )));
+    }
     let values = [
         ("available margin", quote.available_margin_portfolio),
         ("margin requirement", quote.margin_requirement_bps),
@@ -199,14 +388,25 @@ pub fn choose_execution_plan(
     }
     if policy.multi_broker_overhead_portfolio < Decimal::ZERO
         || policy.minimum_saving_portfolio < Decimal::ZERO
+        || policy.max_quote_age_ms <= 0
     {
-        return Err(RoutingError::InvalidPolicy("overhead and minimum saving must be non-negative".into()));
+        return Err(RoutingError::InvalidPolicy("overhead and minimum saving must be non-negative, and quote age must be positive".into()));
     }
     if selected.is_empty() || selected.len() > MAX_FANOUT_ACCOUNTS {
-        return Err(RoutingError::InvalidPolicy("select between 1 and 15 broker accounts".into()));
+        return Err(RoutingError::InvalidPolicy("select between 1 and 20 broker accounts".into()));
     }
+    let mut selected_accounts = HashSet::with_capacity(selected.len());
     for quote in selected {
-        validate_quote(quote)?;
+        let broker_id = quote.target.broker_id.trim().to_ascii_lowercase();
+        let account_id = quote.target.account_id.trim().to_string();
+        if broker_id.is_empty() || account_id.is_empty()
+            || !selected_accounts.insert((broker_id, account_id))
+        {
+            return Err(RoutingError::InvalidPolicy(
+                "selected broker/account targets must be non-empty and unique".into()
+            ));
+        }
+        validate_quote(quote, policy.max_quote_age_ms)?;
     }
 
     let mut best_single: Option<(BrokerCost, EqualAllocation, Decimal)> = None;
@@ -351,12 +551,174 @@ mod tests {
             slippage_bps: d(slippage),
             split_slippage_bps: d(slippage),
             conversion_cost_bps: d("0"),
+            oldest_input_age_ms: 100,
+        }
+    }
+
+
+    fn aggregate_snapshot() -> AggregatePortfolioSnapshot {
+        AggregatePortfolioSnapshot {
+            equity_portfolio: d("10000"),
+            gross_exposure_portfolio: d("5000"),
+            daily_loss_portfolio: d("100"),
+            open_positions: 2,
+            observed_at_ms: 9_900,
+        }
+    }
+
+    fn aggregate_policy() -> AggregateRiskPolicy {
+        AggregateRiskPolicy {
+            max_risk_fraction: d("0.0025"),
+            max_order_notional_fraction: d("0.25"),
+            max_gross_leverage: d("2"),
+            max_daily_loss_fraction: d("0.02"),
+            max_open_positions: 5,
+            max_snapshot_age_ms: 5_000,
+        }
+    }
+
+    fn aggregate_request() -> AggregateRiskRequest {
+        AggregateRiskRequest {
+            instrument_id: "EURUSD".into(),
+            parent_notional_portfolio: d("1000"),
+            maximum_loss_at_stop_portfolio: d("20"),
+            market_data_observed_at_ms: 9_950,
+            now_ms: 10_000,
+            reduce_only: false,
+            additional_open_positions: 1,
         }
     }
 
     #[test]
+    fn aggregate_risk_approval_covers_parent_notional_and_stop_loss() {
+        let approval = validate_aggregate_portfolio_risk(
+            &aggregate_snapshot(), aggregate_policy(), &aggregate_request()
+        ).unwrap();
+        assert_eq!(approval.parent_notional_portfolio, d("1000"));
+        assert_eq!(approval.maximum_loss_at_stop_portfolio, d("20"));
+        assert_eq!(approval.projected_gross_exposure_portfolio, d("6000"));
+        assert_eq!(approval.projected_daily_loss_portfolio, d("120"));
+        assert_eq!(approval.additional_open_positions, 1);
+        assert_eq!(approval.projected_open_positions, 3);
+        assert_eq!(approval.remaining_daily_loss_budget_portfolio, d("80"));
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_parent_risk_even_if_each_child_margin_is_available() {
+        let mut request = aggregate_request();
+        request.maximum_loss_at_stop_portfolio = d("26");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_risk_reserves_parent_stop_loss_against_daily_loss_budget() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.daily_loss_portfolio = d("190");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_stale_portfolio_or_market_snapshots() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.observed_at_ms = 1;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+        let mut request = aggregate_request();
+        request.market_data_observed_at_ms = 1;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn reduce_only_request_cannot_claim_a_nonzero_stop_loss() {
+        let mut request = aggregate_request();
+        request.reduce_only = true;
+        request.additional_open_positions = 0;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&aggregate_snapshot(), aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn reduce_only_orders_remain_available_when_portfolio_limits_are_already_breached() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.gross_exposure_portfolio = d("30000");
+        snapshot.daily_loss_portfolio = d("250");
+        let mut request = aggregate_request();
+        request.parent_notional_portfolio = d("5000");
+        request.maximum_loss_at_stop_portfolio = Decimal::ZERO;
+        request.reduce_only = true;
+        request.additional_open_positions = 0;
+        let approval = validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request).unwrap();
+        assert_eq!(approval.projected_gross_exposure_portfolio, d("30000"));
+        assert_eq!(approval.projected_daily_loss_portfolio, d("250"));
+        assert_eq!(approval.projected_open_positions, 2);
+        assert_eq!(approval.remaining_daily_loss_budget_portfolio, Decimal::ZERO);
+    }
+
+    #[test]
+    fn aggregate_risk_rejects_leverage_and_daily_loss_overruns() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.gross_exposure_portfolio = d("19500");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+        snapshot = aggregate_snapshot();
+        snapshot.daily_loss_portfolio = d("200");
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &aggregate_request()),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn aggregate_open_position_limit_counts_each_routed_child() {
+        let mut snapshot = aggregate_snapshot();
+        snapshot.open_positions = 4;
+        let mut request = aggregate_request();
+        request.additional_open_positions = 2;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+
+        request.additional_open_positions = 1;
+        let approval = validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request).unwrap();
+        assert_eq!(approval.projected_open_positions, 5);
+
+        snapshot.open_positions = 5;
+        assert!(matches!(
+            validate_aggregate_portfolio_risk(&snapshot, aggregate_policy(), &request),
+            Err(RoutingError::AggregateRiskRejected(_))
+        ));
+    }
+
+    #[test]
+    fn duplicate_selected_account_is_rejected_instead_of_silently_consolidated() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[1].target.broker_id = quotes[0].target.broker_id.clone();
+        quotes[1].target.account_id = quotes[0].target.account_id.clone();
+        assert!(matches!(
+            choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()),
+            Err(RoutingError::InvalidPolicy(_))
+        ));
+    }
+
+    #[test]
     fn small_capital_consolidates_when_each_equal_share_is_below_minimum() {
-        let quotes = (0..15).map(|i| quote(i, "1", "1", true)).collect::<Vec<_>>();
+        let quotes = (0..20).map(|i| quote(i, "1", "1", true)).collect::<Vec<_>>();
         let plan = choose_execution_plan(d("100"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { .. }));
     }
@@ -379,7 +741,7 @@ mod tests {
     #[test]
     fn operational_overhead_can_make_single_account_better() {
         let quotes = vec![quote(0, "10", "10", true), quote(1, "1", "1", true)];
-        let policy = AllocationPolicy { multi_broker_overhead_portfolio: d("3"), minimum_saving_portfolio: d("0") };
+        let policy = AllocationPolicy { multi_broker_overhead_portfolio: d("3"), minimum_saving_portfolio: d("0"), max_quote_age_ms: 5_000 };
         let plan = choose_execution_plan(d("1000"), &quotes, policy).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { .. }));
     }
@@ -390,6 +752,16 @@ mod tests {
         quotes[1].available_margin_portfolio = d("1");
         let plan = choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()).unwrap();
         assert!(matches!(plan, ExecutionPlan::Consolidated { broker_id, .. } if broker_id == "broker-0"));
+    }
+
+    #[test]
+    fn stale_account_market_depth_or_fx_inputs_fail_closed_before_routing() {
+        let mut quotes = vec![quote(0, "1", "1", true), quote(1, "1", "1", true)];
+        quotes[1].oldest_input_age_ms = 5_001;
+        assert!(matches!(
+            choose_execution_plan(d("1000"), &quotes, AllocationPolicy::default()),
+            Err(RoutingError::StaleQuote(_))
+        ));
     }
 
     #[test]
@@ -428,15 +800,15 @@ mod tests {
 
     #[test]
     fn fifteen_accounts_can_split_when_large_order_size_makes_it_economical() {
-        let mut quotes = (0..15).map(|i| quote(i, "0", "100", true)).collect::<Vec<_>>();
+        let mut quotes = (0..20).map(|i| quote(i, "0", "100", true)).collect::<Vec<_>>();
         for item in &mut quotes { item.split_slippage_bps = d("1"); }
-        let plan = choose_execution_plan(d("15000"), &quotes, AllocationPolicy::default()).unwrap();
+        let plan = choose_execution_plan(d("20000"), &quotes, AllocationPolicy::default()).unwrap();
         match plan {
             ExecutionPlan::EqualSplit { allocation, .. } => {
-                assert_eq!(allocation.children.len(), 15);
+                assert_eq!(allocation.children.len(), 20);
                 assert!(allocation.children.iter().all(|child| child.target_notional_portfolio == d("1000")));
             }
-            _ => panic!("expected a 15-account split when all accounts are feasible and child-size execution cost is lower"),
+            _ => panic!("expected a 20-account split when all accounts are feasible and child-size execution cost is lower"),
         }
     }
 

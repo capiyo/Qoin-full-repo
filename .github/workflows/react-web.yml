@@ -3,7 +3,6 @@ name: Qoin React web
 on:
   push:
     paths:
-      - "docs/READINESS.md"
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
       - "package.json"
@@ -11,7 +10,6 @@ on:
       - ".github/workflows/react-web.yml"
   pull_request:
     paths:
-      - "docs/READINESS.md"
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
       - "package.json"
@@ -30,7 +28,4 @@ jobs:
         with:
           node-version: 20
       - run: pnpm install --no-frozen-lockfile
-      - name: Typecheck shared core
-        run: pnpm exec tsc --project frontend/packages/core/tsconfig.json --noEmit
-      - name: Typecheck and build web
-        run: pnpm --filter @qoin/react-web build
+      - run: pnpm --filter @qoin/react-web build

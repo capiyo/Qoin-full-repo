@@ -1,39 +1,61 @@
 # Qoin architecture
 
-## Service ownership
+## Ownership
+- **Axum (Rust)** is the sole authority for event validation, bounded state estimation, seven-force feature construction, vector/attention decisions, research replay, risk validation, and MongoDB writes.
+- **Drogon (C++)** is the HTTP gateway. It forwards event, state, vector, strategy, and order requests to Axum; it contains no independent model, risk, or order logic.
+- **MongoDB** is the durable source of truth for raw market events, recovered state snapshots, vector decisions, the V2 append-only set/relation ledger, and legacy edge-map settings.
 
-- **Rust/Axum** is the only authority for market-event validation, venue-scoped state, feature construction, vector decisions, strategy state, risk validation and private execution orchestration.
-- **C++/Drogon** is the public HTTP/WebSocket gateway. It proxies requests and streams to Axum; it does not calculate features, decisions, risk or order sizing.
-- **MongoDB** persists raw events, state snapshots, decisions, strategies, paper-session records, order intents and application data.
-- **React web and React Native** share `@qoin/core`; neither client is authoritative for user identity, entitlements, portfolio state or decisions.
-- **Python** provides research, reference models, analysis and reproducible evaluation. It does not submit exchange orders.
-- **Tauri 2** packages the desktop client. The bounded vector-motion solver lives in the Rust workspace.
+## Authoritative seven-force decision engine
 
-## Market-data and decision flow
+The crate `backend/rust-axum/crates/qoin-vector-engine` is the single decision implementation used by both live market-event ingestion and historical backtesting. The legacy `edge_strategy` module and `edge_strategy` collection remain available through the old strategy inspection/update endpoints for compatibility, but they do **not** calculate current live decisions or the current backtest decisions.
 
-1. Provider adapters normalize observations with provider, venue, canonical symbol, source timestamp and event identity.
-2. Axum validates and deduplicates observations, updates the state keyed by venue and symbol, and persists the raw event.
-3. Axum constructs the configured deterministic feature/vector state and records the decision with its strategy version and diagnostic trace.
-4. WebSocket subscribers receive public market observations and decision updates through Drogon.
-5. Research replay reads persisted raw events in event-time order and applies explicit execution assumptions. Replay is not historical data acquisition and cannot claim full coverage.
+The engine consumes seven normalized forces in a stable order:
 
-## Persistence and recovery
+1. `order_flow_imbalance` — signed trade flow divided by observed trade size.
+2. `liquidity_imbalance` — signed best-bid versus ask-depth imbalance; spread is handled by a separate freshness/quality gate.
+3. `volatility` — EWMA absolute log return normalized by 1%.
+4. `funding_pressure` — funding rate multiplied by 100.
+5. `open_interest_change` — relative change between consecutive open-interest observations, multiplied by 100; the absolute open-interest level is not treated as directional.
+6. `liquidation_pressure` — exponentially decayed signed liquidation count (60-second half-life), with long liquidations negative and short liquidations positive.
+7. `basis` — mark-to-last-trade basis in bps normalized by 25; this is available only where a provider supplies mark price and a trade reference.
 
-The immutable market-event log is the recovery source for the current in-memory market state. Startup replay rebuilds state in deterministic event-time order. Snapshot/decision persistence is separate from a cross-collection atomic transaction; any paper ledger or order lifecycle must therefore use durable idempotency and reconciliation rather than assuming multi-document writes are atomic.
+Trade-flow imbalance and signed liquidation pressure decay with a 60-second half-life; OFI is forced to zero after 60 seconds without a trade. Relative OI-change impulses decay with a five-minute half-life. Book depth imbalance is kept separate from trade flow. The engine clips inputs, constructs a seven-by-seven deterministic self-attention matrix, applies deterministic top-k force selection, calculates the directional score and alignment, and records a full feature/contribution trace. The OFI × absolute OI-change interaction is reported separately so the score calculation is inspectable. This is a hand-specified research baseline, not a trained model.
 
-## Provider capabilities
+A decision is forced to WAIT if the spread is absent, exceeds the configured maximum, or the quote used to calculate it is older than the configured maximum age. Defaults are 25 bps and 30 seconds. These are configurable at service startup with `QOIN_MAX_SPREAD_BPS` and `QOIN_MAX_SPREAD_AGE_MS`. Other baseline parameters include `QOIN_SIGNAL_THRESHOLD`, `QOIN_INPUT_CLIP`, `QOIN_TOP_K`, `QOIN_MIN_ALIGNMENT`, `QOIN_MAX_ANGLE_RADIANS`, and `QOIN_CONFIG_VERSION`.
 
-- Binance USD-M: trades, best bid/ask, mark/funding, liquidation events and open-interest polling.
-- Coinbase Advanced Trade: public spot trades only.
-- Kraken Spot WebSocket v2: public spot trades only.
-- Finnhub: optional authenticated trade feed, news and calendar; actual availability depends on key, plan and symbol entitlement.
+The engine returns a research signal only. It does not size a position or submit an order. Portfolio/risk policy and verified broker adapters remain separate authorities.
 
-A provider's lack of book/funding/liquidation/OI support must be represented as unavailable, not synthesized. Venue histories remain isolated for replay unless a separately validated normalization/aggregation policy explicitly allows combination.
+## Live event and decision flow
+1. A market-data adapter submits an event to `POST /api/v1/events` on the local Drogon gateway.
+2. Axum validates and deduplicates the event by venue + symbol + event_id, and rejects new events that do not follow the deterministic (timestamp, event ID, venue) order for that symbol.
+3. The immutable source event is persisted to `market_events`; the per-symbol rolling state is updated.
+4. Trade prices update the trade reference and EWMA volatility. Mark-price events update mark price, funding and mark-to-trade basis without overwriting the last trade. Consecutive open-interest observations produce a relative OI change. Book events update spread and quote timestamp.
+5. Axum maps that causal state into the seven-force `ForceObservation`, calls `qoin_vector_engine::decide`, persists the exact engine output in `trade_decisions`, and broadcasts the same decision to web/mobile clients.
+6. Consumers query `/api/v1/state?symbol=BTCUSDT`, `/api/v1/vector?symbol=BTCUSDT`, and `/api/v1/vector/history?symbol=BTCUSDT`.
+7. Historical replay calls the same vector-engine crate with event-time state reconstruction and the same quote freshness gate. It does not call the legacy edge strategy.
 
-## Security boundaries
+On startup, Axum rebuilds rolling symbol state by replaying the immutable market-event log in deterministic event-time order. The recovery counters are exposed by the health endpoint.
 
-The Drogon gateway is the only public service in Compose. Axum and MongoDB remain private. Client Firebase authentication does not by itself authenticate a request to Axum; every personalized server route must verify Firebase ID tokens and derive UID from verified claims. Paid entitlements must be loaded and enforced server-side.
+## Explicit research limitations
+- This is a deterministic, hand-specified research baseline, not evidence of an exploitable or profitable edge.
+- Feature transforms are fixed scale mappings, not robust past-only rolling normalization or walk-forward calibration.
+- OI change is zero until two valid OI observations are available.
+- Basis is zero and marked unavailable unless both a trade reference and a mark-price observation are available. The current Binance mark-price stream provides this; other venues may not.
+- A signal is not an order. Live order submission remains independently gated and the broker registry must contain a verified provider adapter before any account can execute.
+- Historical replay uses only persisted events and cannot reconstruct missing provider history. Execution fills remain a simulation with explicit latency, liquidity, fee, slippage and impact assumptions.
 
-## Trading boundary
+## Version 2 direction: sets and relation ledger
 
-The private Binance adapter is operator-invoked and is not connected to autonomous strategy signals. Real-money mode is blocked by code policy pending the mandatory gates in `RISK_POLICY.md`. The current order route's durable intent and operator reconciliation are not a complete exchange lifecycle or portfolio risk system.
+Version 2 has a durable append-only observation/relation ledger backed by MongoDB. It derives typed event sets (trades, buy/sell flow, books, funding, open interest and liquidations), counting/observed trade-size measures, and explicit temporal-precedence edges from persisted raw events. Relations use a fixed 60-second window and are not causal claims. The V2 ledger is an analytical projection; it does not currently replace the seven-force decision engine or grant execution authority.
+
+## Client platforms
+
+Qoin ships three clients over one domain model and one backend decision authority:
+
+- **Web:** React + TypeScript + Vite.
+- **Mobile:** Expo / React Native.
+- **Desktop:** Tauri 2 native shell that packages the shared React/Vite client and switches to a wide workstation layout when running in the native webview.
+
+All clients use the shared `@qoin/core` API, authentication, profile and archive contracts. No client computes trading decisions. The mechanics views render the exact persisted seven-force decision, seven-by-seven attention matrix, feature trace, quote-quality gates and historical decision trajectory. Desktop does not contain provider credentials, MongoDB access, exchange keys, or native order execution.
+
+Desktop installers are built on their native operating systems through `.github/workflows/desktop.yml` (Windows, macOS and Linux). Build locally with `pnpm dev:desktop` or `pnpm build:desktop`. The Tauri shell starts the same web app and talks to the existing local Drogon gateway; start the Rust engine and gateway separately. Packaging a desktop binary does not change the execution policy.

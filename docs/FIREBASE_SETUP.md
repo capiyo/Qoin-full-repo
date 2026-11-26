@@ -36,4 +36,14 @@ The current account menu exposes profile details, notifications, avatar selectio
 
 ## Current scope
 
-This is Firebase client authentication and user-profile persistence. It does not yet create a separate Qoin backend JWT or authorize arbitrary future server-side write endpoints. Any future personalized or mutating Axum/Drogon route must verify Firebase ID tokens server-side and enforce UID ownership independently; never trust a UID sent in JSON or a query parameter.
+Firebase Authentication supplies the identity for authenticated backend routes. Configure `QOIN_FIREBASE_PROJECT_ID` in Axum (the project ID is public configuration). The Rust verifier validates Firebase Secure Token signatures, issuer, audience, expiry, issue time, authentication time and UID. Authenticated broker-account routes derive `owner_uid` exclusively from the verified bearer token; never trust a UID supplied in JSON or a query parameter. The Drogon gateway forwards the Authorization bearer token unchanged.
+
+## Broker connection and credential storage
+
+Axum exposes authenticated `/internal/users/me`, `/internal/broker-connections`, and `/internal/broker-accounts` routes. Drogon exposes these through `/api/v1/me`, `/api/v1/broker-connections`, and `/api/v1/broker-accounts`. A connection request is stored as `pending_validation` and `executable=false`; this is deliberate. It is not evidence that a provider accepted the credentials or that a trading account was discovered. Actual account discovery and provider authorization require a real registered broker adapter and are not fabricated by this registry.
+
+Broker credentials are encrypted with AES-256-GCM before they are written to the separate `broker_credentials` collection. The service requires `QOIN_CREDENTIAL_ENCRYPTION_KEY_HEX`, a 32-byte (64 hexadecimal character) key injected at runtime by the deployment secret manager. Never commit this value, put it in frontend environment files, or log it. If the key is absent, broker connection creation fails closed while the rest of the research service can start. If the configured key is malformed, startup fails. Production deployment must use a managed secret/key service, restrict secret access to the Axum workload, and establish a tested key rotation/re-encryption procedure before accepting customer credentials.
+
+Connection and account queries are scoped by the verified Firebase UID. Disconnecting a connection first marks it non-executable and revoked, removes its encrypted credential record, and disables any associated account records. Credential payloads are never returned by the API. A failed credential cleanup is surfaced as an operator-action error rather than reported as a fully completed disconnect.
+
+The current adapter interface does not yet implement provider account discovery or credential validation. Therefore these endpoints establish secure ownership and storage, not a claim of live broker connectivity. Do not enable real-money execution based on a connection's existence.

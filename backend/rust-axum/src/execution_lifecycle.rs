@@ -6,6 +6,7 @@
 //! live execution.
 
 use std::collections::HashSet;
+use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderStatus {
@@ -28,8 +29,8 @@ impl OrderStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub enum BrokerEvent {
     Accepted { broker_order_id: String },
-    PartialFill { execution_id: String, quantity: f64, price: f64 },
-    Filled { execution_id: String, quantity: f64, price: f64 },
+    PartialFill { execution_id: String, quantity: Decimal, price: Decimal },
+    Filled { execution_id: String, quantity: Decimal, price: Decimal },
     CancelRequested,
     Cancelled,
     Rejected { reason_code: String },
@@ -43,6 +44,7 @@ pub enum LifecycleError {
     InvalidBrokerOrderId,
     InvalidExecution,
     Overfill,
+    Arithmetic,
     MissingBrokerOrderId,
     MissingReason,
 }
@@ -52,19 +54,18 @@ pub struct OrderLifecycle {
     pub client_order_id: String,
     pub broker_order_id: Option<String>,
     pub status: OrderStatus,
-    pub requested_quantity: f64,
-    pub filled_quantity: f64,
-    pub average_fill_price: Option<f64>,
+    pub requested_quantity: Decimal,
+    pub filled_quantity: Decimal,
+    pub average_fill_price: Option<Decimal>,
     pub last_reason_code: Option<String>,
     seen_execution_ids: HashSet<String>,
 }
 
 impl OrderLifecycle {
-    pub fn new(client_order_id: String, requested_quantity: f64) -> Result<Self, LifecycleError> {
+    pub fn new(client_order_id: String, requested_quantity: Decimal) -> Result<Self, LifecycleError> {
         if client_order_id.trim().is_empty()
             || client_order_id.len() > 128
-            || !requested_quantity.is_finite()
-            || requested_quantity <= 0.0
+            || requested_quantity <= Decimal::ZERO
         {
             return Err(LifecycleError::InvalidExecution);
         }
@@ -73,7 +74,7 @@ impl OrderLifecycle {
             broker_order_id: None,
             status: OrderStatus::PendingSubmit,
             requested_quantity,
-            filled_quantity: 0.0,
+            filled_quantity: Decimal::ZERO,
             average_fill_price: None,
             last_reason_code: None,
             seen_execution_ids: HashSet::new(),
@@ -138,8 +139,8 @@ impl OrderLifecycle {
     fn apply_fill(
         &mut self,
         execution_id: String,
-        quantity: f64,
-        price: f64,
+        quantity: Decimal,
+        price: Decimal,
         final_fill: bool,
     ) -> Result<bool, LifecycleError> {
         if !matches!(self.status, OrderStatus::Accepted | OrderStatus::PartiallyFilled | OrderStatus::CancelPending) {
@@ -151,30 +152,31 @@ impl OrderLifecycle {
         }
         if execution_id.trim().is_empty()
             || execution_id.len() > 128
-            || !quantity.is_finite()
-            || quantity <= 0.0
-            || !price.is_finite()
-            || price <= 0.0
+            || quantity <= Decimal::ZERO
+            || price <= Decimal::ZERO
         {
             return Err(LifecycleError::InvalidExecution);
         }
         if self.seen_execution_ids.contains(&execution_id) {
             return Ok(false);
         }
-        let next_filled = self.filled_quantity + quantity;
-        if !next_filled.is_finite() || next_filled > self.requested_quantity + f64::EPSILON {
+        let next_filled = self.filled_quantity.checked_add(quantity).ok_or(LifecycleError::Arithmetic)?;
+        if next_filled > self.requested_quantity {
             return Err(LifecycleError::Overfill);
         }
         // Validate the complete transition before mutating state. A malformed
         // "filled" event must not leave a partially changed in-memory order.
-        if final_fill && (self.requested_quantity - next_filled).abs() > f64::EPSILON {
+        if final_fill && next_filled != self.requested_quantity {
             return Err(LifecycleError::InvalidExecution);
         }
-        let previous_notional = self.average_fill_price.unwrap_or(0.0) * self.filled_quantity;
-        self.average_fill_price = Some((previous_notional + price * quantity) / next_filled);
+        let previous_notional = self.average_fill_price.unwrap_or(Decimal::ZERO)
+            .checked_mul(self.filled_quantity).ok_or(LifecycleError::Arithmetic)?;
+        let fill_notional = price.checked_mul(quantity).ok_or(LifecycleError::Arithmetic)?;
+        let total_notional = previous_notional.checked_add(fill_notional).ok_or(LifecycleError::Arithmetic)?;
+        self.average_fill_price = Some(total_notional.checked_div(next_filled).ok_or(LifecycleError::Arithmetic)?);
         self.filled_quantity = next_filled;
         self.seen_execution_ids.insert(execution_id);
-        self.status = if (self.requested_quantity - next_filled).abs() <= f64::EPSILON {
+        self.status = if next_filled == self.requested_quantity {
             OrderStatus::Filled
         } else if self.status == OrderStatus::CancelPending {
             OrderStatus::CancelPending
@@ -189,8 +191,10 @@ impl OrderLifecycle {
 mod tests {
     use super::*;
 
+    fn d(value: &str) -> Decimal { value.parse().expect("valid test decimal") }
+
     fn accepted() -> OrderLifecycle {
-        let mut order = OrderLifecycle::new("qoin-001".into(), 10.0).unwrap();
+        let mut order = OrderLifecycle::new("qoin-001".into(), d("10")).unwrap();
         order.apply(BrokerEvent::Accepted { broker_order_id: "broker-001".into() }).unwrap();
         order
     }
@@ -198,31 +202,31 @@ mod tests {
     #[test]
     fn tracks_partial_fills_and_weighted_average_price() {
         let mut order = accepted();
-        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 4.0, price: 100.0 }).unwrap();
-        order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: 6.0, price: 110.0 }).unwrap();
+        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("4"), price: d("100") }).unwrap();
+        order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: d("6"), price: d("110") }).unwrap();
         assert_eq!(order.status, OrderStatus::Filled);
-        assert_eq!(order.filled_quantity, 10.0);
-        assert_eq!(order.average_fill_price, Some(106.0));
+        assert_eq!(order.filled_quantity, d("10"));
+        assert_eq!(order.average_fill_price, Some(d("106")));
     }
 
     #[test]
     fn duplicate_execution_id_is_a_noop() {
         let mut order = accepted();
-        let event = BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 4.0, price: 100.0 };
+        let event = BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("4"), price: d("100") };
         assert!(order.apply(event.clone()).unwrap());
         assert!(!order.apply(event).unwrap());
-        assert_eq!(order.filled_quantity, 4.0);
+        assert_eq!(order.filled_quantity, d("4"));
     }
 
     #[test]
     fn rejects_overfill_and_invalid_fill() {
         let mut order = accepted();
         assert_eq!(
-            order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 11.0, price: 100.0 }),
+            order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("11"), price: d("100") }),
             Err(LifecycleError::Overfill)
         );
         assert_eq!(
-            order.apply(BrokerEvent::PartialFill { execution_id: "exec-2".into(), quantity: f64::NAN, price: 100.0 }),
+            order.apply(BrokerEvent::PartialFill { execution_id: "exec-2".into(), quantity: Decimal::ZERO, price: d("100") }),
             Err(LifecycleError::InvalidExecution)
         );
     }
@@ -230,11 +234,11 @@ mod tests {
     #[test]
     fn cancellation_preserves_partial_fill_and_is_terminal() {
         let mut order = accepted();
-        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 3.0, price: 100.0 }).unwrap();
+        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("3"), price: d("100") }).unwrap();
         order.apply(BrokerEvent::CancelRequested).unwrap();
         order.apply(BrokerEvent::Cancelled).unwrap();
         assert_eq!(order.status, OrderStatus::Cancelled);
-        assert_eq!(order.filled_quantity, 3.0);
+        assert_eq!(order.filled_quantity, d("3"));
         assert_eq!(order.apply(BrokerEvent::Failed { reason_code: "late".into() }), Err(LifecycleError::TerminalOrder));
     }
 
@@ -242,29 +246,45 @@ mod tests {
     fn late_fill_during_cancel_keeps_cancel_pending_unless_fully_filled() {
         let mut order = accepted();
         order.apply(BrokerEvent::CancelRequested).unwrap();
-        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 3.0, price: 100.0 }).unwrap();
+        order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("3"), price: d("100") }).unwrap();
         assert_eq!(order.status, OrderStatus::CancelPending);
-        order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: 7.0, price: 101.0 }).unwrap();
+        order.apply(BrokerEvent::Filled { execution_id: "exec-2".into(), quantity: d("7"), price: d("101") }).unwrap();
         assert_eq!(order.status, OrderStatus::Filled);
     }
 
     #[test]
     fn rejects_fill_before_broker_acknowledgement() {
-        let mut order = OrderLifecycle::new("qoin-002".into(), 1.0).unwrap();
+        let mut order = OrderLifecycle::new("qoin-002".into(), d("1")).unwrap();
         assert_eq!(
-            order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: 1.0, price: 1.0 }),
+            order.apply(BrokerEvent::PartialFill { execution_id: "exec-1".into(), quantity: d("1"), price: d("1") }),
             Err(LifecycleError::MissingBrokerOrderId)
         );
+    }
+
+    #[test]
+    fn arithmetic_overflow_does_not_mutate_lifecycle() {
+        let mut order = accepted();
+        assert_eq!(
+            order.apply(BrokerEvent::PartialFill {
+                execution_id: "exec-overflow".into(),
+                quantity: d("2"),
+                price: Decimal::MAX,
+            }),
+            Err(LifecycleError::Arithmetic)
+        );
+        assert_eq!(order.filled_quantity, Decimal::ZERO);
+        assert_eq!(order.average_fill_price, None);
+        assert_eq!(order.status, OrderStatus::Accepted);
     }
 
     #[test]
     fn filled_event_must_close_exact_remaining_quantity() {
         let mut order = accepted();
         assert_eq!(
-            order.apply(BrokerEvent::Filled { execution_id: "exec-1".into(), quantity: 2.0, price: 100.0 }),
+            order.apply(BrokerEvent::Filled { execution_id: "exec-1".into(), quantity: d("2"), price: d("100") }),
             Err(LifecycleError::InvalidExecution)
         );
-        assert_eq!(order.filled_quantity, 0.0);
+        assert_eq!(order.filled_quantity, Decimal::ZERO);
         assert_eq!(order.status, OrderStatus::Accepted);
     }
 }

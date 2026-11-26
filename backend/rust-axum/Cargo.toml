@@ -18,8 +18,10 @@ mongodb = { version = "2.8.2", default-features = false, features = ["tokio-runt
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 hmac = "0.12"
+jsonwebtoken = "9"
 sha2 = "0.10"
 hex = "0.4"
+zeroize = "1"
 url = "2"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 

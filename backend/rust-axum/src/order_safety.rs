@@ -287,15 +287,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_overflowing_derived_risk_budgets() {
+    fn rejects_overflowing_derived_risk_budgets_and_excessive_existing_exposure() {
         let mut order = intent();
         order.equity = f64::MAX;
         assert_eq!(
             validate_order(TradingMode::Paper, &RiskPolicy::default(), &LiveApproval::default(), &order),
             Err(Rejection::InvalidNumericInput)
         );
+
+        // A finite but already over-limit exposure is a leverage rejection,
+        // not malformed numeric input.
         order = intent();
         order.current_gross_exposure = f64::MAX;
+        assert_eq!(
+            validate_order(TradingMode::Paper, &RiskPolicy::default(), &LiveApproval::default(), &order),
+            Err(Rejection::LeverageExceeded)
+        );
+
+        // This combination genuinely overflows projected exposure during
+        // addition; it must be rejected before any budget comparison.
+        order = intent();
+        order.current_gross_exposure = f64::MAX * 0.9;
+        order.reference_price = 1.0e308;
+        order.stop_price = 5.0e307;
+        order.quantity = 1.0;
         assert_eq!(
             validate_order(TradingMode::Paper, &RiskPolicy::default(), &LiveApproval::default(), &order),
             Err(Rejection::InvalidNumericInput)
