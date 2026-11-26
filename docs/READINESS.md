@@ -3,7 +3,7 @@
 **Active integration branch:** `qoin/backend-completion-auth`  
 **Current PR:** #32 (draft; based on `main`)  
 **Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
-**Current branch head at this update:** `e7234e8f612e89c35b3fe022e75ebf57376e60df`  
+**Current branch head at this update:** `cfe0fe438e0424277a5509b628eba1fa019bd9d8`  
 **Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
@@ -159,3 +159,43 @@ No unclassified work is considered complete. The backlog lists unfinished engine
 - No local MongoDB runtime, live broker sandbox, production Firebase project, or deployment environment was exercised in this session.
 
 This section supersedes earlier branch/PR labels in the historical readiness notes below. Historical test results remain historical and must not be treated as verification of the current branch head.
+
+## Latest autonomous backend completion pass — 2026-11-26
+
+**Source branch:** `qoin/backend-completion-auth`  
+**Backend code candidate:** `843f99a24671416d21fbaeb875f1a05774567520`  
+**Documentation follow-up:** `cfe0fe438e0424277a5509b628eba1fa019bd9d8`
+
+### Implemented in this pass
+
+- Added AES-256-GCM credential envelope encryption with random 96-bit nonces, key IDs, previous-key decryption, tamper rejection tests and deployment-managed key configuration.
+- Added Firebase UID-scoped broker connection create/list/rotate/revoke handlers. Ciphertext is omitted from API responses and connections remain `pending_validation`, `trading_enabled=false`, `execution_ready=false`.
+- Added Drogon gateway proxies for broker connection lifecycle.
+- Corrected the paper-session isolation defect: replaced the single global active session with a UID-keyed session map and owner-scoped v2 Mongo collections. GET/start/stop derive ownership from Firebase verification. Paper decision and trade writes include owner UID and idempotent upsert filters.
+- Serialized paper-session state persistence under the session map lock so different symbol-ingest stripes cannot persist older snapshots after newer ones.
+- Added authenticated owner-scoped paper trade and decision history endpoints and Drogon proxies.
+- Added OpenAPI contracts for the new paper-session and broker-connection endpoints.
+- Rewrote the credential security guide to accurately describe the active AES-GCM-at-rest implementation and its limitations.
+- Refreshed the backend audit with source-backed findings, release gates and truthful provider status.
+
+### Verification at this update
+
+- Rust workspace passed on source commit `19f7a2a080993be15b172ae811dd09f74eccbfb7`, which includes the UID-scoped paper session implementation and credential vault.
+- Engine checks passed on `19f7a2a...`.
+- The latest code candidate `843f99a...` includes the paper history endpoints and gateway proxies. Its Rust workspace, Axum/Drogon/Mongo integration, gateway and container workflows were queued or running when this note was written; they must be rechecked before merging.
+- The Axum/Drogon/Mongo integration and gateway workflows for the earlier `19f7a2a...` candidate were still running at the last status poll.
+- Composite live-workspace CI failed only in the React Native typecheck job; web, Rust and Drogon jobs passed. The reported TypeScript failure is missing React type declarations in the existing frontend package. It is outside this backend change and is not represented as a backend test pass.
+- Desktop and mobile checks remain separate from backend verification.
+- No live broker credentials, production Firebase project, broker sandbox or deployed production environment were used.
+
+### Remaining production blockers
+
+- No concrete provider adapter is registered. All twenty provider catalogue entries remain fail-closed scaffolds.
+- The new encrypted per-user credential records are not yet consumed by provider adapters; provider credential validation and account discovery are not implemented.
+- Firebase ID-token revocation/disabled-user checks are not implemented by JWKS signature validation alone.
+- Paper session ownership is now UID-scoped, but partial-fill/liquidity participation, crash-window replay and transactional paper-ledger recovery still require work.
+- Order lifecycle domain types and broker-neutral preflight exist, but immutable execution events and complete broker reconciliation are not yet connected end to end.
+- User-private portfolio/order WebSocket topics are not implemented. Existing market streaming is public market data and must not be mistaken for private account streaming.
+- Production TLS, ingress rate/body limits, secrets-manager wiring, backups/restore drills and deployed observability remain unverified.
+
+This section supersedes earlier progress descriptions that referred to a single global paper session or implied that provider adapters were implemented. The branch is not production-ready until the release gate in `QOIN_BACKEND_COMPLETION_AUDIT.md` passes.
