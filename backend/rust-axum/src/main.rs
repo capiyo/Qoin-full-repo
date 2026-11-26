@@ -1009,6 +1009,11 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         }
     });
     let mut decision_doc=mongodb::bson::to_document(&decision).unwrap_or_default();
+    decision_doc.insert("symbol",&event.symbol);
+    decision_doc.insert("venue",&event.venue);
+    decision_doc.insert("strategy_key","qoin-vector-baseline");
+    decision_doc.insert("event_id",&event.event_id);
+    decision_doc.insert("input_event",mongodb::bson::to_document(&event).unwrap_or_default());
     decision_doc.insert("stored_at",mongodb::bson::DateTime::now());
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
