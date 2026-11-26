@@ -1075,13 +1075,12 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    if s.active_paper_session.lock().await.is_active() {
-        let (paper_result, paper_snapshot) = {
+    let (paper_result, paper_snapshot) = {
             let mut paper = s.active_paper_session.lock().await;
             let result = paper.process_event(&event, &paper_decision);
-            (result, paper.clone())
-        };
-        if let Some((mirror, trade)) = paper_result {
+        (result, paper.clone())
+    };
+    if let Some((mirror, trade)) = paper_result {
             let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
                 Ok(document) => document,
                 Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
@@ -1102,11 +1101,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
                     return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
                 }
             }
-            if let Err(error) = persist_paper_session(&s, &paper_snapshot).await {
-                tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
-            }
-        }
+        if let Err(error) = persist_paper_session(&s, &paper_snapshot).await {
+            tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
@@ -2536,7 +2533,8 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session index");
     paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session decision idempotency index");
-    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper session trade history index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session trade history idempotency index");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
