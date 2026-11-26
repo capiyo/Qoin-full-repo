@@ -6,7 +6,7 @@ Active branch: `qoin/backend-completion-auth`
 Pull request: [#32](https://github.com/capiyo/Qoin-full-repo/pull/32) — draft, based on `main`  
 Base SHA: `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
 Audited candidate SHA before the owner-isolated paper-session change: `bb16843ed2aedad4396bd387ecb1f36d705ad0c3`  
-Current source head at this update: `7079fcbdc3fd387083a34d73d7d8cfeaa16517be`  
+Current source head at this update: `c1f2f240d4eb0cc96e38583d123d5b1e70e86d15`  
 Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes and the explicit HTTP 429 integration assertion on `fb558542...` were queued for CI at this audit update.
 
 > This audit records source findings and verified CI evidence. It does not describe the repository as production-ready. Do not interpret provider catalogues, adapter traits, test fixtures or paper simulations as live broker connectivity.
