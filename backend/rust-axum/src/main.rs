@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -3307,7 +3307,7 @@ async fn main(){
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
-        .with_state(state).layer(TraceLayer::new_for_http());
+        .layer(DefaultBodyLimit::max(1_048_576)).with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     // Bind address may be 0.0.0.0 inside a container; provider callbacks must
     // connect through a concrete local interface instead of the wildcard address.
