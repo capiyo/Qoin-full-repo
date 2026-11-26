@@ -1,7 +1,7 @@
 name: Qoin live workspace checks
 on:
   push:
-    branches: [qoin-archive-explore-vector-ui]
+    branches: [master, qoin-archive-explore-vector-ui]
   pull_request:
     branches: [main]
 
