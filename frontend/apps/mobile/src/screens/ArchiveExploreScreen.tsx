@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinMarketVector, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinMarketVector, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -107,7 +107,7 @@ function DecisionTracePanel({ decision }: { decision: QoinVectorDecision }) {
 }
 
 
-function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null }) {
+function MobileVectorSpaceMechanics({ decision, marketState, lastEvent, marketVector }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null; marketVector: QoinMarketVectorResponse | null }) {
   const names = QOIN_FEATURE_NAMES;
   const raw = names.map((name) => decision?.features?.[name] ?? 0);
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
@@ -1134,7 +1134,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
               <MobileBacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||(selectedAlgorithmId==="qoin-measure-ledger-v2"?"measure-ledger-v2":"edge-map-v1")} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
             </View> : selectedAlgorithmId==="qoin-measure-ledger-v2" ? <><MobileMeasureLedgerDecisionPanel decision={vector} /><MobileSetLedgerPanel ledger={setLedger} status={setLedgerStatus} /></> : mechanicsTab === "vector" ? <>
             <Text style={styles.mapTitle}>Vector space · seven engine dimensions</Text><Text style={styles.mapCopy}>2D projection of actual normalized R⁷ feature state with attention interactions.</Text>
-            <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
+            <MobileVectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} marketVector={marketVector} />
             <Text style={styles.mapTitle}>Resultant decision space</Text><Text style={styles.mapCopy}>Persisted bullish and bearish output vector and its historical trajectory.</Text>
             <View style={styles.mapWrap}>
               <Svg viewBox="0 0 100 100" width="100%" height={270}>
