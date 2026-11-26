@@ -332,6 +332,25 @@ int main() {
         proxyGet(req, std::move(cb), "/internal/broker-accounts");
     }, {drogon::Get});
 
+    // Broker connection credentials are posted only to the server-side vault.
+    // GET responses contain metadata only; rotation/revocation never expose secrets.
+    drogon::app().registerHandler("/api/v1/broker-connections", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Get) {
+            proxyGet(req, std::move(cb), "/internal/broker-connections");
+            return;
+        }
+        proxyPostJson(req, std::move(cb), "/internal/broker-connections");
+    }, {drogon::Get, drogon::Post});
+    drogon::app().registerHandler("/api/v1/broker-connections/rotate", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/broker-connections/rotate");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/broker-connections/revoke", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/broker-connections/revoke");
+    }, {drogon::Post});
+
     // Paper sessions are available through the gateway; the session engine
     // is isolated from broker adapters and never submits live orders.
     drogon::app().registerHandler("/api/v1/paper-session", [](const drogon::HttpRequestPtr& req,
