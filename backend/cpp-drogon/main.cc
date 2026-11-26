@@ -347,6 +347,14 @@ int main() {
             (symbol.empty() ? std::string{} : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
     // Broker credentials are provisioned only through backend deployment secrets.
+    drogon::app().registerHandler("/api/v1/market-vector", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/market-vector");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/market-vector/history", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/market-vector/history");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/notifications", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/notifications");
