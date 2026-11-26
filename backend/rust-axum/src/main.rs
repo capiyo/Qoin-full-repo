@@ -1164,7 +1164,7 @@ async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl 
 }
 
 #[derive(Deserialize)]
-struct HistoryQuery { symbol: Option<String>, limit: Option<i64> }
+struct HistoryQuery { symbol: Option<String>, limit: Option<i64>, at_ms: Option<i64> }
 
 
 async fn fetch_binance_aggregate_trade_page(
@@ -2889,7 +2889,48 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
     (StatusCode::OK,Json(response))
 }
 async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
-    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
+    let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into()).trim().to_ascii_uppercase();
+    if symbol.is_empty() || symbol.len()>96 {
+        return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"invalid instrument symbol"})));
+    }
+
+    // Axon historical-memory lookups use the source event timestamp, never the
+    // database insertion time. Keep the existing bounded history response when
+    // at_ms is omitted so current Qoin clients remain backward compatible.
+    if let Some(at_ms)=q.at_ms {
+        if at_ms<=0 {
+            return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"at_ms must be a positive Unix timestamp in milliseconds"})));
+        }
+        let filter=doc!{
+            "symbol":&symbol,
+            "strategy_key":"qoin-vector-baseline",
+            "input_event.event_ts_ms":{"$lte":at_ms}
+        };
+        let options=FindOneOptions::builder().sort(doc!{"input_event.event_ts_ms":-1}).build();
+        return match s.decisions.find_one(filter,Some(options)).await {
+            Ok(Some(mut document))=>{
+                let event_ts_ms=document.get_document("input_event").ok()
+                    .and_then(|event|event.get_i64("event_ts_ms").ok());
+                document.remove("_id");
+                document.remove("stored_at");
+                let mut value=mongodb::bson::from_document::<serde_json::Value>(document).unwrap_or_default();
+                if let (Some(timestamp),Some(object))=(event_ts_ms,value.as_object_mut()) {
+                    object.insert("event_ts_ms".into(),serde_json::json!(timestamp));
+                }
+                (StatusCode::OK,Json(value))
+            }
+            Ok(None)=>(StatusCode::NOT_FOUND,Json(serde_json::json!({
+                "error":"no Qoin market vector exists at or before this timestamp",
+                "symbol":symbol,
+                "at_ms":at_ms
+            }))),
+            Err(error)=>{
+                tracing::error!(%error,"historical Qoin vector lookup failed");
+                (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"historical vector storage unavailable"})))
+            }
+        };
+    }
+
     let limit=q.limit.unwrap_or(120).clamp(1,500);
     let options=FindOptions::builder().sort(doc!{"stored_at":-1}).limit(limit).build();
     let mut cursor=match s.decisions.find(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},Some(options)).await {
@@ -3296,6 +3337,7 @@ async fn main(){
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"input_event.event_ts_ms":-1}).build(),None).await.expect("historical source-event vector lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
     let baseline=EdgeStrategy::baseline();
