@@ -332,6 +332,21 @@ int main() {
         proxyGet(req, std::move(cb), "/internal/broker-accounts");
     }, {drogon::Get});
 
+    // Paper sessions are available through the gateway; the session engine
+    // is isolated from broker adapters and never submits live orders.
+    drogon::app().registerHandler("/api/v1/paper-session", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/paper-session");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/paper-session/start", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/paper-session/start");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/paper-session/stop", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/paper-session/stop");
+    }, {drogon::Post});
+
     // Live order submission and reconciliation deliberately have no public
     // Drogon routes. The private Axum operator endpoints remain isolated from
     // the internet-facing gateway until live execution receives separate approval.
