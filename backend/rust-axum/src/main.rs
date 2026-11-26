@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::{broadcast, Mutex};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
@@ -579,11 +579,10 @@ async fn encrypt_broker_credentials(
     credentials: &BrokerCredentialInput,
 ) -> Result<Document, (StatusCode, &'static str)> {
     let vault = vault.ok_or((StatusCode::SERVICE_UNAVAILABLE, "broker credential encryption is not configured"))?;
-    let mut plaintext = credentials.encrypted_payload()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "broker credential payload is invalid"))?;
-    let envelope = vault.encrypt(&plaintext)
+    let plaintext = Zeroizing::new(credentials.encrypted_payload()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "broker credential payload is invalid"))?);
+    let envelope = vault.encrypt(plaintext.as_slice())
         .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "broker credential encryption failed"))?;
-    plaintext.zeroize();
     mongodb::bson::to_document(&envelope)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "broker credential envelope serialization failed"))
 }
@@ -2815,9 +2814,20 @@ async fn main(){
     let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     let users:Collection<Document>=db.collection("qoin_users");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
+    let broker_connections:Collection<Document>=db.collection("broker_connections");
+    let broker_connection_audit:Collection<Document>=db.collection("broker_connection_audit");
     broker_accounts.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("Firebase user broker-account listing index");
+    broker_connections.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
+        .expect("Firebase user broker-connection listing index");
+    broker_connections.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"broker_id":1,"account_id":1}).build(),None).await
+        .expect("broker connection account lookup index");
+    broker_connection_audit.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"at":-1}).build(),None).await
+        .expect("broker connection audit index");
     broker_accounts.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"broker_id":1,"account_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
@@ -2902,6 +2912,8 @@ async fn main(){
         }
         _ => PaperSession::default(),
     };
+    let credential_vault = credential_vault::CredentialVault::from_env()
+        .expect("broker credential encryption configuration must be valid");
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
@@ -2910,7 +2922,7 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
-        users, broker_accounts,
+        users, broker_accounts, broker_connections, broker_connection_audit, credential_vault,
         paper_sessions, paper_session_decisions, paper_session_trades,
         active_paper_session: Arc::new(Mutex::new(persisted_paper_session)),
         broker_registry: broker_contract::BrokerRegistry::default(),
@@ -2927,6 +2939,9 @@ async fn main(){
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
         .route("/internal/broker-accounts",get(get_broker_accounts))
+        .route("/internal/broker-connections",get(get_broker_connections).post(create_broker_connection))
+        .route("/internal/broker-connections/rotate",post(rotate_broker_connection))
+        .route("/internal/broker-connections/revoke",post(revoke_broker_connection))
         .route("/internal/admin/broker-accounts",post(provision_broker_account))
         .route("/internal/brokers/configuration",get(get_broker_configuration))
         .route("/internal/trading/readiness",get(get_broker_readiness))
