@@ -6,6 +6,22 @@ info:
 servers:
   - url: http://127.0.0.1:8080
 paths:
+  /v1/signal:
+    post:
+      summary: Evaluate one normalized observation with the authoritative Rust vector engine
+      description: |
+        Research signal only. It never authorizes or submits an order. Pulse, Attend and
+        pressure-blade fields expose the existing V1 math; they do not alter the decision.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignalRequest' }
+      responses:
+        '200': { description: Versioned Rust signal and complete Attend/Pulse contribution trace, content: { application/json: { schema: { $ref: '#/components/schemas/Signal' } } } }
+        '400': { description: Invalid or non-finite observation }
+        '413': { description: Request body exceeds the one MiB Axum limit }
+        '429': { description: Gateway rate limit exceeded }
   /health:
     get:
       summary: Health of gateway and Axum/MongoDB connection
@@ -385,6 +401,81 @@ components:
       scheme: bearer
       bearerFormat: Firebase ID token
   schemas:
+    ForceObservation:
+      type: object
+      required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+      properties:
+        ofi: { type: number }
+        liquidity: { type: number }
+        volatility: { type: number }
+        funding: { type: number }
+        open_interest_change: { type: number }
+        liquidation_pressure: { type: number }
+        basis: { type: number }
+        spread_bps: { type: number, nullable: true, minimum: 0 }
+        spread_age_ms: { type: integer, nullable: true, minimum: 0 }
+    SignalRequest:
+      type: object
+      required: [observation, has_open_position]
+      properties:
+        observation: { $ref: '#/components/schemas/ForceObservation' }
+        has_open_position: { type: boolean }
+    FeatureTrace:
+      type: object
+      properties:
+        name: { type: string }
+        raw_value: { type: number }
+        transform: { type: string }
+        scale: { type: number }
+        normalized_value: { type: number }
+        clamped_value: { type: number }
+        selected: { type: boolean }
+        attended_value: { type: number }
+        bullish_weight: { type: number }
+        bearish_weight: { type: number }
+        bullish_weighted_term: { type: number }
+        bearish_weighted_term: { type: number }
+        directional_weight: { type: number }
+        directional_contribution: { type: number }
+        interaction_contribution: { type: number }
+        attend_weights: { type: array, items: { type: number }, minItems: 7, maxItems: 7 }
+        pulse_bullish: { type: number, minimum: 0 }
+        pulse_bearish: { type: number, minimum: 0 }
+        pressure_blade_contribution: { type: number }
+    Signal:
+      type: object
+      required: [decision, action, score, alignment, config_version, attend, attention, pulse, pressure_blade_total, feature_trace]
+      properties:
+        decision: { type: string, enum: [BUY, SELL, CLOSE, WAIT] }
+        action: { type: string, enum: [buy, sell, close, wait] }
+        score: { type: number }
+        alignment: { type: number }
+        angle_radians: { type: number }
+        angle_degrees: { type: number }
+        active_force_count: { type: integer }
+        config_version: { type: string }
+        rationale: { type: string }
+        feature_names: { type: array, items: { type: string } }
+        raw_inputs: { type: object, additionalProperties: { type: number } }
+        features: { type: object, additionalProperties: { type: number } }
+        attend:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { type: array, minItems: 7, maxItems: 7, items: { type: number } }
+        attention:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { type: array, minItems: 7, maxItems: 7, items: { type: number } }
+        attended_features: { type: array, items: { type: number }, minItems: 7, maxItems: 7 }
+        pulse: { type: array, items: { type: number, minimum: 0 }, minItems: 2, maxItems: 2 }
+        pressure_blade_total: { type: number }
+        feature_trace: { type: array, items: { $ref: '#/components/schemas/FeatureTrace' }, minItems: 7, maxItems: 7 }
+        decision_vector: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+        magnitude: { type: number }
+        interaction_contribution: { type: number }
+        diagnostics: { type: object }
     PaperAccountConfig:
       type: object
       required: [symbol, venue, quote_currency, initial_cash, notional_per_trade]
