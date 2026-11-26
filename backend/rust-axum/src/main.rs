@@ -13,7 +13,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
@@ -32,7 +32,9 @@ mod broker_env;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
+mod paper_session;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
+use paper_session::{PaperAccountConfig, PaperSession};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -93,6 +95,10 @@ struct AppState {
     strategies: Collection<Document>,
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
+    paper_sessions: Collection<Document>,
+    paper_session_decisions: Collection<Document>,
+    paper_session_trades: Collection<Document>,
+    active_paper_session: Arc<Mutex<PaperSession>>,
     users: Collection<Document>,
     broker_accounts: Collection<Document>,
     broker_registry: broker_contract::BrokerRegistry,
@@ -854,6 +860,76 @@ async fn persist_set_ledger_records(
     Ok(inserted)
 }
 
+#[derive(Deserialize)]
+struct PaperSessionStartRequest {
+    cycle_id: String,
+    accounts: Vec<PaperAccountConfig>,
+}
+
+async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(session).map_err(|error| error.to_string())?;
+    document.insert("session_key", "active");
+    document.insert("updated_at", mongodb::bson::DateTime::now());
+    s.paper_sessions.update_one(
+        doc!{"session_key":"active"},
+        doc!{"$set":document},
+        UpdateOptions::builder().upsert(true).build(),
+    ).await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn get_paper_session(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
+    };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable"})));
+    }
+    let session = s.active_paper_session.lock().await;
+    (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
+}
+
+async fn start_paper_session(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PaperSessionStartRequest>,
+) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"operator authorization is required"})));
+    }
+    if request.cycle_id.trim().is_empty() || request.cycle_id.len() > 128 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"cycle_id must contain 1 to 128 characters"})));
+    }
+    let session = match PaperSession::start(request.cycle_id, &request.accounts) {
+        Ok(session) => session,
+        Err(error) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error}))),
+    };
+    if let Err(error) = persist_paper_session(&s, &session).await {
+        tracing::error!(error=%error, "paper session start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    let snapshot = session.snapshot();
+    *s.active_paper_session.lock().await = session;
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+
+async fn stop_paper_session(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"operator authorization is required"})));
+    }
+    let session = {
+        let mut current = s.active_paper_session.lock().await;
+        current.stop();
+        current.clone()
+    };
+    if let Err(error) = persist_paper_session(&s, &session).await {
+        tracing::error!(error=%error, "paper session stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
+}
+
 async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl IntoResponse{
     // Serialize the full persistence/decision pipeline per canonical symbol.
     // The memory lock alone only protects state mutation; without this guard,
@@ -944,6 +1020,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
         }
     };
+    let paper_decision = signal.clone();
     let decision = serde_json::json!({
         "symbol": snapshot.symbol,
         "input_event": {
@@ -997,6 +1074,39 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
+    }
+    if s.active_paper_session.lock().await.is_active() {
+        let (paper_result, paper_snapshot) = {
+            let mut paper = s.active_paper_session.lock().await;
+            let result = paper.process_event(&event, &paper_decision);
+            (result, paper.clone())
+        };
+        if let Some((mirror, trade)) = paper_result {
+            let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
+                Ok(document) => document,
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))),
+            };
+            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror decision persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror decision persistence failed","event_persisted":true,"decision_persisted":true})));
+            }
+            if let Some(trade) = trade {
+                let mut trade_doc = match mongodb::bson::to_document(&trade) {
+                    Ok(document) => document,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
+                };
+                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
+                }
+            }
+            if let Err(error) = persist_paper_session(&s, &paper_snapshot).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper account state persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
+            }
+        }
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
@@ -2406,6 +2516,9 @@ async fn main(){
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
+    let paper_sessions:Collection<Document>=db.collection("paper_sessions");
+    let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
+    let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     let users:Collection<Document>=db.collection("qoin_users");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
     broker_accounts.create_index(mongodb::IndexModel::builder()
@@ -2419,6 +2532,11 @@ async fn main(){
         doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
             "updated_at":mongodb::bson::DateTime::now()}},
         UpdateOptions::builder().upsert(true).build()).await.expect("initialize trading kill switch");
+    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session decision idempotency index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper session trade history index");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
@@ -2482,6 +2600,13 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
+    let persisted_paper_session = match paper_sessions.find_one(doc!{"session_key":"active"}, None).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id");
+            mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default()
+        }
+        _ => PaperSession::default(),
+    };
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
@@ -2491,6 +2616,8 @@ async fn main(){
     let state=AppState{
         stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
         users, broker_accounts,
+        paper_sessions, paper_session_decisions, paper_session_trades,
+        active_paper_session: Arc::new(Mutex::new(persisted_paper_session)),
         broker_registry: broker_contract::BrokerRegistry::default(),
         broker_environment: Arc::new(broker_env::BrokerEnvironment::from_env().expect("broker environment configuration must be valid")),
         firebase_verifier,
@@ -2508,6 +2635,9 @@ async fn main(){
         .route("/internal/admin/broker-accounts",post(provision_broker_account))
         .route("/internal/brokers/configuration",get(get_broker_configuration))
         .route("/internal/trading/readiness",get(get_broker_readiness))
+        .route("/internal/paper-session",get(get_paper_session))
+        .route("/internal/paper-session/start",post(start_paper_session))
+        .route("/internal/paper-session/stop",post(stop_paper_session))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
