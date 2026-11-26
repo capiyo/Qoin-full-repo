@@ -3,7 +3,7 @@
 **Active integration branch:** `qoin/backend-completion-auth`  
 **Current PR:** #32 (draft; based on `main`)  
 **Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
-**Current branch head at this update:** `cfe0fe438e0424277a5509b628eba1fa019bd9d8`  
+**Current branch head at this update:** `9051312b816ff496abdeb30d22af3db451f18ab7`  
 **Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
@@ -199,3 +199,20 @@ This section supersedes earlier branch/PR labels in the historical readiness not
 - Production TLS, ingress rate/body limits, secrets-manager wiring, backups/restore drills and deployed observability remain unverified.
 
 This section supersedes earlier progress descriptions that referred to a single global paper session or implied that provider adapters were implemented. The branch is not production-ready until the release gate in `QOIN_BACKEND_COMPLETION_AUDIT.md` passes.
+
+## Latest risk, lifecycle and gateway hardening — 2026-11-26
+
+**Code candidate:** `0fe1913a812a89b4efe5a013ef72d965f2540c95`  
+**Audit documentation follow-up:** `9051312b816ff496abdeb30d22af3db451f18ab7`
+
+- Connected the historical `order_safety` approval gate into the broker-neutral order dispatch preflight. It is applied to opening orders after account-currency normalization; the Decimal portfolio risk gate remains the authoritative quantitative check.
+- All five separate live-approval flags default to false. The registry remains empty and live dispatch remains disabled.
+- Distinguished pre-dispatch rejection from unknown broker submission outcome; the latter requires reconciliation and is never automatically retried.
+- Added an append-only, owner-scoped order lifecycle event collection with idempotent state keys and indexes. Broker acknowledgements pass through the existing lifecycle state machine before acceptance is persisted.
+- Added bounded per-peer Drogon HTTP rate limits (120 reads / 30 writes per minute).
+- Added Axum graceful shutdown on Ctrl-C and SIGTERM.
+- Added paper-session resume and protection against overwriting a paused session that still has an open position or pending action.
+
+### Verification boundary
+
+The code candidate `843f99a...` passed Rust workspace, Axum/Drogon/Mongo integration and Drogon gateway CI. The newer risk, lifecycle, rate-limit, session-resume and graceful-shutdown changes on `0fe1913...` were queued for exact-head CI at the time of writing. They are not marked DONE until the new runs finish successfully. The audit document records the current limitations and release gate.
