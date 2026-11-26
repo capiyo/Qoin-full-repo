@@ -729,6 +729,9 @@ async fn submit_live_order(
         Ok(uid) => uid,
         Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order submission"}))),
     };
+    if let Err(status) = ensure_user_record(&s.users, &owner_uid).await {
+        return (status, Json(serde_json::json!({"error":"user account is unavailable; order rejected","dispatch_started":false})));
+    }
     let enabled = match s.trading_controls.find_one(doc!{"_id":"execution"}, None).await {
         Ok(Some(control)) => control.get_bool("enabled").unwrap_or(false),
         Ok(None) => false,
@@ -743,6 +746,29 @@ async fn submit_live_order(
     let broker_id = submission.broker_id.trim().to_ascii_lowercase();
     if broker_id.is_empty() || broker_id.len() > 64 {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"broker_id is required"})));
+    }
+    let _owned_account = match s.broker_accounts.find_one(
+        doc!{"owner_uid":&owner_uid,"account_id":&submission.order.account_id,"broker_id":&broker_id,"status":"active","trading_enabled":true},
+        None
+    ).await {
+        Ok(Some(account)) => account,
+        Ok(None) => return (StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error":"selected broker account is not provisioned and active for this Firebase user",
+            "dispatch_started":false
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error, "broker account ownership lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"broker account ownership could not be verified; order rejected",
+                "dispatch_started":false
+            })));
+        }
+    };
+    if !s.broker_environment.account_authorized(&broker_id, &submission.order.account_id) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({
+            "error":"broker credentials or the selected subaccount are not configured by Qoin",
+            "dispatch_started":false
+        })));
     }
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
