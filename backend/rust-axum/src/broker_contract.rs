@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use futures_util::future::join_all;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, fmt, sync::{Arc, RwLock}};
 
@@ -687,6 +687,66 @@ pub async fn submit_risk_checked(
         protective_order_supported: capabilities.native_protective_orders,
         required_margin_account_currency: required_margin,
     })?;
+
+    // The historical order_safety gate (introduced in commit 3bef7b0c) is
+    // retained as a second, stricter pre-dispatch check. Values are normalized
+    // into account currency and contract exposure before conversion to f64;
+    // the Decimal portfolio gate above remains authoritative for FX, margin,
+    // instrument precision and full account-currency calculations.
+    if !order.reduce_only {
+        let stop_price = preflight.protective_stop_price
+            .ok_or_else(|| ContractError::InvalidOrder("opening order requires a protective stop".into()))?;
+        let account_quantity = order.quantity.checked_mul(instrument.contract_multiplier)
+            .ok_or_else(|| ContractError::InvalidOrder("normalized risk quantity overflow".into()))?;
+        let account_reference = reference_price.checked_mul(instrument.price_currency_to_account_rate)
+            .ok_or_else(|| ContractError::InvalidOrder("account-currency reference price overflow".into()))?;
+        let account_stop = stop_price.checked_mul(instrument.price_currency_to_account_rate)
+            .ok_or_else(|| ContractError::InvalidOrder("account-currency stop price overflow".into()))?;
+        let to_f64 = |value: Decimal, field: &str| -> Result<f64, ContractError> {
+            value.to_f64().filter(|number| number.is_finite())
+                .ok_or_else(|| ContractError::InvalidOrder(format!("{field} cannot be represented for the legacy safety gate")))
+        };
+        let side = match order.side {
+            OrderSide::Buy => crate::order_safety::Side::Buy,
+            OrderSide::Sell => crate::order_safety::Side::Sell,
+        };
+        let legacy_policy = crate::order_safety::RiskPolicy {
+            max_risk_fraction: to_f64(policy.max_risk_fraction, "max_risk_fraction")?,
+            max_leverage: to_f64(policy.max_gross_leverage, "max_gross_leverage")?,
+            max_daily_loss_fraction: to_f64(policy.max_daily_loss_fraction, "max_daily_loss_fraction")?,
+            max_positions: policy.max_open_positions,
+            max_market_data_age_ms: policy.max_market_data_age_ms,
+            max_order_notional_fraction: to_f64(policy.max_order_notional_fraction, "max_order_notional_fraction")?,
+        };
+        let approval = crate::order_safety::LiveApproval {
+            human_approved: std::env::var("QOIN_LIVE_HUMAN_APPROVED").map(|v| v == "true").unwrap_or(false),
+            exchange_account_verified: std::env::var("QOIN_LIVE_ACCOUNT_VERIFIED").map(|v| v == "true").unwrap_or(false),
+            withdrawals_disabled: std::env::var("QOIN_LIVE_WITHDRAWALS_DISABLED").map(|v| v == "true").unwrap_or(false),
+            kill_switch_healthy: std::env::var("QOIN_LIVE_KILL_SWITCH_HEALTHY").map(|v| v == "true").unwrap_or(false),
+            reconciliation_healthy: std::env::var("QOIN_LIVE_RECONCILIATION_HEALTHY").map(|v| v == "true").unwrap_or(false),
+        };
+        let legacy_intent = crate::order_safety::OrderIntent {
+            client_order_id: order.client_order_id.clone(),
+            symbol: instrument.instrument_id.clone(),
+            side,
+            quantity: to_f64(account_quantity, "normalized quantity")?,
+            reference_price: to_f64(account_reference, "account-currency reference price")?,
+            stop_price: to_f64(account_stop, "account-currency protective stop")?,
+            equity: to_f64(account.equity, "account equity")?,
+            current_gross_exposure: to_f64(account.gross_exposure, "gross exposure")?,
+            current_daily_loss: to_f64(account.current_daily_loss()?, "daily loss")?,
+            open_positions: account.open_positions,
+            market_data_age_ms: now_ms.saturating_sub(quote.observed_at_ms),
+            exchange_protective_stop_supported: capabilities.native_protective_orders,
+        };
+        crate::order_safety::validate_order(
+            crate::order_safety::TradingMode::Live,
+            &legacy_policy,
+            &approval,
+            &legacy_intent,
+        ).map_err(|reason| ContractError::InvalidOrder(format!("independent live safety approval failed: {reason:?}")))?;
+    }
+
     let broker_receipt = adapter.submit_order(owner_uid, order.clone(), preflight.protective_stop_price).await?;
     if broker_receipt.broker_id != adapter.broker_id()
         || broker_receipt.account_id != order.account_id
