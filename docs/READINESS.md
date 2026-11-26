@@ -3,7 +3,7 @@
 **Active integration branch:** `qoin/backend-completion-auth`  
 **Current PR:** #32 (draft; based on `main`)  
 **Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
-**Current branch head at this update:** `fb558542e2d51fbf0f8cc0f728416c31f88f66b0`  
+**Current branch head at this update:** `548f74f5864aa3cb0a3736ee086da72a11f786db`  
 **Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
@@ -218,3 +218,11 @@ This section supersedes earlier progress descriptions that referred to a single 
 The code candidate `843f99a...` passed Rust workspace, Axum/Drogon/Mongo integration and Drogon gateway CI. The newer risk, lifecycle, rate-limit, session-resume and graceful-shutdown changes on `0fe1913...` were queued for exact-head CI at the time of writing. They are not marked DONE until the new runs finish successfully. The audit document records the current limitations and release gate.
 
 The integration test now includes an HTTP 429 assertion for the Drogon write-rate limit. It remains pending exact-head CI verification. The active branch is still a draft PR and is not merged or deployed.
+
+## Rust math and Python parity follow-up — 2026-11-26
+
+- V1 Attend/Pulse/pressure-blade fields are now explicit in Rust `Signal` and `FeatureTrace`; the existing decision score and thresholds are unchanged. Exact equations are in `docs/VECTOR_ENGINE_MATHEMATICS.md`.
+- Python decision and backtest entry points are thin clients to Rust Axum; no independent Python decision coefficients or fill engine are used by those entry points.
+- The separate `qoin-axum-api` research binary is loopback-only on port 8082, with a 64 KiB request cap and graceful shutdown. Production `qoin-flow-engine` remains private behind Drogon.
+- Production Axum body limit is 1 MiB; Drogon limits HTTP and WebSocket connection attempts.
+- The current branch head `548f74f...` workflows are queued. Only earlier candidate `843f99a...` has completed Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks. The newest math, Python bridge, rate-limit and order lifecycle changes must not be called verified until exact-head CI completes.
