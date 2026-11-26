@@ -1035,24 +1035,34 @@ async fn submit_live_order(
             }
             (StatusCode::OK, Json(serde_json::to_value(receipt).unwrap_or_default()))
         }
-        Err(_error) => {
+        Err(error) => {
+            let outcome_unknown = matches!(error, broker_contract::ContractError::SubmissionOutcomeUnknown(_));
+            let lifecycle_state = if outcome_unknown { "reconciliation_required" } else { "rejected" };
+            let reason_code = if outcome_unknown { "broker_submission_outcome_unknown" } else { "preflight_or_capability_rejected" };
             let _ = append_order_lifecycle_event(
-                &s, &owner_uid, &submission.order.client_order_id, "reconciliation_required",
+                &s, &owner_uid, &submission.order.client_order_id, lifecycle_state,
                 &broker_id, &submission.order.account_id,
-                doc!{"reason_code":"broker_submission_outcome_unknown"},
+                doc!{"reason_code":reason_code},
             ).await;
             if let Err(ledger_error) = s.orders.update_one(
                 doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
-                doc!{"$set":{"status":"reconciliation_required","execution_error":"broker_submission_outcome_unknown","updated_at":mongodb::bson::DateTime::now()}},
+                doc!{"$set":{"status":lifecycle_state,"execution_error":reason_code,"updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
                 tracing::error!(error=%ledger_error, client_order_id=%submission.order.client_order_id,
-                    "broker submission failed and Qoin ledger update also failed");
+                    "order rejection state could not be persisted");
             }
-            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-                "error":"broker submission outcome is unknown","broker_id":broker_id,
-                "client_order_id":submission.order.client_order_id,"reconciliation_required":true
-            })))
+            if outcome_unknown {
+                (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                    "error":"broker submission outcome is unknown","broker_id":broker_id,
+                    "client_order_id":submission.order.client_order_id,"reconciliation_required":true
+                })))
+            } else {
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({
+                    "error":"order was rejected before broker dispatch","broker_id":broker_id,
+                    "client_order_id":submission.order.client_order_id,"dispatch_started":false
+                })))
+            }
         }
     }
 }
