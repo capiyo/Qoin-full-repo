@@ -3,7 +3,7 @@
 **Active integration branch:** `qoin/backend-completion-auth`  
 **Current PR:** #32 (draft; based on `main`)  
 **Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
-**Current branch head at this update:** `548f74f5864aa3cb0a3736ee086da72a11f786db`  
+**Current branch head at this update:** `23df63f57a1c71cc74930331a4306e2343c8e0fe`  
 **Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
@@ -226,3 +226,7 @@ The integration test now includes an HTTP 429 assertion for the Drogon write-rat
 - The separate `qoin-axum-api` research binary is loopback-only on port 8082, with a 64 KiB request cap and graceful shutdown. Production `qoin-flow-engine` remains private behind Drogon.
 - Production Axum body limit is 1 MiB; Drogon limits HTTP and WebSocket connection attempts.
 - The current branch head `548f74f...` workflows are queued. Only earlier candidate `843f99a...` has completed Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks. The newest math, Python bridge, rate-limit and order lifecycle changes must not be called verified until exact-head CI completes.
+
+## Dead-code cleanup — 2026-11-26
+
+Removed three uncompiled/disconnected source files: the Binance-only legacy trading adapter, the old duplicate six-force vector implementation, and the unused operating-cycle prototype. Removed the direct HMAC dependency that was only used by the deleted legacy adapter. The authoritative shared Rust vector crate and provider-neutral broker contract remain intact. Current-head CI is still queued.
