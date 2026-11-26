@@ -2995,6 +2995,10 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("owner-scoped paper decision idempotency index");
     paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("owner-scoped paper trade idempotency index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"ts_ms":-1})
+        .build(),None).await.expect("owner-scoped paper decision history index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"exit_ts_ms":-1})
+        .build(),None).await.expect("owner-scoped paper trade history index");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
