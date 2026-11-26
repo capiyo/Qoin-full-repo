@@ -3,7 +3,7 @@ use super::*;
 #[derive(Deserialize)]
 struct BrokerReadinessQuery { brokers: Option<String> }
 
-async fn get_broker_readiness(
+pub(super) async fn get_broker_readiness(
     State(s): State<AppState>,
     Query(query): Query<BrokerReadinessQuery>,
     headers: HeaderMap,
@@ -84,7 +84,7 @@ async fn get_broker_readiness(
 }
 
 
-async fn get_broker_configuration(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+pub(super) async fn get_broker_configuration(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid,
         Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))),
@@ -108,7 +108,7 @@ struct ProvisionBrokerAccountRequest {
     trading_enabled: bool,
 }
 
-async fn provision_broker_account(
+pub(super) async fn provision_broker_account(
     State(s): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<ProvisionBrokerAccountRequest>,

@@ -17,7 +17,7 @@ struct DiscoverRelationshipsRequest {
     recorded_at_ms: i64,
 }
 
-async fn discover_relationships(
+pub(super) async fn discover_relationships(
     State(state): State<AppState>,
     Json(request): Json<DiscoverRelationshipsRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
@@ -124,7 +124,7 @@ async fn discover_relationships(
     }))))
 }
 
-async fn append_relationship_event(
+pub(super) async fn append_relationship_event(
     State(state): State<AppState>,
     Json(event): Json<RelationshipLedgerEvent>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
@@ -157,7 +157,7 @@ async fn append_relationship_event(
     }
 }
 
-async fn list_relationship_events(
+pub(super) async fn list_relationship_events(
     State(state): State<AppState>,
     Query(query): Query<RelationshipLedgerQuery>,
 ) -> Result<Json<Vec<RelationshipLedgerEvent>>, (StatusCode, Json<serde_json::Value>)> {
@@ -166,7 +166,7 @@ async fn list_relationship_events(
         .sort(doc!{"recorded_at_ms":-1,"event_id":1})
         .limit(limit)
         .build();
-    let mut cursor = state.relationship_ledger.find(None, Some(options)).await.map_err(|error| {
+    let cursor = state.relationship_ledger.find(None, Some(options)).await.map_err(|error| {
         tracing::error!(error=%error, "relationship ledger query failed");
         (StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error":"relationship ledger unavailable"})))
