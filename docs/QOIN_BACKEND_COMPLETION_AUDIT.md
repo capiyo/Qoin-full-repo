@@ -6,7 +6,7 @@ Active branch: `qoin/backend-completion-auth`
 Pull request: [#32](https://github.com/capiyo/Qoin-full-repo/pull/32) — draft, based on `main`  
 Base SHA: `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
 Audited candidate SHA before the owner-isolated paper-session change: `bb16843ed2aedad4396bd387ecb1f36d705ad0c3`  
-Current source head at this update: `fb558542e2d51fbf0f8cc0f728416c31f88f66b0`  
+Current source head at this update: `548f74f5864aa3cb0a3736ee086da72a11f786db`  
 Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes and the explicit HTTP 429 integration assertion on `fb558542...` were queued for CI at this audit update.
 
 > This audit records source findings and verified CI evidence. It does not describe the repository as production-ready. Do not interpret provider catalogues, adapter traits, test fixtures or paper simulations as live broker connectivity.
@@ -114,3 +114,15 @@ The integration workflow now also sends enough write requests to verify the gate
 - OpenAPI now describes the Rust signal request/response and the explicit Attend/Pulse/pressure-blade diagnostics.
 
 Exact-head Rust and Python CI for these latest schema/diagnostic changes is pending.
+
+## Research parity and standalone API update
+
+- Python `research.vector_model.evaluate_signal` now calls the production Rust `/v1/signal` endpoint and contains no duplicate decision coefficients or rules.
+- Python `research.backtest_client.run_rust_backtest` delegates chronological event replay and execution assumptions to Rust `/internal/backtest`; Python is a client/research layer, not a second simulator.
+- Python tests cover the bridge request contract, validation and response handling.
+- The separate `qoin-axum-api` binary is documented and hardened as a loopback-only research server on port 8082 by default, with a 64 KiB body cap and graceful shutdown. The production Axum/Mongo service remains `qoin-flow-engine` on private port 8081 behind Drogon.
+- The production Axum router has a one MiB request body cap and graceful shutdown. Drogon rate limits HTTP proxy requests and WebSocket connection attempts.
+
+## Remaining quantitative definition boundary
+
+The V1 engine now explicitly exposes Attend, Pulse and pressure-blade contributions using the existing V1 mathematics. The current seven-force implementation has an angular alignment/angle diagnostic, but no separately specified vector-spacing metric or independent evolving vector-state dynamics. Those must not be invented or silently substituted; the exact V1 angular measure is documented in `VECTOR_ENGINE_MATHEMATICS.md`. If vector spacing means a distinct quantity, it requires the user's established formula before implementation.
