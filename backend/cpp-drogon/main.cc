@@ -2,6 +2,9 @@
 #include <drogon/WebSocketClient.h>
 #include <drogon/WebSocketController.h>
 #include <cstdlib>
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -109,6 +112,48 @@ public:
 };
 
 namespace {
+struct RateBucket {
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    unsigned count = 0;
+};
+std::mutex rateLimitMutex;
+std::unordered_map<std::string, RateBucket> rateLimitBuckets;
+
+bool allowGatewayRequest(const drogon::HttpRequestPtr& request, bool write) {
+    const auto peer = request->peerAddr().toIp();
+    if (peer.empty()) return false;
+    const auto key = peer + (write ? ":write" : ":read");
+    const auto now = std::chrono::steady_clock::now();
+    const auto window = std::chrono::seconds(60);
+    const unsigned maximum = write ? 30U : 120U;
+    std::lock_guard<std::mutex> guard(rateLimitMutex);
+    auto found = rateLimitBuckets.find(key);
+    if (found == rateLimitBuckets.end()) {
+        if (rateLimitBuckets.size() >= 20000U) {
+            for (auto it = rateLimitBuckets.begin(); it != rateLimitBuckets.end();) {
+                if (now - it->second.started >= window) it = rateLimitBuckets.erase(it);
+                else ++it;
+            }
+            if (rateLimitBuckets.size() >= 20000U) return false;
+        }
+        found = rateLimitBuckets.emplace(key, RateBucket{now, 0U}).first;
+    }
+    if (now - found->second.started >= window) {
+        found->second.started = now;
+        found->second.count = 0U;
+    }
+    if (found->second.count >= maximum) return false;
+    ++found->second.count;
+    return true;
+}
+
+void respondRateLimited(std::function<void(const drogon::HttpResponsePtr&)>& callback) {
+    auto response = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "gateway request rate limit exceeded"}});
+    response->setStatusCode(drogon::k429TooManyRequests);
+    response->addHeader("retry-after", "60");
+    callback(response);
+}
+
 std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
     return value ? std::string(value) : "http://127.0.0.1:8081";
@@ -116,6 +161,10 @@ std::string upstream() {
 void proxyGet(const drogon::HttpRequestPtr& incoming,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               const std::string& path) {
+    if (!allowGatewayRequest(incoming, false)) {
+        respondRateLimited(callback);
+        return;
+    }
     auto client = drogon::HttpClient::newHttpClient(upstream());
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Get);
@@ -148,6 +197,10 @@ void proxyGet(const drogon::HttpRequestPtr& incoming,
 void proxyPostJson(const drogon::HttpRequestPtr& incoming,
                    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
                    const std::string& path) {
+    if (!allowGatewayRequest(incoming, true)) {
+        respondRateLimited(callback);
+        return;
+    }
     auto client = drogon::HttpClient::newHttpClient(upstream());
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Post);
@@ -183,6 +236,10 @@ void proxyPostJson(const drogon::HttpRequestPtr& incoming,
 void proxyDelete(const drogon::HttpRequestPtr& incoming,
                  std::function<void(const drogon::HttpResponsePtr&)>&& callback,
                  const std::string& path) {
+    if (!allowGatewayRequest(incoming, true)) {
+        respondRateLimited(callback);
+        return;
+    }
     auto client = drogon::HttpClient::newHttpClient(upstream());
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Delete);
