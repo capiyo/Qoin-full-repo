@@ -312,6 +312,8 @@ pub enum ContractError {
     InvalidOrder(String),
     Broker(String),
     Unsupported(String),
+    /// The request may have reached the provider; reconcile by client order ID before retrying.
+    SubmissionOutcomeUnknown(String),
 }
 
 impl fmt::Display for ContractError {
@@ -322,6 +324,7 @@ impl fmt::Display for ContractError {
             Self::InvalidOrder(message) => write!(formatter, "invalid normalized order: {message}"),
             Self::Broker(message) => write!(formatter, "broker adapter error: {message}"),
             Self::Unsupported(message) => write!(formatter, "unsupported broker capability: {message}"),
+            Self::SubmissionOutcomeUnknown(_) => write!(formatter, "broker submission outcome is unknown; reconciliation is required"),
         }
     }
 }
@@ -747,7 +750,8 @@ pub async fn submit_risk_checked(
         ).map_err(|reason| ContractError::InvalidOrder(format!("independent live safety approval failed: {reason:?}")))?;
     }
 
-    let broker_receipt = adapter.submit_order(owner_uid, order.clone(), preflight.protective_stop_price).await?;
+    let broker_receipt = adapter.submit_order(owner_uid, order.clone(), preflight.protective_stop_price).await
+        .map_err(|error| ContractError::SubmissionOutcomeUnknown(error.to_string()))?;
     if broker_receipt.broker_id != adapter.broker_id()
         || broker_receipt.account_id != order.account_id
         || broker_receipt.client_order_id != order.client_order_id
@@ -755,7 +759,9 @@ pub async fn submit_risk_checked(
         || broker_receipt.accepted_at_ms <= 0
         || broker_receipt.status.trim().is_empty()
     {
-        return Err(ContractError::Broker("broker returned an invalid or mismatched acknowledgement; reconciliation is required".into()));
+        return Err(ContractError::SubmissionOutcomeUnknown(
+            "broker returned an invalid or mismatched acknowledgement".into()
+        ));
     }
     Ok(RiskCheckedReceipt { risk, broker_receipt })
 }
