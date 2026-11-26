@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinMarketVector, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -122,6 +122,11 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent }: { deci
   const colors = ["#64A7E8","#64C69B","#D9A65D","#B69AE8","#DB7E85","#72C6CF","#E2B86A"];
   const output = decision?.decision_vector ?? [0, 0];
   return <View style={styles.tracePanel}>
+    <View style={styles.marketVectorSummary}>
+      <Text style={styles.marketVectorTitle}>Shared market vector · 53 axes</Text>
+      <Text style={styles.marketVectorValue}>{marketVector && "coordinates" in marketVector ? `${Object.values(marketVector.coordinates).filter((coordinate) => coordinate.status === "observed").length}/53 observed · ${Object.values(marketVector.coordinates).filter((coordinate) => coordinate.status === "missing").length} missing` : marketVector?.status === "warming_up" ? "Warming up · awaiting source evidence" : "No shared vector available"}</Text>
+      <Text style={styles.marketVectorMeta}>{marketVector && "coordinates" in marketVector ? `${marketVector.venue} · ${marketVector.timeframe}` : "Only source-backed dimensions are populated"}</Text>
+    </View>
     <Text style={styles.attentionTitle}>Vector space · seven engine dimensions</Text>
     <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁷ feature state · decision output is a separate space</Text>
     <View style={{padding:11,borderRadius:12,backgroundColor:"#13231C",gap:8}}>
@@ -543,6 +548,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
+  const [marketVector, setMarketVector] = useState<QoinMarketVectorResponse | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
   const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
   const [news, setNews] = useState<QoinNewsItem[]>([]);
@@ -824,6 +830,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     setSetLedger(null);
     setSetLedgerStatus("Loading set memberships and temporal relations…");
     getQoinMarketState(selected.engineSymbol, selected.engineVenue).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
+    setMarketVector(null);
+    getQoinMarketVector(selected.engineSymbol, selected.engineVenue).then((value) => { if (active) setMarketVector(value); }).catch(() => undefined);
     getQoinSetLedger(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
     if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500, selected.engineVenue).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
@@ -881,6 +889,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
         if (selected?.engineSymbol.toUpperCase() === symbol) {
           if (update.state) setMarketState(update.state);
+          if (update.market_vector) setMarketVector(update.market_vector);
           if (update.event) {
             setLastEvent(update.event);
             setRawEvents((current) => [{
@@ -1450,6 +1459,10 @@ const styles = StyleSheet.create({
   featureValues: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 7 },
   featureValue: { width: "30%", flexDirection: "row", justifyContent: "space-between" },
   attentionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 9 },
+  marketVectorSummary: { backgroundColor: "#F2F6FC", borderColor: "#DCE7F5", borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
+  marketVectorTitle: { color: "#23456B", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+  marketVectorValue: { color: "#18324F", fontSize: 13, fontWeight: "700", marginTop: 5 },
+  marketVectorMeta: { color: "#61758E", fontSize: 11, marginTop: 4 },
   attentionTitle: { color: "#40536E", fontSize: 10, fontWeight: "700" },
   attentionCaption: { color: "#9AA6B5", fontSize: 8 },
   attentionRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 3 },
