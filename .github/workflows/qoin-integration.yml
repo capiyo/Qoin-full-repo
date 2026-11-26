@@ -1,14 +1,14 @@
 name: Qoin Axum-Drogon MongoDB integration
 on:
   push:
-    branches: [main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui]
+    branches: [master, main, feat/mongodb-edge-strategy-map, qoin-archive-explore-vector-ui]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
       - "docker-compose.yml"
       - ".github/workflows/qoin-integration.yml"
   pull_request:
-    branches: [main]
+    branches: [master, main]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
