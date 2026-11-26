@@ -8,6 +8,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+// Causal, independently evaluated research horizons. Consensus is descriptive only.
+pub mod multi_horizon;
+pub mod market_data;
+pub use market_data::{aggregate_horizon, HorizonObservation, MarketEvent};
+pub use multi_horizon::{evaluate_multi_horizon, Horizon, HorizonConsensus, HorizonInput, HorizonRelationship, HorizonSignal, MultiHorizonError, MultiHorizonSignal};
+
 // Cross-market feature calculations are separate research projections. They do not
 // change the authoritative seven-force V1 decision function or grant execution authority.
 pub mod features;
