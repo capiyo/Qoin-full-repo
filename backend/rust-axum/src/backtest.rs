@@ -465,7 +465,13 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         last_decision=Some(decision);
     }
     let final_mark=state.last_mark_price.or(state.last_price).unwrap_or(0.0); let final_equity=cash+position*final_mark;
+    if !final_equity.is_finite() || !final_mark.is_finite() {
+        return Err("backtest final valuation overflowed; reduce position size or replay input magnitude".into());
+    }
     let net_pnl = final_equity - initial_capital;
+    if !net_pnl.is_finite() {
+        return Err("backtest net P&L overflowed".into());
+    }
     let net_return_pct = (final_equity / initial_capital - 1.0) * 100.0;
     let elapsed_ms = events.last().unwrap().ts_ms.saturating_sub(events.first().unwrap().ts_ms);
     let elapsed_years = elapsed_ms as f64 / (365.25 * 86_400_000.0);
@@ -511,7 +517,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         entry.0 += fill.realized_pnl;
         if fill.status == ReplayOrderStatus::Filled { entry.1 = true; }
     }
-    let completed: Vec<f64> = closed_trade_pnl.values().filter(|(_, complete)| *complete).map(|(pnl, _)| *pnl).collect();
+    let completed: Vec<f64> = closed_trade_pnl.values().filter(|(pnl, complete)| *complete && pnl.is_finite()).map(|(pnl, _)| *pnl).collect();
     let gross_profit = completed.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
     let gross_loss = -completed.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
     let completed_trades = completed.len();
@@ -523,6 +529,9 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         .map(|first| (final_mark / first - 1.0) * 100.0)
         .filter(|value| value.is_finite());
     let transaction_costs = fees + slippage + market_impact_paid;
+    if !gross_profit.is_finite() || !gross_loss.is_finite() || !transaction_costs.is_finite() || !max_gross_exposure_pct.is_finite() {
+        return Err("backtest performance metric overflowed".into());
+    }
     let realized_execution_costs = transaction_costs;
     let execution_stress_scenarios = [
         ("baseline", 1.0),
