@@ -64,6 +64,8 @@ struct MarketEvent {
     #[serde(default)] liquidation_side: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
+fn venue_state_key(venue:&str,symbol:&str)->String { format!("{}|{}",venue.trim().to_ascii_lowercase(),symbol.trim().to_ascii_uppercase()) }
+
 struct SymbolState {
     symbol: String,
     event_count: usize,
@@ -896,7 +898,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event lookup unavailable"})));
         }
     }
-    let state_key=format!("{}|{}",event.venue,event.symbol);
+    let state_key=venue_state_key(&event.venue,&event.symbol);
     if let Ok(memory)=s.memory.read() {
         if let Some(previous)=memory.get(&state_key) {
             if !event_follows_state(&event, previous) {
@@ -1033,7 +1035,7 @@ async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl I
     let mut filter=doc!{"symbol":&symbol};
     if let Some(venue)=q.venue.as_deref(){filter.insert("last_event_venue",venue);}
     if let Ok(g)=s.memory.read(){
-        let state=if let Some(venue)=q.venue.as_deref(){g.get(&format!("{venue}|{symbol}"))}
+        let state=if let Some(venue)=q.venue.as_deref(){g.get(&venue_state_key(venue,&symbol))}
             else{g.values().filter(|value|value.symbol==symbol).max_by_key(|value|value.last_event_ts_ms.unwrap_or(0))};
         if let Some(value)=state{return(StatusCode::OK,Json(serde_json::to_value(value).unwrap_or_default()));}
     }
@@ -3275,7 +3277,7 @@ async fn main(){
         .expect("read immutable market event log during recovery") {
         match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok() => {
-                let state = restored_memory.entry(format!("{}|{}",event.venue,event.symbol)).or_default();
+                let state = restored_memory.entry(venue_state_key(&event.venue,&event.symbol)).or_default();
                 apply(state, &event);
                 replayed_events += 1;
             }
@@ -3640,5 +3642,19 @@ mod vector_ingestion_tests {
 
         assert_eq!(state.open_interest, Some(1_100.0));
         assert!((state.open_interest_change - 0.1).abs() < 1e-12);
+    }
+}
+
+
+#[cfg(test)]
+mod venue_state_key_tests {
+    use super::venue_state_key;
+    #[test]
+    fn same_symbol_on_distinct_venues_has_independent_state_keys() {
+        assert_ne!(venue_state_key("binance_usdm","BTCUSDT"), venue_state_key("coinbase_advanced_trade","BTCUSDT"));
+    }
+    #[test]
+    fn venue_state_keys_normalize_case_and_whitespace() {
+        assert_eq!(venue_state_key(" BINANCE_USDM ","btcusdt"), "binance_usdm|BTCUSDT");
     }
 }
