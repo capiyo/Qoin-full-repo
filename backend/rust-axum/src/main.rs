@@ -35,6 +35,7 @@ mod broker_fanout;
 mod market_data_quality;
 mod market_data_backfill;
 mod market_data_health;
+mod v2_relationships;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -93,6 +94,7 @@ struct AppState {
     dataset_manifests: Collection<Document>,
     market_backfill_jobs: Collection<Document>,
     set_ledger_records: Collection<Document>,
+    relationship_ledger: Collection<Document>,
     states: Collection<Document>,
     decisions: Collection<Document>,
     strategies: Collection<Document>,
@@ -3273,6 +3275,7 @@ async fn main(){
     let dataset_manifests:Collection<Document>=db.collection("market_dataset_manifests");
     let market_backfill_jobs:Collection<Document>=db.collection("market_backfill_jobs");
     let set_ledger_records:Collection<Document>=db.collection("set_relation_ledger");
+    let relationship_ledger:Collection<Document>=db.collection("relationship_ledger_events");
     let states:Collection<Document>=db.collection("market_states");
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
@@ -3330,6 +3333,11 @@ async fn main(){
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"ts_ms":1,"event_id":1,"venue":1}).build(),None).await.expect("V2 ledger backfill keyset index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"event_time_ms":-1,"record_type":1}).build(),None).await.expect("durable V2 ledger symbol/time index");
     set_ledger_records.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"record_type":1,"relation_id":1}).build(),None).await.expect("durable V2 relation lookup index");
+    relationship_ledger.create_index(mongodb::IndexModel::builder().keys(doc!{"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("V2 relationship ledger event idempotency index");
+    relationship_ledger.create_index(mongodb::IndexModel::builder().keys(doc!{"recorded_at_ms":-1,"event_id":1}).build(),None).await
+        .expect("V2 relationship ledger chronological lookup index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"received_at_ms":-1})
@@ -3393,7 +3401,7 @@ async fn main(){
         .expect("configure a valid Firebase project ID for authenticated trading routes");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,states,decisions,strategies,orders,trading_controls,
+        stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,relationship_ledger,states,decisions,strategies,orders,trading_controls,
         users, algorithm_selections, broker_connections, broker_credentials, broker_accounts, credential_cipher,
         broker_registry: broker_contract::BrokerRegistry::default(),
         firebase_verifier,
@@ -3425,6 +3433,8 @@ async fn main(){
         .route("/internal/set-ledger/backfill",post(backfill_set_ledger))
          .route("/internal/set-ledger/corrections",get(list_set_ledger_corrections).post(propose_set_ledger_correction))
         .route("/internal/set-ledger/integrity",get(audit_set_ledger))
+        .route("/internal/v2/relationships",get(v2_relationships::list_relationship_events).post(v2_relationships::append_relationship_event))
+        .route("/internal/v2/relationships/discover",post(v2_relationships::discover_relationships))
         .route("/internal/datasets",get(list_dataset_manifests).post(create_dataset_manifest))
         .route("/internal/market-data/providers/health",get(get_market_provider_health))
         .route("/internal/market-data/backfill/binance-usdm",post(backfill_binance_usdm_aggregate_trades))
