@@ -294,6 +294,59 @@ export function getQoinBrokerConfiguration(): Promise<QoinBrokerEnvironment> {
   return authenticatedQoinRequest("/api/v1/brokers/configuration");
 }
 
+export type QoinStoredNotification = {
+  id: string;
+  symbol: string;
+  title: string;
+  body: string;
+  kind: "signal" | "liquidation";
+  createdAt: number;
+  read: boolean;
+  details: string;
+};
+export type QoinNotificationPreferences = {
+  market_alerts: boolean;
+  security_alerts: boolean;
+  system_alerts: boolean;
+};
+export type QoinClientNotificationInput = {
+  event_id: string;
+  symbol: string;
+  title: string;
+  body: string;
+  kind: "signal" | "liquidation";
+  details: string;
+};
+
+export async function getQoinNotifications(): Promise<{ notifications: QoinStoredNotification[] }> {
+  const result = await authenticatedQoinRequest<{ notifications: Array<Record<string, unknown>> }>("/api/v1/notifications");
+  return { notifications: result.notifications.map((item) => ({
+    id: String(item.id ?? ""),
+    symbol: String(item.symbol ?? ""),
+    title: String(item.title ?? ""),
+    body: String(item.body ?? ""),
+    kind: item.notification_type === "liquidation" ? "liquidation" : "signal",
+    createdAt: Date.parse(String(item.created_at ?? "")) || Date.now(),
+    read: Boolean(item.is_read),
+    details: String(item.details ?? JSON.stringify(item.data ?? {})),
+  })) };
+}
+export function recordQoinNotification(input: QoinClientNotificationInput): Promise<{ success: boolean; id: string; event_id: string }> {
+  return authenticatedQoinRequest("/api/v1/notifications/record", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+}
+export function markQoinNotificationsRead(notificationIds?: string[]): Promise<{ success: boolean; modified_count: number }> {
+  return authenticatedQoinRequest("/api/v1/notifications/mark-read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ notification_ids: notificationIds }) });
+}
+export function getQoinNotificationPreferences(): Promise<QoinNotificationPreferences> {
+  return authenticatedQoinRequest("/api/v1/notifications/preferences");
+}
+export function updateQoinNotificationPreferences(preferences: QoinNotificationPreferences): Promise<{ success: boolean }> {
+  return authenticatedQoinRequest("/api/v1/notifications/preferences", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(preferences) });
+}
+export function registerQoinPushToken(fcmToken: string, platform: "web" | "android" | "ios"): Promise<{ success: boolean }> {
+  return authenticatedQoinRequest("/api/v1/notifications/register-token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fcm_token: fcmToken, platform }) });
+}
+
 /** Returns the backend user record associated with the verified Firebase UID. */
 export function getQoinMe(): Promise<{ uid: string; status: string; created_at?: string | null }> {
   return authenticatedQoinRequest("/api/v1/me");
