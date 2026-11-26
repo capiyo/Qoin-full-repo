@@ -96,6 +96,7 @@ struct AppState {
     decisions: Collection<Document>,
     strategies: Collection<Document>,
     orders: Collection<Document>,
+    order_lifecycle_events: Collection<Document>,
     trading_controls: Collection<Document>,
     paper_sessions: Collection<Document>,
     paper_session_decisions: Collection<Document>,
@@ -822,6 +823,34 @@ async fn get_broker_accounts(State(s): State<AppState>, headers: HeaderMap) -> i
     (StatusCode::OK, Json(serde_json::json!({"items":items})))
 }
 
+async fn append_order_lifecycle_event(
+    s: &AppState,
+    owner_uid: &str,
+    client_order_id: &str,
+    state: &str,
+    broker_id: &str,
+    account_id: &str,
+    metadata: Document,
+) -> Result<(), String> {
+    if owner_uid.trim().is_empty() || client_order_id.trim().is_empty() || state.trim().is_empty() {
+        return Err("order lifecycle event identity is incomplete".into());
+    }
+    let mut document = doc!{
+        "event_id":mongodb::bson::oid::ObjectId::new(),
+        "owner_uid":owner_uid,
+        "client_order_id":client_order_id,
+        "state":state,
+        "broker_id":broker_id,
+        "account_id":account_id,
+        "at":mongodb::bson::DateTime::now(),
+        "schema_version":1_i32
+    };
+    for (key, value) in metadata { document.insert(key, value); }
+    s.order_lifecycle_events.insert_one(document, None).await
+        .map_err(|_| "durable order lifecycle event could not be persisted".to_string())?;
+    Ok(())
+}
+
 async fn submit_live_order(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -884,7 +913,7 @@ async fn submit_live_order(
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
         Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error":error.to_string(),"broker_id":broker_id,"dispatch_started":false
+            "error":"broker submission outcome is unknown","broker_id":broker_id,"dispatch_started":false
         }))),
     };
     if !adapter.broker_id().eq_ignore_ascii_case(&broker_id) {
@@ -923,6 +952,23 @@ async fn submit_live_order(
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"durable order ledger unavailable; no order submitted"})));
         }
     }
+    if let Err(error) = append_order_lifecycle_event(
+        &s, &owner_uid, &submission.order.client_order_id, "pending_submission",
+        &broker_id, &submission.order.account_id, Document::new(),
+    ).await {
+        tracing::error!(error=%error, client_order_id=%submission.order.client_order_id,
+            "order lifecycle reservation event failed; dispatch suppressed");
+        let _ = s.orders.update_one(
+            doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
+            doc!{"$set":{"status":"reconciliation_required","updated_at":mongodb::bson::DateTime::now()}},
+            None
+        ).await;
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"order lifecycle ledger unavailable; no broker request was sent",
+            "client_order_id":submission.order.client_order_id,
+            "dispatch_started":false
+        })));
+    }
     let result = broker_contract::submit_risk_checked(
         adapter.as_ref(),
         &owner_uid,
@@ -932,6 +978,24 @@ async fn submit_live_order(
     ).await;
     match result {
         Ok(receipt) => {
+            if let Err(error) = append_order_lifecycle_event(
+                &s, &owner_uid, &submission.order.client_order_id, "accepted",
+                &broker_id, &submission.order.account_id,
+                doc!{"broker_order_id":&receipt.broker_receipt.broker_order_id,"broker_status":&receipt.broker_receipt.status},
+            ).await {
+                tracing::error!(error=%error, client_order_id=%submission.order.client_order_id,
+                    "broker acknowledgement received but immutable lifecycle event failed");
+                let _ = s.orders.update_one(
+                    doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
+                    doc!{"$set":{"status":"reconciliation_required","updated_at":mongodb::bson::DateTime::now()}},
+                    None
+                ).await;
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"broker acknowledgement received but lifecycle persistence failed; reconcile before retrying",
+                    "client_order_id":submission.order.client_order_id,
+                    "reconciliation_required":true
+                })));
+            }
             let stored = mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null);
             if let Err(error) = s.orders.update_one(
                 doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
@@ -947,10 +1011,15 @@ async fn submit_live_order(
             }
             (StatusCode::OK, Json(serde_json::to_value(receipt).unwrap_or_default()))
         }
-        Err(error) => {
+        Err(_error) => {
+            let _ = append_order_lifecycle_event(
+                &s, &owner_uid, &submission.order.client_order_id, "reconciliation_required",
+                &broker_id, &submission.order.account_id,
+                doc!{"reason_code":"broker_submission_outcome_unknown"},
+            ).await;
             if let Err(ledger_error) = s.orders.update_one(
                 doc!{"client_order_id":&submission.order.client_order_id,"owner_uid":&owner_uid},
-                doc!{"$set":{"status":"reconciliation_required","execution_error":error.to_string(),"updated_at":mongodb::bson::DateTime::now()}},
+                doc!{"$set":{"status":"reconciliation_required","execution_error":"broker_submission_outcome_unknown","updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
                 tracing::error!(error=%ledger_error, client_order_id=%submission.order.client_order_id,
@@ -2959,6 +3028,7 @@ async fn main(){
     let decisions:Collection<Document>=db.collection("trade_decisions");
     let strategies:Collection<Document>=db.collection("edge_strategy");
     let orders:Collection<Document>=db.collection("live_orders");
+    let order_lifecycle_events:Collection<Document>=db.collection("order_lifecycle_events");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let paper_sessions:Collection<Document>=db.collection("paper_sessions_v2");
     let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions_v2");
@@ -3002,6 +3072,13 @@ async fn main(){
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("durable live order idempotency index");
+    order_lifecycle_events.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"client_order_id":1,"event_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("immutable owner-scoped order lifecycle event identity index");
+    order_lifecycle_events.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"client_order_id":1,"at":1}).build(),None).await
+        .expect("owner-scoped order lifecycle timeline index");
     orders.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("owner-scoped order history index");
@@ -3093,7 +3170,7 @@ async fn main(){
         .expect("configure a valid Firebase project ID for authenticated trading routes");
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
-        stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,trading_controls,
+        stream, database: db.clone(), events,set_ledger_records,states,decisions,strategies,orders,order_lifecycle_events,trading_controls,
         users, broker_accounts, broker_connections, broker_connection_audit, credential_vault,
         paper_sessions, paper_session_decisions, paper_session_trades,
         active_paper_sessions: Arc::new(Mutex::new(persisted_paper_sessions)),
