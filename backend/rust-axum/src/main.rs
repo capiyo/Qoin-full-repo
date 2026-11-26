@@ -978,10 +978,34 @@ async fn submit_live_order(
     ).await;
     match result {
         Ok(receipt) => {
+            let mut lifecycle = match execution_lifecycle::OrderLifecycle::new(
+                submission.order.client_order_id.clone(),
+                submission.order.quantity,
+            ) {
+                Ok(value) => value,
+                Err(_) => {
+                    tracing::error!(client_order_id=%submission.order.client_order_id,
+                        "broker acknowledged an order that failed local lifecycle initialization");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                        "error":"broker acknowledgement requires reconciliation because local lifecycle validation failed",
+                        "client_order_id":submission.order.client_order_id,
+                        "reconciliation_required":true
+                    })));
+                }
+            };
+            if lifecycle.apply(execution_lifecycle::BrokerEvent::Accepted {
+                broker_order_id: receipt.broker_receipt.broker_order_id.clone(),
+            }).is_err() {
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"broker acknowledgement failed local lifecycle validation; reconcile before retrying",
+                    "client_order_id":submission.order.client_order_id,
+                    "reconciliation_required":true
+                })));
+            }
             if let Err(error) = append_order_lifecycle_event(
                 &s, &owner_uid, &submission.order.client_order_id, "accepted",
                 &broker_id, &submission.order.account_id,
-                doc!{"broker_order_id":&receipt.broker_receipt.broker_order_id,"broker_status":&receipt.broker_receipt.status},
+                doc!{"broker_order_id":&receipt.broker_receipt.broker_order_id,"broker_status":&receipt.broker_receipt.status,"lifecycle_status":"accepted"},
             ).await {
                 tracing::error!(error=%error, client_order_id=%submission.order.client_order_id,
                     "broker acknowledgement received but immutable lifecycle event failed");
