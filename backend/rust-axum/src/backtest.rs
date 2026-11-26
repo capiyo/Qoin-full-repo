@@ -500,9 +500,9 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         (Some(mean), Some(volatility)) => Some(mean / volatility * 365.25_f64.sqrt()).filter(|value| value.is_finite()),
         _ => None,
     };
-    let downside_deviation = if observed_days > 0.0 {
+    let downside_deviation = (if observed_days > 0.0 {
         Some((daily_returns.iter().map(|(value, days)| value.min(0.0).powi(2) * days).sum::<f64>() / observed_days).sqrt())
-    } else { None }.filter(|value| value.is_finite() && *value > 0.0);
+    } else { None }).filter(|value| value.is_finite() && *value > 0.0);
     let sortino_ratio = match (mean_daily_return, downside_deviation) {
         (Some(mean), Some(downside)) => Some(mean / downside * 365.25_f64.sqrt()).filter(|value| value.is_finite()),
         _ => None,
