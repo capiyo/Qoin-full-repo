@@ -6,7 +6,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -687,7 +687,19 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
   const previousActionRef = useRef<Record<string, string>>({});
   const notifiedEventIdsRef = useRef<Set<string>>(new Set());
   const unreadNotifications = notifications.filter((item) => !item.read).length;
-  const addNotification = (notification: QoinNotification) => setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
+  const addNotification = (notification: QoinNotification) => {
+    setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
+    void recordQoinNotification({ event_id: notification.id, symbol: notification.symbol, title: notification.title, body: notification.body, kind: notification.kind, details: notification.details })
+      .then((stored) => setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, id: stored.id } : item)))
+      .catch(() => { /* Keep the local live alert available during API outages. */ });
+  };
+  useEffect(() => {
+    if (!firebaseUser) { setNotifications([]); return; }
+    let active = true;
+    void getQoinNotifications().then((result) => { if (active) setNotifications(result.notifications); })
+      .catch(() => { /* Keep local stream notifications available if history is offline. */ });
+    return () => { active = false; };
+  }, [firebaseUser?.uid]);
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const decisionStrategy = strategy;
   const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
@@ -1066,8 +1078,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       </Modal>
       <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
         <View style={styles.modalShade}><View style={styles.notificationModal}>
-          <View style={styles.modalHeader}><View><Text style={styles.kicker}>LIVE ENGINE EVENTS</Text><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.assetMeta}>{unreadNotifications} unread · current session</Text></View><Pressable onPress={() => setNotificationsOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
-          <View style={styles.notificationActions}><Pressable onPress={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}><Text style={styles.notificationActionText}>Mark all read</Text></Pressable><Pressable onPress={() => setNotifications([])}><Text style={styles.notificationActionText}>Clear history</Text></Pressable></View>
+          <View style={styles.modalHeader}><View><Text style={styles.kicker}>LIVE ENGINE EVENTS</Text><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.assetMeta}>{unreadNotifications} unread · saved history</Text></View><Pressable onPress={() => setNotificationsOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable></View>
+          <View style={styles.notificationActions}><Pressable onPress={() => { const unread = notifications.filter((item) => !item.read); const persisted = unread.every((item) => /^[a-f0-9]{24}$/i.test(item.id)); void markQoinNotificationsRead(persisted ? unread.map((item) => item.id) : undefined).catch(() => {}); setNotifications((current) => current.map((item) => ({ ...item, read: true }))); }}><Text style={styles.notificationActionText}>Mark all read</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.notificationContent}>{notifications.length ? notifications.map((item) => <View key={item.id} style={[styles.notificationItem, item.read && styles.notificationRead]}><Text style={styles.notificationMeta}>{item.kind.toUpperCase()} · {item.symbol} · {new Date(item.createdAt).toLocaleTimeString()}</Text><Text style={styles.notificationTitle}>{item.title}</Text><Text style={styles.notificationBody}>{item.body}</Text><Text style={styles.notificationPayload}>{item.details}</Text></View>) : <Text style={styles.noteCopy}>No alerts yet. Signal transitions and liquidation events from the live stream will appear here.</Text>}</ScrollView>
         </View></View>
       </Modal>
