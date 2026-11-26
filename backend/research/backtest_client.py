@@ -6,6 +6,7 @@ and paper execution assumptions.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 from urllib.parse import urlencode
@@ -74,7 +75,7 @@ def run_rust_backtest(
     )
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
-            result = __import__("json").loads(response.read().decode("utf-8"))
+            result = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         raise RuntimeError(f"Rust backtest endpoint returned HTTP {error.code}") from None
     except (URLError, TimeoutError, OSError):
