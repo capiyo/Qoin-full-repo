@@ -220,7 +220,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
     let mut net_funding_cashflow=0.0; let mut funding_settlements=0usize; let mut market_impact_paid=0.0;
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
-    let mut daily_equity: Vec<f64> = Vec::new();
+    let mut daily_equity: Vec<(i64, f64)> = Vec::new();
     let mut last_equity_day: Option<i64> = None;
     let mut max_gross_exposure_pct: f64 = 0.0;
     let mut first_mark_price: Option<f64> = None;
@@ -419,16 +419,14 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
                 let day = event.ts_ms.div_euclid(86_400_000);
                 match last_equity_day {
                     None => {
-                        daily_equity.push(equity);
+                        daily_equity.push((day, equity));
                         last_equity_day = Some(day);
                     }
                     Some(previous_day) if day == previous_day => {
-                        if let Some(last) = daily_equity.last_mut() { *last = equity; }
+                        if let Some(last) = daily_equity.last_mut() { last.1 = equity; }
                     }
                     Some(previous_day) if day > previous_day => {
-                        let previous_equity = daily_equity.last().copied().unwrap_or(equity);
-                        for _ in (previous_day + 1)..day { daily_equity.push(previous_equity); }
-                        daily_equity.push(equity);
+                        daily_equity.push((day, equity));
                         last_equity_day = Some(day);
                     }
                     _ => {}
@@ -472,30 +470,35 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let elapsed_ms = events.last().unwrap().ts_ms.saturating_sub(events.first().unwrap().ts_ms);
     let elapsed_years = elapsed_ms as f64 / (365.25 * 86_400_000.0);
     let annualized_return_pct = if elapsed_years > 0.0 && final_equity > 0.0 {
-        Some(((final_equity / initial_capital).powf(1.0 / elapsed_years) - 1.0) * 100.0)
+        Some(((final_equity / initial_capital).powf(1.0 / elapsed_years) - 1.0) * 100.0).filter(|value| value.is_finite())
     } else { None };
-    let daily_returns: Vec<f64> = daily_equity.windows(2)
-        .filter_map(|pair| (pair[0] > 0.0).then_some(pair[1] / pair[0] - 1.0))
-        .filter(|value| value.is_finite())
+    let daily_returns: Vec<(f64, f64)> = daily_equity.windows(2)
+        .filter_map(|pair| {
+            if pair[0].1 <= 0.0 || pair[1].1 <= 0.0 { return None; }
+            let days = (pair[1].0 - pair[0].0).max(1) as f64;
+            let dailyized = (pair[1].1 / pair[0].1).powf(1.0 / days) - 1.0;
+            dailyized.is_finite().then_some((dailyized, days))
+        })
         .collect();
-    let mean_daily_return = if daily_returns.is_empty() { None } else {
-        Some(daily_returns.iter().sum::<f64>() / daily_returns.len() as f64)
-    };
-    let daily_variance = if daily_returns.len() >= 2 {
+    let observed_days = daily_returns.iter().map(|(_, days)| *days).sum::<f64>();
+    let mean_daily_return = if observed_days > 0.0 {
+        Some(daily_returns.iter().map(|(value, days)| value * days).sum::<f64>() / observed_days)
+    } else { None };
+    let daily_variance = if daily_returns.len() >= 2 && observed_days > 0.0 {
         let mean = mean_daily_return.unwrap_or(0.0);
-        Some(daily_returns.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / (daily_returns.len() - 1) as f64)
+        Some(daily_returns.iter().map(|(value, days)| (value - mean).powi(2) * days).sum::<f64>() / observed_days)
     } else { None };
     let daily_volatility = daily_variance.map(f64::sqrt).filter(|value| value.is_finite() && *value > 0.0);
-    let volatility_pct = daily_volatility.map(|value| value * 365.25_f64.sqrt() * 100.0);
+    let volatility_pct = daily_volatility.map(|value| value * 365.25_f64.sqrt() * 100.0).filter(|value| value.is_finite());
     let sharpe_ratio = match (mean_daily_return, daily_volatility) {
-        (Some(mean), Some(volatility)) => Some(mean / volatility * 365.25_f64.sqrt()),
+        (Some(mean), Some(volatility)) => Some(mean / volatility * 365.25_f64.sqrt()).filter(|value| value.is_finite()),
         _ => None,
     };
-    let downside_deviation = if daily_returns.is_empty() { None } else {
-        Some((daily_returns.iter().map(|value| value.min(0.0).powi(2)).sum::<f64>() / daily_returns.len() as f64).sqrt())
-    }.filter(|value| value.is_finite() && *value > 0.0);
+    let downside_deviation = if observed_days > 0.0 {
+        Some((daily_returns.iter().map(|(value, days)| value.min(0.0).powi(2) * days).sum::<f64>() / observed_days).sqrt())
+    } else { None }.filter(|value| value.is_finite() && *value > 0.0);
     let sortino_ratio = match (mean_daily_return, downside_deviation) {
-        (Some(mean), Some(downside)) => Some(mean / downside * 365.25_f64.sqrt()),
+        (Some(mean), Some(downside)) => Some(mean / downside * 365.25_f64.sqrt()).filter(|value| value.is_finite()),
         _ => None,
     };
     let calmar_ratio = match (annualized_return_pct, max_dd > 0.0) {
@@ -515,7 +518,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let win_rate_pct = (completed_trades > 0).then_some(
         completed.iter().filter(|pnl| **pnl > 0.0).count() as f64 / completed_trades as f64 * 100.0
     );
-    let profit_factor = (gross_loss > 0.0).then_some(gross_profit / gross_loss);
+    let profit_factor = (gross_loss > 0.0).then_some(gross_profit / gross_loss).filter(|value| value.is_finite());
     let buy_and_hold_return_pct = first_mark_price.filter(|price| *price > 0.0)
         .map(|first| (final_mark / first - 1.0) * 100.0)
         .filter(|value| value.is_finite());
