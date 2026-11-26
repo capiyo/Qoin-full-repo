@@ -29,6 +29,8 @@ mod broker_adapter_skeleton;
 mod broker_catalogue;
 mod firebase_identity;
 mod broker_account_store;
+mod broker_env;
+mod broker_env_api;
 mod broker_allocation;
 mod broker_allocation_policy;
 mod broker_fanout;
@@ -107,6 +109,7 @@ struct AppState {
     broker_accounts: Collection<Document>,
     credential_cipher: Option<Arc<broker_account_store::CredentialCipher>>,
     broker_registry: broker_contract::BrokerRegistry,
+    broker_environment: Arc<broker_env::BrokerEnvironment>,
     firebase_verifier: Option<firebase_identity::FirebaseIdentityVerifier>,
     memory: Arc<RwLock<HashMap<String, SymbolState>>>,
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
@@ -3294,6 +3297,8 @@ async fn main(){
     )
     .unwrap_or_else(|error| panic!("{error}"))
     .map(Arc::new);
+    let broker_environment = Arc::new(broker_env::BrokerEnvironment::from_env()
+        .expect("QOIN_BROKER_* environment configuration must be valid"));
     algorithm_selections.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"symbol":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("one algorithm selection per user and instrument");
@@ -3404,6 +3409,7 @@ async fn main(){
         stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,relationship_ledger,states,decisions,strategies,orders,trading_controls,
         users, algorithm_selections, broker_connections, broker_credentials, broker_accounts, credential_cipher,
         broker_registry: broker_contract::BrokerRegistry::default(),
+        broker_environment,
         firebase_verifier,
         memory:Arc::new(RwLock::new(restored_memory)),
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
@@ -3421,7 +3427,9 @@ async fn main(){
         .route("/internal/broker-connections",get(get_broker_connections).post(create_broker_connection))
         .route("/internal/broker-connections/:connection_id",delete(delete_broker_connection))
         .route("/internal/broker-accounts",get(get_broker_accounts))
-        .route("/internal/trading/readiness",get(get_broker_readiness))
+        .route("/internal/trading/readiness",get(broker_env_api::get_broker_readiness))
+        .route("/internal/brokers/configuration",get(broker_env_api::get_broker_configuration))
+        .route("/internal/admin/broker-accounts",post(broker_env_api::provision_broker_account))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
         .route("/internal/trading/kill-switch",post(set_trading_enabled))
