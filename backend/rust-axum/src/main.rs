@@ -1100,6 +1100,19 @@ async fn reconcile_live_order(
         adapter.as_ref(), &owner_uid, &submission.order.account_id, &client_order_id
     ).await {
         Ok(Some(receipt)) => {
+            if let Err(error) = append_order_lifecycle_event(
+                &s, &owner_uid, &client_order_id, "reconciled",
+                stored_broker_id, stored_account_id,
+                doc!{"broker_order_id":&receipt.broker_order_id,"broker_status":&receipt.status},
+            ).await {
+                tracing::error!(error=%error, client_order_id=%client_order_id,
+                    "broker reconciliation succeeded but lifecycle event persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "error":"broker reconciliation succeeded but lifecycle persistence failed",
+                    "client_order_id":client_order_id,
+                    "reconciliation_required":true
+                })));
+            }
             if let Err(error) = s.orders.update_one(
                 doc!{"client_order_id":&client_order_id,"owner_uid":&owner_uid},
                 doc!{"$set":{"status":"reconciled","broker_receipt":mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null),
@@ -1111,13 +1124,27 @@ async fn reconcile_live_order(
             }
             (StatusCode::OK, Json(serde_json::to_value(receipt).unwrap_or_default()))
         }
-        Ok(None) => (StatusCode::CONFLICT, Json(serde_json::json!({
-            "status":"not_found_authoritative","client_order_id":client_order_id,
-            "message":"The adapter confirmed a complete client-order-ID search; do not automatically resubmit."
-        }))),
-        Err(error) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error":error.to_string(),"client_order_id":client_order_id,"reconciliation_required":true
-        })))
+        Ok(None) => {
+            let _ = append_order_lifecycle_event(
+                &s, &owner_uid, &client_order_id, "not_found_authoritative",
+                stored_broker_id, stored_account_id,
+                doc!{"reason_code":"complete_client_id_search_returned_no_order"},
+            ).await;
+            (StatusCode::CONFLICT, Json(serde_json::json!({
+                "status":"not_found_authoritative","client_order_id":client_order_id,
+                "message":"The adapter confirmed a complete client-order-ID search; do not automatically resubmit."
+            })))
+        },
+        Err(_error) => {
+            let _ = append_order_lifecycle_event(
+                &s, &owner_uid, &client_order_id, "reconciliation_failed",
+                stored_broker_id, stored_account_id,
+                doc!{"reason_code":"broker_reconciliation_unavailable"},
+            ).await;
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error":"broker reconciliation is unavailable","client_order_id":client_order_id,"reconciliation_required":true
+            })))
+        }
     }
 }
 
