@@ -30,7 +30,8 @@
         "book",
         "funding",
         "open_interest",
-        "liquidation"
+        "liquidation",
+        "basis"
       ]
     },
     "ts_ms": {
@@ -114,6 +115,19 @@
         "short",
         null
       ]
+    },
+    "basis": {
+      "type": "number",
+      "description": "Optional normalized spot-perpetual basis observation"
+    },
+    "asset_class": {
+      "type": "string",
+      "enum": [
+        "forex",
+        "crypto",
+        "stock"
+      ],
+      "description": "Optional normalized asset class; recommended to avoid cross-class symbol collisions"
     }
   }
 }
