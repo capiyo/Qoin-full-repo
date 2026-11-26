@@ -51,6 +51,8 @@ pub struct BinanceAggregateTrade {
 pub struct ParsedAggregateTradePage {
     pub trades: Vec<BinanceAggregateTrade>,
     pub rows_seen: usize,
+    pub first_aggregate_trade_id: Option<u64>,
+    pub first_ts_ms: Option<i64>,
     pub last_aggregate_trade_id: Option<u64>,
     pub last_ts_ms: Option<i64>,
     pub next_from_id: Option<u64>,
@@ -149,6 +151,8 @@ pub fn parse_aggregate_trade_page(
     let mut trades = Vec::with_capacity(rows.len());
     let mut previous_id: Option<u64> = None;
     let mut previous_ts: Option<i64> = None;
+    let mut first_aggregate_trade_id = None;
+    let mut first_ts_ms = None;
     let mut last_aggregate_trade_id = None;
     let mut last_ts_ms = None;
     let mut beyond_range = false;
@@ -169,6 +173,8 @@ pub fn parse_aggregate_trade_page(
         }
         previous_id = Some(id);
         previous_ts = Some(ts_ms);
+        first_aggregate_trade_id.get_or_insert(id);
+        first_ts_ms.get_or_insert(ts_ms);
         last_aggregate_trade_id = Some(id);
         last_ts_ms = Some(ts_ms);
 
@@ -218,11 +224,35 @@ pub fn parse_aggregate_trade_page(
     Ok(ParsedAggregateTradePage {
         trades,
         rows_seen: rows.len(),
+        first_aggregate_trade_id,
+        first_ts_ms,
         last_aggregate_trade_id,
         last_ts_ms,
         next_from_id,
         has_more,
     })
+}
+
+/// Validate continuity against the persisted cursor from the preceding page.
+/// Provider IDs must not move backwards and event time must remain monotonic
+/// across page boundaries; otherwise a repeated or reordered response could
+/// be checkpointed as progress and silently corrupt a resumable import.
+pub fn validate_page_continuation(
+    page: &ParsedAggregateTradePage,
+    expected_from_id: Option<u64>,
+    previous_ts_ms: Option<i64>,
+) -> Result<(), String> {
+    if let (Some(expected), Some(first)) = (expected_from_id, page.first_aggregate_trade_id) {
+        if first < expected {
+            return Err("aggregate-trade page begins before the persisted fromId cursor".into());
+        }
+    }
+    if let (Some(previous), Some(first)) = (previous_ts_ms, page.first_ts_ms) {
+        if first < previous {
+            return Err("aggregate-trade timestamps moved backwards across pages".into());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -280,6 +310,8 @@ mod tests {
             1_700_000_000_000,
             2,
         ).unwrap();
+        assert_eq!(page.first_aggregate_trade_id, Some(10));
+        assert_eq!(page.first_ts_ms, Some(1_700_000_000_000));
         assert_eq!(page.trades[0].event_id, "agg_trade:10");
         assert_eq!(page.trades[0].side, "sell");
         assert_eq!(page.trades[1].side, "buy");
@@ -314,6 +346,42 @@ mod tests {
         assert_eq!(page.trades.len(), 1);
         assert!(!page.has_more);
         assert_eq!(page.next_from_id, None);
+    }
+
+
+    #[test]
+    fn continuation_rejects_replayed_ids_and_backwards_timestamps() {
+        let replayed = parse_aggregate_trade_page(
+            "BTCUSDT",
+            &[row(10, 1_700_000_000_000, "100", "1", false),
+              row(11, 1_700_000_000_001, "101", "1", true)],
+            1_700_000_000_000,
+            1_700_000_100_000,
+            2,
+        ).unwrap();
+        assert!(validate_page_continuation(&replayed, Some(12), Some(1_700_000_000_001)).is_err());
+
+        let time_reversed = parse_aggregate_trade_page(
+            "BTCUSDT",
+            &[row(12, 1_700_000_000_000, "102", "1", false)],
+            1_700_000_000_000,
+            1_700_000_100_000,
+            2,
+        ).unwrap();
+        assert!(validate_page_continuation(&time_reversed, Some(12), Some(1_700_000_000_001)).is_err());
+    }
+
+    #[test]
+    fn continuation_accepts_forward_ids_and_equal_timestamps() {
+        let next = parse_aggregate_trade_page(
+            "BTCUSDT",
+            &[row(13, 1_700_000_000_001, "102", "1", false),
+              row(14, 1_700_000_000_001, "103", "1", true)],
+            1_700_000_000_000,
+            1_700_000_100_000,
+            2,
+        ).unwrap();
+        assert!(validate_page_continuation(&next, Some(12), Some(1_700_000_000_001)).is_ok());
     }
 
     #[test]

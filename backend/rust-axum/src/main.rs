@@ -1565,6 +1565,18 @@ async fn backfill_binance_usdm_aggregate_trades(
                 })));
             }
         };
+        if let Err(message) = market_data_backfill::validate_page_continuation(
+            &page,next_from_id,last_ts_ms
+        ) {
+            release_market_backfill_lease(&s.market_backfill_jobs,&job_id,&lease_owner,"paused",Some(&message)).await;
+            tracing::error!(job_id=%job_id,symbol=%request.symbol,error=%message,
+                "Binance aggregate-trade page violated the persisted cross-page cursor");
+            return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error":"Binance historical page did not continue from the persisted cursor",
+                "job_id":job_id,
+                "resumable":true
+            })));
+        }
         if events_seen.saturating_add(page.trades.len() as i64)
             > market_data_backfill::MAX_EVENTS_PER_JOB
         {
