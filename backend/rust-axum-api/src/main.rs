@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     routing::{get, post},
     Json, Router,
@@ -57,7 +57,8 @@ async fn main() {
     // Validate configuration before opening the HTTP listener.
     qoin_vector_engine::decide(
         ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
-            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0 },
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
+            spread_bps: None, spread_age_ms: None },
         &config, &config_version, false,
     ).expect("Qoin engine configuration must be valid");
     let state = Arc::new(AppState { config, config_version });
@@ -73,14 +74,44 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/signal", post(signal))
+        .layer(DefaultBodyLimit::max(65_536))
         .layer(cors)
         .with_state(state);
 
     // Loopback binding keeps this research API local by default.
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let research_port = std::env::var("QOIN_RESEARCH_API_PORT")
+        .ok()
+        .map(|value| value.parse::<u16>().expect("QOIN_RESEARCH_API_PORT must be a valid port"))
+        .unwrap_or(8082);
+    let addr = SocketAddr::from(([127, 0, 0, 1], research_port));
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind API listener");
     tracing::info!(%addr, "Qoin research API listening; live trading is disabled");
-    axum::serve(listener, app).await.expect("serve API");
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await.expect("serve API");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install research API Ctrl-C handler");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => { signal.recv().await; }
+            Err(error) => {
+                tracing::error!(%error, "failed to install research API SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("research API graceful shutdown requested"),
+        _ = terminate => tracing::info!("research API graceful shutdown requested"),
+    }
 }
 
 async fn health() -> Json<Health> {
