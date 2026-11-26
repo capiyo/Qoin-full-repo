@@ -444,6 +444,21 @@ mod tests {
     }
 
     #[test]
+    fn paused_session_preserves_open_positions_for_same_cycle_resume() {
+        let mut session = PaperSession::start("cycle-resume".into(), &[config()]).unwrap();
+        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
+        assert!(session.has_unsettled_state());
+        session.stop();
+        assert!(!session.is_active());
+        assert_eq!(session.cycle_id(), Some("cycle-resume"));
+        session.resume();
+        assert!(session.is_active());
+        assert!(session.snapshot().accounts[0].has_open_position);
+        session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
+        assert!(!session.has_unsettled_state());
+    }
+
+    #[test]
     fn rejects_duplicate_and_overallocated_accounts() {
         assert!(PaperSession::start("cycle".into(), &[config(), config()]).is_err());
         let mut invalid = config(); invalid.notional_per_trade = 20_001.0;
