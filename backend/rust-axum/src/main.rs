@@ -3345,6 +3345,10 @@ async fn main(){
     broker_accounts.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"connection_id":1}).build(),None).await
         .expect("broker account owner index");
+    broker_accounts.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"broker_id":1,"account_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("broker subaccount must map to only one Firebase user");
     trading_controls.update_one(doc!{"_id":"execution"},
         doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
             "updated_at":mongodb::bson::DateTime::now()}},
