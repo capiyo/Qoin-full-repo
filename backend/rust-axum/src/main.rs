@@ -526,6 +526,15 @@ async fn submit_live_order(
     headers: HeaderMap,
     Json(submission): Json<BrokerOrderSubmission>,
 ) -> impl IntoResponse {
+    // A signed-in user is not an execution operator. Require the independent
+    // server-held execution token in addition to Firebase identity and the
+    // persisted kill-switch state before any order intent can be reserved.
+    if !execution_token_authorized(&headers) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
+            "error":"operator execution authorization is required",
+            "dispatch_started":false
+        })));
+    }
     let owner_uid = match firebase_uid_from_headers(s.firebase_verifier.as_ref(), &headers).await {
         Ok(uid) => uid,
         Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required for order submission"}))),
