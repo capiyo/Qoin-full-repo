@@ -103,3 +103,14 @@ Do not mark the backend production-ready until all of these pass:
 The earlier candidate `843f99a...` passed Rust workspace, Axum/Drogon/Mongo integration and Drogon gateway workflows. The newer changes to dual risk gating, order lifecycle persistence, rate limiting, session resume and graceful shutdown are not yet covered by a completed CI run at the time of this audit. Current branch workflows for `0fe1913...` were queued. Do not promote these newest changes until those exact-head workflows finish successfully.
 
 The integration workflow now also sends enough write requests to verify the gateway returns HTTP 429 after the configured per-peer write threshold. This assertion is awaiting execution on the current head.
+
+## V1 mathematics and Python parity update
+
+- The Rust V1 seven-force algorithm was preserved; no coefficients, clipping, top-k selection, volatility damping, spread gate or BUY/SELL/CLOSE/WAIT rule was changed.
+- `Signal.attend` now exposes the existing row-softmax Attend matrix while retaining `attention` as a backward-compatible alias.
+- `Signal.pulse` exposes the existing signed pressure-blade decomposition as bullish and bearish magnitudes. Each feature trace now records Attend weights, positive/negative Pulse, and its signed pressure-blade contribution. The interaction term remains separately attributed and is included once in the net Pulse.
+- `docs/VECTOR_ENGINE_MATHEMATICS.md` records the actual equations, validated domains and relationship to the existing score. Tests assert Attend row consistency, unique feature provenance and Pulse/pressure-blade reconciliation.
+- Python `research.vector_model.evaluate_signal` is now a thin bridge to Axum `POST /v1/signal`; the independent Python decision calculation was removed. Python tests verify request mapping/delegation. Rust remains the only decision implementation.
+- OpenAPI now describes the Rust signal request/response and the explicit Attend/Pulse/pressure-blade diagnostics.
+
+Exact-head Rust and Python CI for these latest schema/diagnostic changes is pending.
