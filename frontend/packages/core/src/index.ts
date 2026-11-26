@@ -5,3 +5,5 @@ export * from "./mockData";
 export * from "./qoinApi";
 
 export * from "./firebaseAuth";
+
+export * from "./marketVector";
