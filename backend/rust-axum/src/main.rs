@@ -40,6 +40,7 @@ mod v2_relationships;
 mod v2_evaluation;
 mod paper_session;
 mod operating_cycle;
+mod notifications;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -105,6 +106,8 @@ struct AppState {
     orders: Collection<Document>,
     trading_controls: Collection<Document>,
     users: Collection<Document>,
+    notifications: Collection<Document>,
+    fcm_tokens: Collection<Document>,
     algorithm_selections: Collection<Document>,
     broker_accounts: Collection<Document>,
     broker_registry: broker_contract::BrokerRegistry,
@@ -3160,6 +3163,10 @@ async fn main(){
     algorithm_selections.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("algorithm selection owner index");
+    notifications.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("user notification history index");
+    fcm_tokens.create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM device token index");
+    fcm_tokens.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1}).build(),None).await.expect("user FCM device lookup index");
     broker_accounts.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"broker_id":1,"account_id":1}).build(),None).await
         .expect("broker account owner index");
@@ -3255,7 +3262,7 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,relationship_ledger,states,decisions,strategies,orders,trading_controls,
-        users, algorithm_selections, broker_accounts,
+        users, notifications, fcm_tokens, algorithm_selections, broker_accounts,
         broker_registry: broker_contract::BrokerRegistry::default(),
         broker_environment,
         firebase_verifier,
@@ -3274,6 +3281,12 @@ async fn main(){
         .route("/internal/broker-accounts",get(get_broker_accounts))
         .route("/internal/trading/readiness",get(broker_env_api::get_broker_readiness))
         .route("/internal/brokers/configuration",get(broker_env_api::get_broker_configuration))
+        .route("/internal/notifications",get(notifications::list))
+        .route("/internal/notifications/unread-summary",get(notifications::unread_summary))
+        .route("/internal/notifications/register-token",post(notifications::register_token))
+        .route("/internal/notifications/mark-read",post(notifications::mark_read))
+        .route("/internal/notifications/preferences",get(notifications::get_preferences).post(notifications::update_preferences))
+        .route("/internal/notifications/send",post(notifications::send_internal))
         .route("/internal/admin/broker-accounts",post(broker_env_api::provision_broker_account))
         .route("/internal/orders",post(submit_live_order))
         .route("/internal/orders/:client_order_id/reconcile",get(reconcile_live_order))
