@@ -42,6 +42,7 @@ mod paper_session;
 mod operating_cycle;
 mod notifications;
 mod market_vector;
+mod market_vector_api;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -3339,6 +3340,8 @@ async fn main(){
         .route("/internal/trading/readiness",get(broker_env_api::get_broker_readiness))
         .route("/internal/brokers/configuration",get(broker_env_api::get_broker_configuration))
         .route("/internal/notifications",get(notifications::list))
+        .route("/internal/market-vector",get(market_vector_api::get_latest))
+        .route("/internal/market-vector/history",get(market_vector_api::get_history))
         .route("/internal/notifications/unread-summary",get(notifications::unread_summary))
         .route("/internal/notifications/register-token",post(notifications::register_token))
         .route("/internal/notifications/record",post(notifications::record_client_event))
