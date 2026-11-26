@@ -41,6 +41,7 @@ mod v2_evaluation;
 mod paper_session;
 mod operating_cycle;
 mod notifications;
+mod market_vector;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
@@ -63,9 +64,9 @@ struct MarketEvent {
     #[serde(default)] open_interest: Option<f64>,
     #[serde(default)] liquidation_side: Option<String>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 fn venue_state_key(venue:&str,symbol:&str)->String { format!("{}|{}",venue.trim().to_ascii_lowercase(),symbol.trim().to_ascii_uppercase()) }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 struct SymbolState {
     symbol: String,
     event_count: usize,
@@ -109,6 +110,7 @@ struct AppState {
     trading_controls: Collection<Document>,
     users: Collection<Document>,
     notifications: Collection<Document>,
+    market_vectors: Collection<Document>,
     fcm_tokens: Collection<Document>,
     algorithm_selections: Collection<Document>,
     broker_accounts: Collection<Document>,
@@ -964,6 +966,15 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
         }
     };
+    let market_vector = market_vector::build_market_vector(&event, &snapshot, &signal, received_at_ms);
+    let market_vector_persisted = if let Some(vector) = market_vector.as_ref() {
+        let mut document = mongodb::bson::to_document(vector).unwrap_or_default();
+        document.insert("stored_at", mongodb::bson::DateTime::now());
+        match s.market_vectors.insert_one(document, None).await {
+            Ok(_) => true,
+            Err(error) => { tracing::error!(error=%error,vector_id=%vector.vector_id,"market vector persistence failed"); false }
+        }
+    } else { false };
     let decision = serde_json::json!({
         "symbol": snapshot.symbol,
         "input_event": {
@@ -1016,6 +1027,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     decision_doc.insert("symbol",&event.symbol);
     decision_doc.insert("venue",&event.venue);
     decision_doc.insert("strategy_key","qoin-vector-baseline");
+    if let Some(vector)=market_vector.as_ref(){decision_doc.insert("market_vector_id",&vector.vector_id);}
     decision_doc.insert("event_id",&event.event_id);
     let mut input_event=mongodb::bson::to_document(&event).unwrap_or_default();
     input_event.insert("event_ts_ms",event.ts_ms);
@@ -1026,9 +1038,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
-        "state":snapshot,"decision":decision,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+        "state":snapshot,"decision":decision,"market_vector":market_vector,"market_vector_persisted":market_vector_persisted,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
     let _=s.stream.send(update);
-    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision})))
+    (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"market_vector_persisted":market_vector_persisted})))
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
@@ -3188,6 +3200,7 @@ async fn main(){
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let users:Collection<Document>=db.collection("qoin_users");
     let notifications:Collection<Document>=db.collection("notifications");
+    let market_vectors:Collection<Document>=db.collection("market_vectors");
     let fcm_tokens:Collection<Document>=db.collection("fcm_tokens");
     let algorithm_selections:Collection<Document>=db.collection("user_algorithm_selections");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
@@ -3200,6 +3213,9 @@ async fn main(){
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("algorithm selection owner index");
     notifications.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("user notification history index");
+    market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"vector_id":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("market vector idempotency index");
+    market_vectors.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"event_time_cutoff_ms":-1}).build(),None).await.expect("venue scoped market vector history index");
     notifications.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"event_id":1})
         .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"event_id":{"$type":"string"}}).build()).build(),None)
         .await.expect("per-user notification event idempotency index");
@@ -3303,7 +3319,7 @@ async fn main(){
     let (stream, _) = broadcast::channel(4096);
     let state=AppState{
         stream, database: db.clone(), events,dataset_manifests,market_backfill_jobs,set_ledger_records,relationship_ledger,states,decisions,strategies,orders,trading_controls,
-        users, notifications, fcm_tokens, algorithm_selections, broker_accounts,
+        users, notifications, fcm_tokens, market_vectors, algorithm_selections, broker_accounts,
         broker_registry: broker_contract::BrokerRegistry::default(),
         broker_environment,
         firebase_verifier,
