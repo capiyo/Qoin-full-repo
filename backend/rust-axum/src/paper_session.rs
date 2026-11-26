@@ -224,7 +224,7 @@ impl PaperAccount {
             contract_multiplier: self.config.contract_multiplier, quantity_step: self.config.quantity_step,
             notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
             fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
-            ts_ms: event.ts_ms, strategy_version: decision.strategy_version.clone(),
+            ts_ms: event.ts_ms, strategy_version: decision.config_version.clone(),
             bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.clone(),
             reason: decision.rationale.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
@@ -304,7 +304,7 @@ impl PaperSession {
     }
     pub fn stop(&mut self) { self.active = false; }
     pub fn is_active(&self) -> bool { self.active }
-    pub fn process_event(&mut self, event: &MarketEvent, decision: &EdgeDecision) -> Option<(PaperMirrorRecord, Option<PaperTradeRecord>)> {
+    pub fn process_event(&mut self, event: &MarketEvent, decision: &Signal) -> Option<(PaperMirrorRecord, Option<PaperTradeRecord>)> {
         if !self.active { return None; }
         let key = format!("{}::{}", event.venue, event.symbol);
         let account = self.accounts.get_mut(&key)?;
