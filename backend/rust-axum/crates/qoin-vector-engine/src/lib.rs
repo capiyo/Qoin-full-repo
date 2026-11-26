@@ -445,6 +445,24 @@ mod tests {
     }
 
     #[test]
+    fn attend_pulse_and_pressure_blades_reconcile_without_changing_decision_math() {
+        let signal = decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap();
+        assert_eq!(signal.attend, signal.attention);
+        assert_eq!(signal.attend.len(), FEATURE_NAMES.len());
+        assert_eq!(signal.feature_trace.len(), FEATURE_NAMES.len());
+        let mut names = std::collections::BTreeSet::new();
+        for (index, trace) in signal.feature_trace.iter().enumerate() {
+            assert!(names.insert(trace.name.as_str()));
+            assert_eq!(trace.attend_weights, signal.attend[index]);
+            assert!((trace.pulse_bullish - trace.directional_contribution.max(0.0)).abs() < 1e-12);
+            assert!((trace.pulse_bearish - (-trace.directional_contribution).max(0.0)).abs() < 1e-12);
+            assert!((trace.pressure_blade_contribution - trace.directional_contribution).abs() < 1e-12);
+        }
+        let net_pulse = signal.pulse[0] - signal.pulse[1];
+        assert!((net_pulse - signal.pressure_blade_total).abs() < 1e-12);
+    }
+
+    #[test]
     fn invalid_top_k_is_rejected() {
         let mut config = EngineConfig::default();
         config.top_k = 0;
