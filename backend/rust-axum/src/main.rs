@@ -1385,50 +1385,47 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    let paper_updates = {
+    {
+        // Keep the session-map lock through the durable writes. Otherwise two
+        // different symbol-ingest stripes could persist snapshots out of order
+        // and overwrite a newer per-user paper ledger with an older snapshot.
         let mut sessions = s.active_paper_sessions.lock().await;
-        let mut updates = Vec::new();
         for (owner_uid, paper) in sessions.iter_mut() {
-            if let Some((mirror, trade)) = paper.process_event(&event, &paper_decision) {
-                updates.push((owner_uid.clone(), mirror, trade, paper.clone()));
-            }
-        }
-        updates
-    };
-    for (owner_uid, mirror, trade, paper_snapshot) in paper_updates {
-        let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
-            Ok(document) => document,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper decision serialization failed"}))),
-        };
-        mirror_doc.insert("owner_uid", &owner_uid);
-        mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
-        if let Err(error) = s.paper_session_decisions.update_one(
-            doc!{"owner_uid":&owner_uid,"cycle_id":&mirror.cycle_id,"venue":&mirror.venue,"symbol":&mirror.symbol,"event_id":&mirror.event_id},
-            doc!{"$setOnInsert":mirror_doc},
-            UpdateOptions::builder().upsert(true).build(),
-        ).await {
-            tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper decision persistence failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper decision persistence failed","event_persisted":true})));
-        }
-        if let Some(trade) = trade {
-            let mut trade_doc = match mongodb::bson::to_document(&trade) {
+            let Some((mirror, trade)) = paper.process_event(&event, &paper_decision) else { continue; };
+            let mut mirror_doc = match mongodb::bson::to_document(&mirror) {
                 Ok(document) => document,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper decision serialization failed"}))),
             };
-            trade_doc.insert("owner_uid", &owner_uid);
-            trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
-            if let Err(error) = s.paper_session_trades.update_one(
-                doc!{"owner_uid":&owner_uid,"cycle_id":&trade.cycle_id,"venue":&trade.venue,"symbol":&trade.symbol,"exit_ts_ms":trade.exit_ts_ms},
-                doc!{"$setOnInsert":trade_doc},
+            mirror_doc.insert("owner_uid", owner_uid);
+            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_decisions.update_one(
+                doc!{"owner_uid":owner_uid,"cycle_id":&mirror.cycle_id,"venue":&mirror.venue,"symbol":&mirror.symbol,"event_id":&mirror.event_id},
+                doc!{"$setOnInsert":mirror_doc},
                 UpdateOptions::builder().upsert(true).build(),
             ).await {
-                tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper trade persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
+                tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper decision persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper decision persistence failed","event_persisted":true})));
             }
-        }
-        if let Err(error) = persist_paper_session(&s, &owner_uid, &paper_snapshot).await {
-            tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper account state persistence failed");
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
+            if let Some(trade) = trade {
+                let mut trade_doc = match mongodb::bson::to_document(&trade) {
+                    Ok(document) => document,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))),
+                };
+                trade_doc.insert("owner_uid", owner_uid);
+                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+                if let Err(error) = s.paper_session_trades.update_one(
+                    doc!{"owner_uid":owner_uid,"cycle_id":&trade.cycle_id,"venue":&trade.venue,"symbol":&trade.symbol,"exit_ts_ms":trade.exit_ts_ms},
+                    doc!{"$setOnInsert":trade_doc},
+                    UpdateOptions::builder().upsert(true).build(),
+                ).await {
+                    tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper trade persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true})));
+                }
+            }
+            if let Err(error) = persist_paper_session(&s, owner_uid, paper).await {
+                tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper account state persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper account state persistence failed","event_persisted":true})));
+            }
         }
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
