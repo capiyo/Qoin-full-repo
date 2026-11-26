@@ -102,6 +102,14 @@ pub struct FeatureTrace {
     pub directional_weight: f64,
     pub directional_contribution: f64,
     pub interaction_contribution: f64,
+    /// Per-feature normalized Attend row; an alias of the corresponding row in Signal.attend.
+    pub attend_weights: Vec<f64>,
+    /// Positive directional pressure contributed by this feature.
+    pub pulse_bullish: f64,
+    /// Negative directional pressure contributed by this feature, stored as a positive magnitude.
+    pub pulse_bearish: f64,
+    /// Signed pressure-blade contribution before volatility damping.
+    pub pressure_blade_contribution: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -133,8 +141,14 @@ pub struct Signal {
     pub feature_names: Vec<String>,
     pub raw_inputs: BTreeMap<String, f64>,
     pub features: BTreeMap<String, f64>,
+    /// Attend matrix: A_ij = softmax_j(z_i * z_j), retained for compatibility with attention.
+    pub attend: Vec<Vec<f64>>,
     pub attention: Vec<Vec<f64>>,
     pub attended_features: Vec<f64>,
+    /// Aggregate [bullish, bearish] Pulse magnitudes before volatility damping.
+    pub pulse: [f64; 2],
+    /// Signed sum of all pressure-blade and interaction contributions before damping.
+    pub pressure_blade_total: f64,
     pub feature_trace: Vec<FeatureTrace>,
     /// Positive and negative directional score components, respectively.
     pub decision_vector: [f64; 2],
@@ -327,6 +341,10 @@ pub fn decide(
             directional_weight: DIRECTIONAL_WEIGHTS[index],
             directional_contribution: attended[index] * DIRECTIONAL_WEIGHTS[index],
             interaction_contribution: if index == 4 { interaction } else { 0.0 },
+            attend_weights: attention[index].clone(),
+            pulse_bullish: (attended[index] * DIRECTIONAL_WEIGHTS[index]).max(0.0),
+            pulse_bearish: (-attended[index] * DIRECTIONAL_WEIGHTS[index]).max(0.0),
+            pressure_blade_contribution: attended[index] * DIRECTIONAL_WEIGHTS[index],
         }
     }).collect();
 
@@ -343,8 +361,14 @@ pub fn decide(
         feature_names: FEATURE_NAMES.iter().map(|name| (*name).to_owned()).collect(),
         raw_inputs,
         features,
+        attend: attention.clone(),
         attention,
         attended_features: attended.to_vec(),
+        pulse: [
+            feature_trace.iter().map(|trace| trace.pulse_bullish).sum::<f64>() + interaction.max(0.0),
+            feature_trace.iter().map(|trace| trace.pulse_bearish).sum::<f64>() + (-interaction).max(0.0),
+        ],
+        pressure_blade_total: directional + interaction,
         feature_trace,
         decision_vector: [score.max(0.0), (-score).max(0.0)],
         magnitude: score.abs(),
