@@ -3,6 +3,8 @@ resolver = "2"
 exclude = ["frontend/apps/desktop/src-tauri"]
 members = [
   "backend/rust-axum/crates/qoin-vector-engine",
+  "backend/rust-axum/crates/qoin-insurance",
+  "backend/rust-axum/crates/qoin-derivatives",
   "backend/rust-axum/crates/qoin-set-theoretic-attention",
   "backend/rust-axum-api",
   "backend/rust-axum",
