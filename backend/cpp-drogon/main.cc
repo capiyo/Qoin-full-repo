@@ -347,6 +347,27 @@ int main() {
             (symbol.empty() ? std::string{} : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
     // Broker credentials are provisioned only through backend deployment secrets.
+    drogon::app().registerHandler("/api/v1/notifications", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/notifications");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/notifications/unread-summary", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/notifications/unread-summary");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/notifications/register-token", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/notifications/register-token");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/notifications/mark-read", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/notifications/mark-read");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/notifications/preferences", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::HttpMethod::Get) proxyGet(req, std::move(cb), "/internal/notifications/preferences");
+        else proxyPostJson(req, std::move(cb), "/internal/notifications/preferences");
+    }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/brokers/configuration", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/brokers/configuration");
