@@ -37,6 +37,7 @@ mod market_data_quality;
 mod market_data_backfill;
 mod market_data_health;
 mod v2_relationships;
+mod v2_evaluation;
 mod paper_session;
 mod operating_cycle;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
