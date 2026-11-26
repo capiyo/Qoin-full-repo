@@ -3,7 +3,7 @@
 **Active integration branch:** `qoin/backend-completion-auth`  
 **Current PR:** #32 (draft; based on `main`)  
 **Base:** `main` at `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
-**Current branch head at this update:** `c1f2f240d4eb0cc96e38583d123d5b1e70e86d15`  
+**Current branch head at this update:** `f4b41c7778fc4bc28b93e5db8797d32ab1de9f8c`  
 **Safety posture:** live-money execution remains disabled by code policy; no merge to `main` and no production deployment has been performed.
 
 Status meanings: **DONE** means implemented and verified on the exact candidate commit. **IN PROGRESS** means engineering work or verification remains. **BLOCKED** is reserved exclusively for an external exchange key, unavailable hardware, or a human decision/authorization. A missing local checkout, unavailable tool, unresolved conflict, or unfinished implementation is not a valid BLOCKED reason.
@@ -234,3 +234,5 @@ Removed three uncompiled/disconnected source files: the Binance-only legacy trad
 ## Backtest performance metrics update — 2026-11-26
 
 The Rust chronological replay now returns annualized return, annualized volatility, Sharpe, Sortino, Calmar, max drawdown, completed-trade win rate, net winning/losing trade P&L, profit factor, max gross exposure, transaction costs and buy-and-hold return. Unsupported ratios are null rather than non-finite values. Tests cover a multi-day benchmark window. The Python research client delegates to this Rust replay endpoint; it does not calculate decisions or fills independently. Exact-head CI remains pending.
+
+Backtest metric assumptions are included in the Rust result: calendar-day annualization, zero risk-free rate, net realized trade P&L after fees, and same-instrument buy-and-hold benchmark. Current-head Rust, Python, gateway and integration workflows are pending.
