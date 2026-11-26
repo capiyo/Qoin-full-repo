@@ -570,7 +570,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     if (cardLedgers[item.symbol] || cardLedgerRequestsRef.current.has(item.symbol)) return;
     cardLedgerRequestsRef.current.add(item.symbol);
     setCardLedgerStatus((current)=>({...current,[item.symbol]:"loading"}));
-    void getQoinSetLedger(item.engineSymbol,1000).then((ledger)=>setCardLedgers((current)=>({...current,[item.symbol]:ledger}))).catch(()=>setCardLedgerStatus((current)=>({...current,[item.symbol]:"unavailable"}))).finally(()=>cardLedgerRequestsRef.current.delete(item.symbol));
+    void getQoinSetLedger(item.engineSymbol,1000,item.engineVenue).then((ledger)=>setCardLedgers((current)=>({...current,[item.symbol]:ledger}))).catch(()=>setCardLedgerStatus((current)=>({...current,[item.symbol]:"unavailable"}))).finally(()=>cardLedgerRequestsRef.current.delete(item.symbol));
   };
   const [viewModeBySymbol, setViewModeBySymbol] = useState<Record<string, "live" | "backtest">>({});
   const [viewModesReady, setViewModesReady] = useState(false);
@@ -801,7 +801,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     setVector(null);
     setVectorError("");
     setVectorLoading(true);
-    getQoinAlgorithmDecision(selected.engineSymbol).then((result) => {
+    getQoinAlgorithmDecision(selected.engineSymbol, selected.engineVenue).then((result) => {
       if (!current) return;
       if (result.action || result.decision_vector) {
         setVector(result);
@@ -823,10 +823,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
     setRawEvents([]);
     setSetLedger(null);
     setSetLedgerStatus("Loading set memberships and temporal relations…");
-    getQoinMarketState(selected.engineSymbol).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
-    getQoinSetLedger(selected.engineSymbol, 1000).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
-    if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
-    getQoinEvents(selected.engineSymbol, 1000).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
+    getQoinMarketState(selected.engineSymbol, selected.engineVenue).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
+    getQoinSetLedger(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
+    if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500, selected.engineVenue).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
+    getQoinEvents(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
     return () => { active = false; };
   }, [selected?.engineSymbol, selectedAlgorithmId]);
 
@@ -842,7 +842,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
       if (ledgerRefreshInFlight) { ledgerRefreshQueued = true; return; }
       ledgerRefreshInFlight = true;
       try {
-        const result = await getQoinSetLedger(selected.engineSymbol, 1000);
+        const result = await getQoinSetLedger(selected.engineSymbol, 1000, selected.engineVenue);
         if (active) {
           setSetLedger(result);
           setSetLedgerStatus("Live · " + new Date().toLocaleTimeString());
@@ -908,10 +908,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested }: Props) {
         if (selected) {
           setSetLedgerStatus("Stream gap · restoring authoritative snapshots…");
           void Promise.all([
-            getQoinAlgorithmDecision(selected.engineSymbol),
-            getInstrumentVectorHistory(selected.engineSymbol, 500),
-            getQoinEvents(selected.engineSymbol, 1000),
-            getQoinSetLedger(selected.engineSymbol, 1000),
+            getQoinAlgorithmDecision(selected.engineSymbol, selected.engineVenue),
+            getInstrumentVectorHistory(selected.engineSymbol, 500, selected.engineVenue),
+            getQoinEvents(selected.engineSymbol, 1000, selected.engineVenue),
+            getQoinSetLedger(selected.engineSymbol, 1000, selected.engineVenue),
           ]).then(([decision, history, events, ledger]) => {
             if (!active) return;
             if (decision.action || decision.decision_vector) setVector(decision);

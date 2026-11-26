@@ -133,13 +133,13 @@ export const QOIN_FEATURE_NAMES = [
 ] as const;
 
 /** Fetches the latest persisted market-state snapshot for a symbol. */
-export function getQoinMarketState(symbol: string): Promise<QoinMarketState> {
-  return request<QoinMarketState>(`/api/v1/state?symbol=${encodeURIComponent(symbol)}`);
+export function getQoinMarketState(symbol: string, venue?: string): Promise<QoinMarketState> {
+  return request<QoinMarketState>(`/api/v1/state?symbol=${encodeURIComponent(symbol)}${venue ? `&venue=${encodeURIComponent(venue)}` : ""}`);
 }
 
 /** Fetches the latest persisted engine vector for a symbol; never places orders. */
-export function getInstrumentVector(symbol: string): Promise<QoinVectorDecision> {
-  return request<QoinVectorDecision>(`/api/v1/vector?symbol=${encodeURIComponent(symbol)}`);
+export function getInstrumentVector(symbol: string, venue?: string): Promise<QoinVectorDecision> {
+  return request<QoinVectorDecision>(`/api/v1/vector?symbol=${encodeURIComponent(symbol)}${venue ? `&venue=${encodeURIComponent(venue)}` : ""}`);
 }
 
 export type QoinSignalRequest = {
@@ -479,8 +479,8 @@ export function getQoinNews(category = "general"): Promise<QoinNewsResponse> {
 export function getQoinInstruments(): Promise<{ items: QoinInstrument[]; source: string }> {
   return request<{ items: QoinInstrument[]; source: string }>("/api/v1/instruments");
 }
-export function getInstrumentVectorHistory(symbol: string, limit = 120): Promise<{ symbol: string; items: QoinVectorHistory[] }> {
-  return request<{ symbol: string; items: QoinVectorHistory[] }>("/api/v1/vector/history?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
+export function getInstrumentVectorHistory(symbol: string, limit = 120, venue?: string): Promise<{ symbol: string; items: QoinVectorHistory[] }> {
+  return request<{ symbol: string; items: QoinVectorHistory[] }>("/api/v1/vector/history?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit + (venue ? "&venue=" + encodeURIComponent(venue) : ""));
 }
 
 export type QoinMacroEvent = {
@@ -552,12 +552,12 @@ export type QoinSetLedger = {
   durable_history_complete?: boolean;
   durable_history_note?: string;
 };
-export function getQoinSetLedger(symbol: string, limit = 500): Promise<QoinSetLedger> {
-  return request<QoinSetLedger>("/api/v1/set-ledger?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
+export function getQoinSetLedger(symbol: string, limit = 500, venue?: string): Promise<QoinSetLedger> {
+  return request<QoinSetLedger>("/api/v1/set-ledger?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit + (venue ? "&venue=" + encodeURIComponent(venue) : ""));
 }
 
-export function getQoinEvents(symbol: string, limit = 200): Promise<{ symbol: string; items: QoinMarketEvent[]; count: number }> {
-  return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit);
+export function getQoinEvents(symbol: string, limit = 200, venue?: string): Promise<{ symbol: string; items: QoinMarketEvent[]; count: number }> {
+  return request<{ symbol: string; items: QoinMarketEvent[]; count: number }>("/api/v1/events?symbol=" + encodeURIComponent(symbol) + "&limit=" + limit + (venue ? "&venue=" + encodeURIComponent(venue) : ""));
 }
 
 
@@ -695,6 +695,6 @@ export function getQoinAlgorithmSelections(): Promise<{ items: QoinAlgorithmSele
 export function saveQoinAlgorithmSelection(input: { symbol: string; algorithm_id: string; version: string }): Promise<QoinAlgorithmSelection & { persisted: boolean }> {
   return authenticatedQoinRequest("/api/v1/me/algorithm-selections", { method: "POST", body: JSON.stringify(input) });
 }
-export function getQoinAlgorithmDecision(symbol: string): Promise<QoinVectorDecision> {
-  return authenticatedQoinRequest("/api/v1/me/algorithm-decision?symbol=" + encodeURIComponent(symbol));
+export function getQoinAlgorithmDecision(symbol: string, venue?: string): Promise<QoinVectorDecision> {
+  return authenticatedQoinRequest("/api/v1/me/algorithm-decision?symbol=" + encodeURIComponent(symbol) + (venue ? "&venue=" + encodeURIComponent(venue) : ""));
 }
