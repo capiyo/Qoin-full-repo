@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
-import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, registerQoinPushToken, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, registerQoinPushToken, getQoinMarketVector, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -269,7 +269,7 @@ function ResearchLedger({ decision, history, events }: { decision: QoinVectorDec
 }
 
 
-function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null }) {
+function VectorSpaceMechanics({ decision, marketState, lastEvent, marketVector }: { decision: QoinVectorDecision | null; marketState: QoinMarketState | null; lastEvent: QoinStreamUpdate["event"] | null; marketVector: QoinMarketVectorResponse | null }) {
   const names = QOIN_FEATURE_NAMES;
   const raw = names.map((name) => decision?.features?.[name] ?? 0);
   const attended = names.map((_, index) => decision?.attended_features?.[index] ?? 0);
@@ -293,6 +293,10 @@ function VectorSpaceMechanics({ decision, marketState, lastEvent }: { decision: 
       <div><span>Open interest</span><strong>{marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4}) ?? "—"}</strong></div>
       <div><span>Funding rate</span><strong>{marketState?.funding_rate?.toFixed(7) ?? "—"}</strong></div>
       <div><span>Source timestamp</span><strong>{lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "—"}</strong></div>
+    </div>
+    <div className="live-mechanics-readout">
+      <div><span>Shared market vector · 53 axes</span><strong>{marketVector && "coordinates" in marketVector ? `${Object.values(marketVector.coordinates).filter((coordinate) => coordinate.status === "observed").length}/53 observed · ${Object.values(marketVector.coordinates).filter((coordinate) => coordinate.status === "missing").length} missing` : marketVector?.status === "warming_up" ? "Warming up · awaiting source evidence" : "No shared vector available"}</strong></div>
+      <div><span>Vector source</span><strong>{marketVector && "coordinates" in marketVector ? `${marketVector.venue} · ${marketVector.timeframe} · ${new Date(marketVector.event_time_cutoff_ms).toLocaleTimeString()}` : "Venue-scoped, causal snapshot"}</strong></div>
     </div>
     <p className="disclaimer">Each radial basis direction represents one normalized engine feature. Arrow length and sign use its attended value. The plot is a fixed 2D projection for inspection; calculations remain in seven dimensions. The bullish/bearish decision vector lives in a separate output space below.</p>
     <div className="vector-space-layout">
@@ -742,6 +746,7 @@ export default function App() {
   const [showRawEvents, setShowRawEvents] = useState(true);
   const [liveBySymbol, setLiveBySymbol] = useState<Record<string, { state?: QoinMarketState; decision?: QoinVectorDecision; event?: QoinStreamUpdate["event"] }>>({});
   const [marketState, setMarketState] = useState<QoinMarketState | null>(null);
+  const [marketVector, setMarketVector] = useState<QoinMarketVectorResponse | null>(null);
   const [streamStatus, setStreamStatus] = useState("disconnected");
   const [lastEvent, setLastEvent] = useState<QoinStreamUpdate["event"] | null>(null);
   const [news, setNews] = useState<QoinNewsItem[]>([]);
@@ -1018,6 +1023,8 @@ export default function App() {
     setSetLedger(null);
     setSetLedgerStatus("Loading derived set memberships and temporal relations…");
     getQoinMarketState(selected.engineSymbol, selected.engineVenue).then((state) => { if (active) setMarketState(state); }).catch(() => undefined);
+    setMarketVector(null);
+    getQoinMarketVector(selected.engineSymbol, selected.engineVenue).then((value) => { if (active) setMarketVector(value); }).catch(() => undefined);
     getQoinSetLedger(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setSetLedger(result); setSetLedgerStatus("Loaded"); } }).catch((error: unknown) => { if (active) setSetLedgerStatus(error instanceof Error ? error.message : "Set ledger unavailable."); });
     if (selectedAlgorithmId==="qoin-vector-baseline") getInstrumentVectorHistory(selected.engineSymbol, 500, selected.engineVenue).then((result) => { if (active) setVectorHistory(result.items); }).catch(() => undefined); else setVectorHistory([]);
     getQoinEvents(selected.engineSymbol, 1000, selected.engineVenue).then((result) => { if (active) { setRawEvents(result.items.slice().reverse()); const latest = result.items[result.items.length - 1]; setLastEvent(latest ? { event_id: latest.event_id, venue: latest.venue, symbol: latest.symbol, event_type: latest.event_type, ts_ms: latest.ts_ms, price: latest.price, size: latest.size, side: latest.side, bid: latest.bid, ask: latest.ask, bid_size: latest.bid_size, ask_size: latest.ask_size, funding_rate: latest.funding_rate, open_interest: latest.open_interest, liquidation_side: latest.liquidation_side } : null); } }).catch(() => undefined);
@@ -1075,6 +1082,7 @@ export default function App() {
         setLiveBySymbol((current) => ({ ...current, [symbol]: { state: update.state, decision: update.decision, event: update.event } }));
         if (selected?.engineSymbol.toUpperCase() === symbol) {
           if (update.state) setMarketState(update.state);
+          if (update.market_vector) setMarketVector(update.market_vector);
           if (update.event) {
             setLastEvent(update.event);
             setRawEvents((current) => [{ ...update.event, event_id: update.event?.event_id || String(update.server_ts_ms || Date.now()), venue: update.event?.venue || "stream", symbol, event_type: update.event?.event_type || "unknown", ts_ms: update.event?.ts_ms || update.server_ts_ms || Date.now() } as QoinMarketEvent, ...current].slice(0, 1000));
@@ -1349,7 +1357,7 @@ export default function App() {
             <BacktestPanel symbol={selected.engineSymbol} venue={selected.engineVenue} algorithmId={selectedAlgorithmId} algorithmVersion={selectedAlgorithm?.version||(selectedAlgorithmId==="qoin-measure-ledger-v2"?"measure-ledger-v2":"edge-map-v1")} algorithmName={selectedAlgorithm?.display_name||selectedAlgorithmId} authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
           </section> : selectedAlgorithmId==="qoin-measure-ledger-v2" ? <><MeasureLedgerDecisionPanel decision={vector} /><SetLedgerPanel ledger={setLedger} status={setLedgerStatus} /></> : mechanicsTab === "vector" ? <>
           <div className="vector-intro"><div><strong>Vector space</strong><p>Actual seven-force engine features, attention interactions and connected decision output.</p></div><span className="preview-tag">{streamStatus.toUpperCase()}</span></div>
-          <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} />
+          <VectorSpaceMechanics decision={vector} marketState={marketState} lastEvent={lastEvent} marketVector={marketVector} />
           <div className="vector-intro"><div><strong>Resultant decision space</strong><p>Persisted bullish and bearish decision-vector trajectory.</p></div></div>
           <VectorMap decision={vector} history={vectorHistory} />
           <FeatureSpace decision={vector} />

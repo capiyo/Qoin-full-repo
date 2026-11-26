@@ -217,6 +217,7 @@ export type QoinStreamUpdate = {
     bid?: number | null; ask?: number | null; bid_size?: number | null; ask_size?: number | null; funding_rate?: number | null;
     open_interest?: number | null; liquidation_side?: string | null };
   state?: QoinMarketState; decision?: QoinVectorDecision; server_ts_ms?: number;
+  market_vector?: QoinMarketVector | null; market_vector_persisted?: boolean;
   missed_updates?: number; note?: string; subscribed_symbols?: string[];
 };
 export type QoinNewsItem = {
