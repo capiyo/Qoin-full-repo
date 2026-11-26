@@ -326,10 +326,7 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/brokers/configuration");
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/admin/broker-accounts", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        proxyPostJson(req, std::move(cb), "/internal/admin/broker-accounts");
-    }, {drogon::Post});
+    // Broker-account provisioning is an operator-only private Axum operation.
     drogon::app().registerHandler("/api/v1/broker-accounts", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/broker-accounts");
