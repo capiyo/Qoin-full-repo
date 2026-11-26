@@ -6,7 +6,7 @@ Active branch: `qoin/backend-completion-auth`
 Pull request: [#32](https://github.com/capiyo/Qoin-full-repo/pull/32) — draft, based on `main`  
 Base SHA: `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
 Audited candidate SHA before the owner-isolated paper-session change: `bb16843ed2aedad4396bd387ecb1f36d705ad0c3`  
-Current source head at this update: `548f74f5864aa3cb0a3736ee086da72a11f786db`  
+Current source head at this update: `23df63f57a1c71cc74930331a4306e2343c8e0fe`  
 Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes and the explicit HTTP 429 integration assertion on `fb558542...` were queued for CI at this audit update.
 
 > This audit records source findings and verified CI evidence. It does not describe the repository as production-ready. Do not interpret provider catalogues, adapter traits, test fixtures or paper simulations as live broker connectivity.
@@ -126,3 +126,11 @@ Exact-head Rust and Python CI for these latest schema/diagnostic changes is pend
 ## Remaining quantitative definition boundary
 
 The V1 engine now explicitly exposes Attend, Pulse and pressure-blade contributions using the existing V1 mathematics. The current seven-force implementation has an angular alignment/angle diagnostic, but no separately specified vector-spacing metric or independent evolving vector-state dynamics. Those must not be invented or silently substituted; the exact V1 angular measure is documented in `VECTOR_ENGINE_MATHEMATICS.md`. If vector spacing means a distinct quantity, it requires the user's established formula before implementation.
+
+## Dead-code and dependency cleanup
+
+- Removed unreferenced `backend/rust-axum/src/trading.rs`, the uncompiled Binance-only legacy trading adapter.
+- Removed unreferenced `backend/rust-axum/src/vector_engine.rs`, the uncompiled six-force Python-era duplicate; the shared `qoin-vector-engine` crate remains the only Rust signal implementation.
+- Removed unreferenced `backend/rust-axum/src/operating_cycle.rs`, a disconnected cycle prototype that was not declared as a module or wired to the active paper-session service.
+- Removed the now-unused direct `hmac` dependency from `backend/rust-axum/Cargo.toml`; HMAC functionality remains available transitively where `jsonwebtoken` requires it.
+- Rechecked the active `main.rs` module declarations against `backend/rust-axum/src/*.rs`; remaining Rust source modules are declared and used by the production service.
