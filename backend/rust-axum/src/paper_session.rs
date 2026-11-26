@@ -303,7 +303,12 @@ impl PaperSession {
         Ok(Self { cycle_id: Some(cycle_id), active: true, accounts })
     }
     pub fn stop(&mut self) { self.active = false; }
+    pub fn resume(&mut self) { self.active = true; }
     pub fn is_active(&self) -> bool { self.active }
+    pub fn cycle_id(&self) -> Option<&str> { self.cycle_id.as_deref() }
+    pub fn has_unsettled_state(&self) -> bool {
+        self.accounts.values().any(|account| account.position.is_some() || account.pending.is_some())
+    }
     pub fn process_event(&mut self, event: &MarketEvent, decision: &Signal) -> Option<(PaperMirrorRecord, Option<PaperTradeRecord>)> {
         if !self.active { return None; }
         let key = format!("{}::{}", event.venue, event.symbol);
