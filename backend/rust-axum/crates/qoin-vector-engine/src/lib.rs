@@ -8,6 +8,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+// Offline V1 objective evaluation and bounded threshold search; never activates a strategy.
+pub mod research;
+pub use research::{evaluate as evaluate_research_loss, optimize_signal_threshold, Evaluation as ResearchEvaluation, LabeledObservation, LossConfig, ResearchError};
+
 // Causal, independently evaluated research horizons. Consensus is descriptive only.
 pub mod multi_horizon;
 pub mod market_data;
