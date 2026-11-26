@@ -2,7 +2,7 @@ use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     routing::{get, post},
-    Json, Router,
+    DefaultBodyLimit, Json, Router,
 };
 use qoin_vector_engine::{decide, EngineConfig, ForceObservation, Signal};
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/signal", post(signal))
+        .layer(DefaultBodyLimit::max(65_536))
         .layer(cors)
         .with_state(state);
 
@@ -81,7 +82,32 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind API listener");
     tracing::info!(%addr, "Qoin research API listening; live trading is disabled");
-    axum::serve(listener, app).await.expect("serve API");
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await.expect("serve API");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install research API Ctrl-C handler");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => { signal.recv().await; }
+            Err(error) => {
+                tracing::error!(%error, "failed to install research API SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("research API graceful shutdown requested"),
+        _ = terminate => tracing::info!("research API graceful shutdown requested"),
+    }
 }
 
 async fn health() -> Json<Health> {
