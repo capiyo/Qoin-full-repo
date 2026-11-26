@@ -258,4 +258,11 @@ jobs:
             jq . /tmp/algorithms.json || cat /tmp/algorithms.json
             exit 1
           fi
+          # Verify the Drogon fixed-window write limit responds with 429.
+          rate_limited=false
+          for attempt in $(seq 1 40); do
+            status=$(curl -sS -o /tmp/rate-limit.json -w '%{http_code}' -X POST http://127.0.0.1:8080/v1/signal -H 'content-type: application/json' --data '{"observation":{"ofi":0,"liquidity":0,"volatility":0,"funding":0,"open_interest_change":0,"liquidation_pressure":0,"basis":0},"has_open_position":false}')
+            if [[ "$status" == "429" ]]; then rate_limited=true; break; fi
+          done
+          test "$rate_limited" = true
           echo "All Qoin Axum-Drogon integration assertions passed."
