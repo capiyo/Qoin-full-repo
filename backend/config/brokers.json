@@ -15,7 +15,10 @@
     "strategy": "capability_filter_then_rank",
     "selection_scope": "per_instrument_and_account",
     "user_preference": "honor_explicit_preference_if_eligible",
-    "mode_order": ["paper", "live"],
+    "mode_order": [
+      "paper",
+      "live"
+    ],
     "filters": [
       "broker.enabled",
       "broker.adapter_status == implemented",
@@ -43,243 +46,573 @@
     "tie_break": "stable_broker_id_ascending",
     "live_routing": "disabled_until_risk_policy_and_human_approval_gates_are_satisfied"
   },
-  "markets": ["forex", "stocks", "crypto", "commodities"],
+  "markets": [
+    "crypto",
+    "forex",
+    "cfds"
+  ],
   "brokers": [
     {
-      "id": "interactive_brokers",
-      "name": "Interactive Brokers",
-      "entity": "Confirm the IBKR contracting entity for the account",
-      "jurisdictions": ["KE:eligibility_to_confirm"],
-      "markets": ["stocks", "forex", "commodities"],
-      "instrument_types": ["equities", "ETFs", "listed_futures", "options", "FX"],
-      "api": ["TWS API", "Client Portal / Web API", "FIX subject to eligibility"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
+      "id": "binance",
+      "name": "Binance",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 1,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "coinbase",
+      "name": "Coinbase",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 2,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "kraken",
+      "name": "Kraken",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 3,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "bybit",
+      "name": "Bybit",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 4,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "okx",
+      "name": "OKX",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 5,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "bitget",
+      "name": "Bitget",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 6,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "gate_io",
+      "name": "Gate.io",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 7,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "kucoin",
+      "name": "KuCoin",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 8,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "deribit",
+      "name": "Deribit",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 9,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
+    },
+    {
+      "id": "hyperliquid",
+      "name": "Hyperliquid",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "crypto"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
       "priority": 10,
-      "verification_required": ["Kenya account eligibility", "specific exchange permissions", "market-data subscriptions", "paper account access", "contract margin and fees"],
-      "notes": "Broad multi-market candidate; do not assume every instrument or API is enabled for every account."
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "spot/derivatives/options instrument coverage",
+        "sandbox or paper account availability",
+        "order types, precision, minimums, rate limits and fees",
+        "market-data licensing and historical-data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, sandbox, or executable capability is asserted."
     },
     {
-      "id": "alpaca",
-      "name": "Alpaca",
-      "entity": "Confirm contracting entity and international account eligibility",
-      "jurisdictions": ["KE:eligibility_to_confirm"],
-      "markets": ["stocks", "crypto"],
-      "instrument_types": ["US_equities", "ETFs", "supported_crypto_pairs"],
-      "api": ["REST", "WebSocket"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
+      "id": "oanda",
+      "name": "OANDA",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 11,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "ig",
+      "name": "IG",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 12,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "fxcm",
+      "name": "FXCM",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 13,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "capital_com",
+      "name": "Capital.com",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 14,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "deriv",
+      "name": "Deriv",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 15,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "xtb",
+      "name": "XTB",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 16,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "pepperstone",
+      "name": "Pepperstone",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 17,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "ic_markets",
+      "name": "IC Markets",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 18,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "forex_com",
+      "name": "FOREX.com",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
+      "priority": 19,
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
+    },
+    {
+      "id": "cmc_markets",
+      "name": "CMC Markets",
+      "entity": "Verify the contracting legal entity for the user's account",
+      "jurisdictions": [
+        "KE:eligibility_to_confirm"
+      ],
+      "markets": [
+        "forex",
+        "cfds"
+      ],
+      "instrument_types": [],
+      "api": [],
+      "supported_modes": [],
+      "adapter_status": "adapter_pending",
+      "enabled": false,
+      "execution_ready": false,
       "priority": 20,
-      "verification_required": ["Kenya eligibility", "crypto jurisdiction availability", "supported symbols", "paper-account availability", "fees and trading permissions"],
-      "notes": "API-first candidate; not a complete listed commodity-futures route."
-    },
-    {
-      "id": "pepperstone_markets_kenya",
-      "name": "Pepperstone Markets Kenya",
-      "entity": "Pepperstone Markets Kenya Ltd",
-      "jurisdictions": ["KE"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["MT4/MT5 or other API access: verify exact account and entity"],
-      "supported_modes": ["paper", "live"],
-      "regulatory": {"jurisdiction": "KE", "authority": "CMA Kenya", "status": "verify_current_register_and_licence"},
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 30,
-      "verification_required": ["exact legal entity on client agreement", "CMA licence status", "API access", "symbol catalogue", "CFD financing and spreads", "minimum order size"],
-      "notes": "Potential Kenya-regulated FX/CFD route; CFDs are not the same as owning the underlying asset."
-    },
-    {
-      "id": "egm_fx_pesa",
-      "name": "EGM Securities / FXPesa",
-      "entity": "EGM Securities Ltd",
-      "jurisdictions": ["KE"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "regulatory": {"jurisdiction": "KE", "authority": "CMA Kenya", "status": "verify_current_register_and_licence"},
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 40,
-      "verification_required": ["API availability", "exact instruments", "execution model", "fees and spreads", "minimum order size"],
-      "notes": "Kenyan CMA-regulated candidate; execution-only CFD service details must be checked."
-    },
-    {
-      "id": "scfm_scope",
-      "name": "SCFM Ltd / Scope Markets",
-      "entity": "SCFM Ltd",
-      "jurisdictions": ["KE"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "regulatory": {"jurisdiction": "KE", "authority": "CMA Kenya", "status": "verify_current_register_and_licence"},
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 50,
-      "verification_required": ["API availability", "exact instruments", "fees", "minimum order size", "paper environment"]
-    },
-    {
-      "id": "exinity_capital_east_africa",
-      "name": "Exinity Capital East Africa",
-      "entity": "Exinity Capital East Africa Ltd",
-      "jurisdictions": ["KE"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "regulatory": {"jurisdiction": "KE", "authority": "CMA Kenya", "status": "verify_current_register_and_licence"},
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 60,
-      "verification_required": ["brand and legal-entity mapping", "API availability", "instruments", "fees", "minimum order size"]
-    },
-    {
-      "id": "hfm",
-      "name": "HFM",
-      "entity": "Confirm Kenya contracting entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 70,
-      "verification_required": ["contracting entity", "CMA licence and permissions", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "windsor",
-      "name": "Windsor Brokers",
-      "entity": "Confirm Kenya contracting entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 80,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "exness_ke",
-      "name": "Exness Kenya",
-      "entity": "Confirm exact Exness legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 90,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "ingot_ke",
-      "name": "INGOT Kenya",
-      "entity": "Confirm exact INGOT legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 100,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "admirals",
-      "name": "Admirals",
-      "entity": "Confirm Kenya contracting entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 110,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "fp_markets",
-      "name": "FP Markets",
-      "entity": "Confirm Kenya contracting entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 120,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "ic_markets_ke",
-      "name": "IC Markets (Kenya)",
-      "entity": "Confirm exact IC Markets legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 130,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "anzo",
-      "name": "ANZO Capital",
-      "entity": "Confirm exact ANZO legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 140,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "tpxm_global",
-      "name": "TPXM Global",
-      "entity": "Confirm exact TPXM legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 150,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
-    },
-    {
-      "id": "ava_trade_kenya",
-      "name": "AvaTrade Kenya",
-      "entity": "Confirm exact AvaTrade legal entity",
-      "jurisdictions": ["KE:entity_and_eligibility_to_confirm"],
-      "markets": ["forex", "commodities", "stocks"],
-      "instrument_types": ["CFDs: verify per symbol"],
-      "api": ["API availability: verify"],
-      "supported_modes": ["paper", "live"],
-      "adapter_status": "catalog_only",
-      "enabled": true,
-      "priority": 160,
-      "verification_required": ["contracting entity", "licence status", "API", "instrument list", "fees"]
+      "verification_required": [
+        "Kenya account eligibility and contracting entity",
+        "official API and authentication documentation",
+        "FX/CFD instrument and contract specifications",
+        "demo account and trading permissions",
+        "order types, precision, minimums, margin, rate limits and fees",
+        "quote source, indicative versus executable pricing and data entitlements"
+      ],
+      "notes": "Selected provider scope only. No adapter, account entitlement, demo environment, or executable capability is asserted."
     }
   ],
   "selection_result": {
-    "required_fields": ["selected_broker_id", "market", "symbol", "mode", "account_id", "selection_reason", "rejected_candidates"],
+    "required_fields": [
+      "selected_broker_id",
+      "market",
+      "symbol",
+      "mode",
+      "account_id",
+      "selection_reason",
+      "rejected_candidates"
+    ],
     "audit_every_decision": true,
     "mirror_event": "broker.route.selected",
     "never_silently_switch_broker": true
