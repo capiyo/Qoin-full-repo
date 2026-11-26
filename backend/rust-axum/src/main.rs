@@ -478,15 +478,16 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         Err(error)=>{tracing::error!(error=%error,"algorithm selection read failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"algorithm selection unavailable"})));}
     };
     if selection.algorithm_id=="qoin-flow-momentum" { selection=default_algorithm_selection(&symbol); }
+    let mut venue_filter=doc!{"symbol":&symbol}; if let Some(venue)=query.venue.as_deref(){venue_filter.insert("venue",venue);}
     if selection.algorithm_id=="qoin-vector-baseline" {
         if selection.version!="edge-map-v1" {
             return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned V1 vector algorithm version is no longer active","current_version":"edge-map-v1"})));
         }
-        return match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
+        return match s.decisions.find_one({let mut filter=venue_filter.clone();filter.insert("strategy_key","qoin-vector-baseline");filter},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await {
             Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");let mut value=mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default();
                 if let Some(o)=value.as_object_mut(){o.insert("selected_algorithm_id".into(),serde_json::json!(selection.algorithm_id));o.insert("selected_algorithm_version".into(),serde_json::json!(selection.version));}
                 (StatusCode::OK,Json(value))},
-            Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"strategy_key":"qoin-vector-baseline","selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,"action":"wait","reason":"No vector decision is available yet."}))),
+            Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":query.venue,"strategy_key":"qoin-vector-baseline","selected_algorithm_id":selection.algorithm_id,"selected_algorithm_version":selection.version,"action":"wait","reason":"No vector decision is available yet."}))),
             Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
         };
     }
@@ -497,7 +498,7 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         return (StatusCode::CONFLICT,Json(serde_json::json!({"error":"the pinned V2 version is no longer active","current_version":"measure-ledger-v2"})));
     }
     let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1}).limit(251).build();
-    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+    let mut cursor=match s.events.find(venue_filter.clone(),Some(options)).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"V2 measure ledger source query failed");return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"V2 event ledger unavailable"})));}
     };
@@ -520,6 +521,7 @@ async fn get_algorithm_decision(State(s): State<AppState>, headers: HeaderMap, Q
         Ok(mut value)=>{
             if let Some(object)=value.as_object_mut() {
                 object.insert("selected_algorithm_id".into(),serde_json::json!(selection.algorithm_id));
+                if let Some(venue)=query.venue.as_deref(){object.insert("venue".into(),serde_json::json!(venue));}
                 object.insert("selected_algorithm_version".into(),serde_json::json!(selection.version));
             }
             (StatusCode::OK,Json(value))
