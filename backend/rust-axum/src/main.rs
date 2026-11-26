@@ -3067,6 +3067,31 @@ async fn put_strategy(State(s):State<AppState>,Json(strategy):Json<EdgeStrategy>
     (StatusCode::OK,Json(serde_json::json!({"status":"legacy_strategy_updated","legacy_only":true,"applies_to_active_vector_engine":false,"strategy":stored,"live_trading":false})))
 }
 #[tokio::main]
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(error=%error, "failed to install Ctrl-C shutdown handler");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => { signal.recv().await; }
+            Err(error) => {
+                tracing::error!(error=%error, "failed to install SIGTERM shutdown handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl-C; graceful shutdown starting"),
+        _ = terminate => tracing::info!("received SIGTERM; graceful shutdown starting"),
+    }
+}
+
 async fn main(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
     let mut signal_config = EngineConfig::default();
@@ -3327,7 +3352,7 @@ async fn main(){
     }
     let listener=tokio::net::TcpListener::bind(&addr).await.expect("bind Axum listener");
     tracing::info!("Qoin Axum research engine listening on {addr}; live orders remain disconnected");
-    axum::serve(listener,app).await.expect("Axum server failed");
+    axum::serve(listener,app).with_graceful_shutdown(shutdown_signal()).await.expect("Axum server failed");
 }
 
 #[cfg(test)]
