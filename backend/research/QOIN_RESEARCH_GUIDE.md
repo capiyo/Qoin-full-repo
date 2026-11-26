@@ -17,6 +17,8 @@ Represent each normalized force as a point/vector. Use angular alignment, magnit
 ## Learning protocol
 Start a fresh adaptive episode at each new position. Partial fills belong to the same episode; closing completes it; a reversal must be a separate close and open lifecycle. Persist all feature observations, configuration versions, weights, decisions, fills, and outcomes. Completed-trade outcomes are offline calibration data only; do not let one trade update production weights immediately.
 
+The standalone `qoin-axum-api` workspace binary is a loopback-only research server on port 8082 by default. The production `qoin-flow-engine` service is the private Axum/MongoDB service on port 8081 behind Drogon. These listeners are deliberately separate; the research binary is not a broker gateway or production order service.
+
 ## Production-engine parity
 
 Python must not implement a second decision engine. `research.vector_model.evaluate_signal` is a thin HTTP bridge to Axum `POST /v1/signal`; Axum invokes the production Rust `qoin-vector-engine` crate and returns its versioned `Signal`. It validates and serializes the Rust `ForceObservation` contract but contains no model coefficients, attention calculation or decision thresholds.
