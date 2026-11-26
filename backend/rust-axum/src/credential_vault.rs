@@ -2,13 +2,13 @@
 //! The active key is deployment-managed; previous keys may be retained during rotation.
 //! Ciphertext is never returned by API handlers and plaintext buffers are zeroized.
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng, Payload},
+    aead::{Aead, AeadCore, KeyInit, OsRng, Payload},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, env};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedCredentialEnvelope {
