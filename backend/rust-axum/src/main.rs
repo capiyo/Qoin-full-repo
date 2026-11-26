@@ -2605,8 +2605,13 @@ async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQ
         return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"a valid symbol is required"})));
     }
     let limit=q.limit.unwrap_or(500).clamp(1,1000);
+    let mut source_filter=doc!{"symbol":&symbol};
+    if let Some(venue)=q.venue.as_deref(){source_filter.insert("venue",venue);}
+    let mut observation_filter=source_filter.clone(); observation_filter.insert("record_type","observation");
+    let mut relation_filter=source_filter.clone(); relation_filter.insert("record_type","relation_edge");
+    let mut truncated_filter=observation_filter.clone(); truncated_filter.insert("relation_edges_truncated",true);
     let options=FindOptions::builder().sort(doc!{"event_time_ms":1,"record_id":1}).limit(limit+1).build();
-    let mut cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol,"record_type":"observation"},Some(options)).await {
+    let mut cursor=match s.set_ledger_records.find(observation_filter.clone(),Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable observation reconstruction query failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation ledger unavailable","symbol":symbol})));}
@@ -2643,22 +2648,22 @@ async fn reconstruct_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQ
         }
         events.push(event);
     }
-    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+    let observation_count=match s.set_ledger_records.count_documents(observation_filter.clone(),None).await {
         Ok(count)=>count,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable observation count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable observation count unavailable"})));}
     };
-    let source_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+    let source_count=match s.events.count_documents(source_filter.clone(),None).await {
         Ok(count)=>count,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"raw source event count failed during reconstruction");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw source event count unavailable"})));}
     };
-    let relation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"relation_edge"},None).await {
+    let relation_count=match s.set_ledger_records.count_documents(relation_filter.clone(),None).await {
         Ok(count)=>count,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed during reconstruction");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation count unavailable"})));}
     };
-    let truncated_relation_observations=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation","relation_edges_truncated":true},None).await {
+    let truncated_relation_observations=match s.set_ledger_records.count_documents(truncated_filter.clone(),None).await {
         Ok(count)=>count,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"relation coverage count failed during reconstruction");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"relation coverage count unavailable"})));}
@@ -2687,8 +2692,13 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
         return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"symbol is required"})));
     }
     let limit=q.limit.unwrap_or(500).clamp(1,1000);
+    let mut source_filter=doc!{"symbol":&symbol};
+    if let Some(venue)=q.venue.as_deref(){source_filter.insert("venue",venue);}
+    let mut relation_filter=source_filter.clone(); relation_filter.insert("record_type","relation_edge");
+    let mut observation_filter=source_filter.clone(); observation_filter.insert("record_type","observation");
+    let mut truncated_filter=source_filter.clone(); truncated_filter.insert("relation_scan_truncated",true);
     let options=FindOptions::builder().sort(doc!{"ts_ms":-1,"event_id":-1,"venue":-1}).limit(limit + 1).build();
-    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+    let mut cursor=match s.events.find(source_filter.clone(),Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"set ledger event query failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"set ledger evidence unavailable","symbol":symbol}))); }
@@ -2717,34 +2727,34 @@ async fn get_set_ledger(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->
     events.reverse();
     let ledger=set_ledger::build(&symbol,&events,skipped_invalid_events,limit as usize,universe_truncated);
     let mut response=serde_json::to_value(ledger).unwrap_or_default();
-    let durable_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol},None).await {
+    let durable_count=match s.set_ledger_records.count_documents(source_filter.clone(),None).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable ledger count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable set ledger unavailable","symbol":symbol}))); }
     };
-    let relation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"relation_edge"},None).await {
+    let relation_count=match s.set_ledger_records.count_documents(relation_filter.clone(),None).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation ledger unavailable","symbol":symbol}))); }
     };
-    let source_event_count=match s.events.count_documents(doc!{"symbol":&symbol},None).await {
+    let source_event_count=match s.events.count_documents(source_filter.clone(),None).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable history source count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable history source count unavailable","symbol":symbol}))); }
     };
-    let observation_count=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"record_type":"observation"},None).await {
+    let observation_count=match s.set_ledger_records.count_documents(observation_filter.clone(),None).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable history observation count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable history observation count unavailable","symbol":symbol}))); }
     };
     let durable_history_complete=source_event_count==observation_count;
-    let truncated_relation_scans=match s.set_ledger_records.count_documents(doc!{"symbol":&symbol,"relation_scan_truncated":true},None).await {
+    let truncated_relation_scans=match s.set_ledger_records.count_documents(truncated_filter.clone(),None).await {
         Ok(value)=>value,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable relation coverage count failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable relation coverage count unavailable","symbol":symbol}))); }
     };
     let record_options=FindOptions::builder().sort(doc!{"event_time_ms":-1,"record_type":1}).limit(limit as i64).build();
-    let mut record_cursor=match s.set_ledger_records.find(doc!{"symbol":&symbol},Some(record_options)).await {
+    let mut record_cursor=match s.set_ledger_records.find(source_filter.clone(),Some(record_options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,symbol=%symbol,"durable ledger records query failed");
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"durable ledger records unavailable","symbol":symbol}))); }
