@@ -3153,6 +3153,8 @@ async fn main(){
     let orders:Collection<Document>=db.collection("live_orders");
     let trading_controls:Collection<Document>=db.collection("trading_controls");
     let users:Collection<Document>=db.collection("qoin_users");
+    let notifications:Collection<Document>=db.collection("notifications");
+    let fcm_tokens:Collection<Document>=db.collection("fcm_tokens");
     let algorithm_selections:Collection<Document>=db.collection("user_algorithm_selections");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
     let broker_environment = Arc::new(broker_env::BrokerEnvironment::from_env()

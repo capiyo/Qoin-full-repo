@@ -45,8 +45,8 @@ pub struct RelationshipKindSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct V2EvaluationReport {
-    pub symbol: String,
-    pub venue: String,
+    pub source_domain: String,
+    pub target_domain: String,
     pub horizon_ms: i64,
     pub discovered_relationships: usize,
     pub evaluated_relationships: usize,
@@ -86,21 +86,19 @@ pub fn evaluate_forward_window(
 }
 
 pub fn evaluate(
-    symbol: &str,
-    venue: &str,
+    source_domain: &str,
+    target_domain: &str,
     horizon_ms: i64,
     ledger: &[RelationshipLedgerEvent],
     observations: &[PriceObservation],
 ) -> Result<V2EvaluationReport, String> {
-    if symbol.trim().is_empty() || venue.trim().is_empty() || horizon_ms <= 0 || horizon_ms > 90 * 24 * 60 * 60 * 1000 {
-        return Err("symbol and venue are required; horizon must be in (0, 90 days]".into());
+    if source_domain.trim().is_empty() || target_domain.trim().is_empty() || horizon_ms <= 0 || horizon_ms > 90 * 24 * 60 * 60 * 1000 {
+        return Err("source and target domains are required; horizon must be in (0, 90 days]".into());
     }
     let discovered = ledger.iter().filter(|event| {
         event.event_type == RelationshipEventType::Discovered
-            && event.relationship.source_symbol.as_deref() == Some(symbol)
-            && event.relationship.target_symbol.as_deref() == Some(symbol)
-            && event.relationship.source_venue.as_deref() == Some(venue)
-            && event.relationship.target_venue.as_deref() == Some(venue)
+            && event.relationship.source_domain == source_domain
+            && event.relationship.target_domain == target_domain
     }).collect::<Vec<_>>();
     let mut samples = Vec::new();
     for event in &discovered {
@@ -152,8 +150,8 @@ pub fn evaluate(
     }).collect();
     let evaluated = samples.len();
     Ok(V2EvaluationReport {
-        symbol: symbol.into(),
-        venue: venue.into(),
+        source_domain: source_domain.into(),
+        target_domain: target_domain.into(),
         horizon_ms,
         discovered_relationships: discovered.len(),
         evaluated_relationships: evaluated,
@@ -165,6 +163,7 @@ pub fn evaluate(
             "Attention weights are descriptive model weights, not probabilities, causal effects, or position sizes.".into(),
             "Each sample starts strictly after its evidence timestamp; overlapping horizons are not independent observations.".into(),
             "No fees, fills, slippage, portfolio exposure, or order execution are simulated by this V2 report.".into(),
+            "Current relationship records are domain-scoped; they do not encode instrument symbols or venue identity.".into(),
             "Vector V1 remains the sole decision authority; this report cannot change V1 signals or submit orders.".into(),
         ],
     })
