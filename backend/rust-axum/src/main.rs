@@ -38,6 +38,7 @@ mod market_data_backfill;
 mod market_data_health;
 mod v2_relationships;
 mod paper_session;
+mod operating_cycle;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
 
