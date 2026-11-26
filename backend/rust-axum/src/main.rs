@@ -125,7 +125,7 @@ struct AppState {
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
 
 #[derive(Deserialize)]
-struct SymbolQuery { symbol: Option<String> }
+struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 #[derive(Deserialize)]
 struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 #[derive(Debug, Clone, Deserialize)]
@@ -894,8 +894,9 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"event lookup unavailable"})));
         }
     }
+    let state_key=format!("{}|{}",event.venue,event.symbol);
     if let Ok(memory)=s.memory.read() {
-        if let Some(previous)=memory.get(&event.symbol) {
+        if let Some(previous)=memory.get(&state_key) {
             if !event_follows_state(&event, previous) {
                 return (StatusCode::CONFLICT,Json(serde_json::json!({
                     "error":"out-of-order market event rejected",
@@ -928,7 +929,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let snapshot={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(event.symbol.clone()).or_default(); apply(state,&event); state.clone()
+        let state=guard.entry(state_key.clone()).or_default(); apply(state,&event); state.clone()
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
@@ -1020,24 +1021,32 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
 }
 async fn get_state(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    if let Ok(g)=s.memory.read(){if let Some(v)=g.get(&symbol){return(StatusCode::OK,Json(serde_json::to_value(v).unwrap_or_default()));}}
-    match s.states.find_one(doc!{"symbol":&symbol},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let mut filter=doc!{"symbol":&symbol};
+    if let Some(venue)=q.venue.as_deref(){filter.insert("last_event_venue",venue);}
+    if let Ok(g)=s.memory.read(){
+        let state=if let Some(venue)=q.venue.as_deref(){g.get(&format!("{venue}|{symbol}"))}
+            else{g.values().filter(|value|value.symbol==symbol).max_by_key(|value|value.last_event_ts_ms.unwrap_or(0))};
+        if let Some(value)=state{return(StatusCode::OK,Json(serde_json::to_value(value).unwrap_or_default()));}
+    }
+    match s.states.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":q.venue,"event_count":0,"order_flow_imbalance":0.0,"state_quality":0.0}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"state storage unavailable"})))
     }
 }
 async fn get_vector(State(s):State<AppState>,Query(q):Query<SymbolQuery>)->impl IntoResponse{
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
-    match s.decisions.find_one(doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"},FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
+    let mut filter=doc!{"symbol":&symbol,"strategy_key":"qoin-vector-baseline"};
+    if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
+    match s.decisions.find_one(filter,FindOneOptions::builder().sort(doc!{"stored_at":-1}).build()).await{
         Ok(Some(mut d))=>{d.remove("_id");d.remove("stored_at");(StatusCode::OK,Json(mongodb::bson::from_document::<serde_json::Value>(d).unwrap_or_default()))},
-        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"strategy_key":"qoin-vector-baseline","model_version":"qoin-seven-force-vector-v1","action":"wait","reason":"no seven-force engine decision available yet"}))),
+        Ok(None)=>(StatusCode::OK,Json(serde_json::json!({"symbol":symbol,"venue":q.venue,"strategy_key":"qoin-vector-baseline","model_version":"qoin-seven-force-vector-v1","action":"wait","reason":"no seven-force engine decision available yet"}))),
         Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision storage unavailable"})))
     }
 }
 
 #[derive(Deserialize)]
-struct HistoryQuery { symbol: Option<String>, limit: Option<i64>, at_ms: Option<i64> }
+struct HistoryQuery { symbol: Option<String>, venue: Option<String>, limit: Option<i64>, at_ms: Option<i64> }
 
 
 async fn fetch_binance_aggregate_trade_page(
@@ -2100,11 +2109,12 @@ async fn spawn_finnhub_stream(axum_addr: String, token: String, symbols: Vec<Str
 async fn get_events(State(s):State<AppState>,Query(q):Query<HistoryQuery>)->impl IntoResponse {
     let symbol=q.symbol.unwrap_or_else(||"BTCUSDT".into());
     let limit=q.limit.unwrap_or(100).clamp(1,1000);
+    let mut filter=doc!{"symbol":&symbol}; if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
     let options=FindOptions::builder().sort(doc!{"ts_ms":-1}).limit(limit).build();
-    let mut cursor=match s.events.find(doc!{"symbol":&symbol},Some(options)).await {
+    let mut cursor=match s.events.find(filter,Some(options)).await {
         Ok(cursor)=>cursor,
         Err(error)=>{tracing::error!(error=%error,"raw event history query failed");
-            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw event history unavailable","symbol":symbol}))); }
+            return (StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"raw event history unavailable","symbol":symbol,"venue":q.venue}))); }
     };
     let mut items=Vec::new();
     loop {
@@ -2774,11 +2784,12 @@ async fn get_vector_history(State(s):State<AppState>,Query(q):Query<HistoryQuery
         if at_ms<=0 {
             return (StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"at_ms must be a positive Unix timestamp in milliseconds"})));
         }
-        let filter=doc!{
+        let mut filter=doc!{
             "symbol":&symbol,
             "strategy_key":"qoin-vector-baseline",
             "input_event.event_ts_ms":{"$lte":at_ms}
         };
+        if let Some(venue)=q.venue.as_deref(){filter.insert("venue",venue);}
         let options=FindOneOptions::builder().sort(doc!{"input_event.event_ts_ms":-1}).build();
         return match s.decisions.find_one(filter,Some(options)).await {
             Ok(Some(mut document))=>{
@@ -3241,7 +3252,7 @@ async fn main(){
         .expect("read immutable market event log during recovery") {
         match mongodb::bson::from_document::<MarketEvent>(document) {
             Ok(event) if validate_event(&event).is_ok() => {
-                let state = restored_memory.entry(event.symbol.clone()).or_default();
+                let state = restored_memory.entry(format!("{}|{}",event.venue,event.symbol)).or_default();
                 apply(state, &event);
                 replayed_events += 1;
             }
