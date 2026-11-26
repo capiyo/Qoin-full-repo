@@ -82,7 +82,7 @@ pub struct ReplayResult {
     pub annualized_return_pct: Option<f64>, pub volatility_pct: Option<f64>,
     pub sharpe_ratio: Option<f64>, pub sortino_ratio: Option<f64>, pub calmar_ratio: Option<f64>,
     pub win_rate_pct: Option<f64>, pub profit_factor: Option<f64>,
-    pub gross_profit: f64, pub gross_loss: f64, pub completed_trades: usize,
+    pub winning_trade_pnl: f64, pub losing_trade_pnl: f64, pub completed_trades: usize,
     pub max_gross_exposure_pct: f64, pub transaction_costs: f64,
     pub buy_and_hold_return_pct: Option<f64>,
     pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
@@ -518,18 +518,18 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         if fill.status == ReplayOrderStatus::Filled { entry.1 = true; }
     }
     let completed: Vec<f64> = closed_trade_pnl.values().filter(|(pnl, complete)| *complete && pnl.is_finite()).map(|(pnl, _)| *pnl).collect();
-    let gross_profit = completed.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
-    let gross_loss = -completed.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
+    let winning_trade_pnl = completed.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
+    let losing_trade_pnl = -completed.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
     let completed_trades = completed.len();
     let win_rate_pct = (completed_trades > 0).then_some(
         completed.iter().filter(|pnl| **pnl > 0.0).count() as f64 / completed_trades as f64 * 100.0
     );
-    let profit_factor = (gross_loss > 0.0).then_some(gross_profit / gross_loss).filter(|value| value.is_finite());
+    let profit_factor = (losing_trade_pnl > 0.0).then_some(winning_trade_pnl / losing_trade_pnl).filter(|value| value.is_finite());
     let buy_and_hold_return_pct = first_mark_price.filter(|price| *price > 0.0)
         .map(|first| (final_mark / first - 1.0) * 100.0)
         .filter(|value| value.is_finite());
     let transaction_costs = fees + slippage + market_impact_paid;
-    if !gross_profit.is_finite() || !gross_loss.is_finite() || !transaction_costs.is_finite() || !max_gross_exposure_pct.is_finite() {
+    if !winning_trade_pnl.is_finite() || !losing_trade_pnl.is_finite() || !transaction_costs.is_finite() || !max_gross_exposure_pct.is_finite() {
         return Err("backtest performance metric overflowed".into());
     }
     let realized_execution_costs = transaction_costs;
@@ -558,7 +558,7 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         final_equity,net_pnl,net_return_pct,
         max_drawdown_pct:max_dd*100.0,
         annualized_return_pct,volatility_pct,sharpe_ratio,sortino_ratio,calmar_ratio,
-        win_rate_pct,profit_factor,gross_profit,gross_loss,completed_trades,
+        win_rate_pct,profit_factor,winning_trade_pnl,losing_trade_pnl,completed_trades,
         max_gross_exposure_pct,transaction_costs,buy_and_hold_return_pct,
         fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps,market_impact_paid,fills,last_decision,
         unfilled_pending_order: pending_order,
