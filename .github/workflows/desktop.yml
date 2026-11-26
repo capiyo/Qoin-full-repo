@@ -2,7 +2,7 @@ name: Desktop
 
 on:
   push:
-    branches: [main, qoin-archive-explore-vector-ui]
+    branches: [master, main, qoin-archive-explore-vector-ui]
     paths:
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
