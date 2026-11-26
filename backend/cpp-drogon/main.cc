@@ -357,6 +357,14 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/paper-session");
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/paper-session/trades", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/paper-session/trades");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/paper-session/decisions", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/paper-session/decisions");
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/paper-session/start", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/paper-session/start");
