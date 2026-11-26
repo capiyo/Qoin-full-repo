@@ -3,7 +3,7 @@
 //! has an isolated quote-currency ledger; capital is never silently shared
 //! across instruments or currencies.
 use crate::MarketEvent;
-use crate::edge_strategy::EdgeDecision;
+use qoin_vector_engine::{Decision, DecisionDiagnostics, Signal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -128,10 +128,10 @@ impl PaperAccount {
         }).unwrap_or(0.0);
         self.cash + marked
     }
-    fn process(&mut self, event: &MarketEvent, decision: &EdgeDecision, cycle_id: &str) -> (PaperMirrorRecord, Option<PaperTradeRecord>) {
+    fn process(&mut self, event: &MarketEvent, decision: &Signal, cycle_id: &str) -> (PaperMirrorRecord, Option<PaperTradeRecord>) {
         self.events = self.events.saturating_add(1);
         self.decisions = self.decisions.saturating_add(1);
-        match decision.action { "buy" => self.buy_signals += 1, "sell" => self.sell_signals += 1, _ => self.wait_signals += 1 }
+        match decision.action.as_str() { "buy" => self.buy_signals += 1, "sell" => self.sell_signals += 1, _ => self.wait_signals += 1 }
         let quote = match (event.bid, event.ask) {
             (Some(bid), Some(ask)) if bid.is_finite() && ask.is_finite() && bid > 0.0 && ask >= bid => {
                 self.last_bid = Some(bid); Some((bid, ask))
@@ -178,7 +178,7 @@ impl PaperAccount {
                 let debit = filled_notional + fee;
                 if debit <= self.cash && quantity.is_finite() && quantity > 0.0 {
                     self.cash -= debit; self.fees_paid += fee; self.entries += 1;
-                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, entry_event_id: event.event_id.clone(), strategy_version: decision.strategy_version.clone(), quantity, entry_price, entry_fee: fee });
+                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, entry_event_id: event.event_id.clone(), strategy_version: decision.config_version.clone(), quantity, entry_price, entry_fee: fee });
                     execution = if action.signal_ts_ms == event.ts_ms { "entered_long" } else { "filled_pending_buy" }.into();
                 } else {
                     self.skipped_entries += 1; execution = "skipped_insufficient_cash".into();
@@ -225,8 +225,8 @@ impl PaperAccount {
             notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
             fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
             ts_ms: event.ts_ms, strategy_version: decision.strategy_version.clone(),
-            bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.into(),
-            reason: decision.reason.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
+            bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.clone(),
+            reason: decision.rationale.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
             magnitude: decision.magnitude, angle_radians: decision.angle_radians, spread_bps, execution,
             equity, cash: self.cash, realized_pnl: self.realized_pnl, fees_paid: self.fees_paid,
@@ -357,40 +357,44 @@ mod tests {
             event_type: "book".into(), ts_ms, price: None, size: None, side: None, bid, ask,
             bid_size: None, ask_size: None, funding_rate: None, open_interest: None, liquidation_side: None }
     }
-    fn decision(action: &'static str) -> EdgeDecision {
-        EdgeDecision {
-            symbol: "BTCUSDT".into(),
-            strategy_key: "active".into(),
-            strategy_version: "v1".into(),
-            input_event: None,
-            liquidation_side: None,
+    fn decision(action: &'static str) -> Signal {
+        let decision = match action {
+            "buy" => Decision::Buy,
+            "sell" => Decision::Sell,
+            _ => Decision::Wait,
+        };
+        Signal {
+            decision,
+            action: action.to_owned(),
+            score: 1.0,
+            alignment: 1.0,
+            angle_radians: 0.1,
+            angle_degrees: 5.7295779513,
+            active_force_count: 7,
+            config_version: "test-v1".into(),
+            rationale: "paper-session test signal".into(),
+            feature_names: vec![],
             raw_inputs: BTreeMap::new(),
-            feature_trace: vec![],
-            strategy_parameters: crate::edge_strategy::EdgeStrategy::baseline(),
             features: BTreeMap::new(),
             attention: vec![],
             attended_features: vec![],
+            feature_trace: vec![],
             decision_vector: [0.8, 0.1],
             magnitude: 0.8,
-            angle_radians: 0.1,
-            angular_threshold_radians: 0.4,
-            action,
-            reason: "test".into(),
-            diagnostics: crate::edge_strategy::DecisionDiagnostics {
+            interaction_contribution: 0.0,
+            diagnostics: DecisionDiagnostics {
                 spread_present: true,
                 spread_within_limit: true,
-                event_intensity_positive: true,
+                spread_fresh: true,
+                alignment_passed: true,
                 magnitude_passed: true,
-                buy_angle_passed: true,
-                sell_angle_passed: true,
-                bullish_exceeds_bearish: true,
-                bearish_exceeds_bullish: false,
+                angle_passed: true,
+                active_force_count: 7,
                 spread_limit_bps: 20.0,
-                magnitude_limit: 0.1,
-                angle_limit_degrees: 30.0,
+                signal_threshold: 0.1,
+                alignment_threshold: 0.1,
+                angle_limit_radians: 0.5,
             },
-            angle_degrees: 5.7295779513,
-            research_only: true,
         }
     }
     #[test]
