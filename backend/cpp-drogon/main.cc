@@ -67,6 +67,8 @@ public:
         });
         auto upstreamRequest = drogon::HttpRequest::newHttpRequest();
         upstreamRequest->setPath(path);
+        const auto authorization = request->getHeader("authorization");
+        if (!authorization.empty()) upstreamRequest->addHeader("authorization", authorization);
         client->connectToServer(upstreamRequest,
             [downstream, client, key = connection.get()](drogon::ReqResult result,
                 const drogon::HttpResponsePtr&, const drogon::WebSocketClientPtr&) {
@@ -344,32 +346,17 @@ int main() {
         proxyGet(req, std::move(cb), "/internal/me/algorithm-decision" +
             (symbol.empty() ? std::string{} : "?symbol=" + drogon::utils::urlEncode(symbol)));
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/broker-credentials/public-key", [](const drogon::HttpRequestPtr& req,
+    // Broker credentials are provisioned only through backend deployment secrets.
+    drogon::app().registerHandler("/api/v1/brokers/configuration", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        proxyGet(req, std::move(cb), "/internal/broker-credentials/public-key");
+        proxyGet(req, std::move(cb), "/internal/brokers/configuration");
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/broker-connections", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        if (req->method() == drogon::Get) proxyGet(req, std::move(cb), "/internal/broker-connections");
-        else proxyPostJson(req, std::move(cb), "/internal/broker-connections");
-    }, {drogon::Get, drogon::Post});
-    drogon::app().registerHandler("/api/v1/broker-connections/{1}", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb, const std::string& connectionId) {
-        proxyDelete(req, std::move(cb), "/internal/broker-connections/" + drogon::utils::urlEncode(connectionId));
-    }, {drogon::Delete});
     drogon::app().registerHandler("/api/v1/broker-accounts", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/broker-accounts");
     }, {drogon::Get});
 
-    drogon::app().registerHandler("/api/v1/orders", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
-        proxyPostJson(req, std::move(cb), "/internal/orders");
-    }, {drogon::Post});
-    drogon::app().registerHandler("/api/v1/orders/{1}/reconcile", [](const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& cb, const std::string& clientOrderId) {
-        proxyGet(req, std::move(cb), "/internal/orders/" + drogon::utils::urlEncode(clientOrderId) + "/reconcile");
-    }, {drogon::Get});
+    // Live order submission and reconciliation remain private Axum operations.
     drogon::app().registerHandler("/api/v1/trading/readiness", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto brokers = req->getParameter("brokers");
