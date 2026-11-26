@@ -17,6 +17,9 @@ use tokio::sync::{broadcast, Mutex};
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
+mod broker_contract;
+mod broker_allocation;
+mod broker_allocation_policy;
 mod algorithm_catalogue;
 mod algorithm_entitlements;
 mod edge_strategy;
