@@ -79,6 +79,12 @@ pub struct ReplayResult {
     pub decisions: usize, pub buy_decisions: usize, pub sell_decisions: usize,
     pub wait_decisions: usize, pub initial_capital: f64, pub final_equity: f64,
     pub net_pnl: f64, pub net_return_pct: f64, pub max_drawdown_pct: f64,
+    pub annualized_return_pct: Option<f64>, pub volatility_pct: Option<f64>,
+    pub sharpe_ratio: Option<f64>, pub sortino_ratio: Option<f64>, pub calmar_ratio: Option<f64>,
+    pub win_rate_pct: Option<f64>, pub profit_factor: Option<f64>,
+    pub gross_profit: f64, pub gross_loss: f64, pub completed_trades: usize,
+    pub max_gross_exposure_pct: f64, pub transaction_costs: f64,
+    pub buy_and_hold_return_pct: Option<f64>,
     pub fees_paid: f64, pub slippage_paid: f64, pub net_funding_cashflow: f64, pub funding_settlements: usize,
     pub fee_bps: f64, pub slippage_bps: f64, pub latency_ms: i64,
     pub max_participation_rate: f64, pub market_impact_bps: f64, pub market_impact_paid: f64,
@@ -214,6 +220,10 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let mut peak=initial_capital; let mut max_dd: f64=0.0; let mut fills=Vec::new();
     let mut net_funding_cashflow=0.0; let mut funding_settlements=0usize; let mut market_impact_paid=0.0;
     let mut buys=0; let mut sells=0; let mut waits=0; let mut last_decision=None;
+    let mut daily_equity: Vec<f64> = Vec::new();
+    let mut last_equity_day: Option<i64> = None;
+    let mut max_gross_exposure_pct: f64 = 0.0;
+    let mut first_mark_price: Option<f64> = None;
     let mut pending_order: Option<ReplayPendingOrder> = None;
     for event in &events {
         if let Some(previous_ts) = state.last_event_ts_ms {
@@ -226,7 +236,10 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
             state.open_interest_change *= oi_decay;
         }
         let current_mark_price = event_mark_price(event);
-        if let Some(price) = current_mark_price { state.last_mark_price = Some(price); }
+        if let Some(price) = current_mark_price {
+            state.last_mark_price = Some(price);
+            if first_mark_price.is_none() { first_mark_price = Some(price); }
+        }
 
         // A decision made on an earlier event may only fill on this later,
         // executable trade/book observation. Funding and mark events are not fills.
@@ -399,8 +412,29 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         match decision.action.as_str() { "buy"=>buys+=1,"sell"=>sells+=1,_=>waits+=1 }
         let mark = state.last_mark_price.or(state.last_price);
         if let Some(price)=mark {
-            let equity=cash+position*price; peak=peak.max(equity);
+            let equity=cash+position*price;
+            peak=peak.max(equity);
             if peak>0.0 {max_dd=max_dd.max((peak-equity)/peak);}
+            if equity.is_finite() && equity > 0.0 {
+                let day = event.ts_ms.div_euclid(86_400_000);
+                match last_equity_day {
+                    None => {
+                        daily_equity.push(equity);
+                        last_equity_day = Some(day);
+                    }
+                    Some(previous_day) if day == previous_day => {
+                        if let Some(last) = daily_equity.last_mut() { *last = equity; }
+                    }
+                    Some(previous_day) if day > previous_day => {
+                        let previous_equity = daily_equity.last().copied().unwrap_or(equity);
+                        for _ in (previous_day + 1)..day { daily_equity.push(previous_equity); }
+                        daily_equity.push(equity);
+                        last_equity_day = Some(day);
+                    }
+                    _ => {}
+                }
+                max_gross_exposure_pct = max_gross_exposure_pct.max((position * price / equity).max(0.0) * 100.0);
+            }
         }
         if pending_order.is_none() {
             let should_queue = (decision.action == "buy" && position == 0.0)
@@ -435,7 +469,58 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
     let final_mark=state.last_mark_price.or(state.last_price).unwrap_or(0.0); let final_equity=cash+position*final_mark;
     let net_pnl = final_equity - initial_capital;
     let net_return_pct = (final_equity / initial_capital - 1.0) * 100.0;
-    let realized_execution_costs = fees + slippage + market_impact_paid;
+    let elapsed_ms = events.last().unwrap().ts_ms.saturating_sub(events.first().unwrap().ts_ms);
+    let elapsed_years = elapsed_ms as f64 / (365.25 * 86_400_000.0);
+    let annualized_return_pct = if elapsed_years > 0.0 && final_equity > 0.0 {
+        Some(((final_equity / initial_capital).powf(1.0 / elapsed_years) - 1.0) * 100.0)
+    } else { None };
+    let daily_returns: Vec<f64> = daily_equity.windows(2)
+        .filter_map(|pair| (pair[0] > 0.0).then_some(pair[1] / pair[0] - 1.0))
+        .filter(|value| value.is_finite())
+        .collect();
+    let mean_daily_return = if daily_returns.is_empty() { None } else {
+        Some(daily_returns.iter().sum::<f64>() / daily_returns.len() as f64)
+    };
+    let daily_variance = if daily_returns.len() >= 2 {
+        let mean = mean_daily_return.unwrap_or(0.0);
+        Some(daily_returns.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / (daily_returns.len() - 1) as f64)
+    } else { None };
+    let daily_volatility = daily_variance.map(f64::sqrt).filter(|value| value.is_finite() && *value > 0.0);
+    let volatility_pct = daily_volatility.map(|value| value * 365.25_f64.sqrt() * 100.0);
+    let sharpe_ratio = match (mean_daily_return, daily_volatility) {
+        (Some(mean), Some(volatility)) => Some(mean / volatility * 365.25_f64.sqrt()),
+        _ => None,
+    };
+    let downside_deviation = if daily_returns.is_empty() { None } else {
+        Some((daily_returns.iter().map(|value| value.min(0.0).powi(2)).sum::<f64>() / daily_returns.len() as f64).sqrt())
+    }.filter(|value| value.is_finite() && *value > 0.0);
+    let sortino_ratio = match (mean_daily_return, downside_deviation) {
+        (Some(mean), Some(downside)) => Some(mean / downside * 365.25_f64.sqrt()),
+        _ => None,
+    };
+    let calmar_ratio = match (annualized_return_pct, max_dd > 0.0) {
+        (Some(annualized), true) => Some((annualized / 100.0) / max_dd),
+        _ => None,
+    };
+    let mut closed_trade_pnl: std::collections::BTreeMap<String, (f64, bool)> = std::collections::BTreeMap::new();
+    for fill in fills.iter().filter(|fill| fill.action == "SELL") {
+        let entry = closed_trade_pnl.entry(fill.order_id.clone()).or_insert((0.0, false));
+        entry.0 += fill.realized_pnl;
+        if fill.status == ReplayOrderStatus::Filled { entry.1 = true; }
+    }
+    let completed: Vec<f64> = closed_trade_pnl.values().filter(|(_, complete)| *complete).map(|(pnl, _)| *pnl).collect();
+    let gross_profit = completed.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
+    let gross_loss = -completed.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
+    let completed_trades = completed.len();
+    let win_rate_pct = (completed_trades > 0).then_some(
+        completed.iter().filter(|pnl| **pnl > 0.0).count() as f64 / completed_trades as f64 * 100.0
+    );
+    let profit_factor = (gross_loss > 0.0).then_some(gross_profit / gross_loss);
+    let buy_and_hold_return_pct = first_mark_price.filter(|price| *price > 0.0)
+        .map(|first| (final_mark / first - 1.0) * 100.0)
+        .filter(|value| value.is_finite());
+    let transaction_costs = fees + slippage + market_impact_paid;
+    let realized_execution_costs = transaction_costs;
     let execution_stress_scenarios = [
         ("baseline", 1.0),
         ("moderate_cost_stress", 1.5),
@@ -459,7 +544,11 @@ where F: FnMut(&str, &ReplayState, &ReplayEvent) -> Result<ReplayDecision, Strin
         event_gaps_over_5m:events.windows(2).filter(|pair|pair[1].ts_ms-pair[0].ts_ms>300_000).count(),
         decisions:events.len(),buy_decisions:buys,sell_decisions:sells,wait_decisions:waits,initial_capital,
         final_equity,net_pnl,net_return_pct,
-        max_drawdown_pct:max_dd*100.0,fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps,market_impact_paid,fills,last_decision,
+        max_drawdown_pct:max_dd*100.0,
+        annualized_return_pct,volatility_pct,sharpe_ratio,sortino_ratio,calmar_ratio,
+        win_rate_pct,profit_factor,gross_profit,gross_loss,completed_trades,
+        max_gross_exposure_pct,transaction_costs,buy_and_hold_return_pct,
+        fees_paid:fees,slippage_paid:slippage,net_funding_cashflow,funding_settlements,fee_bps,slippage_bps,latency_ms,max_participation_rate,market_impact_bps,market_impact_paid,fills,last_decision,
         unfilled_pending_order: pending_order,
         execution_stress_scenarios,
         assumptions:vec!["Historical replay uses only persisted raw events; it does not download missing history.".into(),
