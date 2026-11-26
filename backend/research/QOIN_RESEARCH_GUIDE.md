@@ -17,6 +17,12 @@ Represent each normalized force as a point/vector. Use angular alignment, magnit
 ## Learning protocol
 Start a fresh adaptive episode at each new position. Partial fills belong to the same episode; closing completes it; a reversal must be a separate close and open lifecycle. Persist all feature observations, configuration versions, weights, decisions, fills, and outcomes. Completed-trade outcomes are offline calibration data only; do not let one trade update production weights immediately.
 
+## Production-engine parity
+
+Python must not implement a second decision engine. `research.vector_model.evaluate_signal` is a thin HTTP bridge to Axum `POST /v1/signal`; Axum invokes the production Rust `qoin-vector-engine` crate and returns its versioned `Signal`. It validates and serializes the Rust `ForceObservation` contract but contains no model coefficients, attention calculation or decision thresholds.
+
+For chronological backtests, use the Rust `/internal/backtest` replay path (or a Rust library binding built from the same crate) rather than calling a Python reimplementation. Python's `vector_dynamics.py` remains research-only descriptive analysis; it cannot authorize, submit or mutate production decisions. The removed Python reference decision function was replaced by the Rust API bridge, and its tests now verify delegation/serialization rather than reproducing model outputs.
+
 ## Evaluation protocol
 Use the same signal code in paper, backtest, and any future live path. Replay events chronologically; split by time with purge and embargo; include realistic fees, spread, slippage, funding, market impact, and +50% cost stress. Compare against no-trade, simple linear/logistic, and buy-and-hold baselines. Report expectancy, profit factor, Sharpe/Sortino, drawdown, time under water, trade counts, regime splits, and bootstrap confidence intervals. Track every tried configuration and apply multiple-testing/deflated-Sharpe corrections.
 
