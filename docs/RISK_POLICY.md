@@ -1,6 +1,18 @@
 # Risk policy and hard gates
 
 ## Current implementation status
+
+### Active integration branch update — 2026-11-26
+
+On `qoin/backend-completion-auth`, the broker-neutral `submit_risk_checked` path now invokes both:
+1. the Decimal account-currency portfolio gate (`validate_portfolio_order`), including quote freshness, instrument multiplier/precision, FX conversion, broker margin, exposure, daily loss and protective-order checks; and
+2. the historical `order_safety::validate_order` gate from commit `3bef7b0c`, after converting the instrument quantity and reference/stop prices into account-currency exposure.
+
+The second gate is a stricter pre-dispatch approval layer, not a substitute for the Decimal portfolio validator. It requires all five deployment-managed flags to be explicitly true:
+`QOIN_LIVE_HUMAN_APPROVED`, `QOIN_LIVE_ACCOUNT_VERIFIED`, `QOIN_LIVE_WITHDRAWALS_DISABLED`, `QOIN_LIVE_KILL_SWITCH_HEALTHY`, and `QOIN_LIVE_RECONCILIATION_HEALTHY`. All are false in `.env.example`. The private order route additionally requires operator authorization and the persisted kill switch. No provider adapter is registered in the runtime registry, so live dispatch remains unavailable even if the approval flags are configured.
+
+The gateway now applies bounded per-peer fixed-window limits to proxied HTTP requests: 120 read requests and 30 write requests per 60 seconds, with a bounded 20,000-key peer table and HTTP 429 / Retry-After response on limit. The current implementation uses the direct peer address; deployments behind proxies must preserve source addresses or add an explicitly trusted proxy-address policy before relying on per-client limits.
+
 - The Axum vector endpoint emits research signals only. Live order submission is a separate private route (`POST /internal/orders`) and is not reachable through the public Drogon gateway.
 - The public market WebSocket (`/api/v1/stream`) forwards the caller's Firebase Bearer token through Drogon; Axum verifies the Firebase identity before accepting the WebSocket upgrade. Missing credentials or an unconfigured Firebase verifier fail closed. This authenticates stream access; market observations remain public-market data, not user-private portfolio data.
 - The public Drogon gateway does not register order submission or order reconciliation routes. Those operator endpoints remain on the private Axum service and must not be exposed by a reverse proxy or deployment rule.
