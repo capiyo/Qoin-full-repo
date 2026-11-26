@@ -54,5 +54,6 @@ pub(super) async fn get_history(
         items.push(serde_json::to_value(vector).map_err(|_|StatusCode::INTERNAL_SERVER_ERROR)?);
     }
     items.reverse();
-    Ok(Json(json!({"symbol":symbol,"venue":q.venue,"items":items,"count":items.len(),"limit":limit})))
+    let count=items.len();
+    Ok(Json(json!({"symbol":symbol,"venue":q.venue,"items":items,"count":count,"limit":limit})))
 }
