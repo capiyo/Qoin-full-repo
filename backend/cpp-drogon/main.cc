@@ -19,6 +19,7 @@ struct StreamProxySession {
 };
 std::mutex streamSessionsMutex;
 std::unordered_map<const drogon::WebSocketConnection*, std::shared_ptr<StreamProxySession>> streamSessions;
+bool allowGatewayRequest(const drogon::HttpRequestPtr& request, bool write);
 std::string upstreamWs() {
     const char* value = std::getenv("QOIN_AXUM_WS_URL");
     return value ? std::string(value) : "ws://127.0.0.1:8081";
@@ -41,6 +42,10 @@ public:
     }
     void handleNewConnection(const drogon::HttpRequestPtr& request,
                               const drogon::WebSocketConnectionPtr& connection) override {
+        if (!allowGatewayRequest(request, false)) {
+            connection->forceClose();
+            return;
+        }
         auto session = std::make_shared<StreamProxySession>();
         session->downstream = connection;
         session->upstream_client = drogon::WebSocketClient::newWebSocketClient(upstreamWs());
