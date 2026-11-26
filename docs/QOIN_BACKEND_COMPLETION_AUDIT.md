@@ -6,7 +6,7 @@ Active branch: `qoin/backend-completion-auth`
 Pull request: [#32](https://github.com/capiyo/Qoin-full-repo/pull/32) — draft, based on `main`  
 Base SHA: `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
 Audited candidate SHA before the owner-isolated paper-session change: `bb16843ed2aedad4396bd387ecb1f36d705ad0c3`  
-Current source head at this update: `c1f2f240d4eb0cc96e38583d123d5b1e70e86d15`  
+Current source head at this update: `f4b41c7778fc4bc28b93e5db8797d32ab1de9f8c`  
 Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes and the explicit HTTP 429 integration assertion on `fb558542...` were queued for CI at this audit update.
 
 > This audit records source findings and verified CI evidence. It does not describe the repository as production-ready. Do not interpret provider catalogues, adapter traits, test fixtures or paper simulations as live broker connectivity.
@@ -138,3 +138,5 @@ The V1 engine now explicitly exposes Attend, Pulse and pressure-blade contributi
 ## Quantitative research metrics update
 
 The Rust replay now calculates annualized return, annualized dailyized volatility, Sharpe and Sortino ratios (zero risk-free rate), Calmar ratio, max drawdown, completed exit-order win rate, net winning/losing trade P&L, profit factor, maximum gross exposure, transaction costs and a same-instrument buy-and-hold comparison. Unsupported/degenerate ratios serialize as `null`, not infinity. The backtest client remains a thin Python transport wrapper.
+
+Backtest metric definitions are now embedded in each Rust `ReplayResult.assumptions`: calendar-day annualization (365.25), zero risk-free rate for Sharpe, dailyized calendar returns, completed SELL-order aggregation for win rate/profit factor, net realized P&L after entry/exit fees, and same-instrument first-to-last mark buy-and-hold comparison. Unsupported ratios are represented as null. Exact-head verification remains pending.
