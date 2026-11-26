@@ -2207,6 +2207,24 @@ async fn stream_ws(
     let symbols = subscription_set(query.symbol, query.symbols);
     ws.on_upgrade(move |socket| stream_connection(socket, state, symbols)).into_response()
 }
+#[cfg(test)]
+mod stream_auth_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stream_auth_rejects_missing_bearer_token() {
+        let verifier = firebase_identity::FirebaseIdentityVerifier::new("qoin-test-project".into()).unwrap();
+        let result = firebase_uid_from_headers(Some(&verifier), &HeaderMap::new()).await;
+        assert_eq!(result, Err(StatusCode::UNAUTHORIZED));
+    }
+
+    #[tokio::test]
+    async fn stream_auth_fails_closed_when_firebase_is_unconfigured() {
+        let result = firebase_uid_from_headers(None, &HeaderMap::new()).await;
+        assert_eq!(result, Err(StatusCode::SERVICE_UNAVAILABLE));
+    }
+}
+
 async fn stream_connection(mut socket: WebSocket, state: AppState, mut symbols: HashSet<String>) {
     let hello = serde_json::json!({"type":"stream.ready","protocol_version":1,
         "subscribed_symbols":symbols,"server_ts_ms":chrono::Utc::now().timestamp_millis(),
