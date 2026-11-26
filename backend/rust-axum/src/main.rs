@@ -912,8 +912,8 @@ async fn submit_live_order(
     }
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
-        Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error":"broker submission outcome is unknown","broker_id":broker_id,"dispatch_started":false
+        Err(_error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error":"selected broker adapter is not registered; dispatch was not started","broker_id":broker_id,"dispatch_started":false
         }))),
     };
     if !adapter.broker_id().eq_ignore_ascii_case(&broker_id) {
@@ -1026,7 +1026,7 @@ async fn submit_live_order(
                     "broker submission failed and Qoin ledger update also failed");
             }
             (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-                "error":error.to_string(),"broker_id":broker_id,
+                "error":"broker submission outcome is unknown","broker_id":broker_id,
                 "client_order_id":submission.order.client_order_id,"reconciliation_required":true
             })))
         }
