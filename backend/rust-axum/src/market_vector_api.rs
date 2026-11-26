@@ -1,6 +1,6 @@
 use axum::{extract::{Query,State},http::{HeaderMap,StatusCode},Json};
 use futures_util::TryStreamExt;
-use mongodb::{bson::{doc,Document},options::{FindOneOptions,FindOptions}};
+use mongodb::{bson::doc,options::{FindOneOptions,FindOptions}};
 use qoin_market_space::MarketVector;
 use serde::Deserialize;
 use serde_json::{json,Value};
