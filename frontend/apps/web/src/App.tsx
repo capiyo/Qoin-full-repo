@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
-import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, runQoinBacktest, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -793,6 +793,15 @@ export default function App() {
       return undefined;
     }
   }, []);
+  useEffect(() => {
+    if (!firebaseUser) { setNotifications([]); return; }
+    let active = true;
+    void getQoinNotifications().then((result) => {
+      if (active) setNotifications(result.notifications);
+    }).catch(() => { /* Keep the live local notification stream available during API outages. */ });
+    return () => { active = false; };
+  }, [firebaseUser?.uid]);
+
   function requireAuthentication() { setAccountOpen(true); setAuthPanelOpen(true); setAuthError(firebaseUser ? "" : "Sign in to use this action."); }
   function rememberCardMode(symbol: string, mode: InstrumentMode) {
     const next = { ...cardModesRef.current, [symbol]: mode };
@@ -879,6 +888,16 @@ export default function App() {
   const unreadNotifications = notifications.filter((item) => !item.read).length;
   function addNotification(notification: QoinNotification) {
     setNotifications((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current].slice(0, 100));
+    void recordQoinNotification({
+      event_id: notification.id,
+      symbol: notification.symbol,
+      title: notification.title,
+      body: notification.body,
+      kind: notification.kind,
+      details: notification.details,
+    }).then((stored) => {
+      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, id: stored.id } : item));
+    }).catch(() => { /* Local alert remains visible if the notification service is unavailable. */ });
     if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
       try { new Notification(notification.title, { body: notification.body, tag: notification.id }); } catch { /* browser policy */ }
     }
@@ -1167,7 +1186,7 @@ export default function App() {
         {profileOpen && firebaseUser && <section className="account-menu profile-menu"><div className="account-identity"><strong>{firebaseUser.displayName || "Profile"}</strong><small>{firebaseUser.email}</small><small>{firebaseUser.uid}</small></div><button onClick={() => { setProfileOpen(false); setAccountOpen(false); }}>Close</button></section>}
         {authPanelOpen && <section className="auth-panel"><form onSubmit={submitAuthentication}><div className="account-identity"><strong>{authMode === "register" ? "Create your Qoin account" : "Sign in to Qoin"}</strong><small>Firebase-secured account</small></div><label>Email<input type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required /></label><label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={6} required /></label>{authError && <p role="alert">{authError}</p>}<button className="primary-button" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button><button type="button" className="account-switch" onClick={() => { setAuthMode((value) => value === "signin" ? "register" : "signin"); setAuthError(""); }}>{authMode === "register" ? "Already registered? Sign in" : "New to Qoin? Create an account"}</button><button type="button" className="account-switch" onClick={() => setAuthPanelOpen(false)}>Close</button></form></section>}
         {notificationsOpen && <section className="notification-panel" aria-label="Notification centre">
-          <div className="notification-panel-heading"><div><strong>Notifications</strong><small>{unreadNotifications} unread · live engine events</small></div><button onClick={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))}>Mark read</button></div>
+          <div className="notification-panel-heading"><div><strong>Notifications</strong><small>{unreadNotifications} unread · live engine events</small></div><button onClick={() => { const unread = notifications.filter((item) => !item.read); const persisted = unread.every((item) => /^[a-f0-9]{24}$/i.test(item.id)); void markQoinNotificationsRead(persisted ? unread.map((item) => item.id) : undefined).catch(() => {}); setNotifications((current) => current.map((item) => ({ ...item, read: true }))); }}>Mark read</button></div>
           {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && <button className="notification-permission" onClick={() => { if ("Notification" in window) void Notification.requestPermission(); }}>Enable desktop alerts</button>}
           <div className="notification-list">{notifications.length ? notifications.map((item) => <article className={"notification-item " + (item.read ? "is-read" : "")} key={item.id}><div className="notification-item-top"><span>{item.kind.toUpperCase()} · {item.symbol}</span><time>{new Date(item.createdAt).toLocaleTimeString()}</time></div><strong>{item.title}</strong><p>{item.body}</p><details><summary>Inspect trigger payload</summary><pre>{item.details}</pre></details></article>) : <p className="notification-empty">No alerts yet. Signal transitions and liquidation events from the live stream will appear here.</p>}</div>
         </section>}
