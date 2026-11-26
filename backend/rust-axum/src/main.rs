@@ -2192,9 +2192,20 @@ fn subscription_set(symbol: Option<String>, symbols: Option<String>) -> HashSet<
     symbols.or(symbol).unwrap_or_default().split(',').map(str::trim)
         .filter(|v| !v.is_empty()).map(|v| v.to_ascii_uppercase()).collect()
 }
-async fn stream_ws(State(state): State<AppState>, Query(query): Query<StreamQuery>, ws: WebSocketUpgrade) -> impl IntoResponse {
+async fn stream_ws(
+    State(state): State<AppState>,
+    Query(query): Query<StreamQuery>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    // The public Drogon gateway proxies this endpoint. Authenticate before
+    // upgrading so an unauthenticated client cannot subscribe to live feeds.
+    let _owner_uid = match firebase_uid_from_headers(state.firebase_verifier.as_ref(), &headers).await {
+        Ok(uid) => uid,
+        Err(status) => return status.into_response(),
+    };
     let symbols = subscription_set(query.symbol, query.symbols);
-    ws.on_upgrade(move |socket| stream_connection(socket, state, symbols))
+    ws.on_upgrade(move |socket| stream_connection(socket, state, symbols)).into_response()
 }
 async fn stream_connection(mut socket: WebSocket, state: AppState, mut symbols: HashSet<String>) {
     let hello = serde_json::json!({"type":"stream.ready","protocol_version":1,
