@@ -6,8 +6,8 @@ Active branch: `qoin/backend-completion-auth`
 Pull request: [#32](https://github.com/capiyo/Qoin-full-repo/pull/32) — draft, based on `main`  
 Base SHA: `0d9cba0ce8c88ca874c29c891a0785934d05aa17`  
 Audited candidate SHA before the owner-isolated paper-session change: `bb16843ed2aedad4396bd387ecb1f36d705ad0c3`  
-Current source head at this update: `0fe1913a812a89b4efe5a013ef72d965f2540c95`  
-Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes on `0fe1913...` were queued for CI at this audit update.
+Current source head at this update: `fb558542e2d51fbf0f8cc0f728416c31f88f66b0`  
+Verification: Rust workspace, Axum/Drogon/Mongo integration, Drogon gateway and engine checks passed on the earlier code candidate `843f99a24671416d21fbaeb875f1a05774567520`; newer risk/order lifecycle/rate-limit/shutdown changes and the explicit HTTP 429 integration assertion on `fb558542...` were queued for CI at this audit update.
 
 > This audit records source findings and verified CI evidence. It does not describe the repository as production-ready. Do not interpret provider catalogues, adapter traits, test fixtures or paper simulations as live broker connectivity.
 
@@ -101,3 +101,5 @@ Do not mark the backend production-ready until all of these pass:
 ## Latest verification boundary
 
 The earlier candidate `843f99a...` passed Rust workspace, Axum/Drogon/Mongo integration and Drogon gateway workflows. The newer changes to dual risk gating, order lifecycle persistence, rate limiting, session resume and graceful shutdown are not yet covered by a completed CI run at the time of this audit. Current branch workflows for `0fe1913...` were queued. Do not promote these newest changes until those exact-head workflows finish successfully.
+
+The integration workflow now also sends enough write requests to verify the gateway returns HTTP 429 after the configured per-peer write threshold. This assertion is awaiting execution on the current head.
