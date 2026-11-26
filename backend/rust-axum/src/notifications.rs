@@ -12,6 +12,42 @@ async fn current_user(s:&AppState,h:&HeaderMap)->Result<String,StatusCode>{
 #[derive(Deserialize)]pub(super) struct MarkRead{notification_ids:Option<Vec<String>>}
 #[derive(Deserialize,serde::Serialize)]pub(super) struct Preferences{market_alerts:bool,security_alerts:bool,system_alerts:bool}
 pub(super) async fn register_token(State(s):State<AppState>,h:HeaderMap,Json(p):Json<RegisterToken>)->Result<Json<Value>,StatusCode>{let uid=current_user(&s,&h).await?;if p.fcm_token.trim().len()<40||!matches!(p.platform.as_str(),"web"|"android"|"ios"){return Err(StatusCode::BAD_REQUEST)}let c=s.fcm_tokens.clone();c.update_one(doc!{"fcm_token":&p.fcm_token},doc!{"$set":{"user_id":&uid,"platform":&p.platform,"updated_at":DateTime::now()},"$setOnInsert":{"created_at":DateTime::now()}},mongodb::options::UpdateOptions::builder().upsert(true).build()).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;Ok(Json(json!({"success":true})))}
+#[derive(Debug, Deserialize)]
+pub(super) struct ClientEvent {
+    event_id: String,
+    symbol: String,
+    title: String,
+    body: String,
+    kind: String,
+    details: String,
+}
+
+pub(super) async fn record_client_event(
+    State(s): State<AppState>, headers: HeaderMap, Json(p): Json<ClientEvent>
+) -> Result<Json<Value>, StatusCode> {
+    let uid = current_user(&s, &headers).await?;
+    let event_id = p.event_id.trim();
+    let symbol = p.symbol.trim();
+    if event_id.is_empty() || event_id.len() > 200 || symbol.is_empty() || symbol.len() > 32 ||
+       p.title.trim().is_empty() || p.title.len() > 200 || p.body.len() > 1000 ||
+       p.details.len() > 20_000 || !matches!(p.kind.as_str(), "signal" | "liquidation") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let filter = doc!{"user_id":&uid,"event_id":event_id};
+    let update = doc!{"$setOnInsert":{
+        "user_id":&uid,"event_id":event_id,"symbol":symbol,"title":p.title.trim(),
+        "body":p.body,"notification_type":&p.kind,"details":p.details,
+        "is_read":false,"created_at":DateTime::now()
+    }};
+    s.notifications.update_one(filter.clone(), update,
+        mongodb::options::UpdateOptions::builder().upsert(true).build())
+        .await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let record = s.notifications.find_one(filter, None).await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let id = record.get_object_id("_id").map(|v| v.to_hex()).unwrap_or_default();
+    Ok(Json(json!({"success":true,"id":id,"event_id":event_id})))
+}
+
 pub(super) async fn list(State(s):State<AppState>,h:HeaderMap)->Result<Json<Value>,StatusCode>{let uid=current_user(&s,&h).await?;let c=s.notifications.clone();let mut cur=c.find(doc!{"user_id":&uid},mongodb::options::FindOptions::builder().sort(doc!{"created_at":-1}).limit(50).build()).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;let mut items=Vec::new();use futures_util::TryStreamExt;while let Some(mut d)=cur.try_next().await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?{let id=d.get_object_id("_id").map(|v|v.to_hex()).unwrap_or_default();d.remove("_id");d.remove("user_id");if let Ok(created)=d.get_datetime("created_at"){d.insert("created_at",created.to_string());}let mut v=mongodb::bson::from_document::<Value>(d).map_err(|_|StatusCode::INTERNAL_SERVER_ERROR)?;if let Some(o)=v.as_object_mut(){o.insert("id".into(),json!(id));}items.push(v)}Ok(Json(json!({"notifications":items})))}
 pub(super) async fn unread_summary(State(s):State<AppState>,h:HeaderMap)->Result<Json<Value>,StatusCode>{let uid=current_user(&s,&h).await?;let n=s.notifications.clone().count_documents(doc!{"user_id":&uid,"is_read":false},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;Ok(Json(json!({"notifications":n,"comments":0})))}
 pub(super) async fn mark_read(State(s):State<AppState>,h:HeaderMap,Json(p):Json<MarkRead>)->Result<Json<Value>,StatusCode>{let uid=current_user(&s,&h).await?;let mut f=doc!{"user_id":&uid,"is_read":false};if let Some(ids)=p.notification_ids{let parsed:Result<Vec<_>,_>=ids.iter().map(|x|mongodb::bson::oid::ObjectId::parse_str(x)).collect();f.insert("_id",doc!{"$in":parsed.map_err(|_|StatusCode::BAD_REQUEST)?});}let r=s.notifications.clone().update_many(f,doc!{"$set":{"is_read":true,"read_at":DateTime::now()}},None).await.map_err(|_|StatusCode::SERVICE_UNAVAILABLE)?;Ok(Json(json!({"success":true,"modified_count":r.modified_count})))}

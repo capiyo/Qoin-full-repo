@@ -3164,6 +3164,9 @@ async fn main(){
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("algorithm selection owner index");
     notifications.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"created_at":-1}).build(),None).await.expect("user notification history index");
+    notifications.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1,"event_id":1})
+        .options(IndexOptions::builder().unique(true).partial_filter_expression(doc!{"event_id":{"$type":"string"}}).build()).build(),None)
+        .await.expect("per-user notification event idempotency index");
     fcm_tokens.create_index(mongodb::IndexModel::builder().keys(doc!{"fcm_token":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("unique FCM device token index");
     fcm_tokens.create_index(mongodb::IndexModel::builder().keys(doc!{"user_id":1}).build(),None).await.expect("user FCM device lookup index");
@@ -3284,6 +3287,7 @@ async fn main(){
         .route("/internal/notifications",get(notifications::list))
         .route("/internal/notifications/unread-summary",get(notifications::unread_summary))
         .route("/internal/notifications/register-token",post(notifications::register_token))
+        .route("/internal/notifications/record",post(notifications::record_client_event))
         .route("/internal/notifications/mark-read",post(notifications::mark_read))
         .route("/internal/notifications/preferences",get(notifications::get_preferences).post(notifications::update_preferences))
         .route("/internal/notifications/send",post(notifications::send_internal))

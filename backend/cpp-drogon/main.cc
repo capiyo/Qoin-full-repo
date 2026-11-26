@@ -355,6 +355,10 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/notifications/unread-summary");
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/notifications/record", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/notifications/record");
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/notifications/register-token", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/notifications/register-token");
