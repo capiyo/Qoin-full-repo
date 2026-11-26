@@ -846,8 +846,11 @@ async fn append_order_lifecycle_event(
         "schema_version":1_i32
     };
     for (key, value) in metadata { document.insert(key, value); }
-    s.order_lifecycle_events.insert_one(document, None).await
-        .map_err(|_| "durable order lifecycle event could not be persisted".to_string())?;
+    s.order_lifecycle_events.update_one(
+        doc!{"owner_uid":owner_uid,"client_order_id":client_order_id,"state":state},
+        doc!{"$setOnInsert":document},
+        UpdateOptions::builder().upsert(true).build(),
+    ).await.map_err(|_| "durable order lifecycle event could not be persisted".to_string())?;
     Ok(())
 }
 
@@ -3140,6 +3143,10 @@ async fn main(){
     order_lifecycle_events.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"client_order_id":1,"at":1}).build(),None).await
         .expect("owner-scoped order lifecycle timeline index");
+    order_lifecycle_events.create_index(mongodb::IndexModel::builder()
+        .keys(doc!{"owner_uid":1,"client_order_id":1,"state":1})
+        .options(IndexOptions::builder().unique(true).build()).build(),None).await
+        .expect("idempotent order lifecycle state index");
     orders.create_index(mongodb::IndexModel::builder()
         .keys(doc!{"owner_uid":1,"updated_at":-1}).build(),None).await
         .expect("owner-scoped order history index");
