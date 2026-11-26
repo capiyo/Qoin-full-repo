@@ -28,6 +28,7 @@ mod broker_contract;
 mod broker_adapter_skeleton;
 mod broker_catalogue;
 mod firebase_identity;
+mod credential_vault;
 mod broker_env;
 mod broker_allocation;
 mod broker_allocation_policy;
@@ -101,6 +102,9 @@ struct AppState {
     active_paper_session: Arc<Mutex<PaperSession>>,
     users: Collection<Document>,
     broker_accounts: Collection<Document>,
+    broker_connections: Collection<Document>,
+    broker_connection_audit: Collection<Document>,
+    credential_vault: Option<credential_vault::CredentialVault>,
     broker_registry: broker_contract::BrokerRegistry,
     broker_environment: Arc<broker_env::BrokerEnvironment>,
     firebase_verifier: Option<firebase_identity::FirebaseIdentityVerifier>,
