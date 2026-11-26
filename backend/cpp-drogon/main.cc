@@ -67,6 +67,10 @@ public:
         });
         auto upstreamRequest = drogon::HttpRequest::newHttpRequest();
         upstreamRequest->setPath(path);
+        // Preserve the caller's Firebase ID token across the gateway proxy.
+        // Axum verifies it before accepting the WebSocket upgrade.
+        const auto authorization = request->getHeader("authorization");
+        if (!authorization.empty()) upstreamRequest->addHeader("authorization", authorization);
         client->connectToServer(upstreamRequest,
             [downstream, client, key = connection.get()](drogon::ReqResult result,
                 const drogon::HttpResponsePtr&, const drogon::WebSocketClientPtr&) {
