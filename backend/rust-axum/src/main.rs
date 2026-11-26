@@ -3240,6 +3240,8 @@ async fn main(){
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
+    decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"strategy_key":1,"stored_at":-1}).build(),None).await.expect("venue scoped vector history index");
+    states.create_index(mongodb::IndexModel::builder().keys(doc!{"last_event_venue":1,"symbol":1,"stored_at":-1}).build(),None).await.expect("venue scoped state history index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"input_event.event_ts_ms":-1}).build(),None).await.expect("historical source-event vector lookup index");
     strategies.create_index(mongodb::IndexModel::builder().keys(doc!{"strategy_key":1})
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("strategy key index");
