@@ -218,12 +218,24 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         const auto symbol = req->getParameter("symbol");
         const auto limit = req->getParameter("limit");
+        const auto atMs = req->getParameter("at_ms");
         std::string path = "/internal/vector/history";
-        if (!symbol.empty() || !limit.empty()) {
+        if (!symbol.empty() || !limit.empty() || !atMs.empty()) {
             path += "?";
-            if (!symbol.empty()) path += "symbol=" + drogon::utils::urlEncode(symbol);
-            if (!symbol.empty() && !limit.empty()) path += "&";
-            if (!limit.empty()) path += "limit=" + drogon::utils::urlEncode(limit);
+            bool hasParameter = false;
+            if (!symbol.empty()) {
+                path += "symbol=" + drogon::utils::urlEncode(symbol);
+                hasParameter = true;
+            }
+            if (!limit.empty()) {
+                if (hasParameter) path += "&";
+                path += "limit=" + drogon::utils::urlEncode(limit);
+                hasParameter = true;
+            }
+            if (!atMs.empty()) {
+                if (hasParameter) path += "&";
+                path += "at_ms=" + drogon::utils::urlEncode(atMs);
+            }
         }
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
