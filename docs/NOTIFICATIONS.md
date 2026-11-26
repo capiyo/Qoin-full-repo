@@ -29,6 +29,7 @@ The backend uses the Firebase Cloud Messaging HTTP v1 API. Configure these backe
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
 - `QOIN_INTERNAL_API_KEY`
+- `VITE_FIREBASE_VAPID_KEY` (web client public VAPID key; not a secret)
 
 Never expose service-account values through `VITE_*`, `EXPO_PUBLIC_*`, browser bundles, mobile builds, or API responses.
 
@@ -36,5 +37,5 @@ Never expose service-account values through `VITE_*`, `EXPO_PUBLIC_*`, browser b
 
 - Persistent in-app history and Firebase-scoped record/read/preferences routes are implemented.
 - The web and mobile Archive/Explore workspaces persist their live signal/liquidation notifications and hydrate history after Firebase sign-in.
-- FCM delivery code and token registration endpoint are implemented, but device-token acquisition/registration is not yet wired into the shipped web/mobile startup flows. Push delivery is therefore not claimed as active until a real device token is registered and the Firebase Admin service-account environment is configured.
+- FCM delivery code and token registration endpoint are implemented. The web notification panel now offers explicit browser push opt-in, obtains a Firebase Messaging token with the configured VAPID public key, and registers it against the signed-in Firebase UID. Native mobile device-token acquisition/registration is not yet wired. Push delivery is active only for registered web devices after the Firebase Admin service-account environment is configured.
 - Notification creation from the live client stream is an activity record for that signed-in user; it is not a trusted cross-user market alert. Trusted server-originated pushes must use the private internal route.
