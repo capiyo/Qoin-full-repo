@@ -4,7 +4,7 @@
 
 The web and React Native clients share the Archive / Explore instrument workspace. Explore loads the backend instrument registry, supports Crypto, Equities, FX, Indices and Commodities filters, and displays provider-attributed news and economic-calendar items. Cards subscribe to the same read-only market stream and show last observed price and current research action when those observations exist.
 
-Archive toggles are currently client-local state. They are not authenticated, persisted to MongoDB, or synchronized between web and mobile. The starter archive defaults to BTC/USD, ETH/USD and SOL/USD. Do not describe this as a cross-device user archive until the user identity and persistence endpoints are implemented.
+Archive changes are available after Firebase sign-in. The authenticated user's `archivedSymbols` list is read from and written to Firestore at `users/{uid}` through shared `@qoin/core` functions used by both web and React Native. Firestore rules restrict access to the matching UID and cap the list at 500 entries, so signed-in clients share the same Archive. This is a Firestore user preference, not a MongoDB-backed subscription service. The signed-out starter preview defaults to BTC/USD, ETH/USD and SOL/USD.
 
 ## Instrument registry and canonical symbols
 
@@ -62,7 +62,7 @@ The six-axis chart is a direct visualization of the six normalized input feature
 
 ## Explicit integration gaps and safety boundaries
 
-- Archive add/remove state is still client-local. Authentication and MongoDB-backed per-user archive synchronization are not implemented.
+- Archive add/remove is gated by Firebase Authentication and persisted in Firestore at `users/{uid}.archivedSymbols`; web and React Native use the same per-user document. This is not a MongoDB-backed subscription service.
 - The 26-item registry is a curated discovery catalogue, not a dynamically queried exchange-wide instrument master. Provider support/entitlements and symbol availability must be verified per instrument.
 - Binance public stream is wired for the default crypto perpetual symbols. Finnhub stream/news/calendar require a real configured API key and supported entitlements. No provider key is committed.
 - The engine still holds live symbol state in memory after process start; full MongoDB replay/recovery remains incomplete. Persisted raw events and decisions exist, but this does not yet guarantee crash-safe reconstruction.
@@ -78,18 +78,15 @@ The web and React Native clients now expose a notification centre fed directly b
 
 On web, users may opt into browser desktop notifications from the notification centre. Those browser notifications are emitted only while the page is running and has an active WebSocket connection. The mobile app currently shows in-app notifications while the app is running; it does not yet register FCM/APNs/Expo push tokens or deliver background notifications.
 
-Notification history is currently in-memory and resets when the app process/page is restarted. It is not stored per user in MongoDB, synchronized across devices, or backed by a server-side notification queue. Those capabilities require authenticated user identity, device-token registration, durable notification storage, delivery retries, and user-configurable alert preferences. Do not describe the current client layer as remote push delivery.
+Notification history is currently in-memory and resets when the app process/page is restarted. It is not stored per user in MongoDB, synchronized across devices, or backed b## Light/blue workspace visual system (2026-11-27)
 
+- Shared Qoin brand tokens in `frontend/packages/core/src/theme.ts`: background `#F7F9FC`, surface `#FFFFFF`, border `#E6EBF2`, blue accent `#2867DC`, primary text `#24344D`, and muted text `#8794A7`.
+- The web workspace uses light page/card surfaces and blue Archive/Explore active states.
+- React Native uses the shared theme tokens; its floating bottom navigation has exactly two destinations, Archive and Explore. The bar uses the white surface and shared border token, with a light-blue active surface `#EAF1FF` and blue active text/indicator.
+- Instrument mechanics remain an inspection surface. V1 is the implemented deterministic vector baseline; Set & Ledger V2 is a read-only finite-set projection, not a complete independent decision engine.
+- Qoin remains research/paper-only. The broker-neutral order contract and owner-scoped identity checks exist, but `BrokerRegistry` starts empty, no provider adapter is registered, and the readiness endpoint keeps live dispatch disabled. See `docs/BROKER_NEUTRAL_EXECUTION.md`.
 
-## Forest-green workspace visual system (2026-11-17)
-
-- Applied the shared Qoin visual direction across web, desktop and React Native: deep forest background `#0e1612`, raised surfaces `#14221a` / `#19291f`, emerald accent `#70d99d`, warm off-white text `#e6f1e9`, muted sage text `#9cb2a2`, and restrained green borders `#2b4032`.
-- Web desktop mirrors Funspot's Home workspace structure: a full-width app header, a persistent profile sidebar, and Archive / Explore as two side-by-side independently scrollable content panes. Desktop workspace controls are icon-only beside the profile control; there are no visible Archive / Explore text labels in the header.
-- Mobile web uses one active page pane at a time, selected by a detached circular icon-only Archive / Explore floating pill. The profile rail is hidden, the app header remains, and the content pane scrolls independently. The responsive breakpoint is 650px, matching Funspot web.
-- Archive and Explore keep their Qoin-specific instrument cards, filters, provider-attributed news, macro calendar, and market research content; only the page composition and navigation behavior are ported from Funspot.
-- React Native uses the same palette and a floating rounded Archive / Explore navigation pill; status bar switches to light content for the dark workspace.
-- Vector chart grid, axes, trajectory and current-vector marker use the forest/emerald palette.
-- The two algorithm concepts remain distinct in product design: Version 1 is the implemented deterministic vector baseline; Version 2 Set & Ledger remains a future/preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
+preview engine until independent execution, persisted state, entitlement checks and validation exist. UI styling does not imply that Version 2 is running.
 - No broker selection, order submission or live execution was added. Research/paper-only safety boundary is unchanged.
 
 
