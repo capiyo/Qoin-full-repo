@@ -1,0 +1,1369 @@
+/* Funspot parity: Qoin keeps its own research content, but the application
+   frame, responsive behaviour, surfaces and navigation follow Funspot. */
+:root {
+  color-scheme: dark;
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  color: #edf4ee;
+  background: #0e1612;
+}
+html, body, #root { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
+body { min-height: 100vh; background: #0e1612; color: #edf4ee; }
+button, input, select, textarea { font: inherit; }
+a { color: inherit; }
+.qoin-shell {
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0e1612;
+  color: #edf4ee;
+}
+.qoin-shell > .topbar {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 66px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 0 22px;
+  border: 0;
+  border-bottom: 1px solid #ffffff14;
+  background: #0e1612;
+}
+.qoin-shell > .topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #7df162;
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+.qoin-shell > .topbar .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 10px;
+  background: #7df162;
+  color: #061308;
+  font-size: 19px;
+}
+.qoin-shell > .topbar .topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #89968d;
+  font-size: 11px;
+}
+.qoin-shell .connection-dot.connected {
+  background: #7df162;
+  box-shadow: 0 0 0 3px #7df16220;
+}
+.qoin-shell .desktop-header-nav-item {
+  color: #89968d;
+}
+.qoin-shell .desktop-header-nav-item:hover,
+.qoin-shell .desktop-header-nav-item.active {
+  background: #161f1a;
+  color: #7df162;
+}
+.qoin-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0e1612;
+}
+.qoin-workspace > .desktop-profile-sidebar {
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  display: flex;
+  width: 300px;
+  min-width: 300px;
+  flex: 0 0 300px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 26px 16px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-right: 1px solid #ffffff14;
+  background: #0e1612;
+  color: #edf4ee;
+}
+.desktop-sidebar-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 8px;
+}
+.desktop-profile-avatar {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: #161f1a;
+  color: #7df162;
+}
+.desktop-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.desktop-sidebar-profile > strong {
+  margin-top: 6px;
+  color: #edf4ee;
+  font-size: 16px;
+}
+.desktop-sidebar-profile > small,
+.desktop-profile-details small {
+  color: #89968d;
+  font-size: 11px;
+}
+.desktop-profile-link,
+.desktop-sidebar-bottom button {
+  border: 0;
+  background: transparent;
+  color: #89968d;
+  text-align: left;
+}
+.desktop-profile-link:hover,
+.desktop-sidebar-bottom button:hover {
+  color: #7df162;
+}
+.desktop-sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 8px 0;
+}
+.desktop-sidebar-bottom button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.desktop-sidebar-bottom button:hover { background: #161f1a; }
+.qoin-home-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0e1612;
+}
+.qoin-home-columns > .home-column {
+  display: block;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  background: #0e1612;
+}
+.qoin-home-columns > .home-column + .home-column {
+  border-left: 1px solid #ffffff14;
+}
+.qoin-home-columns > .home-column::-webkit-scrollbar { display: none; }
+.qoin-home-columns .content-section {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  padding: 22px 20px 44px;
+  background: #0e1612;
+}
+.qoin-home-columns .section-heading {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 0 18px;
+}
+.qoin-home-columns .section-heading h2 {
+  margin: 0;
+  color: #edf4ee;
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.qoin-home-columns .section-heading p:not(.eyebrow) {
+  margin: 6px 0 0;
+  color: #89968d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.qoin-home-columns .eyebrow,
+.qoin-home-columns .count-label {
+  color: #89968d;
+}
+.qoin-home-columns .instrument-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.qoin-home-columns .instrument-card,
+.qoin-home-columns .instrument-card.qoin-instrument-card {
+  min-width: 0;
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #161f1a;
+  box-shadow: none;
+  color: #edf4ee;
+}
+.qoin-home-columns .instrument-card:hover {
+  transform: none;
+  background: #1a261e;
+  box-shadow: none;
+}
+.qoin-home-columns .qoin-instrument-card:before { display: none; }
+.qoin-home-columns .asset-copy strong,
+.qoin-home-columns .qoin-card-primary > strong {
+  color: #edf4ee;
+}
+.qoin-home-columns .asset-copy small,
+.qoin-home-columns .asset-description,
+.qoin-home-columns .qoin-card-secondary small,
+.qoin-home-columns .qoin-card-reason small {
+  color: #89968d;
+}
+.qoin-home-columns .open-arrow {
+  background: #0e1612;
+  color: #7df162;
+}
+.qoin-home-columns .qoin-card-pager {
+  border: 0;
+  border-radius: 9px;
+  background: #0e1612;
+}
+.qoin-home-columns .qoin-card-secondary {
+  border-left-color: #ffffff14;
+}
+.qoin-home-columns .qoin-card-secondary b,
+.qoin-home-columns .qoin-card-reason p {
+  color: #c5d0c7;
+}
+.qoin-home-columns .qoin-meta-chip,
+.qoin-home-columns .filter {
+  border: 0;
+  border-radius: 8px;
+  background: #161f1a;
+  color: #89968d;
+}
+.qoin-home-columns .qoin-meta-chip.is-live,
+.qoin-home-columns .filter.active {
+  background: #1c3020;
+  color: #7df162;
+}
+.qoin-home-columns .search-box {
+  border: 1px solid #ffffff18;
+  border-radius: 9px;
+  background: #161f1a;
+  color: #89968d;
+}
+.qoin-home-columns .search-box input {
+  color: #edf4ee;
+}
+.qoin-home-columns .empty-state,
+.qoin-home-columns .coverage-card,
+.qoin-home-columns .market-pulse-panel,
+.qoin-home-columns .algorithm-card {
+  border: 0;
+  border-radius: 12px;
+  background: #161f1a;
+  color: #edf4ee;
+}
+.qoin-home-columns .empty-state p,
+.qoin-home-columns .coverage-card p,
+.qoin-home-columns .coverage-card dd,
+.qoin-home-columns .algorithm-card p {
+  color: #89968d;
+}
+.qoin-shell .primary-button {
+  border: 1px solid #7df162;
+  border-radius: 9px;
+  background: #7df162;
+  color: #061308;
+}
+.qoin-shell .text-action,
+.qoin-shell .auth-gate-switch {
+  color: #7df162;
+}
+.qoin-shell .floating-navigation {
+  display: none;
+}
+.qoin-shell .account-menu,
+.qoin-shell .auth-panel,
+.qoin-shell .notification-panel {
+  border: 1px solid #ffffff18;
+  border-radius: 12px;
+  background: #161f1a;
+  color: #edf4ee;
+  box-shadow: 0 16px 45px #0008;
+}
+.qoin-shell .account-identity strong,
+.qoin-shell .notification-panel-heading strong,
+.qoin-shell .notification-item strong {
+  color: #edf4ee;
+}
+.qoin-shell .account-identity small,
+.qoin-shell .notification-panel-heading small,
+.qoin-shell .notification-item p {
+  color: #89968d;
+}
+.qoin-shell .account-menu > button {
+  color: #e0e6e1;
+}
+.qoin-shell .account-menu > button:hover { background: #0e1612; }
+.qoin-shell .auth-panel label { color: #c5d0c7; }
+.qoin-shell .auth-panel input {
+  border: 1px solid #ffffff20;
+  border-radius: 9px;
+  background: #0e1612;
+  color: #edf4ee;
+}
+.qoin-shell .notification-item {
+  border-color: #ffffff14;
+  background: #0e1612;
+}
+.qoin-shell .footer { color: #89968d; }
+@media (min-width: 1100px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: flex;
+    width: 300px;
+    min-width: 300px;
+    flex-basis: 300px;
+  }
+  .qoin-shell > .topbar .avatar { display: flex; }
+}
+@media (max-width: 1099px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: none;
+  }
+  .qoin-shell .floating-navigation { display: flex; }
+}
+@media (max-width: 650px) {
+  .qoin-shell {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .qoin-shell > .topbar {
+    position: relative;
+    top: auto;
+    flex: 0 0 60px;
+    height: 60px;
+    min-height: 60px;
+    padding: 0 14px;
+  }
+  .qoin-shell > .topbar .brand { display: flex !important; }
+  .qoin-shell .desktop-header-navigation { display: none !important; }
+  .qoin-shell > .topbar .topbar-right { margin-left: auto; }
+  .qoin-workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: flex !important;
+    position: relative;
+    inset: auto;
+    width: 100%;
+    min-width: 0;
+    height: 66px;
+    min-height: 66px;
+    flex: 0 0 66px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 16px;
+    overflow: hidden;
+    border: 0;
+    background: #0e1612;
+  }
+  .desktop-sidebar-profile {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 11px;
+    row-gap: 2px;
+    width: 100%;
+    padding: 0;
+  }
+  .desktop-profile-avatar {
+    grid-row: 1 / 3;
+    width: 42px;
+    height: 42px;
+  }
+  .desktop-sidebar-profile > strong {
+    align-self: end;
+    margin: 0;
+    font-size: 13px;
+  }
+  .desktop-sidebar-profile > small {
+    align-self: start;
+    font-size: 10px;
+  }
+  .desktop-profile-link,
+  .desktop-profile-details,
+  .desktop-sidebar-bottom {
+    display: none !important;
+  }
+  .qoin-home-columns {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 14px 92px;
+    overflow: hidden;
+  }
+  .qoin-home-columns > .home-column {
+    display: none !important;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 0 !important;
+  }
+  .qoin-home-columns > .home-column.mobile-tab-active {
+    display: block !important;
+  }
+  .qoin-home-columns .content-section {
+    padding: 16px 0 30px;
+  }
+  .qoin-home-columns .instrument-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+  .qoin-shell > .floating-navigation {
+    position: fixed;
+    z-index: 80;
+    right: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 50%;
+    display: flex !important;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    gap: 4px;
+    padding: 5px;
+    transform: translateX(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: #17291f;
+    box-shadow: none;
+  }
+  .qoin-shell .floating-nav-item {
+    min-width: 104px;
+    min-height: 42px;
+    padding: 0 16px;
+    border-radius: 999px;
+    color: #89968d;
+    font-size: 11px;
+  }
+  .qoin-shell .floating-nav-item.active {
+    background: #243b28;
+    color: #7df162;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qoin-shell *, .qoin-shell *::before, .qoin-shell *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+
+/* Primary tab labels remain visible in both navigation placements. */
+.qoin-shell .desktop-header-navigation {
+  gap: 5px;
+  margin-left: auto;
+  margin-right: 7px;
+}
+.qoin-shell .desktop-header-nav-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  min-width: 92px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.qoin-shell .desktop-header-nav-item svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+.qoin-shell .desktop-header-nav-label { white-space: nowrap; }
+.qoin-shell .floating-nav-label { white-space: nowrap; }
+@media (max-width: 650px) {
+  .qoin-shell .floating-nav-item {
+    min-width: 112px;
+    gap: 8px;
+  }
+}
+
+
+/* Keep Funspot's persistent desktop workspace through tablet widths; the
+   compact bottom pill is reserved for the phone layout only. */
+@media (min-width: 651px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: flex !important;
+    width: 280px;
+    min-width: 280px;
+    flex-basis: 280px;
+  }
+  .qoin-shell .desktop-header-navigation { display: flex !important; }
+  .qoin-shell .floating-navigation { display: none !important; }
+}
+@media (min-width: 901px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    width: 300px;
+    min-width: 300px;
+    flex-basis: 300px;
+  }
+}
+
+
+.qoin-shell .loading-screen {
+  height: 100vh;
+  background: #0e1612;
+}
+.qoin-shell .spinner {
+  border-color: #ffffff20;
+  border-top-color: #7df162;
+}
+
+
+/* The phone layout keeps Funspot's compact identity strip beneath the app header. */
+
+
+/* The instrument Mechanics surface follows the same dark, borderless modal
+   treatment as Funspot action sheets while retaining Qoin's research panels. */
+.qoin-shell .modal-backdrop {
+  background: #000000b8;
+  backdrop-filter: blur(3px);
+}
+.qoin-shell .vector-modal,
+.qoin-shell .mechanics-modal {
+  border: 0;
+  border-radius: 16px;
+  background: #0e1612;
+  color: #edf4ee;
+  box-shadow: none;
+}
+.qoin-shell .modal-header,
+.qoin-shell .modal-body,
+.qoin-shell .modal-footer {
+  border: 0;
+  background: #0e1612;
+  color: #edf4ee;
+}
+.qoin-shell .modal-header h2,
+.qoin-shell .modal-body h2,
+.qoin-shell .modal-body h3,
+.qoin-shell .modal-body h4,
+.qoin-shell .modal-body strong,
+.qoin-shell .modal-footer strong {
+  color: #edf4ee;
+}
+.qoin-shell .modal-header p,
+.qoin-shell .modal-body p,
+.qoin-shell .modal-body small,
+.qoin-shell .modal-body label,
+.qoin-shell .modal-body dt,
+.qoin-shell .modal-body .disclaimer,
+.qoin-shell .modal-body .axis-label {
+  color: #89968d;
+}
+.qoin-shell .modal-body .mechanics-tabs {
+  border: 0;
+  border-radius: 10px;
+  background: #161f1a;
+}
+.qoin-shell .modal-body .mechanics-tabs button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #89968d;
+}
+.qoin-shell .modal-body .mechanics-tabs button.active {
+  background: #243b28;
+  color: #7df162;
+}
+.qoin-shell .modal-body .vector-intro,
+.qoin-shell .modal-body .feature-space-panel,
+.qoin-shell .modal-body .decision-trace-panel,
+.qoin-shell .modal-body .live-state-panel,
+.qoin-shell .modal-body .attention-panel,
+.qoin-shell .modal-body .backtest-panel,
+.qoin-shell .modal-body .backtest-method-panel,
+.qoin-shell .modal-body .trace-source,
+.qoin-shell .modal-body .raw-tape,
+.qoin-shell .modal-body .coverage-card,
+.qoin-shell .modal-body .set-ledger-panel,
+.qoin-shell .modal-body [aria-label="Research decision and evidence ledger"] {
+  border: 0 !important;
+  border-radius: 12px;
+  background: #161f1a !important;
+  color: #edf4ee;
+}
+.qoin-shell .modal-body .trace-table,
+.qoin-shell .modal-body .trace-table-wrap,
+.qoin-shell .modal-body .trace-details,
+.qoin-shell .modal-body pre,
+.qoin-shell .modal-body input,
+.qoin-shell .modal-body select,
+.qoin-shell .modal-body textarea {
+  border-color: #ffffff14 !important;
+  background: #0e1612 !important;
+  color: #c5d0c7 !important;
+}
+.qoin-shell .modal-body th,
+.qoin-shell .modal-body td,
+.qoin-shell .modal-body dd,
+.qoin-shell .modal-body dt,
+.qoin-shell .modal-body li,
+.qoin-shell .modal-body summary,
+.qoin-shell .modal-body span {
+  color: #c5d0c7;
+}
+.qoin-shell .modal-body .preview-tag,
+.qoin-shell .modal-body .coverage-status {
+  border: 0;
+  background: #243b28;
+  color: #7df162;
+}
+.qoin-shell .modal-body .close-button {
+  border: 0;
+  background: #161f1a;
+  color: #edf4ee;
+}
+.qoin-shell .modal-body button:not(.close-button) {
+  border-color: #ffffff14;
+}
+.qoin-shell .modal-body button:focus-visible {
+  outline: 2px solid #7df162;
+  outline-offset: 2px;
+}
+.qoin-shell .modal-body [style*="background: #fff"],
+.qoin-shell .modal-body [style*="background:#fff"],
+.qoin-shell .modal-body [style*="background: white"],
+.qoin-shell .modal-body [style*="background:white"] {
+  background: #161f1a !important;
+}
+@media (max-width: 650px) {
+  .qoin-shell .vector-modal.mechanics-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88dvh;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+
+/* Funspot uses one consistent sans family across navigation, content and
+   controls rather than a separate display face for dashboard headings. */
+.qoin-shell,
+.qoin-shell * {
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+
+/* Match Funspot's navigation hierarchy: the desktop workspace shows both
+   panes together; only phone layouts use the icon-only floating pill. */
+.qoin-shell .desktop-header-navigation {
+  display: none !important;
+}
+.qoin-shell > .topbar {
+  flex: 0 0 66px;
+  min-height: 66px;
+}
+.qoin-shell > .topbar .topbar-right {
+  margin-left: auto;
+}
+.qoin-shell .floating-navigation {
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: #17291f;
+  box-shadow: 0 12px 36px #00000030;
+  backdrop-filter: blur(14px);
+}
+.qoin-shell .floating-nav-item {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #89968d;
+}
+.qoin-shell .floating-nav-item.active {
+  background: #7df162;
+  color: #061308;
+}
+.qoin-shell .floating-nav-icon {
+  width: 22px;
+  height: 22px;
+  font-size: 18px;
+}
+.qoin-shell .floating-nav-label {
+  display: none !important;
+}
+@media (max-width: 650px) {
+  .qoin-shell > .topbar {
+    flex: 0 0 60px;
+    min-height: 60px;
+    height: 60px;
+    padding: 0 14px;
+  }
+  .qoin-shell > .topbar .topbar-right > span:not(.connection-dot) {
+    display: none;
+  }
+  .qoin-shell > .topbar .brand {
+    font-size: 19px;
+  }
+  .qoin-shell .floating-navigation {
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+}
+
+.qoin-shell .floating-nav-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qoin-shell .floating-nav-item:focus-visible {
+  outline: 2px solid #7df162;
+  outline-offset: 3px;
+}
+
+.qoin-shell .desktop-sidebar-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 0;
+  padding: 26px 8px 18px;
+}
+.qoin-shell .desktop-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qoin-shell .desktop-sidebar-label {
+  margin: 0 0 8px;
+  color: #89968d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+.qoin-shell .desktop-sidebar-market {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e0e6e1;
+  text-align: left;
+}
+.qoin-shell .desktop-sidebar-market:hover {
+  background: #161f1a;
+  color: #7df162;
+}
+.qoin-shell .desktop-sidebar-market > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.qoin-shell .desktop-sidebar-market strong {
+  overflow: hidden;
+  color: #e0e6e1;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qoin-shell .desktop-sidebar-market small {
+  overflow: hidden;
+  color: #89968d;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qoin-shell .desktop-sidebar-market-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  color: #061308;
+  font-size: 11px;
+  font-weight: 900;
+}
+.qoin-shell .desktop-sidebar-market-mark.research-mark {
+  background: #243b28;
+  color: #7df162;
+}
+.qoin-shell .desktop-sidebar-empty {
+  margin: 0;
+  color: #89968d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+@media (max-width: 650px) {
+  .qoin-shell .desktop-sidebar-content { display: none; }
+}
+
+/* Keep each Funspot pane as one scrolling content lane. Qoin's contextual
+   market-pulse and research sidebars become full-width sections beneath it. */
+.qoin-home-columns .archive-workspace,
+.qoin-home-columns .explore-workspace {
+  display: block;
+  width: 100%;
+}
+.qoin-home-columns .archive-market-sidebar,
+.qoin-home-columns .explore-market-sidebar {
+  position: static;
+  width: 100%;
+  margin-top: 18px;
+}
+.qoin-home-columns .explore-main-column {
+  width: 100%;
+  min-width: 0;
+}
+.qoin-shell > .footer {
+  display: none !important;
+}
+
+/* Funspot's clean surface language: no decorative rings or panel dividers;
+   media keeps its compact 8px crop radius and profile photos stay circular. */
+.qoin-home-columns .content-section * {
+  border-color: transparent !important;
+  box-shadow: none;
+}
+.qoin-home-columns .content-section .instrument-card,
+.qoin-home-columns .content-section .coverage-card,
+.qoin-home-columns .content-section .market-pulse-panel,
+.qoin-home-columns .content-section .algorithm-card,
+.qoin-home-columns .content-section .empty-state,
+.qoin-home-columns .content-section .search-box,
+.qoin-home-columns .content-section .filter {
+  border: 0 !important;
+  border-radius: 8px;
+  box-shadow: none !important;
+}
+.qoin-shell .desktop-profile-avatar,
+.qoin-shell .desktop-profile-avatar img,
+.qoin-shell .avatar,
+.qoin-shell .avatar img {
+  border-radius: 50%;
+}
+.qoin-shell .account-menu,
+.qoin-shell .auth-panel,
+.qoin-shell .notification-panel,
+.qoin-shell .profile-menu {
+  border: 0 !important;
+  border-radius: 12px;
+  box-shadow: 0 16px 45px #00000038;
+}
+.qoin-shell .modal-header,
+.qoin-shell .modal-body,
+.qoin-shell .modal-footer {
+  border-color: transparent !important;
+}
+.qoin-shell img,
+.qoin-shell video,
+.qoin-shell canvas {
+  border-radius: 8px;
+}
+
+@media (max-width: 650px) {
+  .qoin-shell > .topbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 90;
+    transition: transform 180ms ease, opacity 180ms ease;
+  }
+  .qoin-home-columns .content-section {
+    padding-top: 76px;
+  }
+  .qoin-shell > .floating-navigation {
+    transition: transform 180ms ease, opacity 180ms ease;
+  }
+  .qoin-shell.chrome-hidden > .topbar {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .qoin-shell.chrome-hidden > .floating-navigation {
+    transform: translate(-50%, calc(100% + 24px));
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* Final surface cleanup: the reference shell uses spacing and tonal contrast,
+   not hairline borders, to separate the header, sidebar and two panes. */
+.qoin-shell > .topbar,
+.qoin-workspace > .desktop-profile-sidebar,
+.qoin-home-columns > .home-column + .home-column {
+  border: 0 !important;
+}
+.qoin-home-columns .search-box,
+.qoin-shell .primary-button,
+.qoin-shell .auth-panel input,
+.qoin-shell .modal-body input,
+.qoin-shell .modal-body select,
+.qoin-shell .modal-body textarea {
+  border: 0 !important;
+}
+
+@media (min-width: 651px) and (max-width: 900px) {
+  .qoin-home-columns .content-section {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+  .qoin-home-columns .instrument-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+/* Keyboard focus stays discoverable through a tonal state, not decorative rings. */
+.qoin-shell :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.qoin-shell * {
+  border-color: transparent !important;
+}
+.qoin-shell :is(button, a, [role="button"], input, select, textarea):focus-visible {
+  background-color: #243b28 !important;
+  color: #7df162 !important;
+}
+.qoin-shell :is(input, select, textarea):focus-visible {
+  background-color: #161f1a !important;
+  color: #edf4ee !important;
+}
+
+
+/* Preserve the reference app's compact profile row on phones. The header is
+   overlaid so it can hide on scroll; reserve its height before the identity row. */
+/* Qoin's market categories occupy the same horizontal header-navigation
+   position as Funspot's channel chips on desktop and become row two on phones. */
+.qoin-shell .mobile-market-navigation {
+  display: flex;
+  order: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.qoin-shell .mobile-market-navigation::-webkit-scrollbar { display: none; }
+.qoin-shell .mobile-market-chip {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #89968d;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.qoin-shell .mobile-market-chip.active {
+  border-color: #ffffff20;
+  background: #161f1a;
+  color: #7df162;
+}
+.qoin-shell > .topbar .topbar-right { order: 3; }
+
+@media (max-width: 650px) {
+  .qoin-shell > .topbar {
+    height: 102px;
+    min-height: 102px;
+    flex-basis: 102px;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 0;
+    column-gap: 12px;
+    padding: 0 14px;
+  }
+  .qoin-shell > .topbar .topbar-right {
+    order: 2;
+    height: 60px;
+    flex: 0 0 auto;
+  }
+  .qoin-shell > .topbar .topbar-right > .connection-dot { display: none; }
+  .qoin-shell .mobile-market-navigation {
+    order: 3;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 42px;
+  }
+  .qoin-shell .mobile-market-chip {
+    min-height: 30px;
+    padding: 0 11px;
+    border-radius: 9px;
+    background: transparent;
+    font-size: 10px;
+  }
+  .qoin-shell .mobile-market-chip.active {
+    border-color: #ffffff20;
+    background: #161f1a;
+    color: #7df162;
+  }
+  .qoin-workspace {
+    padding-top: 102px;
+  }
+  .qoin-workspace > .desktop-profile-sidebar {
+    display: flex !important;
+  }
+  .qoin-home-columns .content-section {
+    padding-top: 16px;
+  }
+}
+
+
+/* The reference keeps the profile area in the phone workspace. Do not collapse
+   Qoin's sidebar to a clipped identity-only 66px strip. */
+@media (max-width: 650px) {
+  .qoin-workspace > .desktop-profile-sidebar {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: 0 0 auto !important;
+    flex-direction: column !important;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px 16px !important;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+  .qoin-shell .desktop-sidebar-profile {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    column-gap: 11px;
+    row-gap: 2px;
+    width: 100%;
+    padding: 0;
+  }
+  .qoin-shell .desktop-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: 42px;
+    height: 42px;
+  }
+  .qoin-shell .desktop-sidebar-profile > strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    margin: 0;
+    font-size: 13px;
+  }
+  .qoin-shell .desktop-sidebar-profile > small {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    font-size: 10px;
+  }
+  .qoin-shell .desktop-profile-link {
+    display: inline-flex !important;
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
+    padding: 2px 0;
+    font-size: 10px;
+  }
+  .qoin-shell .desktop-profile-details {
+    display: block !important;
+    grid-column: 1 / -1;
+    padding: 8px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-content {
+    display: flex !important;
+    flex: 0 0 auto;
+    gap: 12px;
+    padding: 8px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-group {
+    gap: 3px;
+  }
+  .qoin-shell .desktop-sidebar-bottom {
+    display: flex !important;
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 0 0;
+  }
+  .qoin-shell .desktop-sidebar-bottom button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+}
+
+
+.qoin-shell .topbar-notification-button {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #89968d;
+}
+.qoin-shell .topbar-notification-button:hover {
+  background: #161f1a;
+  color: #7df162;
+}
+.qoin-shell .topbar-notification-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qoin-shell .topbar-notification-badge {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #7df162;
+  color: #061308;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+
+/* Match the reference workspace's measured desktop/tablet gutters. */
+@media (min-width: 901px) {
+  .qoin-workspace > .desktop-profile-sidebar { padding: 16px !important; }
+}
+@media (min-width: 651px) and (max-width: 900px) {
+  .qoin-workspace > .desktop-profile-sidebar { padding: 14px !important; }
+  .qoin-home-columns .content-section { padding: 16px 12px 30px; }
+}
+@media (max-width: 650px) {
+  .qoin-shell > .floating-navigation {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 5px;
+    gap: 6px;
+  }
+}
+
+
+/* Keep Funspot's two-lane card rhythm at tablet widths; only phones collapse
+   the instrument grid to a single lane. */
+@media (min-width: 651px) and (max-width: 900px) {
+  .qoin-home-columns .instrument-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+@media (max-width: 650px) {
+  .qoin-home-columns {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+  .qoin-home-columns .content-section {
+    padding-top: 18px;
+  }
+}
+
+
+/* Qoin information architecture: profile / archive / instrument mechanics.
+   The mobile workspace switches between Archive and Explore; mechanics opens
+   from an archived or discovered instrument. */
+@media (min-width: 651px) {
+  .qoin-workspace { position:relative; }
+  .qoin-workspace > .desktop-profile-sidebar {
+    width:250px; min-width:250px; flex:0 0 250px;
+    border-right:1px solid #ffffff12!important;
+  }
+  .qoin-home-columns {
+    display:flex!important; flex:1 1 auto; width:auto; min-width:0;
+    min-height:0; overflow:hidden; padding:0; gap:0;
+  }
+  .qoin-home-columns > .home-column {
+    display:none; height:100%; min-height:0; overflow-y:auto;
+    border:0!important; background:#0e1612;
+  }
+  .qoin-home-columns > .home-column.mobile-tab-active { display:block; }
+  .qoin-home-columns > .archive-column.mobile-tab-active {
+    flex:0 0 340px; width:340px; border-right:1px solid #ffffff12!important;
+  }
+  .qoin-home-columns > .explore-column.mobile-tab-active {
+    flex:1 1 auto; width:auto; border-left:0!important;
+  }
+  .qoin-home-columns .archive-workspace { display:block; }
+  .qoin-home-columns .archive-market-sidebar { display:none!important; }
+  .qoin-home-columns .content-section { padding:20px 16px 30px; }
+  .qoin-home-columns .section-heading { margin-bottom:16px; }
+  .qoin-home-columns .section-heading h2 { font-size:20px; }
+  .qoin-home-columns .instrument-grid { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .qoin-shell .modal-backdrop {
+    position:fixed; z-index:25; top:60px; right:0; bottom:0; left:590px;
+    display:flex; align-items:stretch; justify-content:stretch;
+    padding:0; background:#0e1612; backdrop-filter:none;
+  }
+  .qoin-shell .vector-modal.mechanics-modal {
+    display:flex; width:100%; max-width:none; height:100%; max-height:none;
+    flex-direction:column; border-radius:0; background:#0e1612;
+  }
+  .qoin-shell .mechanics-modal .modal-header {
+    flex:0 0 auto; min-height:76px; padding:16px 22px;
+    border-bottom:1px solid #ffffff12;
+  }
+  .qoin-shell .mechanics-modal .modal-body {
+    flex:1 1 auto; min-height:0; overflow-y:auto; padding:16px 22px 24px;
+  }
+  .qoin-shell .mechanics-modal .modal-footer {
+    flex:0 0 auto; padding:12px 22px;
+    border-top:1px solid #ffffff12;
+  }
+  .qoin-shell .mechanics-modal .modal-header .eyebrow { color:#7df162; }
+  .qoin-shell .mechanics-modal .modal-header h2 { font-size:20px; }
+  .qoin-shell .mechanics-modal .modal-body .vector-intro {
+    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    padding:14px 16px; border-radius:12px; background:#161f1a;
+  }
+}
+@media (min-width:651px) and (max-width:900px) {
+  .qoin-workspace > .desktop-profile-sidebar { width:160px; min-width:160px; flex-basis:160px; }
+  .qoin-home-columns > .archive-column.mobile-tab-active { flex-basis:230px; width:230px; }
+  .qoin-shell .modal-backdrop { left:390px; }
+  .qoin-home-columns .content-section { padding:14px 10px 24px; }
+  .qoin-home-columns .section-heading h2 { font-size:18px; }
+}
+@media (max-width:650px) {
+  .qoin-home-columns.mobile-tab-active { display:block!important; }
+  .qoin-home-columns .archive-column.mobile-tab-active {
+    display:block!important; width:100%; height:auto; min-height:0; overflow:visible;
+  }
+  .qoin-home-columns .explore-column.mobile-tab-active {
+    display:block!important; width:100%; height:auto; min-height:0; overflow:visible;
+  }
+  .qoin-home-columns .archive-column.mobile-tab-hidden,
+  .qoin-home-columns .explore-column.mobile-tab-hidden { display:none!important; }
+  .qoin-home-columns .archive-workspace { display:block; }
+  .qoin-home-columns .archive-market-sidebar { display:none!important; }
+  .qoin-home-columns .instrument-grid { grid-template-columns:minmax(0,1fr); }
+  .qoin-shell .vector-modal.mechanics-modal { max-height:90dvh; }
+}
+
+
+@media (min-width:651px) {
+  .mechanics-empty-dock {
+    display:flex; flex:1 1 auto; min-width:0; min-height:0;
+    flex-direction:column; align-items:flex-start; justify-content:center;
+    padding:clamp(28px,5vw,76px); overflow:auto; background:#0e1612;
+  }
+  .mechanics-empty-mark {
+    display:grid; width:56px; height:56px; place-items:center;
+    margin-bottom:24px; border-radius:18px; background:#17291f;
+    color:#7df162; font-size:30px; font-weight:700;
+  }
+  .mechanics-empty-dock .eyebrow { margin:0 0 12px; color:#7df162; font-size:9px; font-weight:800; letter-spacing:.16em; }
+  .mechanics-empty-dock h2 { max-width:520px; margin:0; color:#edf4ee; font-size:clamp(24px,3vw,38px); line-height:1.14; letter-spacing:-.045em; }
+  .mechanics-empty-dock > p:not(.eyebrow) { max-width:540px; margin:16px 0 0; color:#89968d; font-size:13px; line-height:1.8; }
+  .mechanics-empty-features { display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
+  .mechanics-empty-features span { padding:9px 12px; border-radius:9px; background:#161f1a; color:#c5d0c7; font-size:10px; font-weight:700; }
+  .mechanics-empty-dock > small { margin-top:28px; color:#687a70; font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+}
+@media (max-width:650px) {
+  .mechanics-empty-dock { display:none!important; }
+}
+
+
+@media (min-width:651px) {
+  .qoin-shell .desktop-sidebar-content {
+    display:flex!important; flex:1 1 auto; flex-direction:column;
+    justify-content:flex-start; padding:22px 8px 12px;
+  }
+  .qoin-shell .desktop-sidebar-group:first-child { display:none!important; }
+  .qoin-shell .desktop-sidebar-group:last-child { display:block!important; }
+  .qoin-shell .desktop-sidebar-label { color:#687a70; font-size:9px; letter-spacing:.13em; }
+  .qoin-shell .desktop-sidebar-market {
+    display:flex; width:100%; min-height:42px; align-items:center;
+    gap:10px; padding:8px; border:0; border-radius:9px;
+    background:transparent; color:#c5d0c7; text-align:left;
+  }
+  .qoin-shell .desktop-sidebar-market:hover { background:#161f1a; color:#7df162; }
+  .qoin-shell .desktop-sidebar-market-mark.research-mark {
+    display:grid; width:30px; height:30px; place-items:center;
+    border-radius:9px; background:#17291f; color:#7df162;
+  }
+}
