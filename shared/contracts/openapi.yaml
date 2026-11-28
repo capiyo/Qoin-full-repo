@@ -307,6 +307,26 @@ paths:
       responses:
         '200': { description: Paper decisions and trades }
         '401': { description: Firebase identity required }
+  /api/v1/multi-horizon:
+    post:
+      summary: Evaluate up to eight independent causal horizon observations
+      description: Research-only server-side vector evaluation. The result is descriptive and is never an order or allocation instruction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 8
+              items: { $ref: '#/components/schemas/HorizonInput' }
+      responses:
+        '200':
+          description: Independently evaluated horizon signals and descriptive consensus
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MultiHorizonSignal' }
+        '400': { description: Invalid or duplicate horizon input }
   /api/v1/market-horizons:
     get:
       summary: Evaluate causal multi-horizon research for one exact venue and symbol
@@ -383,6 +403,57 @@ components:
         reinvest_profits: { type: boolean }
         fee_bps: { type: number, minimum: 0, maximum: 100 }
         slippage_bps: { type: number, minimum: 0, maximum: 100 }
+    MarketForceObservation:
+      type: object
+      required: [ofi, liquidity, volatility, funding, open_interest_change, liquidation_pressure, basis]
+      properties:
+        ofi: { type: number }
+        liquidity: { type: number }
+        volatility: { type: number }
+        funding: { type: number }
+        open_interest_change: { type: number }
+        liquidation_pressure: { type: number }
+        basis: { type: number }
+        spread_bps: { type: number, nullable: true }
+        spread_age_ms: { type: integer, nullable: true }
+    EngineConfig:
+      type: object
+      required: [signal_threshold, input_clip, score_clip, top_k, min_alignment, max_angle_radians, volatility_dampener, interaction_coefficient, max_spread_bps, max_spread_age_ms]
+      properties:
+        signal_threshold: { type: number }
+        input_clip: { type: number }
+        score_clip: { type: number }
+        top_k: { type: integer }
+        min_alignment: { type: number }
+        max_angle_radians: { type: number }
+        volatility_dampener: { type: number }
+        interaction_coefficient: { type: number }
+        max_spread_bps: { type: number }
+        max_spread_age_ms: { type: integer }
+    HorizonInput:
+      type: object
+      required: [horizon, observation, config, config_version, has_open_position]
+      properties:
+        horizon: { type: string, enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week] }
+        observation: { $ref: '#/components/schemas/MarketForceObservation' }
+        config: { $ref: '#/components/schemas/EngineConfig' }
+        config_version: { type: string, minLength: 1 }
+        has_open_position: { type: boolean }
+    MultiHorizonSignal:
+      type: object
+      required: [horizons, consensus]
+      properties:
+        horizons: { type: array, items: { type: object } }
+        consensus:
+          type: object
+          properties:
+            relationship: { type: string, enum: [aligned_buy, aligned_sell, divergent, no_directional_consensus] }
+            buy_count: { type: integer }
+            sell_count: { type: integer }
+            wait_count: { type: integer }
+            close_count: { type: integer }
+            directional_count: { type: integer }
+            unanimous_direction: { type: string, nullable: true }
     MarketHorizonsResponse:
       type: object
       required: [symbol, venue_id, decision_ts_ms, events_loaded, event_documents, invalid_event_documents, event_limit_reached, mode, observations, signals, note]
