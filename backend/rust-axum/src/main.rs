@@ -42,7 +42,7 @@ mod paper_session;
 mod operating_cycle;
 mod notifications;
 use operating_cycle::{CycleConfig, OperatingCycle};
-use paper_session::{PaperAccountConfig, PaperSession};
+use paper_session::PaperSession;
 mod market_vector;
 mod market_vector_api;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
@@ -162,7 +162,13 @@ async fn ensure_paper_state_loaded(s: &AppState, owner_uid: &str) -> Result<(), 
             let persisted = s.operating_cycles.find_one(doc! {"owner_uid":owner_uid,"cycle_id":"active"}, None)
                 .await.map_err(|error| { tracing::error!(error=%error,"operating cycle restore failed"); StatusCode::SERVICE_UNAVAILABLE })?;
             let cycle = match persisted {
-                Some(mut document) => { document.remove("_id"); mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default() }
+                Some(mut document) => {
+                    document.remove("_id");
+                    mongodb::bson::from_document::<OperatingCycle>(document).map_err(|error| {
+                        tracing::error!(error=%error, owner_uid=%owner_uid, "persisted operating cycle is invalid");
+                        StatusCode::SERVICE_UNAVAILABLE
+                    })?
+                }
                 None => OperatingCycle::default(),
             };
             cycles.insert(owner_uid.to_owned(), cycle);
@@ -174,7 +180,13 @@ async fn ensure_paper_state_loaded(s: &AppState, owner_uid: &str) -> Result<(), 
             let persisted = s.paper_sessions.find_one(doc! {"owner_uid":owner_uid,"session_key":"active"}, None)
                 .await.map_err(|error| { tracing::error!(error=%error,"paper session restore failed"); StatusCode::SERVICE_UNAVAILABLE })?;
             let session = match persisted {
-                Some(mut document) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
+                Some(mut document) => {
+                    document.remove("_id");
+                    mongodb::bson::from_document::<PaperSession>(document).map_err(|error| {
+                        tracing::error!(error=%error, owner_uid=%owner_uid, "persisted paper session is invalid");
+                        StatusCode::SERVICE_UNAVAILABLE
+                    })?
+                }
                 None => PaperSession::default(),
             };
             sessions.insert(owner_uid.to_owned(), session);
