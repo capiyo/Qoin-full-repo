@@ -135,6 +135,7 @@ struct AppState {
     paper_session_runs: Collection<Document>,
     paper_session_decisions: Collection<Document>,
     paper_session_trades: Collection<Document>,
+    investment_plans: Collection<Document>,
     active_cycles: Arc<Mutex<HashMap<String, OperatingCycle>>>,
     active_paper_sessions: Arc<Mutex<HashMap<String, PaperSession>>>,
 }
@@ -142,6 +143,21 @@ struct AppState {
 struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
 #[derive(Deserialize)]
 struct PaperRunsQuery { limit: Option<i64> }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InvestmentPlan { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16, updated_at: Option<String> }
+#[derive(Debug, Deserialize)]
+struct InvestmentPlanRequest { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16 }
+
+fn validate_investment_plan(request: InvestmentPlanRequest) -> Result<InvestmentPlanRequest, String> {
+    let goal = request.goal.trim();
+    if goal.is_empty() || goal.chars().count() > 80 { return Err("goal must contain between 1 and 80 characters".into()); }
+    if !matches!(request.currency.as_str(), "KES" | "USD" | "EUR" | "GBP") { return Err("currency must be one of KES, USD, EUR, or GBP".into()); }
+    if request.monthly_contribution_minor == 0 || request.monthly_contribution_minor > 100_000_000_000 { return Err("monthly contribution exceeds the supported limit".into()); }
+    if request.target_amount_minor.is_some_and(|amount| amount == 0 || amount > 10_000_000_000_000) { return Err("target amount must be positive and within the supported limit".into()); }
+    if !(1..=600).contains(&request.horizon_months) { return Err("investment horizon must be between 1 and 600 months".into()); }
+    Ok(InvestmentPlanRequest { goal: goal.to_owned(), ..request })
+}
 
 #[derive(Deserialize)]
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
@@ -194,9 +210,13 @@ async fn ensure_paper_state_loaded(s: &AppState, owner_uid: &str) -> Result<(), 
     }
     Ok(())
 }
-async fn authenticated_cycle_uid(s: &AppState, headers: &HeaderMap) -> Result<String, StatusCode> {
+async fn authenticated_owner_uid(s: &AppState, headers: &HeaderMap) -> Result<String, StatusCode> {
     let owner_uid = firebase_uid_from_headers(s.firebase_verifier.as_ref(), headers).await?;
     ensure_user_record(&s.users, &owner_uid).await?;
+    Ok(owner_uid)
+}
+async fn authenticated_cycle_uid(s: &AppState, headers: &HeaderMap) -> Result<String, StatusCode> {
+    let owner_uid = authenticated_owner_uid(s, headers).await?;
     ensure_paper_state_loaded(s, &owner_uid).await?;
     Ok(owner_uid)
 }
@@ -366,6 +386,43 @@ async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): S
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
     }}
     (StatusCode::OK, Json(serde_json::json!({"runs":runs})))
+}
+
+
+async fn get_investment_plan(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_owner_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    match s.investment_plans.find_one(doc! {"owner_uid":&owner_uid}, None).await {
+        Ok(Some(mut document)) => {
+            document.remove("_id"); document.remove("owner_uid");
+            match mongodb::bson::from_document::<InvestmentPlan>(document) {
+                Ok(plan) => (StatusCode::OK, Json(serde_json::to_value(Some(plan)).unwrap_or_default())),
+                Err(error) => { tracing::error!(error=%error, owner_uid=%owner_uid, "investment plan document invalid"); (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"investment plan data unavailable"}))) }
+            }
+        }
+        Ok(None) => (StatusCode::OK, Json(serde_json::Value::Null)),
+        Err(error) => { tracing::error!(error=%error, owner_uid=%owner_uid, "investment plan read failed"); (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"investment plan storage unavailable"}))) }
+    }
+}
+async fn put_investment_plan(State(s): State<AppState>, headers: HeaderMap, Json(request): Json<InvestmentPlanRequest>) -> impl IntoResponse {
+    let owner_uid = match authenticated_owner_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let request = match validate_investment_plan(request) {
+        Ok(value) => value,
+        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+    };
+    let updated_at = chrono::Utc::now().to_rfc3339();
+    let document = doc! {
+        "owner_uid": &owner_uid, "goal": &request.goal, "currency": &request.currency,
+        "monthly_contribution_minor": request.monthly_contribution_minor as i64,
+        "target_amount_minor": request.target_amount_minor.map(|value| value as i64),
+        "horizon_months": i32::from(request.horizon_months), "updated_at": &updated_at,
+    };
+    let options = UpdateOptions::builder().upsert(true).build();
+    if let Err(error) = s.investment_plans.update_one(doc! {"owner_uid":&owner_uid}, doc! {"$set":document}, Some(options)).await {
+        tracing::error!(error=%error, owner_uid=%owner_uid, "investment plan write failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"investment plan storage unavailable"})));
+    }
+    let plan = InvestmentPlan { goal:request.goal, currency:request.currency, monthly_contribution_minor:request.monthly_contribution_minor, target_amount_minor:request.target_amount_minor, horizon_months:request.horizon_months, updated_at:Some(updated_at) };
+    (StatusCode::OK, Json(serde_json::to_value(plan).unwrap_or_default()))
 }
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
@@ -3554,6 +3611,7 @@ async fn main(){
     let paper_session_runs:Collection<Document>=db.collection("paper_session_runs");
     let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
     let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
+    let investment_plans:Collection<Document>=db.collection("user_investment_plans");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
     let broker_environment = Arc::new(broker_env::BrokerEnvironment::from_env()
         .expect("QOIN_BROKER_* environment configuration must be valid"));
@@ -3667,6 +3725,7 @@ async fn main(){
     paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper session archive index");
     paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"venue":1,"symbol":1,"event_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper Mirror event index");
     paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("per-user paper trade history index");
+    investment_plans.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user investment plan index");
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
@@ -3686,7 +3745,7 @@ async fn main(){
         signal_config_version,
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
-        operating_cycles, paper_sessions, paper_session_runs, paper_session_decisions, paper_session_trades,
+        operating_cycles, paper_sessions, paper_session_runs, paper_session_decisions, paper_session_trades, investment_plans,
         active_cycles: Arc::new(Mutex::new(HashMap::new())),
         active_paper_sessions: Arc::new(Mutex::new(HashMap::new())),
     };
@@ -3734,6 +3793,7 @@ async fn main(){
         .route("/internal/paper-session",get(get_paper_session))
         .route("/internal/paper-session/history",get(get_paper_session_history))
         .route("/internal/paper-session/runs",get(get_paper_session_runs))
+        .route("/internal/investment-plan",get(get_investment_plan).put(put_investment_plan))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     // Bind address may be 0.0.0.0 inside a container; provider callbacks must
