@@ -1293,21 +1293,28 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     }
     let mut cycle_persist = Vec::new();
     let mut paper_eligible = HashSet::new();
+    let mut paper_completed = HashSet::new();
     {
         let mut cycles = s.active_cycles.lock().await;
         for (owner_uid, cycle) in cycles.iter_mut() {
-            let phase = cycle.snapshot().phase;
-            if cycle.is_active() {
-                if phase == "observation" { cycle.record_observation(); }
-                else if phase == "weight_evaluation" {
+            let before = cycle.snapshot();
+            if before.phase == "completed" {
+                cycle.stop();
+                cycle_persist.push((owner_uid.clone(), cycle.clone()));
+                paper_completed.insert(owner_uid.clone());
+                continue;
+            }
+            if before.active {
+                if before.phase == "observation" { cycle.record_observation(); }
+                else if before.phase == "weight_evaluation" {
                     let bullish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bullish_weight)).collect::<BTreeMap<_,_>>();
                     let bearish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bearish_weight)).collect::<BTreeMap<_,_>>();
                     cycle.record_signal_evaluation(signal_for_paper.score, signal_for_paper.alignment, &signal_for_paper.action,
                         &signal_for_paper.features, &signal_for_paper.attention, &signal_for_paper.attended_features, &bullish, &bearish);
                 }
-                let snapshot = cycle.snapshot();
-                if snapshot.phase == "paper_session" && snapshot.config.mode == "paper" { paper_eligible.insert(owner_uid.clone()); }
-                if phase == "observation" || phase == "weight_evaluation" { cycle_persist.push((owner_uid.clone(), cycle.clone())); }
+                let after = cycle.snapshot();
+                if after.phase == "paper_session" && after.config.mode == "paper" { paper_eligible.insert(owner_uid.clone()); }
+                if before.phase == "observation" || before.phase == "weight_evaluation" { cycle_persist.push((owner_uid.clone(), cycle.clone())); }
             }
         }
     }
@@ -1318,10 +1325,14 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         }
     }
     let mut paper_updates = Vec::new();
+    let mut paper_finalized = Vec::new();
     {
         let mut sessions = s.active_paper_sessions.lock().await;
         for (owner_uid, paper) in sessions.iter_mut() {
-            if paper_eligible.contains(owner_uid) {
+            if paper_completed.contains(owner_uid) {
+                paper.stop();
+                paper_finalized.push((owner_uid.clone(), paper.clone()));
+            } else if paper_eligible.contains(owner_uid) {
                 if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper) {
                     paper_updates.push((owner_uid.clone(), mirror, trade, paper.clone()));
                 }
@@ -1350,47 +1361,14 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state persistence failed","event_persisted":true,"decision_persisted":true})));
         }
     }
-    let update=serde_json::json!({"type":"market.update"
-        let mut cycle = s.active_cycle.lock().await;
-        let phase = cycle.snapshot().phase;
-        if cycle.is_active() {
-            if phase == "observation" { cycle.record_observation(); }
-            else if phase == "weight_evaluation" {
-                let bullish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bullish_weight)).collect::<BTreeMap<_,_>>();
-                let bearish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bearish_weight)).collect::<BTreeMap<_,_>>();
-                cycle.record_signal_evaluation(signal_for_paper.score, signal_for_paper.alignment, &signal_for_paper.action,
-                    &signal_for_paper.features, &signal_for_paper.attention, &signal_for_paper.attended_features, &bullish, &bearish);
-            }
-            if phase == "observation" || phase == "weight_evaluation" {
-                if let Err(error) = persist_operating_cycle(&s, &cycle).await {
-                    tracing::error!(error=%error, event_id=%event.event_id, "operating cycle telemetry persistence failed");
-                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"operating cycle telemetry persistence failed","event_persisted":true,"state_persisted":true,"decision_persisted":true})));
-                }
-            }
+    for (owner_uid, paper) in paper_finalized {
+        if let Err(error) = persist_paper_session(&s, &owner_uid, &paper).await {
+            tracing::error!(error=%error, owner_uid=%owner_uid, "completed paper session persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"completed paper session persistence failed"})));
         }
-        cycle.snapshot().phase
-    };
-    if cycle_phase == "paper_session" {
-        let mut paper = s.active_paper_session.lock().await;
-        if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper) {
-            let mut mirror_doc = match mongodb::bson::to_document(&mirror) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))) };
-            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
-            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
-                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror persistence failed","event_persisted":true,"decision_persisted":true})));
-            }
-            if let Some(trade) = trade {
-                let mut trade_doc = match mongodb::bson::to_document(&trade) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))) };
-                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
-                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
-                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
-                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true,"decision_persisted":true})));
-                }
-            }
-            if let Err(error) = persist_paper_session(&s, &paper).await {
-                tracing::error!(error=%error, event_id=%event.event_id, "paper session state persistence failed");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state persistence failed","event_persisted":true,"decision_persisted":true})));
-            }
+        if let Err(error) = archive_paper_session(&s, &owner_uid, &paper).await {
+            tracing::error!(error=%error, owner_uid=%owner_uid, "completed paper session archive failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"completed paper session archive failed"})));
         }
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
