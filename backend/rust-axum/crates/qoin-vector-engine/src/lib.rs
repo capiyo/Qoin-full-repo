@@ -452,14 +452,14 @@ mod tests {
 
     #[test]
     fn strong_positive_force_produces_buy() {
-        assert_eq!(decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Buy);
+        assert_eq!(decide(sample(), &EngineConfig::default(), false).unwrap().decision, Decision::Buy);
     }
 
     #[test]
     fn weak_signal_without_position_waits() {
         let input = ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(1.0), spread_age_ms: Some(0) };
-        let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(input, &EngineConfig::default(), false).unwrap();
         assert_eq!(result.decision, Decision::Wait);
         assert_eq!(result.active_force_count, 0);
     }
@@ -468,12 +468,12 @@ mod tests {
     fn missing_or_wide_spread_always_abstains() {
         let mut input = sample();
         input.spread_bps = None;
-        assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Wait);
+        assert_eq!(decide(input, &EngineConfig::default(), false).unwrap().decision, Decision::Wait);
         input.spread_bps = Some(30.0);
-        assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap().decision, Decision::Wait);
+        assert_eq!(decide(input, &EngineConfig::default(), false).unwrap().decision, Decision::Wait);
         input.spread_bps = Some(2.0);
         input.spread_age_ms = Some(30_001);
-        let stale = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let stale = decide(input, &EngineConfig::default(), false).unwrap();
         assert_eq!(stale.decision, Decision::Wait);
         assert!(!stale.diagnostics.spread_fresh);
     }
@@ -482,14 +482,14 @@ mod tests {
     fn non_finite_values_are_rejected() {
         let mut input = sample();
         input.ofi = f64::NAN;
-        assert_eq!(decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap_err(), EngineError::NonFiniteInput);
+        assert_eq!(decide(input, &EngineConfig::default(), false).unwrap_err(), EngineError::NonFiniteInput);
     }
 
     #[test]
     fn strong_negative_force_produces_sell() {
         let input = ForceObservation { ofi: -2.0, liquidity: -1.0, volatility: 0.2, funding: 0.5,
             open_interest_change: -1.0, liquidation_pressure: -0.5, basis: 0.0, spread_bps: Some(2.0), spread_age_ms: Some(0) };
-        let result = decide(input, &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(input, &EngineConfig::default(), false).unwrap();
         assert_eq!(result.decision, Decision::Sell);
     }
 
@@ -497,12 +497,12 @@ mod tests {
     fn invalid_top_k_is_rejected() {
         let mut config = EngineConfig::default();
         config.top_k = 0;
-        assert_eq!(decide(sample(), &config, "baseline-v2", false).unwrap_err(), EngineError::InvalidConfig);
+        assert_eq!(decide(sample(), &config, false).unwrap_err(), EngineError::InvalidConfig);
     }
 
     #[test]
     fn attention_rows_sum_to_one_and_matrix_is_seven_by_seven() {
-        let result = decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(sample(), &EngineConfig::default(), false).unwrap();
         assert_eq!(result.attention.len(), 7);
         for row in result.attention {
             assert_eq!(row.len(), 7);
@@ -513,12 +513,12 @@ mod tests {
 
     #[test]
     fn output_exposes_reproducible_feature_and_selection_ledger() {
-        let result = decide(sample(), &EngineConfig::default(), "baseline-v2", false).unwrap();
+        let result = decide(sample(), &EngineConfig::default(), false).unwrap();
         assert_eq!(result.feature_trace.len(), 7);
         assert_eq!(result.features.len(), 7);
         assert_eq!(result.feature_trace[0].raw_value, 2.0);
         assert_eq!(result.feature_trace[0].directional_weight, 0.30);
-        assert_eq!(result.config_version, "baseline-v2");
+        assert_eq!(result.config_fingerprint, EngineConfig::default().fingerprint());
         assert_eq!(result.decision_vector[0], result.score.max(0.0));
     }
 }
