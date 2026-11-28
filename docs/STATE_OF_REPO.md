@@ -34,7 +34,7 @@ The private Axum order and reconciliation routes exist in the source tree. They 
 
 The runtime initializes the broker registry empty. The named provider adapter scaffolds deliberately return unsupported results and are not registered as executable adapters. Therefore the presence of an order route or broker catalogue must not be represented as a working broker integration. No provider is currently verified as execution-ready, and order dispatch must remain unavailable/fail-closed until a real adapter is implemented, registered through an approved operator path, and passes provider-specific conformance and sandbox tests.
 
-Qoin is a research platform. The paper-session and operating-cycle cores exist as Rust library modules, but authenticated API routes, durable per-user lifecycle integration, replay-safe recovery, and client workflows are not yet wired into the current master runtime. Do not describe the paper-session workflow as integrated, and do not enable real-money execution or describe Qoin as production-ready.
+Qoin is a research platform. The operating-cycle and paper-session cores are now wired into the master runtime through authenticated Axum routes, Drogon gateway forwarding, shared TypeScript API contracts, and web/mobile controls. Cycle configuration, per-user paper-session state, Mirror decisions, trade records, and archived runs persist in MongoDB under Firebase UID ownership; state is restored lazily after restart. Accepted market events feed the user's configured paper ledger during the paper-session phase using the authoritative V1 vector signal and observed bid/ask plus configured fees/slippage. This is simulation only: no broker orders are sent and live execution remains disabled. Exact-head compilation, UI checks, duplicate-delivery recovery across partial writes, and full restart/replay acceptance still require verification; do not describe Qoin as production-ready.
 
 ## Retired components
 
@@ -49,7 +49,7 @@ Remaining release gates include:
 - Real provider-specific market-data coverage, history/backfill quality, symbol/venue mapping, freshness monitoring, and provider failover.
 - Independent chronological and out-of-sample research evaluation, robust portfolio accounting, cross-asset exposure controls, and reproducible datasets.
 - Concrete broker adapters, account permission validation, provider conformance/sandbox testing, credential rotation, and operator provisioning.
-- Authenticated operating-cycle and paper-session APIs, user-scoped lifecycle persistence, duplicate-safe event processing, crash recovery/replay, and web/mobile session diagnostics before paper execution can be considered integrated.
+- Idempotent paper-session processing across duplicate delivery and partial-write/crash windows, replay reconciliation, and exact-head web/mobile/backend acceptance before paper execution can be considered release-ready.
 - Durable reconciliation automation, partial-failure recovery, cancellation/amendment handling, and independently reviewed portfolio-level execution risk.
 - Firebase revocation/authorization operations, payment and entitlement reconciliation where applicable, and security review of public ingress.
 - Production hosting, secret management, TLS/DNS, monitoring, backups, disaster recovery, and desktop release verification.
