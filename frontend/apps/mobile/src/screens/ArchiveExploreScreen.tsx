@@ -778,8 +778,11 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
       const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
-      setRegistryError("");
-      setItems(items.map((item, index) => ({
+      const canonicalItems = items.filter((item): item is typeof item & { venue_id: string } =>
+        typeof item.venue_id === "string" && item.venue_id.trim().length > 0);
+      const missingVenueCount = items.length - canonicalItems.length;
+      setRegistryError(missingVenueCount ? `${missingVenueCount} registry entries were excluded because they lack a canonical venue ID.` : "");
+      setItems(canonicalItems.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
         market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
