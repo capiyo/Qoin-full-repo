@@ -3759,6 +3759,7 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("event deduplication index");
     events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"received_at_ms":-1})
         .build(),None).await.expect("provider live-ingestion freshness index");
+    events.create_index(mongodb::IndexModel::builder().keys(doc!{"venue":1,"symbol":1,"ts_ms":-1}).build(),None).await.expect("venue-scoped multi-horizon query index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("state lookup index");
     states.create_index(mongodb::IndexModel::builder().keys(doc!{"stored_at":-1}).build(),None).await.expect("latest state recovery index");
     decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"symbol":1,"stored_at":-1}).build(),None).await.expect("decision lookup index");
