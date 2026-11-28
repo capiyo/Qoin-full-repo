@@ -1,10 +1,21 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text as NativeText, type TextProps, TextInput as NativeTextInput, type TextInputProps, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { signInQoinUser, registerQoinUser } from "@qoin/core";
 import { colors } from "../theme";
 import type { RootStackParamList } from "../../App";
+
+function Text(props: TextProps) {
+  const flattened = StyleSheet.flatten(props.style);
+  const weight = flattened?.fontWeight;
+  const fontFamily = flattened?.fontFamily ?? (weight === "700" || weight === "800" || weight === "900" || weight === "bold" ? "DMSans_700Bold" : weight === "500" || weight === "600" ? "DMSans_500Medium" : "DMSans_400Regular");
+  return <NativeText {...props} style={[{ fontFamily }, props.style]} />;
+}
+
+function TextInput(props: TextInputProps) {
+  return <NativeTextInput {...props} selectionColor={props.selectionColor ?? "#7DF162"} style={[{ fontFamily: "DMSans_400Regular" }, props.style]} />;
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login"> & { configurationError?: string };
 
