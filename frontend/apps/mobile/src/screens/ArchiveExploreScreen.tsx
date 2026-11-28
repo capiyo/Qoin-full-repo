@@ -1533,4 +1533,4 @@ const styles = StyleSheet.create({
   marketVectorTitle: { color: "#23456B", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
   marketVectorValue: { color: "#18324F", fontSize: 13, fontWeight: "700", marginTop: 5 },
   marketVectorMeta: { color: "#61758E", fontSize: 11, marginTop: 4 },
-});;
+});
