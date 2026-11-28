@@ -51,7 +51,6 @@ use qoin_vector_engine::{aggregate_horizon, decide as decide_signal, evaluate_mu
 mod models;
 mod handlers;
 mod routes;
-use models::*;
 
 #[tokio::main]
 async fn main() {
