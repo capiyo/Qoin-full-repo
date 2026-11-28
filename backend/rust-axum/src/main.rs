@@ -3231,7 +3231,7 @@ async fn main(){
         .options(IndexOptions::builder().unique(true).build()).build(),None).await
         .expect("broker subaccount must map to only one Firebase user");
     trading_controls.update_one(doc!{"_id":"execution"},
-        doc!{"$setOnInsert":{"enabled":env::var("QOIN_TRADING_ENABLED").map(|v|v=="true").unwrap_or(false),
+        doc!{"$setOnInsert":{"enabled":false,
             "updated_at":mongodb::bson::DateTime::now()}},
         UpdateOptions::builder().upsert(true).build()).await.expect("initialize trading kill switch");
     orders.create_index(mongodb::IndexModel::builder().keys(doc!{"client_order_id":1})
