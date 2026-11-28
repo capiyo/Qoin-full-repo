@@ -1148,21 +1148,18 @@ pub(crate) async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent
         }
     }
     let state_key=venue_state_key(&event.venue,&event.symbol);
-    if let Ok(memory)=s.memory.read() {
-        if let Some(previous)=memory.get(&state_key) {
-            if !event_follows_state(&event, previous) {
-                return (StatusCode::CONFLICT,Json(serde_json::json!({
-                    "error":"out-of-order market event rejected",
-                    "last_event_ts_ms":previous.last_event_ts_ms,
-                    "last_event_id":previous.last_event_id.as_deref(),
-                    "incoming_event_ts_ms":event.ts_ms,
-                    "incoming_event_id":event.event_id
-                })));
-            }
-        }
-    } else {
-        return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})));
-    }
+    // Preserve late observations in the immutable source log for audit and
+    // historical reconstruction, but never let them rewind live state or V1.
+    let late_event = match s.memory.read() {
+        Ok(memory) => memory.get(&state_key).and_then(|previous| {
+            (!event_follows_state(&event, previous)).then(|| (
+                previous.last_event_ts_ms,
+                previous.last_event_id.clone(),
+                previous.last_event_venue.clone(),
+            ))
+        }),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"}))),
+    };
     let received_at_ms = chrono::Utc::now().timestamp_millis();
     let mut raw=match mongodb::bson::to_document(&event){Ok(v)=>v,Err(_)=>return(StatusCode::BAD_REQUEST,Json(serde_json::json!({"error":"event serialization failed"})))};
     raw.insert("received_at_ms", received_at_ms);
@@ -1179,6 +1176,18 @@ pub(crate) async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent
     }
     if !newly_inserted {
         return (StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id,"ledger_repair_attempted":true})));
+    }
+    if let Some((last_applied_event_ts_ms,last_applied_event_id,last_applied_venue))=late_event {
+        return (StatusCode::OK,Json(serde_json::json!({
+            "status":"late_event_stored_not_applied",
+            "event_id":event.event_id,
+            "event_ts_ms":event.ts_ms,
+            "last_applied_event_ts_ms":last_applied_event_ts_ms,
+            "last_applied_event_id":last_applied_event_id,
+            "last_applied_venue":last_applied_venue,
+            "event_persisted":true,
+            "decision_generated":false
+        })));
     }
     let (snapshot, mut peer_states)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};

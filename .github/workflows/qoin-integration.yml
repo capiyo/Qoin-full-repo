@@ -244,5 +244,12 @@ jobs:
             jq . /tmp/algorithms.json || cat /tmp/algorithms.json
             exit 1
           fi
+          # Late source events remain auditable but must not rewind the live V1 state.
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-late-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000150,"price":100.025,"size":1,"side":"sell"}' >/tmp/late-event.json
+          jq -e '.status == "late_event_stored_not_applied" and .event_ts_ms == 1792860000150 and .event_persisted == true and .decision_generated == false' /tmp/late-event.json
+          curl -fsS -X POST http://127.0.0.1:8081/internal/events -H 'content-type: application/json' --data '{"event_id":"ci-late-1","venue":"ci","symbol":"BTCUSDT","event_type":"trade","ts_ms":1792860000150,"price":100.025,"size":1,"side":"sell"}' >/tmp/late-event-duplicate.json
+          jq -e '.status == "duplicate_ignored" and .event_id == "ci-late-1"' /tmp/late-event-duplicate.json
+          curl -fsS 'http://127.0.0.1:8080/api/v1/vector/history?symbol=BTCUSDT&venue=ci&at_ms=1792860000150' >/tmp/vector-after-late-event.json
+          jq -e '.event_ts_ms == 1792860000100 and .input_event.event_ts_ms == 1792860000100' /tmp/vector-after-late-event.json
           node backend/tests/websocket_smoke.mjs
           echo "All Qoin Axum-Drogon integration assertions passed."
