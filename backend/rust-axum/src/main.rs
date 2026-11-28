@@ -3653,8 +3653,8 @@ async fn main(){
     operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user operating cycle index");
     paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"session_key":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper session state index");
     paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper session archive index");
-    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper Mirror event index");
-    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper trade history index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"venue":1,"symbol":1,"event_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper Mirror event index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("per-user paper trade history index");
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
