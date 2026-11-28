@@ -330,7 +330,7 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
     if let Some(cycle_id) = query.cycle_id { filter.insert("cycle_id", cycle_id); }
     if let Some(symbol) = query.symbol { filter.insert("symbol", symbol); }
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let mut decisions_cursor = match s.paper_session_decisions.find(filter.clone(), FindOptions::builder().sort(doc! {"ts_ms":-1}).limit(limit).build()).await {
+    let mut decisions_cursor = match s.paper_session_decisions.find(filter.clone(), Some(FindOptions::builder().sort(doc! {"ts_ms":-1}).limit(limit).build())).await {
         Ok(cursor) => cursor,
         Err(error) => { tracing::error!(error=%error, "paper Mirror history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history unavailable"}))); }
     };
@@ -340,7 +340,7 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
         Ok(None) => break,
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
     }}
-    let mut trades_cursor = match s.paper_session_trades.find(filter, FindOptions::builder().sort(doc! {"exit_ts_ms":-1}).limit(limit).build()).await {
+    let mut trades_cursor = match s.paper_session_trades.find(filter, Some(FindOptions::builder().sort(doc! {"exit_ts_ms":-1}).limit(limit).build())).await {
         Ok(cursor) => cursor,
         Err(error) => { tracing::error!(error=%error, "paper trade history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"}))); }
     };
@@ -355,7 +355,7 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
 async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let mut cursor = match s.paper_session_runs.find(doc! {"owner_uid":&owner_uid}, FindOptions::builder().sort(doc! {"archived_at":-1}).limit(limit).build()).await {
+    let mut cursor = match s.paper_session_runs.find(doc! {"owner_uid":&owner_uid}, Some(FindOptions::builder().sort(doc! {"archived_at":-1}).limit(limit).build())).await {
         Ok(cursor) => cursor,
         Err(error) => { tracing::error!(error=%error, "paper session archive query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archives unavailable"}))); }
     };
