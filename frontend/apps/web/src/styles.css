@@ -583,3 +583,24 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 .plan-note,.plan-message{margin:9px 0 0;color:#8794a7;font-size:9px;line-height:1.55}
 .plan-message{color:#2867dc;font-weight:700}
 @media(max-width:580px){.investment-plan-panel{padding:13px}.plan-field-grid{grid-template-columns:1fr}.investment-plan-heading{align-items:flex-start}}
+
+
+/* Venue-isolated multi-horizon research */
+.multi-horizon-panel{margin:20px 0;padding:16px;border:1px solid #e6ebf2;border-radius:16px;background:#fff}
+.horizon-controls{display:grid;grid-template-columns:minmax(220px,2fr) minmax(130px,1fr) auto;align-items:end;gap:10px;margin:14px 0}
+.horizon-controls label{display:flex;flex-direction:column;gap:5px;color:#718096;font-size:10px;font-weight:700}
+.horizon-controls select,.horizon-controls input{width:100%;min-width:0;padding:9px 10px;border:1px solid #e1e8f1;border-radius:9px;background:#fff;color:#24344d;font:inherit}
+.horizon-controls button{min-height:36px;padding:8px 14px}
+.horizon-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:12px}
+.horizon-card{min-width:0;padding:12px;border:1px solid #e8edf5;border-radius:12px;background:#fbfcfe}
+.horizon-title{display:flex;align-items:center;justify-content:space-between;gap:6px;color:#34465f;font-size:10px;text-transform:capitalize}
+.horizon-title .ready,.horizon-title .not-ready{font-size:8px;font-weight:800;letter-spacing:.04em}
+.horizon-title .ready{color:#18845a}.horizon-title .not-ready{color:#b7791f}
+.horizon-signal{margin:10px 0 7px;color:#253650;font-size:18px;font-weight:850}
+.horizon-meta{margin-top:4px;color:#7d8a9d;font-size:9px;line-height:1.45}
+.horizon-reason{margin:7px 0 0;color:#8a6a35;font-size:9px;line-height:1.45}
+.horizon-summary{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;color:#68778d;font-size:10px;font-weight:700}
+.horizon-error{margin:10px 0;color:#b45309;font-size:10px;line-height:1.5}
+.consensus-line{margin:12px 0 0;color:#4d5e75;font-size:11px}
+@media(max-width:850px){.horizon-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:580px){.multi-horizon-panel{padding:13px}.horizon-controls{grid-template-columns:1fr}.horizon-grid{grid-template-columns:1fr 1fr}}
