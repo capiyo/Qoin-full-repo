@@ -23,15 +23,13 @@ services:
       - key: QOIN_FIREBASE_PROJECT_ID
         sync: false
       - key: QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX
-        sync: false
+        value: ""
       - key: QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX
-        sync: false
+        value: ""
       - key: QOIN_EXECUTION_TOKEN
-        sync: false
+        generateValue: true
       - key: QOIN_LEDGER_MAINTENANCE_TOKEN
-        sync: false
-      - key: FINNHUB_API_KEY
-        sync: false
+        generateValue: true
       - key: QOIN_TRADING_ENABLED
         value: "false"
       - key: QOIN_BINANCE_STREAM_ENABLED
