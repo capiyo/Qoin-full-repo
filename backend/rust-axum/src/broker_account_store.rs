@@ -85,6 +85,24 @@ pub fn connection_allows_credential_use(
     status == "active" && validation_status == "validated" && executable
 }
 
+/// An account can receive orders only after provider validation has created an
+/// active account record and explicitly enabled trading for that account.
+pub fn account_allows_order_execution(status: &str, trading_enabled: bool) -> bool {
+    status == "active" && trading_enabled
+}
+
+/// Only active credentials in the supported sealed-box format may back an
+/// executable broker connection. This checks metadata without exposing secrets.
+pub fn credential_record_allows_use(
+    status: &str,
+    encryption_algorithm: &str,
+    encryption_version: i32,
+) -> bool {
+    status == "active"
+        && encryption_algorithm == "libsodium_crypto_box_seal"
+        && encryption_version == 1
+}
+
 pub async fn load_owned_credentials(
     connections: &mongodb::Collection<mongodb::bson::Document>,
     collection: &mongodb::Collection<mongodb::bson::Document>,
@@ -165,6 +183,22 @@ mod tests {
         assert!(!connection_allows_credential_use("disconnected", "validated", true));
         assert!(!connection_allows_credential_use("active", "validated", false));
         assert!(connection_allows_credential_use("active", "validated", true));
+    }
+
+    #[test]
+    fn broker_account_must_be_active_and_explicitly_trade_enabled() {
+        assert!(!account_allows_order_execution("pending_validation", true));
+        assert!(!account_allows_order_execution("active", false));
+        assert!(!account_allows_order_execution("disconnected", true));
+        assert!(account_allows_order_execution("active", true));
+    }
+
+    #[test]
+    fn order_credentials_must_be_active_sealed_box_v1_records() {
+        assert!(!credential_record_allows_use("pending_validation", "libsodium_crypto_box_seal", 1));
+        assert!(!credential_record_allows_use("active", "legacy_aes_gcm", 1));
+        assert!(!credential_record_allows_use("active", "libsodium_crypto_box_seal", 2));
+        assert!(credential_record_allows_use("active", "libsodium_crypto_box_seal", 1));
     }
 
     #[test]

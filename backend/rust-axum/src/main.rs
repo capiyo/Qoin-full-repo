@@ -739,6 +739,108 @@ async fn submit_live_order(
     if broker_id.is_empty() || broker_id.len() > 64 {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"broker_id is required"})));
     }
+
+    // Do not let a configured adapter turn an arbitrary account ID into an
+    // executable account. The account, connection and encrypted credential
+    // must all belong to this verified Firebase user and be explicitly active.
+    let account = match s.broker_accounts.find_one(doc!{
+        "owner_uid":&owner_uid,
+        "broker_id":&broker_id,
+        "account_id":&submission.order.account_id
+    },None).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error":"broker account is not linked to this Qoin user",
+            "dispatch_started":false
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error,"owner-scoped broker account lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"broker account validation is unavailable",
+                "dispatch_started":false
+            })));
+        }
+    };
+    if !broker_account_store::account_allows_order_execution(
+        account.get_str("status").unwrap_or(""),
+        account.get_bool("trading_enabled").unwrap_or(false),
+    ) {
+        return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"broker account has not passed provider validation or trading is disabled",
+            "dispatch_started":false
+        })));
+    }
+    let connection_id = account.get_str("connection_id").unwrap_or("").to_string();
+    if connection_id.is_empty() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({
+            "error":"broker account has no validated credential connection",
+            "dispatch_started":false
+        })));
+    }
+    let connection = match s.broker_connections.find_one(doc!{
+        "owner_uid":&owner_uid,
+        "connection_id":&connection_id,
+        "broker_id":&broker_id
+    },None).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"broker credential connection is unavailable",
+            "dispatch_started":false
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error,"owner-scoped broker connection lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"broker connection validation is unavailable",
+                "dispatch_started":false
+            })));
+        }
+    };
+    if !broker_account_store::connection_allows_credential_use(
+        connection.get_str("status").unwrap_or(""),
+        connection.get_str("validation_status").unwrap_or(""),
+        connection.get_bool("executable").unwrap_or(false),
+    ) {
+        return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"broker connection has not passed provider validation",
+            "dispatch_started":false
+        })));
+    }
+    let credential_id = connection.get_str("credential_id").unwrap_or("").to_string();
+    if credential_id.is_empty() {
+        return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"validated broker connection has no credential record",
+            "dispatch_started":false
+        })));
+    }
+    let credential = match s.broker_credentials.find_one(doc!{
+        "_id":&credential_id,
+        "owner_uid":&owner_uid,
+        "connection_id":&connection_id
+    },None).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"active owner-scoped broker credentials are unavailable",
+            "dispatch_started":false
+        }))),
+        Err(error) => {
+            tracing::error!(error=%error,"owner-scoped broker credential lookup failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error":"broker credential validation is unavailable",
+                "dispatch_started":false
+            })));
+        }
+    };
+    if !broker_account_store::credential_record_allows_use(
+        credential.get_str("status").unwrap_or(""),
+        credential.get_str("encryption_algorithm").unwrap_or(""),
+        credential.get_i32("encryption_version").unwrap_or_default(),
+    ) {
+        return (StatusCode::LOCKED, Json(serde_json::json!({
+            "error":"broker credentials are pending validation, revoked, or use an unsupported encryption format",
+            "dispatch_started":false
+        })));
+    }
+
     let adapter = match s.broker_registry.resolve(&broker_id) {
         Ok(adapter) => adapter,
         Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
@@ -792,7 +894,12 @@ async fn submit_live_order(
         Ok(receipt) => {
             let stored = mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null);
             if let Err(error) = s.orders.update_one(
-                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{
+                    "client_order_id":&submission.order.client_order_id,
+                    "owner_uid":&owner_uid,
+                    "broker_id":&broker_id,
+                    "account_id":&submission.order.account_id
+                },
                 doc!{"$set":{"status":"accepted","broker_receipt":stored,"updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
@@ -807,7 +914,12 @@ async fn submit_live_order(
         }
         Err(error) => {
             if let Err(ledger_error) = s.orders.update_one(
-                doc!{"client_order_id":&submission.order.client_order_id},
+                doc!{
+                    "client_order_id":&submission.order.client_order_id,
+                    "owner_uid":&owner_uid,
+                    "broker_id":&broker_id,
+                    "account_id":&submission.order.account_id
+                },
                 doc!{"$set":{"status":"reconciliation_required","execution_error":error.to_string(),"updated_at":mongodb::bson::DateTime::now()}},
                 None
             ).await {
@@ -861,7 +973,12 @@ async fn reconcile_live_order(
     ).await {
         Ok(Some(receipt)) => {
             if let Err(error) = s.orders.update_one(
-                doc!{"client_order_id":&client_order_id},
+                doc!{
+                    "client_order_id":&client_order_id,
+                    "owner_uid":&owner_uid,
+                    "broker_id":&submission.broker_id,
+                    "account_id":&submission.order.account_id
+                },
                 doc!{"$set":{"status":"reconciled","broker_receipt":mongodb::bson::to_bson(&receipt).unwrap_or(mongodb::bson::Bson::Null),
                     "reconciled_at":mongodb::bson::DateTime::now(),"updated_at":mongodb::bson::DateTime::now()}},
                 None
