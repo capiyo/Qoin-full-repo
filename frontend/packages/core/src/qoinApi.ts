@@ -714,3 +714,60 @@ export function saveQoinAlgorithmSelection(input: { symbol: string; algorithm_id
 export function getQoinAlgorithmDecision(symbol: string, venue?: string): Promise<QoinVectorDecision> {
   return authenticatedQoinRequest("/api/v1/me/algorithm-decision?symbol=" + encodeURIComponent(symbol) + (venue ? "&venue=" + encodeURIComponent(venue) : ""));
 }
+
+
+/** Authenticated per-user operating cycle and paper-only execution ledger. */
+export type QoinPaperAccountConfig = {
+  symbol: string; venue: string; quote_currency: string;
+  initial_cash: number; notional_per_trade: number; contract_multiplier: number;
+  quantity_step: number; reinvest_profits: boolean; fee_bps: number; slippage_bps: number;
+};
+export type QoinOperatingCycleConfig = {
+  observation_minutes: number; weight_evaluation_minutes: number; session_minutes: number;
+  mode: "research" | "paper"; paper_accounts: QoinPaperAccountConfig[];
+};
+export type QoinOperatingCycleSnapshot = {
+  config: QoinOperatingCycleConfig;
+  phase: string; active: boolean; started_at_ms: number | null;
+  elapsed_seconds: number; phase_seconds_remaining: number; observations: number; signal_evaluations: number;
+  mean_absolute_score: number | null; mean_alignment: number | null;
+  mean_feature_values: Record<string, number>; mean_weight_contributions: Record<string, [number, number]>;
+  mean_attention: number[][]; buy_signals: number; sell_signals: number; close_signals: number; wait_signals: number;
+  live_execution_enabled: false; weight_policy: string; note: string;
+};
+export type QoinPaperAccountSnapshot = {
+  symbol: string; venue: string; quote_currency: string; contract_multiplier: number; quantity_step: number;
+  initial_cash: number; cash: number; equity: number; net_pnl: number; realized_pnl: number; unrealized_pnl: number;
+  fees_paid: number; max_drawdown_pct: number; events: number; decisions: number;
+  buy_signals: number; sell_signals: number; wait_signals: number; entries: number; exits: number;
+  wins: number; losses: number; win_rate_pct: number; net_winning_pnl: number; net_losing_pnl: number;
+  profit_factor: number | null; skipped_entries: number; has_open_position: boolean;
+  open_position: Record<string, unknown> | null; pending_action: string | null;
+};
+export type QoinPaperSessionSnapshot = {
+  cycle_id: string | null; active: boolean; accounts: QoinPaperAccountSnapshot[];
+  live_execution_enabled: false; note: string;
+};
+export function getQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return authenticatedQoinRequest("/api/v1/operating-cycle");
+}
+export function configureQoinOperatingCycle(config: QoinOperatingCycleConfig): Promise<QoinOperatingCycleSnapshot> {
+  return authenticatedQoinRequest("/api/v1/operating-cycle", { method: "PUT", body: JSON.stringify(config) });
+}
+export function startQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return authenticatedQoinRequest("/api/v1/operating-cycle/start", { method: "POST", body: JSON.stringify({}) });
+}
+export function stopQoinOperatingCycle(): Promise<QoinOperatingCycleSnapshot> {
+  return authenticatedQoinRequest("/api/v1/operating-cycle/stop", { method: "POST", body: JSON.stringify({}) });
+}
+export function getQoinPaperSession(): Promise<QoinPaperSessionSnapshot> {
+  return authenticatedQoinRequest("/api/v1/paper-session");
+}
+export function getQoinPaperSessionHistory(input: { symbol?: string; cycle_id?: string; limit?: number } = {}): Promise<{ decisions: Record<string, unknown>[]; trades: Record<string, unknown>[] }> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, String(value));
+  return authenticatedQoinRequest("/api/v1/paper-session/history" + (query.size ? "?" + query.toString() : ""));
+}
+export function getQoinPaperSessionRuns(limit = 20): Promise<{ runs: QoinPaperSessionSnapshot[] }> {
+  return authenticatedQoinRequest("/api/v1/paper-session/runs?limit=" + encodeURIComponent(String(limit)));
+}
