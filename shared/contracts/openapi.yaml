@@ -375,7 +375,7 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: Firebase ID token
+      bearerFormat: JWT
   schemas:
     OperatingCycleConfig:
       type: object
@@ -449,102 +449,16 @@ components:
           type: object
           required: [decision, action, score, alignment, rationale, strategy_version, config_fingerprint, reject_reason]
           properties:
-            decision: { type: string }
+            decision: { type: string, enum: [BUY, SELL, WAIT, CLOSE] }
             action: { type: string }
             score: { type: number }
             alignment: { type: number }
+            angle_radians: { type: number }
+            angle_degrees: { type: number }
+            active_force_count: { type: integer }
             rationale: { type: string }
             strategy_version: { type: string }
             config_fingerprint: { type: string, pattern: '^[0-9a-f]{16}$' }
-    HorizonConsensus:
-      type: object
-      required: [relationship, buy_count, sell_count, wait_count, close_count, directional_count, unanimous_direction]
-      properties:
-        relationship: { type: string, enum: [aligned_buy, aligned_sell, divergent, no_directional_consensus] }
-        buy_count: { type: integer }
-        sell_count: { type: integer }
-        wait_count: { type: integer }
-        close_count: { type: integer }
-        directional_count: { type: integer }
-        unanimous_direction: { type: string, nullable: true }
-    MultiHorizonSignal:
-      type: object
-      required: [horizons, consensus]
-      properties:
-        horizons: { type: array, items: { $ref: '#/components/schemas/HorizonSignal' } }
-        consensus: { $ref: '#/components/schemas/HorizonConsensus' }
-    MarketHorizonsResponse:
-      type: object
-      required: [symbol, venue_id, decision_ts_ms, events_loaded, event_documents, invalid_event_documents, event_limit_reached, mode, observations, signals, note]
-      properties:
-        symbol: { type: string }
-        venue_id: { type: string }
-        decision_ts_ms: { type: integer, format: int64 }
-        events_loaded: { type: integer, minimum: 0 }
-        event_documents: { type: integer, minimum: 0 }
-        invalid_event_documents: { type: integer, minimum: 0 }
-        event_limit_reached: { type: boolean }
-        mode: { type: string, enum: [research_only] }
-        observations:
-          type: array
-          items: { $ref: '#/components/schemas/HorizonObservation' }
-        signals:
-          nullable: true
-          allOf:
-            - { $ref: '#/components/schemas/MultiHorizonSignal' }
-          description: Descriptive consensus and independently evaluated horizon signals; never an order.
-        note: { type: string }
-    HorizonObservation:
-      type: object
-      required: [horizon, observation, event_count, trade_count, book_count, data_quality, coverage_ratio, ready, reasons]
-      properties:
-        horizon: { type: string, enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week] }
-        observation: { $ref: '#/components/schemas/MarketForceObservation' }
-        event_count: { type: integer }
-        trade_count: { type: integer }
-        book_count: { type: integer }
-        first_event_ts_ms: { type: integer, nullable: true, format: int64 }
-        last_event_ts_ms: { type: integer, nullable: true, format: int64 }
-        data_quality: { type: number, minimum: 0, maximum: 1 }
-        coverage_ratio: { type: number, minimum: 0, maximum: 1 }
-        ready: { type: boolean }
-        reasons: { type: array, items: { type: string } }
-    InvestmentPlanInput:
-      type: object
-      required: [goal, currency, monthly_contribution_minor, target_amount_minor, horizon_months]
-      properties:
-        goal: { type: string, minLength: 1, maxLength: 80 }
-        currency: { type: string, enum: [KES, USD, EUR, GBP] }
-        monthly_contribution_minor: { type: integer, minimum: 1, maximum: 100000000000 }
-        target_amount_minor: { type: integer, nullable: true, minimum: 1, maximum: 10000000000000 }
-        horizon_months: { type: integer, minimum: 1, maximum: 600 }
-    InvestmentPlan:
-      allOf:
-        - { $ref: '#/components/schemas/InvestmentPlanInput' }
-        - type: object
-          properties:
-            updated_at: { type: string, nullable: true, format: date-time }
-    MarketEvent:
-      type: object
-      required: [event_id, venue, symbol, event_type, ts_ms]
-      properties:
-        event_id: { type: string, minLength: 1 }
-        venue: { type: string, minLength: 1 }
-        symbol: { type: string, minLength: 1 }
-        event_type: { type: string, enum: [trade, book, funding, open_interest, liquidation] }
-        ts_ms: { type: integer, minimum: 1 }
-        price: { type: number, nullable: true, minimum: 0 }
-        size: { type: number, nullable: true, minimum: 0 }
-        side: { type: string, nullable: true, enum: [buy, sell, unknown] }
-        bid: { type: number, nullable: true, minimum: 0 }
-        ask: { type: number, nullable: true, minimum: 0 }
-        bid_size: { type: number, nullable: true, minimum: 0 }
-        ask_size: { type: number, nullable: true, minimum: 0 }
-        funding_rate: { type: number, nullable: true }
-        open_interest: { type: number, nullable: true, minimum: 0 }
-        liquidation_side: { type: string, nullable: true, enum: [long, short] }
-
- }
             reject_reason: { type: string, nullable: true, enum: [SPREAD_MISSING_OR_WIDE, SPREAD_STALE, LOW_MAGNITUDE, MISALIGNED, BOTH, FLAT_VECTOR] }
     HorizonConsensus:
       type: object
@@ -633,4 +547,3 @@ components:
         funding_rate: { type: number, nullable: true }
         open_interest: { type: number, nullable: true, minimum: 0 }
         liquidation_side: { type: string, nullable: true, enum: [long, short] }
-
