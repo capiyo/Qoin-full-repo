@@ -332,6 +332,17 @@ async fn get_market_horizons(State(s): State<AppState>, Query(query): Query<Mark
     })))
 }
 
+
+async fn evaluate_multi_horizon_inputs(Json(inputs): Json<Vec<HorizonInput>>) -> impl IntoResponse {
+    if inputs.is_empty() || inputs.len() > 8 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"between 1 and 8 unique horizon inputs are required","mode":"research_only"})));
+    }
+    match evaluate_multi_horizon(&inputs) {
+        Ok(result) => (StatusCode::OK, Json(serde_json::to_value(result).unwrap_or_default())),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":error.to_string(),"mode":"research_only"}))),
+    }
+}
+
 async fn get_operating_cycle(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
     let cycles = s.active_cycles.lock().await;
@@ -3889,6 +3900,7 @@ async fn main(){
         .route("/internal/paper-session/runs",get(get_paper_session_runs))
         .route("/internal/investment-plan",get(get_investment_plan).put(put_investment_plan))
         .route("/internal/market-horizons",get(get_market_horizons))
+        .route("/internal/multi-horizon",post(evaluate_multi_horizon_inputs))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     // Bind address may be 0.0.0.0 inside a container; provider callbacks must
