@@ -146,7 +146,7 @@ struct PaperRunsQuery { limit: Option<i64> }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InvestmentPlan { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16, updated_at: Option<String> }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct InvestmentPlanRequest { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16 }
 
 fn validate_investment_plan(request: InvestmentPlanRequest) -> Result<InvestmentPlanRequest, String> {
