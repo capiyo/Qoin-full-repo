@@ -248,7 +248,7 @@ pub fn replay_with_algorithm(
     max_participation_rate: f64, market_impact_bps: f64,
 ) -> Result<ReplayResult, String> {
     match algorithm_id {
-        "qoin-vector-baseline" => replay_with_vector_engine(events, config, config_version,
+        "qoin-vector-baseline" => replay_with_vector_engine(events, config, strategy_version,
             initial_capital, fee_bps, slippage_bps, latency_ms, max_participation_rate, market_impact_bps)
             .map(|mut result| { result.algorithm_version="edge-map-v1".into(); result }),
         "qoin-measure-ledger-v2" => replay_with_decider(events, "qoin-measure-ledger-v2".into(), "measure-ledger-v2".into(),
