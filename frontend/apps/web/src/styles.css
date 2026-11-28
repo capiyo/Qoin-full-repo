@@ -556,3 +556,13 @@ html[data-qoin-platform="desktop"] .qoin-shell>.topbar>.brand{display:flex}
 
 /* Registry-backed exchange and quote-currency discovery filters. */
 .exchange-selector{margin:14px 0 17px;padding:15px 16px;border:1px solid #26372D;border-radius:14px;background:#111B15}.exchange-selector-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.exchange-selector-heading h3{margin:0;color:#EAF3EC;font-family:Manrope,sans-serif;font-size:16px;letter-spacing:-.025em}.exchange-selector-heading p:not(.eyebrow){margin:5px 0 0;color:#89968D;font-size:10px;line-height:1.5}.exchange-selector-count{padding:6px 9px;border-radius:20px;background:#17291F;color:#7DF162;font-size:9px;font-weight:700;white-space:nowrap}.exchange-selector-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:13px}.exchange-selector-controls label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#A3B2A8;font-size:10px;font-weight:700}.exchange-selector-controls select{width:100%;height:38px;padding:0 10px;border:1px solid #26372D;border-radius:9px;background:#0E1612;color:#EAF3EC;font-size:11px}.exchange-selector-footnote{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;color:#89968D;font-size:9px}.exchange-selector-footnote button{padding:5px 0;border:0;background:transparent;color:#7DF162;font-size:9px;font-weight:700;white-space:nowrap}@media(max-width:560px){.exchange-selector{padding:12px}.exchange-selector-controls{grid-template-columns:1fr}.exchange-selector-footnote{align-items:flex-start;flex-direction:column;gap:5px}.exchange-selector-heading h3{font-size:15px}}
+
+
+/* Authenticated paper-only operating cycle */
+.operating-cycle-panel{margin-top:24px;padding-top:22px}
+.coverage-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.coverage-actions button{min-height:38px;padding:8px 14px;border:0;border-radius:999px;font-size:10px;font-weight:750;cursor:pointer}
+.coverage-actions button:disabled{opacity:.48;cursor:not-allowed}
+.operating-cycle-panel .live-state-grid{padding:13px;border:1px solid #e8edf5;border-radius:12px;background:#fbfcfe}
+.operating-cycle-panel h4{margin:18px 0 10px;color:#34465f;font-size:12px}
+@media(max-width:640px){.coverage-actions{display:grid;grid-template-columns:1fr}.operating-cycle-panel .live-state-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
