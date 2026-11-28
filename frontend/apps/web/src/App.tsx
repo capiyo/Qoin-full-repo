@@ -717,6 +717,12 @@ function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { aut
     setObservation(String(nextCycle.config.observation_minutes));
     setEvaluation(String(nextCycle.config.weight_evaluation_minutes));
     setSession(String(nextCycle.config.session_minutes));
+    const savedAccount = nextCycle.config.paper_accounts[0];
+    if (savedAccount) {
+      setSymbol(savedAccount.symbol); setVenue(savedAccount.venue); setCurrency(savedAccount.quote_currency);
+      setCapital(String(savedAccount.initial_cash)); setNotional(String(savedAccount.notional_per_trade));
+      setFee(String(savedAccount.fee_bps)); setSlippage(String(savedAccount.slippage_bps));
+    }
     loadedForUser.current = accountKey;
   };
   useEffect(() => {
@@ -726,6 +732,12 @@ function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { aut
       if (!active) return; setCycle(c); setPaper(p);
       if (loadedForUser.current !== accountKey) {
         setObservation(String(c.config.observation_minutes)); setEvaluation(String(c.config.weight_evaluation_minutes)); setSession(String(c.config.session_minutes));
+        const savedAccount = c.config.paper_accounts[0];
+        if (savedAccount) {
+          setSymbol(savedAccount.symbol); setVenue(savedAccount.venue); setCurrency(savedAccount.quote_currency);
+          setCapital(String(savedAccount.initial_cash)); setNotional(String(savedAccount.notional_per_trade));
+          setFee(String(savedAccount.fee_bps)); setSlippage(String(savedAccount.slippage_bps));
+        }
         loadedForUser.current = accountKey;
       }
     }).catch(error => { if (active) setStatus(error instanceof Error ? error.message : "Operating cycle unavailable."); });
