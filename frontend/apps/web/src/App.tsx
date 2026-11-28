@@ -19,15 +19,6 @@ type Instrument = {
   color: string;
 };
 
-const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", description: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#f59e0b" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", description: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#6477df" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", description: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, color: "#8b72e8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", description: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#76a85a" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", description: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#4d91d8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", description: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, color: "#8895a7" },
-];
-
 type Tab = "Archive" | "Explore";
 type InstrumentMode = "live" | "backtest";
 function instrumentSlug(symbol: string): string { return symbol.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase(); }
@@ -719,7 +710,7 @@ export default function App() {
   const archivedSymbolsRef = useRef<string[] | null>(null);
   const pendingArchiveActionRef = useRef<{ symbol: string; archived: boolean } | null>(null);
   const pendingInstrumentRef = useRef<Instrument | null>(null);
-  const [instruments, setInstruments] = useState(seed);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [routePath, setRoutePath] = useState(() => window.location.pathname);
@@ -739,6 +730,7 @@ export default function App() {
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [registryError, setRegistryError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
   const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
@@ -946,13 +938,14 @@ export default function App() {
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
+      setRegistryError("");
       setInstruments(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"),
+        market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
         provider: item.provider, providerStatus: item.provider_status,
-        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), color: colors[index % colors.length],
+        archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, color: colors[index % colors.length],
       })));
-    }).catch(() => { if (active) setVectorError("Instrument registry unavailable; showing the local starter set."); });
+    }).catch((error: unknown) => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -1287,7 +1280,8 @@ export default function App() {
                         </article>)}</div> : <p className="coverage-unavailable">{catalogueStatus === "loading" ? "Loading algorithm manifests…" : "No algorithm manifests are currently published by the engine."}</p>}
                         <p className="coverage-disclaimer">{catalogue?.note || "Algorithm selection and paid entitlements are not assumed. A manifest describes capabilities; it does not prove independent validation, profitable performance or user access."}</p>
                       </section>
-                      {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} algorithmId={algorithmBySymbol[item.engineSymbol] || "qoin-vector-baseline"} algorithms={catalogue?.algorithms || []} onSelectAlgorithm={(algorithmId)=>void selectCardAlgorithm(item,algorithmId)} live={{...liveBySymbol[item.engineSymbol.toUpperCase()],decision:algorithmDecisions[item.engineSymbol.toUpperCase()] || liveBySymbol[item.engineSymbol.toUpperCase()]?.decision}} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
+                      {registryError ? <p className="disclaimer" role="alert">Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</p> : null}
+                       {discovered.length ? <div className="instrument-grid">{discovered.map((item) => <InstrumentCard key={item.symbol} item={item} onOpen={() => openInstrument(item)} mode={cardModeBySymbol[item.symbol] || "live"} onSelectMode={(nextMode) => selectCardMode(item, nextMode)} algorithmId={algorithmBySymbol[item.engineSymbol] || "qoin-vector-baseline"} algorithms={catalogue?.algorithms || []} onSelectAlgorithm={(algorithmId)=>void selectCardAlgorithm(item,algorithmId)} live={{...liveBySymbol[item.engineSymbol.toUpperCase()],decision:algorithmDecisions[item.engineSymbol.toUpperCase()] || liveBySymbol[item.engineSymbol.toUpperCase()]?.decision}} action={{ label: "＋ Add to archive", onClick: () => toggleArchive(item.symbol) }} />)}</div> : <div className="empty-state"><strong>No instruments found.</strong><p>Try another name or market.</p></div>}
                       <section className="news-section">
                         <div className="news-heading"><div><p className="eyebrow">GLOBAL FINANCIAL INTELLIGENCE</p><h3>News & macro events</h3><p>Provider-attributed headlines. Publication timestamps and original links are preserved.</p></div><span className="news-status">{newsStatus}</span></div>
                         <div className="filter-row">{["general", "forex", "crypto", "merger"].map((category) => <button key={category} className={newsCategory === category ? "filter active" : "filter"} onClick={() => setNewsCategory(category)}>{category}</button>)}</div>
