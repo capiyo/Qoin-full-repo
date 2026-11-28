@@ -2,7 +2,7 @@ name: Desktop
 
 on:
   push:
-    branches: [master, main, qoin-archive-explore-vector-ui]
+    branches: [master]
     paths:
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
@@ -13,6 +13,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/desktop.yml"
   pull_request:
+    branches: [master]
     paths:
       - "frontend/apps/desktop/**"
       - "frontend/apps/web/**"
