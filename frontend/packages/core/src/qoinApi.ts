@@ -804,6 +804,18 @@ export type QoinHorizonObservation = {
   first_event_ts_ms: number | null; last_event_ts_ms: number | null;
   data_quality: number; coverage_ratio: number; ready: boolean; reasons: string[];
 };
+export type QoinEngineConfig = {
+  signal_threshold: number; input_clip: number; score_clip: number; top_k: number;
+  min_alignment: number; max_angle_radians: number; volatility_dampener: number;
+  interaction_coefficient: number; max_spread_bps: number; max_spread_age_ms: number;
+};
+export type QoinHorizonInput = {
+  horizon: QoinResearchHorizon;
+  observation: MarketForceObservation;
+  config: QoinEngineConfig;
+  config_version: string;
+  has_open_position: boolean;
+};
 export type QoinHorizonSignal = {
   horizon: QoinResearchHorizon; duration_seconds: number;
   signal: { decision: string; action: string; score: number; alignment: number; rationale: string };
@@ -814,6 +826,11 @@ export type QoinHorizonConsensus = {
   directional_count: number; unanimous_direction: string | null;
 };
 export type QoinMultiHorizonSignal = { horizons: QoinHorizonSignal[]; consensus: QoinHorizonConsensus };
+/** Evaluate up to eight separately constructed causal horizon observations; research only. */
+export function evaluateQoinMultiHorizon(inputs: QoinHorizonInput[]): Promise<QoinMultiHorizonSignal> {
+  if (!inputs.length || inputs.length > 8) return Promise.reject(new Error("between 1 and 8 horizon inputs are required"));
+  return request<QoinMultiHorizonSignal>("/api/v1/multi-horizon", { method: "POST", body: JSON.stringify(inputs) });
+}
 export type QoinMarketHorizonsResponse = {
   symbol: string; venue_id: string; decision_ts_ms: number; events_loaded: number;
   event_documents: number; invalid_event_documents: number; event_limit_reached: boolean;
