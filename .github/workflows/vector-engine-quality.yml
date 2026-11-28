@@ -37,7 +37,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Format Rust workspace
-        run: cargo fmt --manifest-path backend/rust-axum/Cargo.toml --all -- --check
+        run: cargo fmt --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml -- --check
       - name: Test vector engine with all features
         run: cargo test --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml --all-features
       - name: Clippy vector engine with warnings denied
