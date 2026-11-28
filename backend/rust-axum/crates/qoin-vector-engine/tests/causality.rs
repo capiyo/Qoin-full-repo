@@ -29,7 +29,7 @@ fn mutating_future_history_cannot_change_past_signals() {
     for end in 1..=5 {
         let original_observation = observation_from_history(&original[..end]);
         let mutated_observation = observation_from_history(&mutated_future[..end]);
-        let original_signal = decide(original_observation, &config, "causality-test", false).unwrap();
+        let original_signal = decide(original_observation, &config, false).unwrap();
         let mutated_signal = decide(mutated_observation, &config, "causality-test", false).unwrap();
         assert_eq!(original_signal, mutated_signal, "prefix length {end}");
     }
