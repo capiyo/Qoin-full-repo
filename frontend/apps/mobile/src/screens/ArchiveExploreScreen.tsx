@@ -23,15 +23,6 @@ type Instrument = {
   tint: string;
 };
 
-const seed: Instrument[] = [
-  { symbol: "BTC/USD", engineSymbol: "BTCUSDT", name: "Bitcoin", market: "Crypto", detail: "Bitcoin perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#E6A23C" },
-  { symbol: "ETH/USD", engineSymbol: "ETHUSDT", name: "Ethereum", market: "Crypto", detail: "Ether perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#6477DF" },
-  { symbol: "SOL/USD", engineSymbol: "SOLUSDT", name: "Solana", market: "Crypto", detail: "Solana perpetual · USDT quote", venue: "Binance USD-M", engineVenue: "binance_usdm", provider: "Binance", archived: true, tint: "#8B72E8" },
-  { symbol: "NVDA", engineSymbol: "NVDA", name: "NVIDIA", market: "Equities", detail: "Semiconductors · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#76A85A" },
-  { symbol: "EUR/USD", engineSymbol: "OANDA:EUR_USD", name: "Euro / US Dollar", market: "FX", detail: "Major FX pair", venue: "OANDA", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#4D91D8" },
-  { symbol: "AAPL", engineSymbol: "AAPL", name: "Apple", market: "Equities", detail: "Consumer technology · NASDAQ", venue: "NASDAQ", engineVenue: "finnhub", provider: "Finnhub", archived: false, tint: "#8895A7" },
-];
-
 type Props = { mode: "Archive" | "Explore"; onAuthRequested: (mode: "signin" | "register") => void; onHeaderVisibilityChange?: (visible: boolean) => void };
 
 function Text(props: TextProps) {
@@ -560,7 +551,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     }
     lastScrollYRef.current = nextY;
   };
-  const [items, setItems] = useState(seed);
+  const [items, setItems] = useState<Instrument[]>([]);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
   const [selected, setSelected] = useState<Instrument | null>(null);
@@ -571,6 +562,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   const [catalogueStatus, setCatalogueStatus] = useState("loading");
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState("");
+  const [registryError, setRegistryError] = useState("");
   const [vectorHistory, setVectorHistory] = useState<QoinVectorHistory[]>([]);
   const [rawEvents, setRawEvents] = useState<QoinMarketEvent[]>([]);
   const [setLedger, setSetLedger] = useState<QoinSetLedger | null>(null);
@@ -645,7 +637,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         setAvatarUrl(null);
         archivedSymbolsRef.current = null;
         if (!user) {
-          setItems((current) => current.map((item) => ({ ...item, archived: ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol) })));
+          setItems((current) => current.map((item) => ({ ...item, archived: false })));
           return;
         }
         void getQoinArchivedSymbols().then((symbols) => {
@@ -786,12 +778,13 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
       const colors = ["#E6A23C", "#6477DF", "#8B72E8", "#4D91D8", "#76A85A", "#8895A7"];
+      setRegistryError("");
       setItems(items.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id || (item.asset_class === "Crypto" ? "binance_usdm" : "finnhub"), provider: item.provider, providerStatus: item.provider_status,
-        archived: archivedSymbolsRef.current ? archivedSymbolsRef.current.includes(item.symbol) : ["BTC/USD", "ETH/USD", "SOL/USD"].includes(item.symbol), tint: colors[index % colors.length],
+        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status,
+        archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
       })));
-    }).catch(() => undefined);
+    }).catch((error: unknown) => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -988,7 +981,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         <View style={styles.hero}><Text style={styles.kicker}>YOUR MARKET WORKSPACE</Text><Text style={styles.heroTitle}>See the market{"\n"}<Text style={styles.blue}>as a system.</Text></Text><Text style={styles.heroCopy}>Keep the instruments that matter close. Explore the forces shaping each one.</Text></View>
         <View style={styles.headingRow}><View><Text style={styles.kicker}>{mode === "Archive" ? "YOUR COLLECTION" : "DISCOVERY"}</Text><Text style={styles.heading}>{mode}</Text><Text style={styles.subheading}>{mode === "Archive" ? "Every instrument you follow, in one place." : "Find instruments to bring into your archive."}</Text></View><Text style={styles.count}>{mode === "Archive" ? archived.length : items.length - archived.length} ASSETS</Text></View>
 
-        {mode === "Explore" ? (
+        {mode === "Explore" && registryError ? <Text accessibilityRole="alert" style={styles.disclaimer}>Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</Text> : null}
+         {mode === "Explore" ? (
           <>
             <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
