@@ -254,8 +254,10 @@ mod tests {
 
     #[test]
     fn cross_asset_alignment_requires_twelve_completed_buckets() {
-        let current = state("binance_usdm", "BTCUSDT", 13 * 60_000, 1.0);
-        let peer = state("binance_usdm", "ETHUSDT", 13 * 60_000, 1.8);
-        assert!(cross_asset_raw_features(&current, &[peer], 13 * 60_000).is_none());
+        // At a 12-minute cutoff, buckets 1..11 are complete: eleven buckets,
+        // which must not satisfy the twelve-bucket minimum.
+        let current = state("binance_usdm", "BTCUSDT", 12 * 60_000, 1.0);
+        let peer = state("binance_usdm", "ETHUSDT", 12 * 60_000, 1.8);
+        assert!(cross_asset_raw_features(&current, &[peer], 12 * 60_000).is_none());
     }
 }
