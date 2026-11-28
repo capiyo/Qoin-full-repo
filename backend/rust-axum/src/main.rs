@@ -127,7 +127,7 @@ struct AppState {
     symbol_ingest_locks: Arc<Vec<tokio::sync::Mutex<()>>>,
     active_strategy: Arc<RwLock<EdgeStrategy>>,
     signal_config: EngineConfig,
-    signal_config_version: String,
+    signal_strategy_version: String,
     recovery_replayed_events: u64,
     recovery_skipped_events: u64,
     operating_cycles: Collection<Document>,
@@ -312,7 +312,7 @@ async fn get_market_horizons(State(s): State<AppState>, Query(query): Query<Mark
     }
     let inputs: Vec<HorizonInput> = observations.iter().filter(|item| item.ready).map(|item| HorizonInput {
         horizon:item.horizon, observation:item.observation, config:EngineConfig::default(),
-        config_version:"multi-horizon-market-data-v1".to_owned(), has_open_position:false,
+        strategy_version:s.signal_strategy_version.clone(), has_open_position:false,
     }).collect();
     let signals = if inputs.is_empty() { None } else {
         match evaluate_multi_horizon(&inputs) {
@@ -1174,12 +1174,12 @@ async fn reconcile_live_order(
 }
 
 async fn evaluate_signal(State(s): State<AppState>, Json(request): Json<SignalRequest>) -> Result<Json<Signal>, (StatusCode, String)> {
-    let result = decide_signal(
+    let mut result = decide_signal(
         request.observation,
         &s.signal_config,
-        &s.signal_config_version,
         request.has_open_position,
     ).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    result.strategy_version = s.signal_strategy_version.clone();
     Ok(Json(result))
 }
 
@@ -1201,7 +1201,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
         "blocked_pending_account_preflight"
     };
     let healthy=database_ok && recovery_ok;
-    let strategy_version=s.signal_config_version.clone();
+    let strategy_version=s.signal_strategy_version.clone();
     (if healthy {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},
      Json(serde_json::json!({"service":"qoin-axum-flow-engine","status":if healthy{"ok"}else{"degraded"},
        "mongodb":database_ok,
@@ -1216,7 +1216,7 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
           "sole_adapter":sole_configured_adapter},
        "live_order_submission":live_order_status,
        "new_order_entry_enabled":order_entry_enabled,
-       "research_signal_api":"enabled", "research_signal_config_version":s.signal_config_version})))
+       "research_signal_api":"enabled", "research_signal_strategy_version":s.signal_strategy_version})))
 }
 
 /// Append the immutable V2 observation and temporal-relation records associated
@@ -1385,13 +1385,14 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         spread_age_ms: snapshot.last_book_ts_ms.zip(snapshot.last_event_ts_ms)
             .map(|(book_ts, latest_ts)| latest_ts.saturating_sub(book_ts)),
     };
-    let signal = match decide_signal(observation, &s.signal_config, &s.signal_config_version, false) {
+    let mut signal = match decide_signal(observation, &s.signal_config, false) {
         Ok(value) => value,
         Err(error) => {
             tracing::error!(error=%error, symbol=%snapshot.symbol, "authoritative vector engine rejected market state");
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
         }
     };
+    signal.strategy_version = s.signal_strategy_version.clone();
     let signal_for_paper = signal.clone();
     let market_vector = market_vector::build_market_vector(&event, &snapshot, &signal, received_at_ms, &peer_states);
     let market_vector_persisted = if let Some(vector) = market_vector.as_ref() {
@@ -1413,7 +1414,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             "state_last_event_ts_ms": snapshot.last_event_ts_ms
         },
         "strategy_key": "qoin-vector-baseline",
-        "strategy_version": signal.config_version,
+        "strategy_version": signal.strategy_version,
         "model_version": "qoin-seven-force-vector-v1",
         "decision": signal.decision,
         "score": signal.score,
@@ -1506,7 +1507,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
                 paper.stop();
                 paper_finalized.push((owner_uid.clone(), paper.clone()));
             } else if paper_eligible.contains(owner_uid) {
-                if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper) {
+                if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper, &s.signal_strategy_version) {
                     paper_updates.push((owner_uid.clone(), mirror, trade, paper.clone()));
                 }
             }
@@ -2367,7 +2368,7 @@ async fn run_backtest(State(s): State<AppState>, Query(q): Query<BacktestQuery>)
         events,
         algorithm_id,
         &s.signal_config,
-        &s.signal_config_version,
+        &s.signal_strategy_version,
         q.initial_capital.unwrap_or(10_000.0),
         q.fee_bps.unwrap_or(10.0),
         q.slippage_bps.unwrap_or(5.0),
@@ -3686,10 +3687,10 @@ async fn main(){
     if let Ok(value) = env::var("QOIN_TOP_K") { signal_config.top_k = value.parse().expect("QOIN_TOP_K must be an integer"); }
     if let Ok(value) = env::var("QOIN_MIN_ALIGNMENT") { signal_config.min_alignment = value.parse().expect("QOIN_MIN_ALIGNMENT must be numeric"); }
     if let Ok(value) = env::var("QOIN_MAX_ANGLE_RADIANS") { signal_config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric"); }
-    let signal_config_version = env::var("QOIN_CONFIG_VERSION").unwrap_or_else(|_| "baseline-v2".into());
+    let signal_strategy_version = env::var("QOIN_STRATEGY_VERSION").or_else(|_| env::var("QOIN_CONFIG_VERSION")).unwrap_or_else(|_| "baseline-v2".into());
     decide_signal(ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
         open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0, spread_bps: Some(0.0), spread_age_ms: Some(0) },
-        &signal_config, &signal_config_version, false).expect("Qoin signal engine configuration must be valid");
+        &signal_config, false).expect("Qoin signal engine configuration must be valid");
 
     let uri=env::var("QOIN_MONGODB_URI").unwrap_or_else(|_|"mongodb://127.0.0.1:27017".into());
     let client=Client::with_uri_str(&uri).await.expect("connect to MongoDB");
@@ -3847,7 +3848,7 @@ async fn main(){
         symbol_ingest_locks:Arc::new((0..64).map(|_| tokio::sync::Mutex::new(())).collect()),
         active_strategy:Arc::new(RwLock::new(active)),
         signal_config,
-        signal_config_version,
+        signal_strategy_version,
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
         operating_cycles, paper_sessions, paper_session_runs, paper_session_decisions, paper_session_trades, investment_plans,
