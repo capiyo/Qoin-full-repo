@@ -89,8 +89,8 @@ pub enum MultiHorizonError {
     Empty,
     #[error("each horizon may appear only once")]
     DuplicateHorizon,
-    #[error("every horizon requires a non-empty configuration version")]
-    EmptyConfigVersion,
+    #[error("every horizon requires a non-empty strategy version")]
+    EmptyStrategyVersion,
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
@@ -114,7 +114,7 @@ pub fn evaluate_multi_horizon(
             return Err(MultiHorizonError::DuplicateHorizon);
         }
         if input.strategy_version.trim().is_empty() {
-            return Err(MultiHorizonError::EmptyConfigVersion);
+            return Err(MultiHorizonError::EmptyStrategyVersion);
         }
 
         let mut signal = decide(
@@ -250,7 +250,7 @@ mod tests {
         invalid.strategy_version = "  ".to_owned();
         assert_eq!(
             evaluate_multi_horizon(&[invalid]).unwrap_err(),
-            MultiHorizonError::EmptyConfigVersion
+            MultiHorizonError::EmptyStrategyVersion
         );
     }
 
