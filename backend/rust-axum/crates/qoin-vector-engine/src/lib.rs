@@ -358,14 +358,21 @@ pub fn decide(
             (true, true) => Some(RejectReason::LowMagnitude),
         },
     };
-    let rationale = match reject_reason {
-        Some(RejectReason::SpreadMissingOrWide) => "WAIT: current spread is missing or exceeds the configured liquidity limit".to_owned(),
-        Some(RejectReason::SpreadStale) => "WAIT: the quote used for the spread is missing or stale".to_owned(),
-        Some(RejectReason::FlatVector) => "WAIT: effective directional vector is flat".to_owned(),
-        Some(RejectReason::LowMagnitude) => "WAIT: directional force magnitude is below the configured threshold".to_owned(),
-        Some(RejectReason::Misaligned) => "WAIT: effective force vector does not converge with the directional template".to_owned(),
-        Some(RejectReason::Both) => "WAIT: directional magnitude and alignment gates both failed".to_owned(),
-        None => "Research signal: seven-force vector passed spread, magnitude and angular gates; independent portfolio risk checks remain mandatory".to_owned(),
+    let rejection_detail = match reject_reason {
+        Some(RejectReason::SpreadMissingOrWide) => "current spread is missing or exceeds the configured liquidity limit",
+        Some(RejectReason::SpreadStale) => "the quote used for the spread is missing or stale",
+        Some(RejectReason::FlatVector) => "effective directional vector is flat",
+        Some(RejectReason::LowMagnitude) => "directional force magnitude is below the configured threshold",
+        Some(RejectReason::Misaligned) => "effective force vector does not converge with the directional template",
+        Some(RejectReason::Both) => "directional magnitude and alignment gates both failed",
+        None => "seven-force vector passed spread, magnitude and angular gates",
+    };
+    let rationale = if decision == Decision::Close {
+        format!("CLOSE: existing-position handling requested a close; {rejection_detail}")
+    } else if reject_reason.is_some() {
+        format!("WAIT: {rejection_detail}")
+    } else {
+        "Research signal: seven-force vector passed spread, magnitude and angular gates; independent portfolio risk checks remain mandatory".to_owned()
     };
 
     let features = FEATURE_NAMES.iter().enumerate()
