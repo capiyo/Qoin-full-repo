@@ -28,6 +28,9 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -37,6 +40,17 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Format Rust workspace
+        run: cargo fmt --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml
+      - name: Commit canonical Rust formatting to master
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          if git diff --quiet -- backend/rust-axum/crates/qoin-vector-engine; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/rust-axum/crates/qoin-vector-engine
+          git commit -m "style: format qoin vector engine"
+          git push origin HEAD:master
+      - name: Verify Rust formatting
         run: cargo fmt --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml -- --check
       - name: Test vector engine with all features
         run: cargo test --manifest-path backend/rust-axum/crates/qoin-vector-engine/Cargo.toml --all-features
