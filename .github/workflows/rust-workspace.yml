@@ -2,6 +2,7 @@ name: Qoin Rust workspace
 
 on:
   push:
+    branches: [master]
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
@@ -10,6 +11,7 @@ on:
       - "backend/rust-axum-api/**"
       - ".github/workflows/rust-workspace.yml"
   pull_request:
+    branches: [master]
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
