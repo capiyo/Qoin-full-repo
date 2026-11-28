@@ -1,5 +1,8 @@
 # Qoin — Domain-Extensible Intelligence Platform
 
+> **Development branch policy:** `master` is the only authoritative branch. Do not create feature or integration branches. See [docs/BRANCH_POLICY.md](docs/BRANCH_POLICY.md).
+
+
 Qoin is a multi-client, domain-extensible intelligence and decision platform. Finance is its first application vertical, not the definition of the core. A domain-neutral Rust crate defines entities, source-attributed observations, feature vectors and algorithm decisions. The current complete application remains finance-focused research and paper trading; the baseline is not a validated or proven profitable edge.
 
 ## Repository structure
