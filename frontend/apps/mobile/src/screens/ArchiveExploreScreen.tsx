@@ -532,20 +532,22 @@ function MobileBrokerCollectionPanel() {
   </View>;
 }
 
-function MobileOperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: boolean; onRequireAuth: () => void }) {
+function MobileOperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { authenticated: boolean; accountKey: string; onRequireAuth: () => void }) {
   const [observation,setObservation]=useState("5"),[evaluation,setEvaluation]=useState("60"),[session,setSession]=useState("480");
   const [symbol,setSymbol]=useState("BTCUSDT"),[venue,setVenue]=useState("binance_usdm"),[currency,setCurrency]=useState("USDT");
   const [capital,setCapital]=useState("100"),[notional,setNotional]=useState("25"),[fee,setFee]=useState("10"),[slippage,setSlippage]=useState("5");
   const [cycle,setCycle]=useState<QoinOperatingCycleSnapshot|null>(null),[paper,setPaper]=useState<QoinPaperSessionSnapshot|null>(null);
   const [status,setStatus]=useState(""),[busy,setBusy]=useState(false);
+  const loadedForUser = useRef<string | null>(null);
   useEffect(()=>{
     if(!authenticated)return;
     let active=true;
     const load=()=>Promise.all([getQoinOperatingCycle(),getQoinPaperSession()]).then(([c,p])=>{
-      if(!active)return;setCycle(c);setPaper(p);setObservation(String(c.config.observation_minutes));setEvaluation(String(c.config.weight_evaluation_minutes));setSession(String(c.config.session_minutes));
+      if(!active)return;setCycle(c);setPaper(p);
+      if(loadedForUser.current!==accountKey){setObservation(String(c.config.observation_minutes));setEvaluation(String(c.config.weight_evaluation_minutes));setSession(String(c.config.session_minutes));loadedForUser.current=accountKey;}
     }).catch(error=>{if(active)setStatus(error instanceof Error?error.message:"Operating cycle unavailable.");});
     void load();const timer=setInterval(()=>{void load();},5000);return()=>{active=false;clearInterval(timer);};
-  },[authenticated]);
+  },[authenticated,accountKey]);
   const account:QoinOperatingCycleConfig["paper_accounts"][number]={
     symbol:symbol.trim().toUpperCase(),venue:venue.trim(),quote_currency:currency.trim().toUpperCase(),
     initial_cash:Number(capital),notional_per_trade:Number(notional),contract_multiplier:1,quantity_step:0.000001,
@@ -1081,7 +1083,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
               <Text style={styles.coverageDisclaimer}>Preview only: not active subscriptions, prices or enforced permissions. Finnhub data depends on a configured key and eligible access. No live broker execution is connected.</Text>
             </View>
             <MobileBrokerCollectionPanel />
-            <MobileOperatingCyclePanel authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+            <MobileOperatingCyclePanel authenticated={Boolean(firebaseUser)} accountKey={firebaseUser?.uid || ""} onRequireAuth={requireAuthentication} />
           </>
         ) : null}
 
