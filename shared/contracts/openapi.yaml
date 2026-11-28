@@ -439,21 +439,38 @@ components:
         config: { $ref: '#/components/schemas/EngineConfig' }
         config_version: { type: string, minLength: 1 }
         has_open_position: { type: boolean }
+    HorizonSignal:
+      type: object
+      required: [horizon, duration_seconds, signal]
+      properties:
+        horizon: { type: string }
+        duration_seconds: { type: integer, format: int64 }
+        signal:
+          type: object
+          required: [decision, action, score, alignment, rationale]
+          properties:
+            decision: { type: string }
+            action: { type: string }
+            score: { type: number }
+            alignment: { type: number }
+            rationale: { type: string }
+    HorizonConsensus:
+      type: object
+      required: [relationship, buy_count, sell_count, wait_count, close_count, directional_count, unanimous_direction]
+      properties:
+        relationship: { type: string, enum: [aligned_buy, aligned_sell, divergent, no_directional_consensus] }
+        buy_count: { type: integer }
+        sell_count: { type: integer }
+        wait_count: { type: integer }
+        close_count: { type: integer }
+        directional_count: { type: integer }
+        unanimous_direction: { type: string, nullable: true }
     MultiHorizonSignal:
       type: object
       required: [horizons, consensus]
       properties:
-        horizons: { type: array, items: { type: object } }
-        consensus:
-          type: object
-          properties:
-            relationship: { type: string, enum: [aligned_buy, aligned_sell, divergent, no_directional_consensus] }
-            buy_count: { type: integer }
-            sell_count: { type: integer }
-            wait_count: { type: integer }
-            close_count: { type: integer }
-            directional_count: { type: integer }
-            unanimous_direction: { type: string, nullable: true }
+        horizons: { type: array, items: { $ref: '#/components/schemas/HorizonSignal' } }
+        consensus: { $ref: '#/components/schemas/HorizonConsensus' }
     MarketHorizonsResponse:
       type: object
       required: [symbol, venue_id, decision_ts_ms, events_loaded, event_documents, invalid_event_documents, event_limit_reached, mode, observations, signals, note]
@@ -479,9 +496,12 @@ components:
       required: [horizon, observation, event_count, trade_count, book_count, data_quality, coverage_ratio, ready, reasons]
       properties:
         horizon: { type: string, enum: [one_minute, five_minutes, fifteen_minutes, thirty_minutes, one_hour, four_hours, one_day, one_week] }
+        observation: { $ref: '#/components/schemas/MarketForceObservation' }
         event_count: { type: integer }
         trade_count: { type: integer }
         book_count: { type: integer }
+        first_event_ts_ms: { type: integer, nullable: true, format: int64 }
+        last_event_ts_ms: { type: integer, nullable: true, format: int64 }
         data_quality: { type: number, minimum: 0, maximum: 1 }
         coverage_ratio: { type: number, minimum: 0, maximum: 1 }
         ready: { type: boolean }
