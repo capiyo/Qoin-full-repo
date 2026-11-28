@@ -10,9 +10,9 @@ The product must not imply that investing guarantees a return. Contributions can
 
 ## Product experience
 
-- **Archive** is the instrument universe. Customers browse available instruments across Forex, Crypto and Stocks and add instruments to a personal basket. The current endpoint lists symbols explicitly observed in ingested market events and marks the catalogue incomplete; it is not yet a full global universe.
-- **Feed** is the intelligence stream: verified market developments, research notes, portfolio context and explanations. It must not present synthetic fixtures as live news or market data.
-- **Portfolio** contains the user's selected basket and their own investment intention, such as a goal, contribution amount, base currency and time horizon.
+- **Archive** is the instrument universe. Customers browse available instruments across Forex, Crypto, Stocks and Commodities and save instruments to their personal Archive. The current endpoint lists symbols explicitly observed in ingested market events and marks the catalogue incomplete; it is not yet a full global universe.
+- **Explore** is the intelligence and research stream: verified market developments, instrument mechanics, vector diagnostics, and the user's research and paper-session controls. It must not present synthetic fixtures as live news or market data.
+- The current navigation remains **Archive / Explore**; investment intention is an authenticated panel in Explore, not a separate Portfolio navigation destination.
 - Qoin's vector engine measures market conditions and portfolio relationships. It produces research observations and diagnostics; a signal is not an order.
 - Customers do not receive an order ticket or need to decide short-term entry and exit points as the primary product workflow.
 
@@ -61,12 +61,12 @@ Do not assume that describing the algorithm as research exempts Qoin from regula
 
 ## Current implementation status
 
-Implemented on the active feature branch:
+Implemented on `master`:
 - Firebase email/password identity on web and mobile;
 - server-side Firebase ID-token verification;
-- UID-scoped instrument-basket persistence in MongoDB;
+- UID-scoped instrument Archive persistence in MongoDB;
 - user-authored investment-plan persistence in MongoDB;
-- web and mobile plan-entry interfaces.
+- web and mobile plan-entry interfaces in the existing Archive/Explore navigation.
 
 Not yet implemented or verified:
 - production market-data provider adapters and a complete instrument catalogue; the current observed-event catalogue and class filters are only the first layer;
