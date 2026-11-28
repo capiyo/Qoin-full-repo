@@ -938,8 +938,11 @@ export default function App() {
     getQoinInstruments().then(({ items }) => {
       if (!active) return;
       const colors = ["#e6a23c", "#6477df", "#8b72e8", "#4d91d8", "#76a85a", "#8895a7"];
-      setRegistryError("");
-      setInstruments(items.map((item, index) => ({
+      const canonicalItems = items.filter((item): item is typeof item & { venue_id: string } =>
+        typeof item.venue_id === "string" && item.venue_id.trim().length > 0);
+      const missingVenueCount = items.length - canonicalItems.length;
+      setRegistryError(missingVenueCount ? `${missingVenueCount} registry entries were excluded because they lack a canonical venue ID.` : "");
+      setInstruments(canonicalItems.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
         market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
         provider: item.provider, providerStatus: item.provider_status,
