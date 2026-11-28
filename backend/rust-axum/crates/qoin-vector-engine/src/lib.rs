@@ -529,6 +529,13 @@ mod deterministic_audit_tests {
     use super::{decide, Decision, EngineConfig, ForceObservation, RejectReason, DIRECTIONAL_WEIGHTS, OFI_IDX};
 
     fn valid_spread() -> (Option<f64>, Option<u64>) { (Some(1.0), Some(100)) }
+    fn sample_observation() -> ForceObservation {
+        ForceObservation {
+            ofi: 0.8, liquidity: 0.7, volatility: 0.1, funding: 0.2,
+            open_interest_change: 0.5, liquidation_pressure: 0.1, basis: 0.1,
+            spread_bps: Some(1.0), spread_age_ms: Some(100),
+        }
+    }
 
     #[test]
     fn config_fingerprint_is_stable_and_content_bound() {
@@ -556,7 +563,7 @@ mod deterministic_audit_tests {
 
     #[test]
     fn spread_rejections_are_machine_readable() {
-        let missing = decide(ForceObservation { spread_bps: None, ..super::tests::sample() }, &EngineConfig::default(), false).unwrap();
+        let missing = decide(ForceObservation { spread_bps: None, ..sample_observation() }, &EngineConfig::default(), false).unwrap();
         assert_eq!(missing.reject_reason, Some(RejectReason::SpreadMissingOrWide));
         let stale = decide(ForceObservation { spread_age_ms: Some(60_000), ..super::tests::sample() }, &EngineConfig::default(), false).unwrap();
         assert_eq!(stale.reject_reason, Some(RejectReason::SpreadStale));
