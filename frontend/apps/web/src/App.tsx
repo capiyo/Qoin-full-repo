@@ -1,9 +1,10 @@
+import { InvestmentPlanPanel } from "./components/InvestmentPlanPanel";
 import { requestQoinWebPushToken } from "./firebaseMessaging";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { FormEvent, ChangeEvent } from "react";
 import { signInQoinUser, registerQoinUser, signOutQoinUser, subscribeQoinAuth, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections } from "@qoin/core";
-import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, registerQoinPushToken, getQoinMarketVector, runQoinBacktest, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
+import { getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinHealth, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, registerQoinPushToken, getQoinMarketVector, runQoinBacktest, getQoinInvestmentPlan, saveQoinInvestmentPlan, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinHealth, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy, type QoinBacktestResult } from "@qoin/core";
 
 type Instrument = {
   symbol: string;
@@ -1408,6 +1409,7 @@ export default function App() {
                         <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
                       </section>
                       <BrokerCollectionPanel />
+                      <InvestmentPlanPanel user={firebaseUser} />
                       <OperatingCyclePanel authenticated={Boolean(firebaseUser)} accountKey={firebaseUser?.uid || ""} onRequireAuth={requireAuthentication} />
                       <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
                         <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
