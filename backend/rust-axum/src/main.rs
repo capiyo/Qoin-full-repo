@@ -4103,3 +4103,44 @@ mod venue_state_key_tests {
         assert_eq!(venue_state_key(" BINANCE_USDM ","btcusdt"), "binance_usdm|BTCUSDT");
     }
 }
+
+
+#[cfg(test)]
+mod investment_plan_tests {
+    use super::{validate_investment_plan, InvestmentPlanRequest};
+
+    #[test]
+    fn accepts_a_kenyan_monthly_savings_intention() {
+        let plan = validate_investment_plan(InvestmentPlanRequest {
+            goal: "Long-term financial security".into(),
+            currency: "KES".into(),
+            monthly_contribution_minor: 300_000,
+            target_amount_minor: Some(36_000_000),
+            horizon_months: 120,
+        }).unwrap();
+        assert_eq!(plan.goal, "Long-term financial security");
+        assert_eq!(plan.currency, "KES");
+        assert_eq!(plan.monthly_contribution_minor, 300_000);
+        assert_eq!(plan.horizon_months, 120);
+    }
+
+    #[test]
+    fn rejects_invalid_currency_goal_amount_and_horizon() {
+        let base = InvestmentPlanRequest {
+            goal: "Security".into(), currency: "KES".into(),
+            monthly_contribution_minor: 10_000, target_amount_minor: None, horizon_months: 12,
+        };
+        let mut invalid = base.clone();
+        invalid.currency = "XXX".into();
+        assert!(validate_investment_plan(invalid).is_err());
+        let mut invalid = base.clone();
+        invalid.goal = " ".into();
+        assert!(validate_investment_plan(invalid).is_err());
+        let mut invalid = base.clone();
+        invalid.monthly_contribution_minor = 0;
+        assert!(validate_investment_plan(invalid).is_err());
+        let mut invalid = base;
+        invalid.horizon_months = 0;
+        assert!(validate_investment_plan(invalid).is_err());
+    }
+}
