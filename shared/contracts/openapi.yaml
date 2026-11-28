@@ -455,7 +455,7 @@ components:
             alignment: { type: number }
             rationale: { type: string }
             strategy_version: { type: string }
-            config_fingerprint: { type: string, pattern: '^[0-9a-f]{16}
+            config_fingerprint: { type: string, pattern: '^[0-9a-f]{16}$' }
     HorizonConsensus:
       type: object
       required: [relationship, buy_count, sell_count, wait_count, close_count, directional_count, unanimous_direction]
