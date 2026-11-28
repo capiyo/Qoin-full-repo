@@ -377,7 +377,7 @@ mod tests {
             angle_degrees: 5.7295779513,
             active_force_count: 7,
             strategy_version: "test-v1".into(),
-            config_fingerprint: 1,
+            config_fingerprint: "0000000000000001".into(),
             reject_reason: None,
             rationale: "paper-session test signal".into(),
             feature_names: vec![],
