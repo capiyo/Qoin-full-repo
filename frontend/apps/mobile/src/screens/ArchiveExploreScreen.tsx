@@ -1529,8 +1529,8 @@ const styles = StyleSheet.create({
   cardPagerDotActive: { width: 18, backgroundColor: "#7DF162" },
   cardSwipeHint: { color: "#687A92", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
 
-  marketVectorSummary: { backgroundColor: "#F2F6FC", borderColor: "#DCE7F5", borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
-  marketVectorTitle: { color: "#23456B", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
-  marketVectorValue: { color: "#18324F", fontSize: 13, fontWeight: "700", marginTop: 5 },
-  marketVectorMeta: { color: "#61758E", fontSize: 11, marginTop: 4 },
+  marketVectorSummary: { backgroundColor: "#17291F", borderColor: "#365247", borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
+  marketVectorTitle: { color: "#EDF4EE", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+  marketVectorValue: { color: "#EDF4EE", fontSize: 13, fontWeight: "700", marginTop: 5 },
+  marketVectorMeta: { color: "#89968D", fontSize: 11, marginTop: 4 },
 });
