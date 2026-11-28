@@ -123,7 +123,7 @@ export function MultiHorizonPanel({ instruments }: Props) {
           {(result.event_limit_reached || result.invalid_event_documents > 0) && (
             <p className="horizon-error">
               Signals suppressed: {result.event_limit_reached ? "50,000-event safety cap reached. " : ""}
-              {result.invalid_event_documents ? \`\${result.invalid_event_documents} event documents were invalid.\` : ""}
+              {result.invalid_event_documents ? `${result.invalid_event_documents} event documents were invalid.` : ""}
             </p>
           )}
           <p className="hint">{result.note}</p>
