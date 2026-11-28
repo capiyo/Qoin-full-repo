@@ -18,7 +18,9 @@ std::mutex streamSessionsMutex;
 std::unordered_map<const drogon::WebSocketConnection*, std::shared_ptr<StreamProxySession>> streamSessions;
 std::string upstreamWs() {
     const char* value = std::getenv("QOIN_AXUM_WS_URL");
-    return value ? std::string(value) : "ws://127.0.0.1:8081";
+    if (value && *value) return std::string(value);
+    const char* hostport = std::getenv("QOIN_AXUM_HOSTPORT");
+    return hostport && *hostport ? "ws://" + std::string(hostport) : "ws://127.0.0.1:8081";
 }
 }
 class MarketStreamProxy : public drogon::WebSocketController<MarketStreamProxy> {
@@ -109,7 +111,9 @@ public:
 namespace {
 std::string upstream() {
     const char* value = std::getenv("QOIN_AXUM_URL");
-    return value ? std::string(value) : "http://127.0.0.1:8081";
+    if (value && *value) return std::string(value);
+    const char* hostport = std::getenv("QOIN_AXUM_HOSTPORT");
+    return hostport && *hostport ? "http://" + std::string(hostport) : "http://127.0.0.1:8081";
 }
 void proxyGet(const drogon::HttpRequestPtr& incoming,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
