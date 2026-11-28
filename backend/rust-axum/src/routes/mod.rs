@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::handlers::*;
-use crate::models::*;
 
 pub(crate) async fn run(){
     tracing_subscriber::fmt().with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_|"info".into())).init();
