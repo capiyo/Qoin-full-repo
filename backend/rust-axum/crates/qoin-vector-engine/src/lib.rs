@@ -565,7 +565,7 @@ mod deterministic_audit_tests {
     fn spread_rejections_are_machine_readable() {
         let missing = decide(ForceObservation { spread_bps: None, ..sample_observation() }, &EngineConfig::default(), false).unwrap();
         assert_eq!(missing.reject_reason, Some(RejectReason::SpreadMissingOrWide));
-        let stale = decide(ForceObservation { spread_age_ms: Some(60_000), ..super::tests::sample() }, &EngineConfig::default(), false).unwrap();
+        let stale = decide(ForceObservation { spread_age_ms: Some(60_000), ..sample_observation() }, &EngineConfig::default(), false).unwrap();
         assert_eq!(stale.reject_reason, Some(RejectReason::SpreadStale));
     }
 
