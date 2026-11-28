@@ -488,7 +488,8 @@ components:
           items: { $ref: '#/components/schemas/HorizonObservation' }
         signals:
           nullable: true
-          type: object
+          allOf:
+            - { $ref: '#/components/schemas/MultiHorizonSignal' }
           description: Descriptive consensus and independently evaluated horizon signals; never an order.
         note: { type: string }
     HorizonObservation:
