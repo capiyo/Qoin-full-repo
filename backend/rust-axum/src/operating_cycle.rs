@@ -271,7 +271,7 @@ impl OperatingCycle {
             wait_signals: self.wait_signals,
             live_execution_enabled: false,
             weight_policy: "baseline_locked_during_session; validation_is_observational_not_online_training",
-            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates directional score, signed alignment, per-feature mean activations, attention-matrix means and decision counts; it does not silently retune coefficients. The session phase currently monitors research signals only: this API does not simulate fills or place orders.",
+            note: "The five-minute window is an initial observation period, not a substitute for historical lookback. The one-hour phase aggregates directional score, signed alignment, per-feature mean activations, attention-matrix means and decision counts; it does not silently retune coefficients. The session phase runs isolated quote-currency paper ledgers using observed bid/ask fills with configured fees and slippage. No broker orders are sent and live execution remains disabled.",
         }
     }
 }
