@@ -2,6 +2,7 @@ name: Qoin container build
 
 on:
   pull_request:
+    branches: [master]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
@@ -10,7 +11,7 @@ on:
       - "Cargo.toml"
       - ".github/workflows/container-build.yml"
   push:
-    branches: [master, main, qoin-archive-explore-vector-ui]
+    branches: [master]
     paths:
       - "backend/rust-axum/**"
       - "backend/cpp-drogon/**"
