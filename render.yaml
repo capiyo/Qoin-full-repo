@@ -1,0 +1,77 @@
+# Render Blueprint for the Qoin master branch.
+# Provision a MongoDB database (for example, MongoDB Atlas) and supply
+# QOIN_MONGODB_URI before the first deploy. Trading stays disabled.
+services:
+  - type: pserv
+    name: qoin-axum
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    branch: master
+    autoDeploy: true
+    dockerContext: .
+    dockerfilePath: ./backend/rust-axum/Dockerfile
+    envVars:
+      - key: QOIN_AXUM_ADDR
+        value: 0.0.0.0:8081
+      - key: QOIN_AXUM_INTERNAL_ADDR
+        value: 127.0.0.1:8081
+      - key: QOIN_MONGODB_URI
+        sync: false
+      - key: QOIN_MONGODB_DATABASE
+        value: qoin
+      - key: QOIN_FIREBASE_PROJECT_ID
+        sync: false
+      - key: QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX
+        sync: false
+      - key: QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX
+        sync: false
+      - key: QOIN_EXECUTION_TOKEN
+        sync: false
+      - key: QOIN_LEDGER_MAINTENANCE_TOKEN
+        sync: false
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: QOIN_TRADING_ENABLED
+        value: "false"
+      - key: QOIN_BINANCE_STREAM_ENABLED
+        value: "true"
+      - key: QOIN_COINBASE_STREAM_ENABLED
+        value: "true"
+      - key: QOIN_KRAKEN_STREAM_ENABLED
+        value: "true"
+      - key: RUST_LOG
+        value: info
+
+  - type: web
+    name: qoin-gateway
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    branch: master
+    autoDeploy: true
+    dockerContext: .
+    dockerfilePath: ./backend/cpp-drogon/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: QOIN_AXUM_URL
+        value: http://qoin-axum:8081
+      - key: QOIN_AXUM_WS_URL
+        value: ws://qoin-axum:8081
+      - key: QOIN_DROGON_HOST
+        value: 0.0.0.0
+      - key: QOIN_DROGON_PORT
+        value: "8080"
+
+  - type: web
+    name: qoin-web
+    runtime: static
+    region: frankfurt
+    plan: starter
+    branch: master
+    autoDeploy: true
+    buildCommand: corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install --no-frozen-lockfile && pnpm --filter @qoin/react-web build
+    staticPublishPath: frontend/apps/web/dist
+    envVars:
+      - key: VITE_QOIN_API_URL
+        sync: false
