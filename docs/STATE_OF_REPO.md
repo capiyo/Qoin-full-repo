@@ -34,7 +34,7 @@ The private Axum order and reconciliation routes exist in the source tree. They 
 
 The runtime initializes the broker registry empty. The named provider adapter scaffolds deliberately return unsupported results and are not registered as executable adapters. Therefore the presence of an order route or broker catalogue must not be represented as a working broker integration. No provider is currently verified as execution-ready, and order dispatch must remain unavailable/fail-closed until a real adapter is implemented, registered through an approved operator path, and passes provider-specific conformance and sandbox tests.
 
-Qoin is a research and paper-trading platform. Do not enable real-money execution or describe it as production-ready.
+Qoin is a research platform. The paper-session and operating-cycle cores exist as Rust library modules, but authenticated API routes, durable per-user lifecycle integration, replay-safe recovery, and client workflows are not yet wired into the current master runtime. Do not describe the paper-session workflow as integrated, and do not enable real-money execution or describe Qoin as production-ready.
 
 ## Retired components
 
@@ -49,6 +49,7 @@ Remaining release gates include:
 - Real provider-specific market-data coverage, history/backfill quality, symbol/venue mapping, freshness monitoring, and provider failover.
 - Independent chronological and out-of-sample research evaluation, robust portfolio accounting, cross-asset exposure controls, and reproducible datasets.
 - Concrete broker adapters, account permission validation, provider conformance/sandbox testing, credential rotation, and operator provisioning.
+- Authenticated operating-cycle and paper-session APIs, user-scoped lifecycle persistence, duplicate-safe event processing, crash recovery/replay, and web/mobile session diagnostics before paper execution can be considered integrated.
 - Durable reconciliation automation, partial-failure recovery, cancellation/amendment handling, and independently reviewed portfolio-level execution risk.
 - Firebase revocation/authorization operations, payment and entitlement reconciliation where applicable, and security review of public ingress.
 - Production hosting, secret management, TLS/DNS, monitoring, backups, disaster recovery, and desktop release verification.
