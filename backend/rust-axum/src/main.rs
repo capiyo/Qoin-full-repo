@@ -1219,6 +1219,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
         }
     };
+    let signal_for_paper = signal.clone();
     let market_vector = market_vector::build_market_vector(&event, &snapshot, &signal, received_at_ms, &peer_states);
     let market_vector_persisted = if let Some(vector) = market_vector.as_ref() {
         let mut document = mongodb::bson::to_document(vector).unwrap_or_default();
@@ -1290,7 +1291,6 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
-    let signal_for_paper = signal.clone();
     let mut cycle_persist = Vec::new();
     let mut paper_eligible = HashSet::new();
     {
