@@ -26,7 +26,7 @@ export type QoinSignal = {
   angle_degrees: number;
   active_force_count: number;
   strategy_version: string;
-  config_fingerprint: number;
+  config_fingerprint: string;
   reject_reason: QoinRejectReason | null;
   rationale: string;
 };
