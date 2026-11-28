@@ -771,3 +771,20 @@ export function getQoinPaperSessionHistory(input: { symbol?: string; cycle_id?: 
 export function getQoinPaperSessionRuns(limit = 20): Promise<{ runs: QoinPaperSessionSnapshot[] }> {
   return authenticatedQoinRequest("/api/v1/paper-session/runs?limit=" + encodeURIComponent(String(limit)));
 }
+
+
+/** User-authored investment intention; never an allocation or order instruction. */
+export type QoinInvestmentPlanInput = {
+  goal: string;
+  currency: "KES" | "USD" | "EUR" | "GBP";
+  monthly_contribution_minor: number;
+  target_amount_minor: number | null;
+  horizon_months: number;
+};
+export type QoinInvestmentPlan = QoinInvestmentPlanInput & { updated_at: string | null };
+export function getQoinInvestmentPlan(): Promise<QoinInvestmentPlan | null> {
+  return authenticatedQoinRequest("/api/v1/investment-plan");
+}
+export function saveQoinInvestmentPlan(plan: QoinInvestmentPlanInput): Promise<QoinInvestmentPlan> {
+  return authenticatedQoinRequest("/api/v1/investment-plan", { method: "PUT", body: JSON.stringify(plan) });
+}
