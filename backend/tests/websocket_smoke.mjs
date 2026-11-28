@@ -50,8 +50,10 @@ socket.addEventListener("message", (message) => {
     assert(update.symbol === "WS_SMOKE", "Stream symbol did not match the subscribed instrument");
     assert(update.state?.symbol === "WS_SMOKE", "Stream omitted the persisted market state");
     assert(update.decision && typeof update.decision === "object", "Stream omitted the V1 decision mechanics");
-    assert(Object.prototype.hasOwnProperty.call(update, "v1_shared_market_vector"), "Stream omitted the shared V1 market-vector result");
-    assert(Object.prototype.hasOwnProperty.call(update, "v2_relationship_discovery"), "Stream omitted V2 discovery telemetry");
+    assert(Object.prototype.hasOwnProperty.call(update, "market_vector"), "Stream omitted the shared V1 market-vector result");
+    assert(update.v2_relationship_discovery?.status === "explicit_request_required", "Stream omitted the explicit V2 discovery boundary");
+    assert(update.v2_relationship_discovery?.decision_authority === "version-1-vector-engine", "V2 stream telemetry must preserve V1 decision authority");
+    assert(update.v2_relationship_discovery?.orders_authorized === false, "V2 discovery telemetry must never authorize orders");
     clearTimeout(timeout);
     socket.close();
     console.log("WebSocket smoke passed: gateway proxy delivered the source event, state, V1 decision, shared vector and V2 discovery telemetry.");

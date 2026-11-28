@@ -1382,8 +1382,24 @@ pub(crate) async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"completed paper session archive failed"})));
         }
     }
-    let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
-        "state":snapshot,"decision":decision,"market_vector":market_vector,"market_vector_persisted":market_vector_persisted,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
+    let update=serde_json::json!({
+        "type":"market.update",
+        "symbol":snapshot.symbol,
+        "event":event,
+        "state":snapshot,
+        "decision":decision,
+        // Shared V1 market vector is published alongside the authoritative V1 decision.
+        "market_vector":market_vector.as_ref(),
+        "market_vector_persisted":market_vector_persisted,
+        // V2 discovery is an explicit evidence-set operation, not an automatic
+        // per-event decision path. Report that boundary in the live stream.
+        "v2_relationship_discovery":{
+            "status":"explicit_request_required",
+            "decision_authority":"version-1-vector-engine",
+            "orders_authorized":false
+        },
+        "server_ts_ms":chrono::Utc::now().timestamp_millis()
+    });
     let _=s.stream.send(update);
     (StatusCode::OK,Json(serde_json::json!({"status":"accepted","state":snapshot,"decision":decision,"market_vector_persisted":market_vector_persisted})))
 }
