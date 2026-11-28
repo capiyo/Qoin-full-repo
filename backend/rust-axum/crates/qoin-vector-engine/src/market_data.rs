@@ -6,8 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ForceObservation;
 use crate::multi_horizon::Horizon;
+use crate::ForceObservation;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MarketEvent {
@@ -47,10 +47,10 @@ pub fn aggregate_horizon(
     decision_ts_ms: i64,
     min_events: usize,
 ) -> HorizonObservation {
-    let cutoff = decision_ts_ms.saturating_sub(
-        (horizon.duration_seconds() as i64).saturating_mul(1_000),
-    );
-    let mut rows: Vec<&MarketEvent> = events.iter()
+    let cutoff =
+        decision_ts_ms.saturating_sub((horizon.duration_seconds() as i64).saturating_mul(1_000));
+    let mut rows: Vec<&MarketEvent> = events
+        .iter()
         .filter(|event| event.ts_ms > 0 && event.ts_ms >= cutoff && event.ts_ms <= decision_ts_ms)
         .filter(|event| event.numeric_values_are_finite())
         .collect();
@@ -155,19 +155,25 @@ pub fn aggregate_horizon(
     };
     let book_imbalance = if book_count > 0 {
         book_imbalance_sum / book_count as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let open_interest_change = match (first_oi, last_oi) {
         (Some(first), Some(last)) if first > 0.0 => (last - first) / first,
         _ => 0.0,
     };
     let liquidation_pressure = if total_liquidations > 0.0 {
         signed_liquidations / total_liquidations
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     // Explicit research normalization scales: 1% realized move, 10 bps funding,
     // 1% OI change, and 10 bps spot/perpetual basis map to unit magnitude.
     let volatility = if return_count > 0 {
         (squared_log_returns.sqrt() / 0.01).clamp(0.0, 3.0)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let funding_force = (latest_funding.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
     let open_interest_force = (open_interest_change / 0.01).clamp(-3.0, 3.0);
     let basis_force = (latest_basis.unwrap_or(0.0) / 0.001).clamp(-3.0, 3.0);
@@ -182,12 +188,13 @@ pub fn aggregate_horizon(
     // Require evidence distributed across at least 15% of the target window.
     // This is a conservative completeness gate, not a performance parameter.
     const MIN_WINDOW_COVERAGE_RATIO: f64 = 0.15;
-    let coverage_ratio = (observed_span_ms
-        / (horizon.duration_seconds() as f64 * 1_000.0))
-        .clamp(0.0, 1.0);
+    let coverage_ratio =
+        (observed_span_ms / (horizon.duration_seconds() as f64 * 1_000.0)).clamp(0.0, 1.0);
     let mut reasons = Vec::new();
     if event_count < min_events {
-        reasons.push(format!("requires at least {min_events} events; observed {event_count}"));
+        reasons.push(format!(
+            "requires at least {min_events} events; observed {event_count}"
+        ));
     }
     if coverage_ratio < MIN_WINDOW_COVERAGE_RATIO {
         reasons.push(format!(
@@ -247,9 +254,19 @@ pub fn aggregate_horizon(
 impl MarketEvent {
     fn numeric_values_are_finite(&self) -> bool {
         [
-            self.price, self.size, self.bid, self.ask, self.bid_size, self.ask_size,
-            self.funding_rate, self.open_interest, self.basis,
-        ].into_iter().flatten().all(f64::is_finite)
+            self.price,
+            self.size,
+            self.bid,
+            self.ask,
+            self.bid_size,
+            self.ask_size,
+            self.funding_rate,
+            self.open_interest,
+            self.basis,
+        ]
+        .into_iter()
+        .flatten()
+        .all(f64::is_finite)
     }
 }
 
@@ -287,9 +304,7 @@ mod tests {
         future.size = Some(100.0);
         future.side = Some("buy".into());
 
-        let result = aggregate_horizon(
-            &[old, current, future], Horizon::FiveMinutes, 300_000, 1,
-        );
+        let result = aggregate_horizon(&[old, current, future], Horizon::FiveMinutes, 300_000, 1);
         assert_eq!(result.event_count, 2);
         assert_eq!(result.observation.ofi, (10.0 - 2.0) / 12.0);
     }
@@ -314,7 +329,9 @@ mod tests {
 
         let result = aggregate_horizon(
             &[trade, book, oi_a, oi_b, funding, liquidation],
-            Horizon::OneMinute, 200_000, 1,
+            Horizon::OneMinute,
+            200_000,
+            1,
         );
         assert_eq!(result.observation.liquidity, 0.5);
         assert!((result.observation.open_interest_change - 3.0).abs() < 1e-12);
@@ -329,7 +346,10 @@ mod tests {
         basis.basis = Some(0.0025);
         let result = aggregate_horizon(&[basis], Horizon::OneHour, 100_000, 1);
         assert_eq!(result.observation.basis, 2.5);
-        assert!(!result.reasons.iter().any(|reason| reason.contains("basis unavailable")));
+        assert!(!result
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("basis unavailable")));
     }
 
     #[test]
@@ -339,7 +359,10 @@ mod tests {
         trade.side = Some("buy".into());
         let result = aggregate_horizon(&[trade], Horizon::FiveMinutes, 100_000, 1);
         assert!(!result.ready);
-        assert!(result.reasons.iter().any(|reason| reason.contains("order-book")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("order-book")));
     }
 
     #[test]
@@ -351,15 +374,13 @@ mod tests {
         book.bid_size = Some(2.0);
         book.ask_size = Some(1.0);
 
-        let result = aggregate_horizon(
-            &[trade, book],
-            Horizon::OneDay,
-            130_000,
-            2,
-        );
+        let result = aggregate_horizon(&[trade, book], Horizon::OneDay, 130_000, 2);
         assert!(result.coverage_ratio < 0.15);
         assert!(!result.ready);
-        assert!(result.reasons.iter().any(|reason| reason.contains("window coverage")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("window coverage")));
     }
 
     #[test]
@@ -377,15 +398,10 @@ mod tests {
         third.size = Some(1.0);
         third.side = Some("sell".into());
 
-        let result = aggregate_horizon(
-            &[first, second, third],
-            Horizon::OneHour,
-            130_000,
-            1,
-        );
-        let expected = (((101.0_f64 / 100.0).ln().powi(2)
-            + (100.0_f64 / 101.0).ln().powi(2)).sqrt() / 0.01)
-            .clamp(0.0, 3.0);
+        let result = aggregate_horizon(&[first, second, third], Horizon::OneHour, 130_000, 1);
+        let expected =
+            (((101.0_f64 / 100.0).ln().powi(2) + (100.0_f64 / 101.0).ln().powi(2)).sqrt() / 0.01)
+                .clamp(0.0, 3.0);
         assert!((result.observation.volatility - expected).abs() < 1e-12);
     }
 
@@ -401,12 +417,7 @@ mod tests {
         book.bid_size = Some(2.0);
         book.ask_size = Some(1.0);
 
-        let result = aggregate_horizon(
-            &[buy, unknown, book],
-            Horizon::OneMinute,
-            130_000,
-            2,
-        );
+        let result = aggregate_horizon(&[buy, unknown, book], Horizon::OneMinute, 130_000, 2);
         assert_eq!(result.observation.ofi, 1.0);
         assert_eq!(result.trade_count, 1);
         assert!(result.ready);

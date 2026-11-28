@@ -9,7 +9,11 @@ fn observation_from_history(history: &[f64]) -> ForceObservation {
     ForceObservation {
         ofi: last,
         liquidity: prior,
-        volatility: history.iter().map(|value| value.abs()).fold(0.0_f64, f64::max) / 10.0,
+        volatility: history
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0_f64, f64::max)
+            / 10.0,
         funding: 0.0,
         open_interest_change: last - prior,
         liquidation_pressure: 0.0,

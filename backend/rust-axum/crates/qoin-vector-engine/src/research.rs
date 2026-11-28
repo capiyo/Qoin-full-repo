@@ -25,7 +25,10 @@ pub struct LossConfig {
 
 impl Default for LossConfig {
     fn default() -> Self {
-        Self { downside_weight: 1.0, turnover_weight: 0.05 }
+        Self {
+            downside_weight: 1.0,
+            turnover_weight: 0.05,
+        }
     }
 }
 
@@ -65,12 +68,16 @@ pub fn evaluate(
     engine_config: &EngineConfig,
     loss_config: LossConfig,
 ) -> Result<Evaluation, ResearchError> {
-    if samples.is_empty() { return Err(ResearchError::Empty); }
+    if samples.is_empty() {
+        return Err(ResearchError::Empty);
+    }
     if !loss_config.downside_weight.is_finite()
         || !loss_config.turnover_weight.is_finite()
         || loss_config.downside_weight < 0.0
         || loss_config.turnover_weight < 0.0
-    { return Err(ResearchError::InvalidValue); }
+    {
+        return Err(ResearchError::InvalidValue);
+    }
 
     let mut returns = Vec::with_capacity(samples.len());
     let mut previous_exposure = 0.0;
@@ -79,12 +86,18 @@ pub fn evaluate(
         if !sample.realized_return.is_finite()
             || !sample.round_trip_cost.is_finite()
             || sample.round_trip_cost < 0.0
-        { return Err(ResearchError::InvalidValue); }
+        {
+            return Err(ResearchError::InvalidValue);
+        }
         let signal = decide(sample.forces, engine_config, sample.has_open_position)
             .map_err(|_| ResearchError::Engine)?;
         let current = exposure(signal.decision);
         let turnover = (current - previous_exposure).abs();
-        let cost = if turnover > 0.0 { sample.round_trip_cost * turnover } else { 0.0 };
+        let cost = if turnover > 0.0 {
+            sample.round_trip_cost * turnover
+        } else {
+            0.0
+        };
         returns.push(current * sample.realized_return - cost);
         turnover_sum += turnover;
         previous_exposure = current;
@@ -97,7 +110,13 @@ pub fn evaluate(
     let loss = -mean_net_return
         + loss_config.downside_weight * downside_rms
         + loss_config.turnover_weight * turnover;
-    Ok(Evaluation { loss, mean_net_return, downside_rms, turnover, observations: samples.len() })
+    Ok(Evaluation {
+        loss,
+        mean_net_return,
+        downside_rms,
+        turnover,
+        observations: samples.len(),
+    })
 }
 
 /// Small deterministic threshold sweep. Use only on a training split; select and
@@ -109,14 +128,21 @@ pub fn optimize_signal_threshold(
     loss_config: LossConfig,
     candidates: &[f64],
 ) -> Result<(EngineConfig, Evaluation), ResearchError> {
-    if candidates.is_empty() { return Err(ResearchError::NoCandidates); }
+    if candidates.is_empty() {
+        return Err(ResearchError::NoCandidates);
+    }
     let mut best: Option<(EngineConfig, Evaluation)> = None;
     for threshold in candidates {
-        if !threshold.is_finite() || *threshold <= 0.0 { continue; }
+        if !threshold.is_finite() || *threshold <= 0.0 {
+            continue;
+        }
         let mut candidate = base_config.clone();
         candidate.signal_threshold = *threshold;
         if let Ok(score) = evaluate(training_samples, &candidate, loss_config) {
-            if best.as_ref().map_or(true, |(_, current)| score.loss < current.loss) {
+            if best
+                .as_ref()
+                .map_or(true, |(_, current)| score.loss < current.loss)
+            {
                 best = Some((candidate, score));
             }
         }
@@ -131,9 +157,15 @@ mod tests {
     fn sample(realized_return: f64) -> LabeledObservation {
         LabeledObservation {
             forces: ForceObservation {
-                ofi: 2.0, liquidity: 1.0, volatility: 0.2, funding: -0.5,
-                open_interest_change: 1.0, liquidation_pressure: 0.5, basis: 0.0,
-                spread_bps: Some(2.0), spread_age_ms: Some(100),
+                ofi: 2.0,
+                liquidity: 1.0,
+                volatility: 0.2,
+                funding: -0.5,
+                open_interest_change: 1.0,
+                liquidation_pressure: 0.5,
+                basis: 0.0,
+                spread_bps: Some(2.0),
+                spread_age_ms: Some(100),
             },
             realized_return,
             round_trip_cost: 0.0005,
@@ -154,9 +186,9 @@ mod tests {
     fn optimizer_returns_candidate_without_mutating_base_config() {
         let samples = [sample(0.01), sample(0.005)];
         let base = EngineConfig::default();
-        let (selected, score) = optimize_signal_threshold(
-            &samples, &base, LossConfig::default(), &[0.5, 0.65, 0.8],
-        ).unwrap();
+        let (selected, score) =
+            optimize_signal_threshold(&samples, &base, LossConfig::default(), &[0.5, 0.65, 0.8])
+                .unwrap();
         assert!(selected.signal_threshold > 0.0);
         assert_eq!(base.signal_threshold, 0.65);
         assert!(score.loss.is_finite());

@@ -117,11 +117,7 @@ pub fn evaluate_multi_horizon(
             return Err(MultiHorizonError::EmptyStrategyVersion);
         }
 
-        let mut signal = decide(
-            input.observation,
-            &input.config,
-            input.has_open_position,
-        )?;
+        let mut signal = decide(input.observation, &input.config, input.has_open_position)?;
         signal.strategy_version = input.strategy_version.clone();
 
         match signal.decision {
@@ -212,7 +208,10 @@ mod tests {
         ])
         .unwrap();
 
-        assert_eq!(result.consensus.relationship, HorizonRelationship::Divergent);
+        assert_eq!(
+            result.consensus.relationship,
+            HorizonRelationship::Divergent
+        );
         assert_eq!(result.consensus.buy_count, 1);
         assert_eq!(result.consensus.sell_count, 1);
         assert_eq!(result.horizons[0].horizon, Horizon::FiveMinutes);
@@ -227,13 +226,19 @@ mod tests {
         ])
         .unwrap();
 
-        assert_eq!(result.consensus.relationship, HorizonRelationship::AlignedBuy);
+        assert_eq!(
+            result.consensus.relationship,
+            HorizonRelationship::AlignedBuy
+        );
         assert_eq!(result.consensus.unanimous_direction, Some(Decision::Buy));
     }
 
     #[test]
     fn rejects_empty_and_duplicate_horizon_sets() {
-        assert_eq!(evaluate_multi_horizon(&[]).unwrap_err(), MultiHorizonError::Empty);
+        assert_eq!(
+            evaluate_multi_horizon(&[]).unwrap_err(),
+            MultiHorizonError::Empty
+        );
         let duplicate = [
             input(Horizon::FiveMinutes, bullish()),
             input(Horizon::FiveMinutes, bearish()),
