@@ -1311,6 +1311,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         for (owner_uid, cycle) in cycles.iter_mut() {
             let before = cycle.snapshot();
             if before.phase == "completed" {
+                cycle.stop();
                 cycle_persist.push((owner_uid.clone(), cycle.clone()));
                 paper_completed.insert(owner_uid.clone());
                 continue;
