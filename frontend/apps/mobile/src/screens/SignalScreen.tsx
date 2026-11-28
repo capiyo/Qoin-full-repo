@@ -121,7 +121,7 @@ export function SignalScreen() {
               <View style={styles.metricRow}><Text style={styles.metricLabel}>Angular alignment</Text><Text style={styles.metricValue}>{signal.alignment.toFixed(3)}</Text></View>
               <View style={styles.metricRow}><Text style={styles.metricLabel}>Angle (radians)</Text><Text style={styles.metricValue}>{signal.angle_radians.toFixed(3)}</Text></View>
               <View style={styles.metricRow}><Text style={styles.metricLabel}>Active forces</Text><Text style={styles.metricValue}>{signal.active_force_count}/7</Text></View>
-              <View style={styles.metricRow}><Text style={styles.metricLabel}>Config version</Text><Text style={styles.metricValue}>{signal.config_version}</Text></View>
+              <View style={styles.metricRow}><Text style={styles.metricLabel}>Config version</Text><Text style={styles.metricValue}>{signal.strategy_version}</Text></View>
               <Text style={styles.rationale}>{signal.rationale}</Text>
             </>
           ) : (
