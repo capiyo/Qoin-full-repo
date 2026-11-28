@@ -545,7 +545,7 @@ function MobileOperatingCyclePanel({ authenticated, accountKey, onRequireAuth }:
     const load=()=>Promise.all([getQoinOperatingCycle(),getQoinPaperSession()]).then(([c,p])=>{
       if(!active)return;setCycle(c);setPaper(p);
       if(loadedForUser.current!==accountKey){setObservation(String(c.config.observation_minutes));setEvaluation(String(c.config.weight_evaluation_minutes));setSession(String(c.config.session_minutes));
-        const savedAccount=c.config.paper_accounts[0];if(savedAccount){setSymbol(savedAccount.symbol);setVenue(savedAccount.venue);setCurrency(savedAccount.quote_currency);setCapital(String(savedAccount.initial_cash));setNotional(String(savedAccount.notional_per_trade));setFee(String(savedAccount.fee_bps));setSlippage(String(savedAccount.slippage_bps));}
+        const savedAccount=c.config.paper_accounts[0];if(savedAccount){setSymbol(savedAccount.symbol);setVenue(savedAccount.venue);setCurrency(savedAccount.quote_currency);setCapital(String(savedAccount.initial_cash));setNotional(String(savedAccount.notional_per_trade));setFee(String(savedAccount.fee_bps));setSlippage(String(savedAccount.slippage_bps));}else{setSymbol("BTCUSDT");setVenue("binance_usdm");setCurrency("USDT");setCapital("100");setNotional("25");setFee("10");setSlippage("5");}
         loadedForUser.current=accountKey;}
     }).catch(error=>{if(active)setStatus(error instanceof Error?error.message:"Operating cycle unavailable.");});
     void load();const timer=setInterval(()=>{void load();},5000);return()=>{active=false;clearInterval(timer);};
