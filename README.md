@@ -7,7 +7,7 @@ Qoin is a multi-client, domain-extensible intelligence and decision platform. Fi
 
 ## Deployment
 
-Render deployment is defined in [`render.yaml`](render.yaml). Follow [the Render deployment guide](docs/RENDER_DEPLOYMENT.md) to provision the Axum private service, Drogon gateway, and web client from `master`.
+The platform is hosting-vendor-neutral. Docker Compose is the reproducible local deployment; `render.yaml` and [the optional Render guide](docs/RENDER_DEPLOYMENT.md) are one hosted example, not an architectural dependency.
 
 ## Repository structure
 
