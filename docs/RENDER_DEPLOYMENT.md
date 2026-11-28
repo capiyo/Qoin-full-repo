@@ -22,13 +22,12 @@ they must never call Axum's internal routes directly.
    - `QOIN_MONGODB_URI`: TLS-enabled MongoDB connection string for the Qoin
      application user and the `qoin` database.
    - `QOIN_FIREBASE_PROJECT_ID`: Firebase project ID used by the clients.
-   - `QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX` and
-     `QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX`: the deployment's generated,
-     matching credential-sealing key pair. Keep the secret key private.
-   - `QOIN_EXECUTION_TOKEN` and `QOIN_LEDGER_MAINTENANCE_TOKEN`: generate
-     independent high-entropy secrets; do not reuse Firebase or database
-     credentials.
-   - `FINNHUB_API_KEY`: optional market-data key.
+   - `QOIN_EXECUTION_TOKEN` and `QOIN_LEDGER_MAINTENANCE_TOKEN` are generated
+     independently by Render.
+   - Credential sealing is fail-closed until you generate a matching key pair
+     and set `QOIN_CREDENTIAL_SEAL_PUBLIC_KEY_HEX` plus
+     `QOIN_CREDENTIAL_SEAL_SECRET_KEY_HEX` in the Axum service. Keep the secret
+     key private. These are not needed to deploy research and paper trading.
    - `VITE_QOIN_API_URL`: the public HTTPS URL of `qoin-gateway`, e.g.
      `https://qoin-gateway.onrender.com`. Use the actual hostname Render
      assigns to the service.
