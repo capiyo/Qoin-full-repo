@@ -429,7 +429,7 @@ export async function reconcileQoinOrder(clientOrderId: string): Promise<QoinBro
 export type QoinInstrument = {
   symbol: string; engine_symbol: string; name: string;
   asset_class: "Crypto" | "Equities" | "FX" | "Indices" | "Commodities";
-  venue: string; venue_id?: string; provider: string; provider_status?: string; description: string; quote_currency?: string;
+  venue: string; venue_id: string; provider: string; provider_status?: string; description: string; quote_currency?: string;
 };
 export type QoinVectorHistory = {
   symbol: string; strategy_version?: string; decision_vector: [number, number];
