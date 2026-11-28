@@ -522,3 +522,60 @@ mod tests {
         assert_eq!(result.decision_vector[0], result.score.max(0.0));
     }
 }
+
+
+#[cfg(test)]
+mod deterministic_audit_tests {
+    use super::{decide, Decision, EngineConfig, ForceObservation, RejectReason, DIRECTIONAL_WEIGHTS, OFI_IDX};
+
+    fn valid_spread() -> (Option<f64>, Option<u64>) { (Some(1.0), Some(100)) }
+
+    #[test]
+    fn config_fingerprint_is_stable_and_content_bound() {
+        let baseline = EngineConfig::default();
+        assert_eq!(baseline.fingerprint(), EngineConfig::default().fingerprint());
+        let mut changed_threshold = baseline.clone();
+        changed_threshold.signal_threshold += 0.01;
+        assert_ne!(baseline.fingerprint(), changed_threshold.fingerprint());
+        let mut changed_gate = baseline;
+        changed_gate.max_spread_age_ms += 1;
+        assert_ne!(changed_gate.fingerprint(), EngineConfig::default().fingerprint());
+    }
+
+    #[test]
+    fn flat_vector_has_a_structured_rejection_reason() {
+        let (spread_bps, spread_age_ms) = valid_spread();
+        let signal = decide(ForceObservation {
+            ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
+            spread_bps, spread_age_ms,
+        }, &EngineConfig::default(), false).unwrap();
+        assert_eq!(signal.decision, Decision::Wait);
+        assert_eq!(signal.reject_reason, Some(RejectReason::FlatVector));
+    }
+
+    #[test]
+    fn spread_rejections_are_machine_readable() {
+        let missing = decide(ForceObservation { spread_bps: None, ..super::tests::sample() }, &EngineConfig::default(), false).unwrap();
+        assert_eq!(missing.reject_reason, Some(RejectReason::SpreadMissingOrWide));
+        let stale = decide(ForceObservation { spread_age_ms: Some(60_000), ..super::tests::sample() }, &EngineConfig::default(), false).unwrap();
+        assert_eq!(stale.reject_reason, Some(RejectReason::SpreadStale));
+    }
+
+    #[test]
+    fn interaction_is_included_in_the_same_vector_used_for_alignment() {
+        let signal = decide(ForceObservation {
+            ofi: 1.0, liquidity: 0.4, volatility: 0.2, funding: 0.1,
+            open_interest_change: 1.0, liquidation_pressure: 0.2, basis: 0.1,
+            spread_bps: Some(1.0), spread_age_ms: Some(100),
+        }, &EngineConfig::default(), false).unwrap();
+        let attended = signal.attended_features;
+        let dot: f64 = attended.iter().zip(DIRECTIONAL_WEIGHTS.iter()).map(|(value, weight)| value * weight).sum();
+        let observed_norm = attended.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let template_norm = DIRECTIONAL_WEIGHTS.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let expected = if observed_norm <= f64::EPSILON { 0.0 } else { dot / (observed_norm * template_norm) };
+        assert!((signal.alignment - expected).abs() < 1e-12);
+        assert_ne!(signal.feature_trace[OFI_IDX].interaction_contribution, 0.0);
+        assert_eq!(signal.feature_trace[4].interaction_contribution, 0.0);
+    }
+}
