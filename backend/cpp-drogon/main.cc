@@ -376,6 +376,11 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/operating-cycle/stop");
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/investment-plan", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Put) proxyPutJson(req, std::move(cb), "/internal/investment-plan");
+        else proxyGet(req, std::move(cb), "/internal/investment-plan");
+    }, {drogon::Get, drogon::Put});
     drogon::app().registerHandler("/api/v1/paper-session", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyGet(req, std::move(cb), "/internal/paper-session");
