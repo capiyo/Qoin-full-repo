@@ -70,6 +70,7 @@ Updated: 2026-10-23
 - Added authenticated per-Firebase-UID cycle/session state, MongoDB persistence and lazy restoration, cycle configuration/start/stop/status routes, paper-session snapshots/history/archive routes, event-driven paper ledger processing, and automatic session finalization at cycle completion.
 - Added Drogon GET/PUT/POST forwarding for operating-cycle and paper-session endpoints, shared @qoin/core request/response contracts, and authenticated web and React Native Explore panels.
 - Tightened the shared instrument contract so canonical venue_id is required.
+- Reconciled the historical live-market-feed defaults: Binance, Coinbase Advanced Trade and Kraken Spot now share one case-insensitive environment-flag parser, default to enabled, and report the same state in health and instrument-catalogue responses. Added parser tests.
 - Ported the user-authored investment-intention feature into the current Archive/Explore application without replacing its navigation: Firebase-owned MongoDB storage, authenticated Axum/Drogon GET/PUT routes, shared API types, web/mobile panels, validation tests, OpenAPI schemas and the product/legal boundary note.
 - Paper fills remain simulation-only using observed bid/ask, configured fee and slippage assumptions. No live broker dispatch was enabled.
 - Verification status: changes were committed directly to master; the GitHub connector did not return workflow runs or status checks for the resulting commits. Do not treat the new integration as build-verified until exact-head Rust, Drogon, web and mobile checks pass.
