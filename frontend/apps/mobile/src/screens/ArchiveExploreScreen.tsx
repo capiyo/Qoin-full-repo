@@ -19,6 +19,7 @@ type Instrument = {
   engineVenue: string;
   provider: string;
   providerStatus?: string;
+  quoteCurrency?: string;
   archived: boolean;
   tint: string;
 };
@@ -554,6 +555,8 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   const [items, setItems] = useState<Instrument[]>([]);
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
+  const [venueFilter, setVenueFilter] = useState("All exchanges");
+  const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quotes");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [mechanicsTab, setMechanicsTab] = useState<"vector" | "sets">("vector");
   const [vector, setVector] = useState<QoinVectorDecision | null>(null);
@@ -730,7 +733,9 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
   }, [firebaseUser?.uid]);
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
   const decisionStrategy = strategy;
-  const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [items, market, query]);
+  const availableVenues = useMemo(() => [...new Set(items.map((item) => item.venue).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
+  const availableQuotes = useMemo(() => [...new Set(items.map((item) => item.quoteCurrency).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)), [items]);
+  const discovered = useMemo(() => items.filter((item) => !item.archived && (market === "All" || item.market === market) && (venueFilter === "All exchanges" || item.venue === venueFilter) && (quoteCurrencyFilter === "All quotes" || item.quoteCurrency === quoteCurrencyFilter) && `${item.name} ${item.symbol} ${item.venue} ${item.quoteCurrency || ""}`.toLowerCase().includes(query.toLowerCase())), [items, market, venueFilter, quoteCurrencyFilter, query]);
   const requireAuthentication = () => {
     setAccountOpen(true);
     Alert.alert("Sign in required", "Sign in to open instrument research, change your archive or run a historical replay.", [
@@ -784,7 +789,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
       setRegistryError(missingVenueCount ? `${missingVenueCount} registry entries were excluded because they lack a canonical venue ID.` : "");
       setItems(canonicalItems.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
-        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status,
+        market: item.asset_class, detail: item.description, venue: item.venue, engineVenue: item.venue_id, provider: item.provider, providerStatus: item.provider_status, quoteCurrency: item.quote_currency || undefined,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, tint: colors[index % colors.length],
       })));
     }).catch((error: unknown) => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
@@ -987,7 +992,18 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
         {mode === "Explore" && registryError ? <Text accessibilityRole="alert" style={styles.disclaimer}>Instrument registry unavailable: {registryError}. No sample instruments are being substituted.</Text> : null}
          {mode === "Explore" ? (
           <>
-            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments or symbols" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
+            <View style={styles.exchangePicker}>
+              <Text style={styles.kicker}>EXCHANGE / VENUE</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
+                {["All exchanges", ...availableVenues].map((venue) => <Pressable key={venue} onPress={() => setVenueFilter(venue)} style={[styles.exchangeChip, venueFilter === venue && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, venueFilter === venue && styles.exchangeChipTextActive]}>{venue}</Text></Pressable>)}
+              </ScrollView>
+              <Text style={styles.kicker}>QUOTE CURRENCY</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exchangeChips}>
+                {["All quotes", ...availableQuotes].map((currency) => <Pressable key={currency} onPress={() => setQuoteCurrencyFilter(currency)} style={[styles.exchangeChip, quoteCurrencyFilter === currency && styles.exchangeChipActive]}><Text style={[styles.exchangeChipText, quoteCurrencyFilter === currency && styles.exchangeChipTextActive]}>{currency}</Text></Pressable>)}
+              </ScrollView>
+              <Pressable onPress={() => { setVenueFilter("All exchanges"); setQuoteCurrencyFilter("All quotes"); }}><Text style={styles.exchangeReset}>Reset market filters</Text></Pressable>
+            </View>
+            <View style={styles.search}><Text style={styles.searchIcon}>⌕</Text><TextInput value={query} onChangeText={setQuery} placeholder="Search instruments, symbols or venues" placeholderTextColor="#A4AFBD" style={styles.searchInput} /></View>
             <View style={styles.filters}>{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <Pressable key={name} onPress={() => setMarket(name)} style={[styles.filter, market === name && styles.filterActive]}><Text style={[styles.filterText, market === name && styles.filterTextActive]}>{name}</Text></Pressable>)}</View>
             <View style={styles.coverageSection}>
               <View style={styles.coverageHeading}><View style={styles.coverageHeadingCopy}><Text style={styles.kicker}>MARKET ACCESS DESIGN</Text><Text style={styles.newsTitle}>Coverage tiers</Text><Text style={styles.coverageSubheading}>Data breadth is separate from strategy performance and broker execution.</Text></View><Text style={styles.coverageStatus}>{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ENABLED" : "PREVIEW") : catalogueStatus.toUpperCase()}</Text></View>
@@ -1400,6 +1416,13 @@ const styles = StyleSheet.create({
   heading: { color: "#EDF4EE", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
   subheading: { color: "#89968D", fontSize: 10, marginTop: 4 },
   count: { color: "#89968D", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
+  exchangePicker: { marginBottom: 12, padding: 11, borderWidth: 0, borderRadius: 12, backgroundColor: "#161F1A", gap: 7 },
+  exchangeChips: { flexDirection: "row", gap: 6, paddingVertical: 4 },
+  exchangeChip: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: "#26372D", borderRadius: 18, backgroundColor: "#0E1612" },
+  exchangeChipActive: { borderColor: "#315B3D", backgroundColor: "#17291F" },
+  exchangeChipText: { color: "#89968D", fontSize: 9, fontWeight: "600" },
+  exchangeChipTextActive: { color: "#7DF162" },
+  exchangeReset: { alignSelf: "flex-end", color: "#7DF162", fontSize: 9, fontWeight: "700", paddingVertical: 3 },
   search: { height: 42, flexDirection: "row", alignItems: "center", borderWidth: 0, borderColor: "transparent", borderRadius: 8, backgroundColor: "#161F1A", paddingHorizontal: 12, marginBottom: 12 },
   searchIcon: { color: "#89968D", fontSize: 21, marginRight: 8 },
   searchInput: { flex: 1, color: "#EDF4EE", fontSize: 12, paddingVertical: 0 },
