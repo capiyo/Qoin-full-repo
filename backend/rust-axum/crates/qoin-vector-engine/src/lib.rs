@@ -186,7 +186,7 @@ pub struct Signal {
     pub angle_degrees: f64,
     pub active_force_count: usize,
     pub strategy_version: String,
-    pub config_fingerprint: u64,
+    pub config_fingerprint: String,
     pub reject_reason: Option<RejectReason>,
     pub rationale: String,
     pub feature_names: Vec<String>,
@@ -410,7 +410,7 @@ pub fn decide(
         angle_degrees: angle_radians.to_degrees(),
         active_force_count,
         strategy_version: String::new(),
-        config_fingerprint: config.fingerprint(),
+        config_fingerprint: format!("{:016x}", config.fingerprint()),
         reject_reason,
         rationale,
         feature_names: FEATURE_NAMES.iter().map(|name| (*name).to_owned()).collect(),
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(result.features.len(), 7);
         assert_eq!(result.feature_trace[0].raw_value, 2.0);
         assert_eq!(result.feature_trace[0].directional_weight, 0.30);
-        assert_eq!(result.config_fingerprint, EngineConfig::default().fingerprint());
+        assert_eq!(result.config_fingerprint, format!("{:016x}", EngineConfig::default().fingerprint()));
         assert_eq!(result.decision_vector[0], result.score.max(0.0));
     }
 }
