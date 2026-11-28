@@ -551,7 +551,7 @@ function MobileOperatingCyclePanel({ authenticated, onRequireAuth }: { authentic
     initial_cash:Number(capital),notional_per_trade:Number(notional),contract_multiplier:1,quantity_step:0.000001,
     reinvest_profits:true,fee_bps:Number(fee),slippage_bps:Number(slippage),
   };
-  const valid=Boolean(account.symbol&&account.venue&&account.quote_currency)&&[account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite)&&account.initial_cash>0&&account.notional_per_trade>0&&account.notional_per_trade<=account.initial_cash&&account.fee_bps>=0&&account.slippage_bps>=0&&account.slippage_bps<10000;
+  const valid=Boolean(account.symbol&&account.venue&&account.quote_currency)&&[account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite)&&account.initial_cash>0&&account.notional_per_trade>0&&account.notional_per_trade<=account.initial_cash&&account.fee_bps>=0&&account.fee_bps<=100&&account.slippage_bps>=0&&account.slippage_bps<=100;
   const act=async(action:"configure"|"start"|"stop")=>{
     if(!authenticated){onRequireAuth();return;}
     if(action==="configure"&&!valid){setStatus("Check instrument, venue, currency, capital, notional and costs.");return;}
