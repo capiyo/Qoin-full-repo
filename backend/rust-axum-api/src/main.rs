@@ -12,7 +12,7 @@ use tower_http::cors::CorsLayer;
 #[derive(Clone)]
 struct AppState {
     config: EngineConfig,
-    config_version: String,
+    strategy_version: String,
 }
 
 #[derive(Serialize)]
@@ -52,16 +52,16 @@ async fn main() {
     if let Ok(value) = std::env::var("QOIN_MAX_ANGLE_RADIANS") {
         config.max_angle_radians = value.parse().expect("QOIN_MAX_ANGLE_RADIANS must be numeric");
     }
-    let config_version = std::env::var("QOIN_CONFIG_VERSION")
+    let strategy_version = std::env::var("QOIN_STRATEGY_VERSION").or_else(|_| std::env::var("QOIN_CONFIG_VERSION"))
         .unwrap_or_else(|_| "baseline-v2".to_owned());
     // Validate configuration before opening the HTTP listener.
     qoin_vector_engine::decide(
         ForceObservation { ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
             open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
             spread_bps: None, spread_age_ms: None },
-        &config, &config_version, false,
+        &config, false,
     ).expect("Qoin engine configuration must be valid");
-    let state = Arc::new(AppState { config, config_version });
+    let state = Arc::new(AppState { config, strategy_version });
     let cors = CorsLayer::new()
         .allow_origin([
             HeaderValue::from_static("http://localhost:5173"),
@@ -92,13 +92,13 @@ async fn signal(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SignalRequest>,
 ) -> Result<Json<Signal>, (StatusCode, String)> {
-    let result = decide(
+    let mut result = decide(
         request.observation,
         &state.config,
-        &state.config_version,
         request.has_open_position,
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    result.strategy_version = state.strategy_version.clone();
 
     // A signal is not an order. No exchange adapter is called here.
     Ok(Json(result))
