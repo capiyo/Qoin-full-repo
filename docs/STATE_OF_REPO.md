@@ -26,6 +26,7 @@ Qoin is a multi-client, multi-asset research and decision platform. Finance is t
 - Broker-neutral order, account, instrument, capability, risk-preflight, receipt, execution-lifecycle, allocation and reconciliation contracts.
 - Broker catalogue and adapter scaffolding. The catalogue is not proof that a provider is executable.
 - Web, mobile and desktop application shells, Archive/Explore, instrument mechanics, vector inspection, market notifications, and shared API contracts.
+- Authenticated user-authored investment intentions (goal, base currency, monthly contribution, optional target and horizon), persisted under Firebase UID ownership and explicitly isolated from allocation, advice and transaction execution.
 - CI workflows for Rust, gateway, web, mobile, desktop, and Axum–Drogon–MongoDB integration.
 
 ## Execution boundary and current safety state
