@@ -694,7 +694,7 @@ function BrokerCollectionPanel() {
   </section>;
 }
 
-function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: boolean; onRequireAuth: () => void }) {
+function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { authenticated: boolean; accountKey: string; onRequireAuth: () => void }) {
   const [observation, setObservation] = useState("5");
   const [evaluation, setEvaluation] = useState("60");
   const [session, setSession] = useState("480");
@@ -709,6 +709,7 @@ function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: 
   const [paper, setPaper] = useState<QoinPaperSessionSnapshot | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const loadedForUser = useRef<string | null>(null);
 
   const refresh = async () => {
     const [nextCycle, nextPaper] = await Promise.all([getQoinOperatingCycle(), getQoinPaperSession()]);
@@ -716,18 +717,22 @@ function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: 
     setObservation(String(nextCycle.config.observation_minutes));
     setEvaluation(String(nextCycle.config.weight_evaluation_minutes));
     setSession(String(nextCycle.config.session_minutes));
+    loadedForUser.current = accountKey;
   };
   useEffect(() => {
     if (!authenticated) return;
     let active = true;
     const load = () => Promise.all([getQoinOperatingCycle(), getQoinPaperSession()]).then(([c,p]) => {
       if (!active) return; setCycle(c); setPaper(p);
-      setObservation(String(c.config.observation_minutes)); setEvaluation(String(c.config.weight_evaluation_minutes)); setSession(String(c.config.session_minutes));
+      if (loadedForUser.current !== accountKey) {
+        setObservation(String(c.config.observation_minutes)); setEvaluation(String(c.config.weight_evaluation_minutes)); setSession(String(c.config.session_minutes));
+        loadedForUser.current = accountKey;
+      }
     }).catch(error => { if (active) setStatus(error instanceof Error ? error.message : "Operating cycle unavailable."); });
     void load();
     const timer = window.setInterval(() => { void load(); }, 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [authenticated]);
+  }, [authenticated, accountKey]);
 
   const account: QoinOperatingCycleConfig["paper_accounts"][number] = {
     symbol: symbol.trim().toUpperCase(), venue: venue.trim(), quote_currency: currency.trim().toUpperCase(),
@@ -1382,7 +1387,7 @@ export default function App() {
                         <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
                       </section>
                       <BrokerCollectionPanel />
-                      <OperatingCyclePanel authenticated={Boolean(firebaseUser)} onRequireAuth={requireAuthentication} />
+                      <OperatingCyclePanel authenticated={Boolean(firebaseUser)} accountKey={firebaseUser?.uid || ""} onRequireAuth={requireAuthentication} />
                       <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
                         <div className="coverage-heading"><div><p className="eyebrow">STRATEGY LIBRARY</p><h3>Research algorithms</h3><p>Independent models, explicit versions and declared market requirements.</p></div><span className="coverage-status">{catalogue?.selection_enabled ? "SELECTION ENABLED" : "READ-ONLY CATALOGUE"}</span></div>
                         {catalogue?.algorithms?.length ? <div className="algorithm-grid">{catalogue.algorithms.map((algorithm) => <article className="algorithm-card" key={algorithm.algorithm_id}>
