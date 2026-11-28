@@ -1,40 +1,65 @@
 # Risk policy and hard gates
 
-## Current implementation status
-- The Axum vector endpoint emits research signals only. Live order submission is a separate private route (`POST /internal/orders`) and is not reachable through the public Drogon gateway.
-- `backend/rust-axum/src/order_safety.rs` implements deterministic pre-trade checks for identity, finite values, stop direction, risk-at-stop, order notional, gross leverage, daily loss, open-position count, market-data age, and exchange-side protective-stop capability. It rejects malformed policy configuration before order evaluation, including risk/daily-loss/notional fractions outside 0–100%, zero position caps, and negative market-data freshness windows.
-- A new provider-neutral contract lives in `backend/rust-axum/src/broker_contract.rs`. It defines normalized instruments, account snapshots, order requests, broker capabilities, receipts, execution reports, a broker registry whose eligible accounts are selected by the user, and an async `BrokerAdapter` interface. Its `submit_risk_checked` pipeline retrieves the selected adapter's account, instrument and capability state, validates the portfolio risk gate, then submits through that adapter. Its shared portfolio gate calculates notional and stop risk in the selected account currency using an explicit, freshness-checked quote-to-account FX conversion, instrument multiplier/lot step, broker-calculated margin requirement, daily realized plus daily unrealized P&L, gross exposure and position caps. Unit tests cover Forex, equities and non-USDT crypto instrument examples. This is a shared contract and deterministic risk primitive; it is not yet connected to the existing Binance-only order route or backed by live non-Binance adapter implementations.
-- Live-mode validation requires all five explicit approvals: human approval, verified exchange account, withdrawals disabled, healthy kill switch, and healthy reconciliation.
-- `backend/rust-axum/src/execution_lifecycle.rs` models broker acknowledgements, partial fills, final fills, cancellation, rejection, failure, duplicate execution IDs, and overfill rejection.
-- These are tested domain primitives only. They are not yet connected to a durable order store or an exchange adapter. The lifecycle's in-memory duplicate-ID set is not a substitute for persistent idempotency.
-- `backend/rust-axum/src/trading.rs` now requires a valid side-aware stop trigger for Binance USD-M market entries, submits a reduce-only `STOP_MARKET` protective order for the actually filled quantity, and attempts an immediate reduce-only market close if stop placement fails. The private Axum route requires `x-qoin-execution-token`, either `QOIN_TRADING_MODE=testnet` with `QOIN_TESTNET_TRADING_CONFIRM=I_UNDERSTAND_TESTNET_ORDERS` or `QOIN_TRADING_MODE=live` with `QOIN_LIVE_TRADING_CONFIRM=I_UNDERSTAND_REAL_MONEY_RISK`, and Binance API credentials. Testnet defaults to Binance Futures testnet; live defaults to Binance production. The adapter's configured per-order quantity/notional caps are not a portfolio risk engine.
-- A MongoDB-backed operator gate (`POST /internal/trading/kill-switch`) can enable or block new order submissions at runtime. It is deliberately a new-entry gate: it does not cancel existing exchange orders or flatten open positions.
-- The route writes a unique `client_order_id` intent to MongoDB before contacting the exchange. Duplicate IDs are rejected; uncertain outcomes are marked `reconciliation_required` and must not be blindly retried. `GET /internal/orders/{client_order_id}/reconcile` performs an authenticated Binance entry/protective-stop lookup and persists the observed exchange state. This is durable request idempotency plus operator-triggered reconciliation, not an automatic reconciliation worker.
-- Live order submission remains disabled and is not wired into the Axum API.
+Audit date: 2026-11-28  
+Authoritative branch: `master`
 
-## Mandatory operational gates
-- Never expose the internal Axum service to the public internet.
-- Never commit exchange credentials or request them in chat; use a secret manager and API keys with withdrawals disabled.
-- The private live route requires an operator token, explicit live-mode confirmation, and exchange credentials. API keys must have withdrawals disabled and must be scoped to the intended account.
-- Use paper/testnet and shadow mode before any production consideration.
-- Keep the system fail-closed if risk state, market data, broker connectivity, protective orders, reconciliation, or kill-switch health is unavailable.
+## Current execution status
 
-## Target policy
-- Risk per trade: 0.25% of equity, calculated from stop distance.
-- Maximum leverage: 2x; enforce notional, correlated exposure, and position-count caps.
-- Exchange-side protective stop, slippage limits, daily/weekly loss limits, drawdown circuit breaker, and kill switch.
-- Durable idempotent client order IDs, timeout/partial-fill handling, exchange reconciliation, and crash recovery.
-- Reject stale, out-of-order, malformed, or low-quality market data; abstain when spread or feed quality fails.
-- Broker-specific tick/step-size validation, fees, minimum notional, margin mode, and instrument permissions.
+Qoin's vector and set/ledger algorithms produce research outputs. The private Axum source includes order-submission, reconciliation, and operator kill-switch routes, but this does not mean that live execution is available.
 
-The risk and lifecycle modules and the current private order route are not proof of a complete autonomous execution system. Portfolio-level pre-trade risk integration, broker account/position reconciliation, an operational kill switch, exchange testnet lifecycle verification, order amendment/cancellation flows, and deployment controls remain outstanding. The current route is an explicitly invoked Binance USD-M adapter with a strict per-order cap and protective-stop attempt; it must not be described as an unattended production trading system.
+The runtime initializes `BrokerRegistry::default()`, which contains no registered provider adapters. The named provider adapter scaffolds return unsupported results and are deliberately not registered. The broker catalogue and configured environment-variable names are discovery/configuration metadata, not evidence of a connected account or executable provider. As a result, order dispatch must fail closed until an independently tested provider adapter is implemented and explicitly registered.
 
+The private order handler additionally requires:
+- A valid server-side execution token.
+- A verified Firebase ID token and UID-derived owner scope.
+- An active broker-account mapping owned by that UID, with trading enabled.
+- A backend environment allowlist authorizing the broker account.
+- An enabled operator trading control; the control defaults closed.
+- A durable unique client-order intent before any adapter submission.
+- The shared broker-neutral risk-preflight and adapter contract.
 
-## Equal multi-broker allocation
+The order and reconciliation routes are internal Axum routes and must not be exposed through the public Drogon gateway. No real-money dispatch is authorized by this policy.
 
-- A parent strategy order is a total portfolio-currency exposure budget. If the user selects N eligible broker accounts (currently bounded to 15), Qoin targets exactly 1/N of that total notional for each account; it does not copy the full quantity N times.
-- `backend/rust-axum/src/broker_allocation.rs` implements a Decimal-based equal-notional allocation primitive. It converts each account's equal portfolio-notional share into that broker instrument's native quantity using the supplied portfolio value per native unit, then rounds quantity DOWN to the broker's quantity step.
-- The allocator rejects duplicate broker/account pairs, invalid targets, more than 15 recipients, and shares that cannot meet an account's minimum quantity/notional. It reports the unallocated remainder from quantity-step rounding; it never redistributes that remainder to another account.
-- Different broker symbols, contract multipliers, lot conventions, quote currencies, settlement currencies and account currencies must be normalized into the common portfolio currency before allocation. The caller must supply a fresh, correctly directed conversion chain; missing or stale conversion inputs must fail closed.
-- The allocator is currently a tested domain primitive, not wired into the live `/internal/orders` route. The route remains Binance-only. The frontend broker collection is a status catalogue, not an account-linking or order-submission integration. Do not describe multi-broker live fan-out as available until per-account authentication, aggregate portfolio risk reservation, durable parent/child idempotency, concurrent dispatch, partial-failure handling and reconciliation are integrated and verified.
-- Before dispatching ANY child, Qoin must reserve/check aggregate exposure and risk across all selected accounts. Child-order failure or timeout must not cause an untracked duplicate order or an automatic increase in another account's allocation.
+## Implemented safety foundations
+
+- Firebase ID-token verification is performed server-side for private user-scoped operations. Client-supplied user IDs are not authoritative.
+- Broker credentials are read from backend deployment environment secrets. They are not accepted from frontend clients or returned by status APIs.
+- Broker account ownership is checked against the authenticated Firebase UID.
+- Broker-neutral contracts describe normalized instruments, accounts, quotes, capabilities, margin, order requests, receipts, execution reports and adapter operations.
+- The shared risk-preflight contract covers account-currency conversion, instrument multiplier and lot step, margin, daily P&L, gross exposure and position limits.
+- Order intent persistence and client-order-ID deduplication are designed to prevent blind duplicate submissions.
+- Reconciliation is required after uncertain adapter outcomes; an ambiguous outcome must never trigger an automatic blind retry.
+- Execution lifecycle primitives model acknowledgements, partial fills, fills, cancellations, rejections, failures, duplicate execution IDs and overfills.
+- Equal-notional allocation primitives are available, but their presence alone does not establish a production multi-account dispatcher.
+
+These are software foundations, not proof of production execution safety.
+
+## Mandatory fail-closed rules
+
+- Keep the broker registry empty until a concrete adapter passes its complete conformance and sandbox test suite.
+- Never enable real-money dispatch based only on a provider appearing in the broker catalogue or having environment variables configured.
+- Never expose internal Axum routes directly to the public internet or proxy private order routes through Drogon.
+- Never accept broker secrets from the browser or store them in frontend state, Firestore profiles, logs, or API responses.
+- Derive account ownership from verified Firebase identity and operator-provisioned account mappings.
+- Reject stale, malformed, out-of-order, non-finite, or venue-mixed market data.
+- Reject missing, stale, or incorrectly directed FX conversion inputs.
+- Reject invalid risk policy, unknown broker capabilities, missing protective-order support, or unavailable risk state.
+- Persist order intent before dispatch. On timeout, partial failure, persistence failure, or unknown broker outcome, require authoritative reconciliation before any retry.
+- Keep the operator trading control closed by default. A kill switch must not be treated as proof that existing positions or orders have been cancelled or flattened.
+- Keep research signals and V1/V2 algorithm outputs separate from execution authorization.
+
+## Gates before any future live-execution consideration
+
+1. Implement a concrete adapter for each intended provider. Each adapter must retrieve account, instrument, quote, margin and capability data from the provider and implement submit, lookup, cancellation and reconciliation semantics.
+2. Prove provider account ownership, trading permissions, credential rotation, withdrawal restrictions and account allowlisting.
+3. Run provider-specific sandbox/testnet conformance tests covering rejects, timeouts, partial fills, duplicate requests, stop placement, cancellation, and restart recovery.
+4. Wire aggregate portfolio risk reservation across all selected accounts before dispatching any child order.
+5. Implement durable parent/child order state, concurrent dispatch controls, idempotent reconciliation workers and explicit partial-failure handling.
+6. Independently review the risk model, kill-switch operations, deployment isolation, audit trail, monitoring, incident response and recovery procedures.
+7. Require a separate explicit authorization and release decision. Passing software tests alone does not authorize real-money trading.
+
+## Research and paper-trading limits
+
+Backtests and paper sessions are simulations. They must disclose data coverage, venue, timestamp gaps, fees, slippage, fill assumptions, missing market microstructure, funding treatment, leverage assumptions and limitations. They must not be described as proof of profitability or as equivalent to live execution.
+
+Qoin remains research/paper-only. Live order dispatch is not currently available and must remain fail-closed.
