@@ -3,7 +3,7 @@
 //! has an isolated quote-currency ledger; capital is never silently shared
 //! across instruments or currencies.
 use crate::MarketEvent;
-use qoin_vector_engine::{Decision, DecisionDiagnostics, Signal};
+use qoin_vector_engine::{Decision, DecisionDiagnostics, RejectReason, Signal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -225,6 +225,7 @@ impl PaperAccount {
             notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
             fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
             ts_ms: event.ts_ms, strategy_version: strategy_version.to_owned(),
+            config_fingerprint: decision.config_fingerprint.clone(), reject_reason: decision.reject_reason,
             bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.clone(),
             reason: decision.rationale.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
@@ -241,7 +242,10 @@ pub struct PaperMirrorRecord {
     pub cycle_id: String, pub event_id: String, pub venue: String, pub symbol: String,
     pub quote_currency: String, pub contract_multiplier: f64, pub quantity_step: f64,
     pub notional_per_trade: f64, pub reinvest_profits: bool, pub fee_bps: f64, pub slippage_bps: f64,
-    pub ts_ms: i64, pub strategy_version: String, pub bullish_weights: BTreeMap<String, f64>, pub bearish_weights: BTreeMap<String, f64>, pub action: String,
+    pub ts_ms: i64, pub strategy_version: String,
+    #[serde(default)] pub config_fingerprint: String,
+    #[serde(default)] pub reject_reason: Option<RejectReason>,
+    pub bullish_weights: BTreeMap<String, f64>, pub bearish_weights: BTreeMap<String, f64>, pub action: String,
     pub reason: String, pub features: BTreeMap<String, f64>, pub attention: Vec<Vec<f64>>,
     pub attended_features: Vec<f64>, pub decision_vector: [f64; 2], pub magnitude: f64,
     pub angle_radians: f64, pub spread_bps: Option<f64>, pub execution: String,
