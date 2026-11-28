@@ -1,3 +1,4 @@
+import { MultiHorizonPanel } from "./components/MultiHorizonPanel";
 import { InvestmentPlanPanel } from "./components/InvestmentPlanPanel";
 import { requestQoinWebPushToken } from "./firebaseMessaging";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -1409,6 +1410,7 @@ export default function App() {
                         <p className="coverage-disclaimer">These are proposed coverage limits, not active subscriptions, prices or enforced permissions. Finnhub coverage requires a configured key and eligible data; no live broker execution is connected.</p>
                       </section>
                       <BrokerCollectionPanel />
+                      <MultiHorizonPanel instruments={instruments} />
                       <InvestmentPlanPanel user={firebaseUser} />
                       <OperatingCyclePanel authenticated={Boolean(firebaseUser)} accountKey={firebaseUser?.uid || ""} onRequireAuth={requireAuthentication} />
                       <section className="algorithm-catalogue" aria-label="Research algorithm catalogue">
