@@ -61,3 +61,15 @@ Updated: 2026-10-23
 - The stale/out-of-order quote regression also passed the Axum–Drogon–MongoDB integration workflow on `7001b5682c34a571825a5c7eb87b0e66e85d8c72`; the gateway and Axum build/integration sequence completed successfully after the earlier intermittent failure.
 - Added `execution_stress_scenarios` to each replay result: baseline 1.0x, moderate 1.5x, severe 2.0x cost-only repricing of realized fees, base slippage and market impact. Each scenario reports scaled costs, estimated net P/L/return, and `fills_recomputed=false`; assumptions and OpenAPI explicitly state fills/liquidity are not rerun.
 - Verification on `4bc55a98ffa6f7455a9ffe48a378392e7caca218`: Rust workspace passed (36 Axum engine tests, 0 failed; other Rust suites 6 passed each); React web build passed; React Native typecheck and Drogon gateway build passed. Axum–Drogon–MongoDB integration passed with a gateway request asserting the three scenarios, 2.0x multiplier and `fills_recomputed=false`. Desktop builds were still running.
+
+
+## Master porting and operating-cycle integration (2026-11-28)
+- Audited 45 repository branches and the open pull-request set against master; old snapshots are not merged wholesale because many are substantially behind the authoritative tree and would revert newer implementations.
+- Confirmed that Firebase ID-token verification, backend-only broker environment loading, the set-theoretic relationship ledger, multi-horizon research, multi-market vector-space primitives, canonical instrument registry filtering, and Funspot-parity UI foundations are already present on master.
+- Ported the missing operating-cycle/paper-session runtime integration into the current Axum application rather than replacing its newer V1 seven-force vector authority with the older branch implementation.
+- Added authenticated per-Firebase-UID cycle/session state, MongoDB persistence and lazy restoration, cycle configuration/start/stop/status routes, paper-session snapshots/history/archive routes, event-driven paper ledger processing, and automatic session finalization at cycle completion.
+- Added Drogon GET/PUT/POST forwarding for operating-cycle and paper-session endpoints, shared @qoin/core request/response contracts, and authenticated web and React Native Explore panels.
+- Tightened the shared instrument contract so canonical venue_id is required.
+- Paper fills remain simulation-only using observed bid/ask, configured fee and slippage assumptions. No live broker dispatch was enabled.
+- Verification status: changes were committed directly to master; the GitHub connector did not return workflow runs or status checks for the resulting commits. Do not treat the new integration as build-verified until exact-head Rust, Drogon, web and mobile checks pass.
+- Remaining correctness work is idempotent recovery for the partial-write window between raw event/decision persistence and paper-ledger persistence, plus full exact-head integration and UI acceptance.
