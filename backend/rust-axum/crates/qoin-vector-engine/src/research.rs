@@ -141,7 +141,7 @@ pub fn optimize_signal_threshold(
         if let Ok(score) = evaluate(training_samples, &candidate, loss_config) {
             if best
                 .as_ref()
-                .map_or(true, |(_, current)| score.loss < current.loss)
+                .is_none_or(|(_, current)| score.loss < current.loss)
             {
                 best = Some((candidate, score));
             }
