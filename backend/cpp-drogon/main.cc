@@ -376,6 +376,19 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/operating-cycle/stop");
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        std::string path = "/internal/market-horizons";
+        const auto symbol = req->getParameter("symbol");
+        const auto venue = req->getParameter("venue_id");
+        const auto minEvents = req->getParameter("min_events");
+        std::vector<std::string> query;
+        if (!symbol.empty()) query.push_back("symbol=" + drogon::utils::urlEncode(symbol));
+        if (!venue.empty()) query.push_back("venue_id=" + drogon::utils::urlEncode(venue));
+        if (!minEvents.empty()) query.push_back("min_events=" + drogon::utils::urlEncode(minEvents));
+        for (const auto& item : query) path += (path.find('?') == std::string::npos ? "?" : "&") + item;
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/investment-plan", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         if (req->method() == drogon::Put) proxyPutJson(req, std::move(cb), "/internal/investment-plan");
