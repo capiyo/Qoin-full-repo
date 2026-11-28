@@ -323,6 +323,32 @@ components:
       scheme: bearer
       bearerFormat: Firebase ID token
   schemas:
+    OperatingCycleConfig:
+      type: object
+      required: [observation_minutes, weight_evaluation_minutes, session_minutes, mode, paper_accounts]
+      properties:
+        observation_minutes: { type: integer, minimum: 1, maximum: 120 }
+        weight_evaluation_minutes: { type: integer, minimum: 1, maximum: 720 }
+        session_minutes: { type: integer, minimum: 1, maximum: 1440 }
+        mode: { type: string, enum: [research, paper] }
+        paper_accounts:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PaperAccountConfig' }
+    PaperAccountConfig:
+      type: object
+      required: [symbol, venue, quote_currency, initial_cash, notional_per_trade, contract_multiplier, quantity_step, reinvest_profits, fee_bps, slippage_bps]
+      properties:
+        symbol: { type: string, minLength: 1 }
+        venue: { type: string, minLength: 1 }
+        quote_currency: { type: string, minLength: 1 }
+        initial_cash: { type: number, minimum: 0, exclusiveMinimum: true }
+        notional_per_trade: { type: number, minimum: 0, exclusiveMinimum: true }
+        contract_multiplier: { type: number, minimum: 0, exclusiveMinimum: true }
+        quantity_step: { type: number, minimum: 0, exclusiveMinimum: true }
+        reinvest_profits: { type: boolean }
+        fee_bps: { type: number, minimum: 0, maximum: 100 }
+        slippage_bps: { type: number, minimum: 0, maximum: 100 }
     MarketEvent:
       type: object
       required: [event_id, venue, symbol, event_type, ts_ms]
