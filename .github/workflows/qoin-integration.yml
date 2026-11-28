@@ -42,6 +42,9 @@ jobs:
         run: |
           cmake -S backend/cpp-drogon -B build/drogon -DCMAKE_BUILD_TYPE=Release
           cmake --build build/drogon --parallel 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Verify gateway, MongoDB strategy persistence, and event flow
         shell: bash
         run: |
@@ -241,4 +244,5 @@ jobs:
             jq . /tmp/algorithms.json || cat /tmp/algorithms.json
             exit 1
           fi
+          node backend/tests/websocket_smoke.mjs
           echo "All Qoin Axum-Drogon integration assertions passed."
