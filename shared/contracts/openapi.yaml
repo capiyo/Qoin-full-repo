@@ -253,7 +253,75 @@ paths:
       responses:
         '200': { description: Latest decision or abstain response }
         '503': { description: Storage unavailable }
+  /api/v1/operating-cycle:
+    get:
+      summary: Read the authenticated user's operating-cycle state
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Cycle configuration and current phase }
+        '401': { description: Firebase identity required }
+        '503': { description: Identity or persistence unavailable }
+    put:
+      summary: Configure the authenticated user's research/paper operating cycle
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperatingCycleConfig' }
+      responses:
+        '200': { description: Configuration persisted }
+        '400': { description: Invalid cycle or paper-account configuration }
+        '401': { description: Firebase identity required }
+  /api/v1/operating-cycle/start:
+    post:
+      summary: Start the authenticated user's configured cycle
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Cycle started }
+        '400': { description: Paper accounts are required in paper mode }
+        '409': { description: Cycle already active }
+        '401': { description: Firebase identity required }
+  /api/v1/operating-cycle/stop:
+    post:
+      summary: Stop the authenticated user's cycle and archive its paper session
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Cycle stopped and paper ledger archived }
+        '401': { description: Firebase identity required }
+  /api/v1/paper-session:
+    get:
+      summary: Read the authenticated user's current paper-session ledger
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Per-account paper balances, positions and metrics }
+        '401': { description: Firebase identity required }
+  /api/v1/paper-session/history:
+    get:
+      summary: Read the authenticated user's paper Mirror decisions and closed trades
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { in: query, name: symbol, schema: { type: string } }
+        - { in: query, name: cycle_id, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200': { description: Paper decisions and trades }
+        '401': { description: Firebase identity required }
+  /api/v1/paper-session/runs:
+    get:
+      summary: List the authenticated user's archived paper-session runs
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: Archived paper sessions }
+        '401': { description: Firebase identity required }
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
   schemas:
     MarketEvent:
       type: object
@@ -274,3 +342,4 @@ components:
         funding_rate: { type: number, nullable: true }
         open_interest: { type: number, nullable: true, minimum: 0 }
         liquidation_side: { type: string, nullable: true, enum: [long, short] }
+
