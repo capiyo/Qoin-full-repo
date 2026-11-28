@@ -15,6 +15,7 @@ type Instrument = {
   engineVenue: string;
   provider: string;
   providerStatus?: string;
+  quoteCurrency?: string;
   archived: boolean;
   color: string;
 };
@@ -719,6 +720,8 @@ export default function App() {
   const selectedMode: InstrumentMode = selected ? (cardModeBySymbol[selected.symbol] || "live") : "live";
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("All");
+  const [venueFilter, setVenueFilter] = useState("All exchanges");
+  const [quoteCurrencyFilter, setQuoteCurrencyFilter] = useState("All quote currencies");
   const [health, setHealth] = useState<QoinHealth | null>(null);
   const [strategy, setStrategy] = useState<QoinStrategy | null>(null);
   const [catalogue, setCatalogue] = useState<QoinAlgorithmCatalogue | null>(null);
@@ -945,7 +948,7 @@ export default function App() {
       setInstruments(canonicalItems.map((item, index) => ({
         symbol: item.symbol, engineSymbol: item.engine_symbol, name: item.name,
         market: item.asset_class, description: item.description, venue: item.venue, engineVenue: item.venue_id,
-        provider: item.provider, providerStatus: item.provider_status,
+        provider: item.provider, providerStatus: item.provider_status, quoteCurrency: item.quote_currency || undefined,
         archived: archivedSymbolsRef.current?.includes(item.symbol) ?? false, color: colors[index % colors.length],
       })));
     }).catch((error: unknown) => { if (active) setRegistryError(error instanceof Error ? error.message : "Instrument registry unavailable. No local instruments are substituted."); });
@@ -1128,7 +1131,9 @@ export default function App() {
 
   const archived = useMemo(() => instruments.filter((item) => item.archived), [instruments]);
   const decisionStrategy = strategy;
-  const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && `${item.name} ${item.symbol}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, query]);
+  const availableVenues = useMemo(() => [...new Set(instruments.map((item) => item.venue).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [instruments]);
+  const availableQuoteCurrencies = useMemo(() => [...new Set(instruments.map((item) => item.quoteCurrency).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)), [instruments]);
+  const discovered = useMemo(() => instruments.filter((item) => !item.archived && (market === "All" || item.market === market) && (venueFilter === "All exchanges" || item.venue === venueFilter) && (quoteCurrencyFilter === "All quote currencies" || item.quoteCurrency === quoteCurrencyFilter) && `${item.name} ${item.symbol} ${item.venue} ${item.quoteCurrency || ""}`.toLowerCase().includes(query.toLowerCase())), [instruments, market, venueFilter, quoteCurrencyFilter, query]);
 
   function toggleArchive(symbol: string) {
     const target = instruments.find((item) => item.symbol === symbol);
@@ -1260,7 +1265,15 @@ export default function App() {
                       <div className="explore-workspace">
                       <div className="explore-main-column">
                       <div className="section-heading"><div><p className="eyebrow">DISCOVERY</p><h2>Explore</h2><p>Find instruments to bring into your archive.</p></div><span className="count-label">CRYPTO · EQUITIES · FX · INDICES · COMMODITIES</span></div>
-                      <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments or symbols" /></label>
+                      <section className="exchange-selector" aria-label="Exchange and quote currency filters">
+                        <div className="exchange-selector-heading"><div><p className="eyebrow">MARKET DISCOVERY</p><h3>Exchange and quote currency</h3><p>Filter the instrument registry by its published venue and quote currency.</p></div><span className="exchange-selector-count">{availableVenues.length} venues</span></div>
+                        <div className="exchange-selector-controls">
+                          <label><span>Exchange / venue</span><select value={venueFilter} onChange={(event) => setVenueFilter(event.target.value)}><option>All exchanges</option>{availableVenues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}</select></label>
+                          <label><span>Quote currency</span><select value={quoteCurrencyFilter} onChange={(event) => setQuoteCurrencyFilter(event.target.value)}><option>All quote currencies</option>{availableQuoteCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
+                        </div>
+                        <div className="exchange-selector-footnote"><span>Execution broker preferences remain separate from market-data venue.</span><button type="button" onClick={() => { setVenueFilter("All exchanges"); setQuoteCurrencyFilter("All quote currencies"); }}>Reset filters</button></div>
+                      </section>
+                      <label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search instruments, symbols or venues" /></label>
                       <div className="filter-row">{["All", "Crypto", "Equities", "FX", "Indices", "Commodities"].map((name) => <button key={name} className={market === name ? "filter active" : "filter"} onClick={() => setMarket(name)}>{name}</button>)}</div>
                       <section className="coverage-preview" aria-label="Market access tier preview">
                         <div className="coverage-heading"><div><p className="eyebrow">MARKET ACCESS DESIGN</p><h3>Coverage tiers</h3><p>Market-data breadth is separate from algorithm performance and broker execution.</p></div><span className="coverage-status">{catalogueStatus === "loaded" ? (catalogue?.market_access_tiers_enabled ? "ACCESS ENABLED" : "PREVIEW ONLY") : catalogueStatus === "loading" ? "LOADING CATALOGUE" : "CATALOGUE UNAVAILABLE"}</span></div>
