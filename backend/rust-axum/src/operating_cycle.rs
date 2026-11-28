@@ -134,6 +134,11 @@ impl OperatingCycle {
             return Err("stop the current cycle before changing its configuration".into());
         }
         self.config = config;
+        // A naturally completed or manually stopped cycle is a historical run.
+        // Reconfiguration starts a fresh idle lifecycle instead of reusing the
+        // previous start timestamp against the new phase durations.
+        self.started_at_ms = None;
+        self.active = false;
         Ok(self.snapshot())
     }
 
@@ -296,6 +301,21 @@ mod tests {
         let mut config = CycleConfig::default();
         config.mode = "live".into();
         assert!(cycle.configure(config).is_err());
+    }
+
+    #[test]
+    fn completed_cycle_can_be_reconfigured_into_a_fresh_idle_cycle() {
+        let mut cycle = OperatingCycle::default();
+        cycle.start();
+        let total_minutes = cycle.config.observation_minutes
+            + cycle.config.weight_evaluation_minutes + cycle.config.session_minutes;
+        cycle.started_at_ms = Some(now_ms() - (total_minutes as i64 * 60_000) - 1);
+        assert_eq!(cycle.snapshot().phase, "completed");
+        let mut next = CycleConfig::default();
+        next.observation_minutes = 10;
+        cycle.configure(next).unwrap();
+        assert_eq!(cycle.snapshot().phase, "idle");
+        assert!(!cycle.snapshot().active);
     }
 
     #[test]
