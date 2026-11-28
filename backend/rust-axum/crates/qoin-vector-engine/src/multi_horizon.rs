@@ -45,7 +45,7 @@ pub struct HorizonInput {
     /// horizon's aggregate observation as if it were independent data.
     pub observation: ForceObservation,
     pub config: EngineConfig,
-    pub config_version: String,
+    pub strategy_version: String,
     pub has_open_position: bool,
 }
 
@@ -113,16 +113,16 @@ pub fn evaluate_multi_horizon(
         if !seen.insert(input.horizon) {
             return Err(MultiHorizonError::DuplicateHorizon);
         }
-        if input.config_version.trim().is_empty() {
+        if input.strategy_version.trim().is_empty() {
             return Err(MultiHorizonError::EmptyConfigVersion);
         }
 
-        let signal = decide(
+        let mut signal = decide(
             input.observation,
             &input.config,
-            &input.config_version,
             input.has_open_position,
         )?;
+        signal.strategy_version = input.strategy_version.clone();
 
         match signal.decision {
             Decision::Buy => buy_count += 1,
@@ -171,7 +171,7 @@ mod tests {
             horizon,
             observation,
             config: EngineConfig::default(),
-            config_version: "research-baseline-v1".to_owned(),
+            strategy_version: "research-baseline-v1".to_owned(),
             has_open_position: false,
         }
     }
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn rejects_empty_configuration_versions() {
         let mut invalid = input(Horizon::FiveMinutes, bullish());
-        invalid.config_version = "  ".to_owned();
+        invalid.strategy_version = "  ".to_owned();
         assert_eq!(
             evaluate_multi_horizon(&[invalid]).unwrap_err(),
             MultiHorizonError::EmptyConfigVersion
