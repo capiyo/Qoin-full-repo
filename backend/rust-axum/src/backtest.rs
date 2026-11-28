@@ -158,10 +158,10 @@ pub fn replay_with_execution(events: Vec<ReplayEvent>, strategy: &EdgeStrategy, 
 /// Run the identical execution simulator with the authoritative seven-force
 /// engine used by live event ingestion. This keeps research replay and live
 /// signal calculations on one versioned decision implementation.
-pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig, config_version: &str,
+pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig, strategy_version: &str,
               initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
               max_participation_rate: f64, market_impact_bps: f64) -> Result<ReplayResult, String> {
-    replay_with_decider(events, "qoin-vector-baseline".to_owned(), config_version.to_owned(),
+    replay_with_decider(events, "qoin-vector-baseline".to_owned(), strategy_version.to_owned(),
         |_symbol, state, _event| {
             let observation = ForceObservation {
                 ofi: state.ofi,
@@ -174,8 +174,9 @@ pub fn replay_with_vector_engine(events: Vec<ReplayEvent>, config: &EngineConfig
                 spread_bps: state.spread_bps,
                 spread_age_ms: state.last_book_ts_ms.map(|book_ts| _event.ts_ms.saturating_sub(book_ts)),
             };
-            let signal = decide_vector(observation, config, config_version, false)
+            let mut signal = decide_vector(observation, config, false)
                 .map_err(|error| error.to_string())?;
+            signal.strategy_version = strategy_version.to_owned();
             Ok(ReplayDecision { action: signal.action, reason: signal.rationale,
                 score: Some(signal.score), alignment: Some(signal.alignment),
                 angle_radians: Some(signal.angle_radians), feature_trace: Some(signal.feature_trace), measure_trace: None })
@@ -242,7 +243,7 @@ fn measure_ledger_v2_decision(state:&ReplayState,event:&ReplayEvent)->Result<Rep
 
 /// Dispatch a versioned registered algorithm into the event-by-event execution simulator.
 pub fn replay_with_algorithm(
-    events: Vec<ReplayEvent>, algorithm_id: &str, config: &EngineConfig, config_version: &str,
+    events: Vec<ReplayEvent>, algorithm_id: &str, config: &EngineConfig, strategy_version: &str,
     initial_capital: f64, fee_bps: f64, slippage_bps: f64, latency_ms: i64,
     max_participation_rate: f64, market_impact_bps: f64,
 ) -> Result<ReplayResult, String> {
