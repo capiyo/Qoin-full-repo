@@ -128,7 +128,7 @@ impl PaperAccount {
         }).unwrap_or(0.0);
         self.cash + marked
     }
-    fn process(&mut self, event: &MarketEvent, decision: &Signal, cycle_id: &str) -> (PaperMirrorRecord, Option<PaperTradeRecord>) {
+    fn process(&mut self, event: &MarketEvent, decision: &Signal, cycle_id: &str, strategy_version: &str) -> (PaperMirrorRecord, Option<PaperTradeRecord>) {
         self.events = self.events.saturating_add(1);
         self.decisions = self.decisions.saturating_add(1);
         match decision.action.as_str() { "buy" => self.buy_signals += 1, "sell" => self.sell_signals += 1, _ => self.wait_signals += 1 }
@@ -178,7 +178,7 @@ impl PaperAccount {
                 let debit = filled_notional + fee;
                 if debit <= self.cash && quantity.is_finite() && quantity > 0.0 {
                     self.cash -= debit; self.fees_paid += fee; self.entries += 1;
-                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, entry_event_id: event.event_id.clone(), strategy_version: decision.config_version.clone(), quantity, entry_price, entry_fee: fee });
+                    self.position = Some(OpenPosition { entry_ts_ms: event.ts_ms, entry_event_id: event.event_id.clone(), strategy_version: strategy_version.to_owned(), quantity, entry_price, entry_fee: fee });
                     execution = if action.signal_ts_ms == event.ts_ms { "entered_long" } else { "filled_pending_buy" }.into();
                 } else {
                     self.skipped_entries += 1; execution = "skipped_insufficient_cash".into();
@@ -224,7 +224,7 @@ impl PaperAccount {
             contract_multiplier: self.config.contract_multiplier, quantity_step: self.config.quantity_step,
             notional_per_trade: self.config.notional_per_trade, reinvest_profits: self.config.reinvest_profits,
             fee_bps: self.config.fee_bps, slippage_bps: self.config.slippage_bps,
-            ts_ms: event.ts_ms, strategy_version: decision.config_version.clone(),
+            ts_ms: event.ts_ms, strategy_version: strategy_version.to_owned(),
             bullish_weights: BTreeMap::new(), bearish_weights: BTreeMap::new(), action: decision.action.clone(),
             reason: decision.rationale.clone(), features: decision.features.clone(), attention: decision.attention.clone(),
             attended_features: decision.attended_features.clone(), decision_vector: decision.decision_vector,
@@ -309,12 +309,12 @@ impl PaperSession {
     pub fn has_unsettled_state(&self) -> bool {
         self.accounts.values().any(|account| account.position.is_some() || account.pending.is_some())
     }
-    pub fn process_event(&mut self, event: &MarketEvent, decision: &Signal) -> Option<(PaperMirrorRecord, Option<PaperTradeRecord>)> {
+    pub fn process_event(&mut self, event: &MarketEvent, decision: &Signal, strategy_version: &str) -> Option<(PaperMirrorRecord, Option<PaperTradeRecord>)> {
         if !self.active { return None; }
         let key = format!("{}::{}", event.venue, event.symbol);
         let account = self.accounts.get_mut(&key)?;
         let cycle_id = self.cycle_id.as_deref().unwrap_or("unknown");
-        Some(account.process(event, decision, cycle_id))
+        Some(account.process(event, decision, cycle_id, strategy_version))
     }
     pub fn snapshot(&self) -> PaperSessionSnapshot {
         let accounts = self.accounts.values().map(|account| {
@@ -376,7 +376,9 @@ mod tests {
             angle_radians: 0.1,
             angle_degrees: 5.7295779513,
             active_force_count: 7,
-            config_version: "test-v1".into(),
+            strategy_version: "test-v1".into(),
+            config_fingerprint: 1,
+            reject_reason: None,
             rationale: "paper-session test signal".into(),
             feature_names: vec![],
             raw_inputs: BTreeMap::new(),
@@ -405,10 +407,10 @@ mod tests {
     #[test]
     fn paper_account_fills_only_on_observed_two_sided_quote_and_closes_on_sell() {
         let mut session = PaperSession::start("cycle-1".into(), &[config()]).unwrap();
-        let (entry, trade) = session.process_event(&event(1000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
+        let (entry, trade) = session.process_event(&event(1000, Some(99.9), Some(100.1)), &decision("buy"), "test-v1").unwrap();
         assert_eq!(entry.execution, "entered_long");
         assert!(trade.is_none());
-        let (exit, trade) = session.process_event(&event(2000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
+        let (exit, trade) = session.process_event(&event(2000, Some(101.0), Some(101.2)), &decision("sell"), "test-v1").unwrap();
         assert_eq!(exit.execution, "exited_long");
         assert!(trade.unwrap().net_pnl.is_finite());
         let snapshot = session.snapshot();
@@ -419,9 +421,9 @@ mod tests {
     #[test]
     fn no_quote_queues_signal_and_next_valid_quote_fills() {
         let mut session = PaperSession::start("cycle-1".into(), &[config()]).unwrap();
-        let (queued, _) = session.process_event(&event(1000, None, None), &decision("buy")).unwrap();
+        let (queued, _) = session.process_event(&event(1000, None, None), &decision("buy"), "test-v1").unwrap();
         assert_eq!(queued.execution, "queued_buy_waiting_for_quote");
-        let (filled, _) = session.process_event(&event(2000, Some(99.9), Some(100.1)), &decision("wait")).unwrap();
+        let (filled, _) = session.process_event(&event(2000, Some(99.9), Some(100.1)), &decision("wait"), "test-v1").unwrap();
         assert_eq!(filled.execution, "filled_pending_buy");
     }
     #[test]
@@ -430,8 +432,8 @@ mod tests {
         instrument.contract_multiplier = 10.0;
         instrument.quantity_step = 0.5;
         let mut session = PaperSession::start("cycle-multiplier".into(), &[instrument]).unwrap();
-        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
-        let (_, trade) = session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
+        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy"), "test-v1").unwrap();
+        let (_, trade) = session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell"), "test-v1").unwrap();
         let trade = trade.unwrap();
         assert_eq!(trade.quantity, 1.5);
         assert_eq!(trade.contract_multiplier, 10.0);
@@ -446,7 +448,7 @@ mod tests {
     #[test]
     fn paused_session_preserves_open_positions_for_same_cycle_resume() {
         let mut session = PaperSession::start("cycle-resume".into(), &[config()]).unwrap();
-        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy")).unwrap();
+        session.process_event(&event(1_000, Some(99.9), Some(100.1)), &decision("buy"), "test-v1").unwrap();
         assert!(session.has_unsettled_state());
         session.stop();
         assert!(!session.is_active());
@@ -454,7 +456,7 @@ mod tests {
         session.resume();
         assert!(session.is_active());
         assert!(session.snapshot().accounts[0].has_open_position);
-        session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell")).unwrap();
+        session.process_event(&event(2_000, Some(101.0), Some(101.2)), &decision("sell"), "test-v1").unwrap();
         assert!(!session.has_unsettled_state());
     }
 
