@@ -248,7 +248,7 @@ async fn start_operating_cycle(State(s): State<AppState>, headers: HeaderMap) ->
         return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"an operating cycle is already active"})));
     }
     let config = cycle.snapshot().config;
-    let cycle_id = format!("cycle-{}-{}", owner_uid, chrono::Utc::now().timestamp_millis());
+    let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
     let paper = if config.mode == "paper" {
         match PaperSession::start(cycle_id, &config.paper_accounts) {
             Ok(session) => session,
@@ -324,7 +324,7 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
     };
     let mut decisions = Vec::new();
     loop { match decisions_cursor.try_next().await {
-        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); decisions.push(document); }
+        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); document.remove("owner_uid"); decisions.push(document); }
         Ok(None) => break,
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
     }}
@@ -334,7 +334,7 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
     };
     let mut trades = Vec::new();
     loop { match trades_cursor.try_next().await {
-        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); trades.push(document); }
+        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); document.remove("owner_uid"); trades.push(document); }
         Ok(None) => break,
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history read interrupted"}))),
     }}
@@ -349,7 +349,7 @@ async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): S
     };
     let mut runs = Vec::new();
     loop { match cursor.try_next().await {
-        Ok(Some(mut document)) => { document.remove("_id"); runs.push(document); }
+        Ok(Some(mut document)) => { document.remove("_id"); document.remove("owner_uid"); runs.push(document); }
         Ok(None) => break,
         Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
     }}
