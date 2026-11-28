@@ -376,6 +376,10 @@ int main() {
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         proxyPostJson(req, std::move(cb), "/internal/operating-cycle/stop");
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/multi-horizon", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/multi-horizon");
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/market-horizons", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
         std::string path = "/internal/market-horizons";
