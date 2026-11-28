@@ -46,7 +46,7 @@ use paper_session::PaperSession;
 mod market_vector;
 mod market_vector_api;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
-use qoin_vector_engine::{decide as decide_signal, EngineConfig, ForceObservation, Signal};
+use qoin_vector_engine::{aggregate_horizon, decide as decide_signal, evaluate_multi_horizon, EngineConfig, ForceObservation, Horizon, HorizonInput, MarketEvent as HorizonMarketEvent, Signal};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -139,6 +139,9 @@ struct AppState {
     active_cycles: Arc<Mutex<HashMap<String, OperatingCycle>>>,
     active_paper_sessions: Arc<Mutex<HashMap<String, PaperSession>>>,
 }
+#[derive(Deserialize)]
+struct MarketHorizonQuery { symbol: Option<String>, venue_id: Option<String>, min_events: Option<usize> }
+
 #[derive(Deserialize)]
 struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
 #[derive(Deserialize)]
@@ -249,6 +252,86 @@ async fn archive_paper_session(s: &AppState, owner_uid: &str, session: &PaperSes
         .await.map_err(|error| error.to_string())?;
     Ok(())
 }
+
+async fn get_market_horizons(State(s): State<AppState>, Query(query): Query<MarketHorizonQuery>) -> impl IntoResponse {
+    let symbol = query.symbol.unwrap_or_default().trim().to_ascii_uppercase();
+    let venue_id = query.venue_id.unwrap_or_default().trim().to_ascii_lowercase();
+    if symbol.is_empty() || symbol.len() > 64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"symbol must contain 1 to 64 characters"})));
+    }
+    if venue_id.is_empty() || venue_id.len() > 64 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"canonical venue_id must contain 1 to 64 characters"})));
+    }
+    let min_events = query.min_events.unwrap_or(20);
+    if !(5..=10_000).contains(&min_events) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"min_events must be between 5 and 10000"})));
+    }
+    let decision_ts_ms = chrono::Utc::now().timestamp_millis();
+    let cutoff_ts_ms = decision_ts_ms - (Horizon::OneWeek.duration_seconds() as i64 * 1_000);
+    let options = FindOptions::builder().sort(doc! {"ts_ms":-1}).limit(50_000).build();
+    let filter = doc! {"symbol":&symbol,"venue":&venue_id,"ts_ms":{"$gte":cutoff_ts_ms,"$lte":decision_ts_ms}};
+    let cursor = match s.events.find(filter, Some(options)).await {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            tracing::error!(symbol=%symbol,venue_id=%venue_id,error=%error,"multi-horizon event query failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event storage unavailable"})));
+        }
+    };
+    let documents: Vec<Document> = match cursor.try_collect().await {
+        Ok(documents) => documents,
+        Err(error) => {
+            tracing::error!(symbol=%symbol,venue_id=%venue_id,error=%error,"multi-horizon event cursor failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"market event retrieval failed"})));
+        }
+    };
+    let event_limit_reached = documents.len() >= 50_000;
+    let event_documents = documents.len();
+    let events: Vec<HorizonMarketEvent> = documents.into_iter().filter_map(|mut document| {
+        document.remove("_id");
+        mongodb::bson::from_document(document).ok()
+    }).collect();
+    let invalid_event_documents = event_documents.saturating_sub(events.len());
+    let horizons = [
+        Horizon::OneMinute, Horizon::FiveMinutes, Horizon::FifteenMinutes, Horizon::ThirtyMinutes,
+        Horizon::OneHour, Horizon::FourHours, Horizon::OneDay, Horizon::OneWeek,
+    ];
+    let mut observations: Vec<_> = horizons.iter()
+        .map(|horizon| aggregate_horizon(&events, *horizon, decision_ts_ms, min_events))
+        .collect();
+    if event_limit_reached {
+        for observation in &mut observations {
+            observation.ready = false;
+            observation.reasons.push("50,000-event query safety cap reached; signal suppressed because the historical window may be truncated".to_owned());
+        }
+    }
+    if invalid_event_documents > 0 {
+        for observation in &mut observations {
+            observation.ready = false;
+            observation.reasons.push(format!("{invalid_event_documents} stored event documents could not be decoded; signal suppressed"));
+        }
+    }
+    let inputs: Vec<HorizonInput> = observations.iter().filter(|item| item.ready).map(|item| HorizonInput {
+        horizon:item.horizon, observation:item.observation, config:EngineConfig::default(),
+        config_version:"multi-horizon-market-data-v1".to_owned(), has_open_position:false,
+    }).collect();
+    let signals = if inputs.is_empty() { None } else {
+        match evaluate_multi_horizon(&inputs) {
+            Ok(result) => Some(result),
+            Err(error) => {
+                tracing::error!(symbol=%symbol,venue_id=%venue_id,error=%error,"multi-horizon signal evaluation failed");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"signal evaluation failed"})));
+            }
+        }
+    };
+    (StatusCode::OK, Json(serde_json::json!({
+        "symbol":symbol,"venue_id":venue_id,"decision_ts_ms":decision_ts_ms,
+        "events_loaded":events.len(),"event_documents":event_documents,
+        "invalid_event_documents":invalid_event_documents,"event_limit_reached":event_limit_reached,
+        "mode":"research_only","observations":observations,"signals":signals,
+        "note":"Each horizon uses its own trailing event window for this exact venue and symbol. Missing trade or order-book evidence prevents a horizon from producing a signal. Missing funding, open interest and basis remain unavailable or neutral; they are never fabricated. Consensus is descriptive research metadata, not an order or allocation."
+    })))
+}
+
 async fn get_operating_cycle(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
     let cycles = s.active_cycles.lock().await;
@@ -3804,6 +3887,7 @@ async fn main(){
         .route("/internal/paper-session/history",get(get_paper_session_history))
         .route("/internal/paper-session/runs",get(get_paper_session_runs))
         .route("/internal/investment-plan",get(get_investment_plan).put(put_investment_plan))
+        .route("/internal/market-horizons",get(get_market_horizons))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     // Bind address may be 0.0.0.0 inside a container; provider callbacks must
