@@ -30,7 +30,7 @@ fn mutating_future_history_cannot_change_past_signals() {
         let original_observation = observation_from_history(&original[..end]);
         let mutated_observation = observation_from_history(&mutated_future[..end]);
         let original_signal = decide(original_observation, &config, false).unwrap();
-        let mutated_signal = decide(mutated_observation, &config, "causality-test", false).unwrap();
+        let mutated_signal = decide(mutated_observation, &config, false).unwrap();
         assert_eq!(original_signal, mutated_signal, "prefix length {end}");
     }
 }
@@ -40,8 +40,8 @@ fn same_observation_serializes_to_identical_signal_bytes() {
     let history = [0.1, 0.4, 0.8, 1.2];
     let observation = observation_from_history(&history);
     let config = EngineConfig::default();
-    let first = decide(observation, &config, "causality-test", false).unwrap();
-    let second = decide(observation, &config, "causality-test", false).unwrap();
+    let first = decide(observation, &config, false).unwrap();
+    let second = decide(observation, &config, false).unwrap();
     assert_eq!(first, second);
     assert_eq!(to_vec(&first).unwrap(), to_vec(&second).unwrap());
 }
