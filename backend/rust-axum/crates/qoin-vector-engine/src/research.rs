@@ -80,7 +80,7 @@ pub fn evaluate(
             || !sample.round_trip_cost.is_finite()
             || sample.round_trip_cost < 0.0
         { return Err(ResearchError::InvalidValue); }
-        let signal = decide(sample.forces, engine_config, "research-evaluation", sample.has_open_position)
+        let signal = decide(sample.forces, engine_config, sample.has_open_position)
             .map_err(|_| ResearchError::Engine)?;
         let current = exposure(signal.decision);
         let turnover = (current - previous_exposure).abs();
