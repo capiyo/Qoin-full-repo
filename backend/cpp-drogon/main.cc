@@ -237,8 +237,6 @@ void proxyPutJson(const drogon::HttpRequestPtr& incoming,
     });
 }
 
-}
-
 int main() {
     drogon::app().registerHandler("/v1/signal", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
