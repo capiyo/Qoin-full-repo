@@ -307,6 +307,25 @@ paths:
       responses:
         '200': { description: Paper decisions and trades }
         '401': { description: Firebase identity required }
+  /api/v1/investment-plan:
+    get:
+      summary: Read the authenticated user's investment intention
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Saved intention or null when not configured }
+        '401': { description: Firebase identity required }
+    put:
+      summary: Save the authenticated user's investment intention
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvestmentPlanInput' }
+      responses:
+        '200': { description: Investment intention saved }
+        '400': { description: Invalid goal, currency, contribution or horizon }
+        '401': { description: Firebase identity required }
   /api/v1/paper-session/runs:
     get:
       summary: List the authenticated user's archived paper-session runs
@@ -349,6 +368,21 @@ components:
         reinvest_profits: { type: boolean }
         fee_bps: { type: number, minimum: 0, maximum: 100 }
         slippage_bps: { type: number, minimum: 0, maximum: 100 }
+    InvestmentPlanInput:
+      type: object
+      required: [goal, currency, monthly_contribution_minor, target_amount_minor, horizon_months]
+      properties:
+        goal: { type: string, minLength: 1, maxLength: 80 }
+        currency: { type: string, enum: [KES, USD, EUR, GBP] }
+        monthly_contribution_minor: { type: integer, minimum: 1, maximum: 100000000000 }
+        target_amount_minor: { type: integer, nullable: true, minimum: 1, maximum: 10000000000000 }
+        horizon_months: { type: integer, minimum: 1, maximum: 600 }
+    InvestmentPlan:
+      allOf:
+        - { $ref: '#/components/schemas/InvestmentPlanInput' }
+        - type: object
+          properties:
+            updated_at: { type: string, nullable: true, format: date-time }
     MarketEvent:
       type: object
       required: [event_id, venue, symbol, event_type, ts_ms]
