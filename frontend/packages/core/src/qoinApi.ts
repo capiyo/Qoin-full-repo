@@ -842,6 +842,6 @@ export function getQoinMarketHorizons(symbol: string, venueId: string, minEvents
   if (!symbol.trim() || symbol.length > 64) return Promise.reject(new Error("symbol must contain 1 to 64 characters"));
   if (!venueId.trim() || venueId.length > 64) return Promise.reject(new Error("canonical venue ID is required"));
   if (!Number.isInteger(minEvents) || minEvents < 5 || minEvents > 10_000) return Promise.reject(new Error("minEvents must be an integer between 5 and 10000"));
-  const params = new URLSearchParams({ symbol, venue_id: venueId, min_events: String(minEvents) });
-  return request<QoinMarketHorizonsResponse>("/api/v1/market-horizons?" + params.toString());
+  const query = "symbol=" + encodeURIComponent(symbol) + "&venue_id=" + encodeURIComponent(venueId) + "&min_events=" + String(minEvents);
+  return request<QoinMarketHorizonsResponse>("/api/v1/market-horizons?" + query);
 }
