@@ -207,6 +207,7 @@ void proxyDelete(const drogon::HttpRequestPtr& incoming,
         forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
+}
 
 void proxyPutJson(const drogon::HttpRequestPtr& incoming,
                   std::function<void(const drogon::HttpResponsePtr&)>&& callback,
