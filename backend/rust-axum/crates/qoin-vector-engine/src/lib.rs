@@ -8,6 +8,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub const OFI_IDX: usize = 0;
+pub const OI_IDX: usize = 4;
+const INPUT_COUNT: usize = 7;
+
 // Offline V1 objective evaluation and bounded threshold search; never activates a strategy.
 pub mod research;
 pub use research::{evaluate as evaluate_research_loss, optimize_signal_threshold, Evaluation as ResearchEvaluation, LabeledObservation, LossConfig, ResearchError};
@@ -59,7 +63,7 @@ pub struct ForceObservation {
 }
 
 impl ForceObservation {
-    fn values(self) -> [f64; 7] {
+    pub fn values(self) -> [f64; INPUT_COUNT] {
         [self.ofi, self.liquidity, self.volatility, self.funding,
          self.open_interest_change, self.liquidation_pressure, self.basis]
     }
@@ -86,6 +90,28 @@ pub struct EngineConfig {
     pub interaction_coefficient: f64,
     pub max_spread_bps: f64,
     pub max_spread_age_ms: i64,
+}
+
+impl EngineConfig {
+    /// Stable FNV-1a identity for the exact runtime configuration.
+    /// This is a deterministic checksum, not a cryptographic authenticator.
+    pub fn fingerprint(&self) -> u64 {
+        let mut hash = 0xcbf29ce484222325_u64;
+        let mut feed = |byte: u8| {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        };
+        for value in [
+            self.signal_threshold, self.input_clip, self.score_clip, self.min_alignment,
+            self.max_angle_radians, self.volatility_dampener, self.interaction_coefficient,
+            self.max_spread_bps,
+        ] {
+            for byte in value.to_bits().to_le_bytes() { feed(byte); }
+        }
+        for byte in (self.top_k as u64).to_le_bytes() { feed(byte); }
+        for byte in self.max_spread_age_ms.to_le_bytes() { feed(byte); }
+        hash
+    }
 }
 
 impl Default for EngineConfig {
@@ -139,6 +165,17 @@ pub struct DecisionDiagnostics {
     pub angle_limit_radians: f64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RejectReason {
+    SpreadMissingOrWide,
+    SpreadStale,
+    LowMagnitude,
+    Misaligned,
+    Both,
+    FlatVector,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Signal {
     pub decision: Decision,
@@ -148,7 +185,9 @@ pub struct Signal {
     pub angle_radians: f64,
     pub angle_degrees: f64,
     pub active_force_count: usize,
-    pub config_version: String,
+    pub strategy_version: String,
+    pub config_fingerprint: u64,
+    pub reject_reason: Option<RejectReason>,
     pub rationale: String,
     pub feature_names: Vec<String>,
     pub raw_inputs: BTreeMap<String, f64>,
@@ -185,7 +224,7 @@ fn valid_config(config: &EngineConfig) -> bool {
         && config.input_clip > 0.0
         && config.score_clip > 0.0
         && config.score_clip <= 1.0
-        && (1..=7).contains(&config.top_k)
+        && (1..=INPUT_COUNT).contains(&config.top_k)
         && (-1.0..=1.0).contains(&config.min_alignment)
         && (0.0..=std::f64::consts::PI).contains(&config.max_angle_radians)
         && config.volatility_dampener >= 0.0
@@ -207,7 +246,6 @@ fn softmax(values: &[f64]) -> Vec<f64> {
 pub fn decide(
     input: ForceObservation,
     config: &EngineConfig,
-    config_version: &str,
     has_open_position: bool,
 ) -> Result<Signal, EngineError> {
     let raw = input.values();
@@ -251,11 +289,14 @@ pub fn decide(
     }
 
     let active_force_count = selected.iter().filter(|selected| **selected).count();
-    let interaction = (config.interaction_coefficient * attended[0] * attended[4].abs())
+    // Convert OFI × OI reinforcement into an OFI-equivalent input. The
+    // same effective vector now drives score, cosine alignment and angle gates.
+    let interaction = (config.interaction_coefficient * attended[OFI_IDX] * attended[OI_IDX].abs())
         .clamp(-0.25, 0.25);
+    attended[OFI_IDX] += interaction / DIRECTIONAL_WEIGHTS[OFI_IDX];
     let directional = (0..FEATURE_NAMES.len())
         .map(|index| attended[index] * DIRECTIONAL_WEIGHTS[index])
-        .sum::<f64>() + interaction;
+        .sum::<f64>();
     let dampener = 1.0 / (1.0 + attended[2].abs() * config.volatility_dampener);
     let score = (directional * dampener).clamp(-config.score_clip, config.score_clip);
 
@@ -300,18 +341,28 @@ pub fn decide(
         Decision::Close => "close",
         Decision::Wait => "wait",
     }.to_owned();
-    let rationale = if !spread_within_limit {
-        "WAIT: current spread is missing or exceeds the configured liquidity limit".to_owned()
-    } else if !spread_fresh {
-        "WAIT: the quote used for the spread is missing or stale".to_owned()
-    } else if !magnitude_passed {
-        "WAIT: directional force magnitude is below the configured threshold".to_owned()
-    } else if !alignment_passed || !angle_passed {
-        "WAIT: the observed force vector does not converge with the directional template".to_owned()
-    } else if decision == Decision::Close {
-        "CLOSE: existing-position handling requested a close after the entry gates failed".to_owned()
-    } else {
-        "Research signal: seven-force vector passed spread, magnitude and angular gates; independent portfolio risk checks remain mandatory".to_owned()
+    let flat_vector = observed_norm <= f64::EPSILON;
+    let directional_alignment_passed = alignment_passed && angle_passed;
+    let reject_reason = match decision {
+        Decision::Buy | Decision::Sell => None,
+        Decision::Close | Decision::Wait if !spread_within_limit => Some(RejectReason::SpreadMissingOrWide),
+        Decision::Close | Decision::Wait if !spread_fresh => Some(RejectReason::SpreadStale),
+        Decision::Close | Decision::Wait if flat_vector => Some(RejectReason::FlatVector),
+        Decision::Close | Decision::Wait => match (magnitude_passed, directional_alignment_passed) {
+            (false, false) => Some(RejectReason::Both),
+            (false, true) => Some(RejectReason::LowMagnitude),
+            (true, false) => Some(RejectReason::Misaligned),
+            (true, true) => Some(RejectReason::LowMagnitude),
+        },
+    };
+    let rationale = match reject_reason {
+        Some(RejectReason::SpreadMissingOrWide) => "WAIT: current spread is missing or exceeds the configured liquidity limit".to_owned(),
+        Some(RejectReason::SpreadStale) => "WAIT: the quote used for the spread is missing or stale".to_owned(),
+        Some(RejectReason::FlatVector) => "WAIT: effective directional vector is flat".to_owned(),
+        Some(RejectReason::LowMagnitude) => "WAIT: directional force magnitude is below the configured threshold".to_owned(),
+        Some(RejectReason::Misaligned) => "WAIT: effective force vector does not converge with the directional template".to_owned(),
+        Some(RejectReason::Both) => "WAIT: directional magnitude and alignment gates both failed".to_owned(),
+        None => "Research signal: seven-force vector passed spread, magnitude and angular gates; independent portfolio risk checks remain mandatory".to_owned(),
     };
 
     let features = FEATURE_NAMES.iter().enumerate()
@@ -346,7 +397,7 @@ pub fn decide(
             bearish_weighted_term: attended[index] * -DIRECTIONAL_WEIGHTS[index],
             directional_weight: DIRECTIONAL_WEIGHTS[index],
             directional_contribution: attended[index] * DIRECTIONAL_WEIGHTS[index],
-            interaction_contribution: if index == 4 { interaction } else { 0.0 },
+            interaction_contribution: if index == OFI_IDX { interaction } else { 0.0 },
         }
     }).collect();
 
@@ -358,7 +409,9 @@ pub fn decide(
         angle_radians,
         angle_degrees: angle_radians.to_degrees(),
         active_force_count,
-        config_version: config_version.to_owned(),
+        strategy_version: String::new(),
+        config_fingerprint: config.fingerprint(),
+        reject_reason,
         rationale,
         feature_names: FEATURE_NAMES.iter().map(|name| (*name).to_owned()).collect(),
         raw_inputs,
