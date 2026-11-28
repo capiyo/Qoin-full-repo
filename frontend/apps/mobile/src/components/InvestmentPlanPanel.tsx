@@ -6,7 +6,7 @@ import {
   saveQoinInvestmentPlan,
   type QoinInvestmentPlanInput,
 } from "@qoin/core";
-const palette = { bgPrimary: "#0E1612", bgSecondary: "#161F1A", border: "#244B33", accentCyan: "#7DF162", textPrimary: "#EDF4EE", textMuted: "#89968D" };
+const palette = { bgPrimary: "#F5F8FC", bgSecondary: "#FFFFFF", border: "#E5EBF3", accentCyan: "#246BDF", textPrimary: "#1B2A41", textMuted: "#7D8BA1" };
 
 export function InvestmentPlanPanel({ user }: { user: User | null }) {
   const [expanded, setExpanded] = useState(false);

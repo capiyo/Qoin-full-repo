@@ -28,12 +28,12 @@ function TabBar({ current, onChange, visible }: { current: MainTab; onChange: (t
           <Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tab} accessibilityState={{ selected: active }} onPress={() => onChange(tab)} style={[styles.tabItem, active && styles.tabItemActive]}>
             {tab === "Archive" ? (
               <Svg width={19} height={19} viewBox="0 0 24 24">
-                <Path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                <Path d="M4 7.5h16v12H4zM3 4.5h18v3H3zM9 11.5h6" fill="none" stroke={active ? "#FFFFFF" : "#7D8BA1"} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             ) : (
               <Svg width={19} height={19} viewBox="0 0 24 24">
-                <Circle cx={10.8} cy={10.8} r={6.3} fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} />
-                <Path d="m15.5 15.5 4.2 4.2" fill="none" stroke={active ? "#061308" : "#89968D"} strokeWidth={1.8} strokeLinecap="round" />
+                <Circle cx={10.8} cy={10.8} r={6.3} fill="none" stroke={active ? "#FFFFFF" : "#7D8BA1"} strokeWidth={1.8} />
+                <Path d="m15.5 15.5 4.2 4.2" fill="none" stroke={active ? "#FFFFFF" : "#7D8BA1"} strokeWidth={1.8} strokeLinecap="round" />
               </Svg>
             )}
           </Pressable>
@@ -89,7 +89,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <NavigationContainer>
-          <StatusBar style="light" backgroundColor="#0E1612" />
+          <StatusBar style="dark" backgroundColor="#F5F8FC" />
           {authReady ? (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               {signedIn ? (
@@ -108,9 +108,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  main: { flex: 1, backgroundColor: "#0E1612" },
+  main: { flex: 1, backgroundColor: "#F5F8FC" },
   screen: { flex: 1 },
-  tabBar: { position: "absolute", alignSelf: "center", bottom: 16, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#17291F", borderWidth: 0, borderRadius: 999, padding: 4, zIndex: 20, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  tabBar: { position: "absolute", alignSelf: "center", bottom: 16, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5EBF3", borderRadius: 999, padding: 4, zIndex: 20, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   tabItem: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: "transparent" },
-  tabItemActive: { backgroundColor: "#7DF162" },
+  tabItemActive: { backgroundColor: "#246BDF" },
 });

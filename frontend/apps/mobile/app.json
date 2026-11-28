@@ -6,10 +6,10 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#F7F9FC",
+    "backgroundColor": "#F5F8FC",
     "icon": "./assets/icon.png",
     "splash": {
-      "backgroundColor": "#F7F9FC"
+      "backgroundColor": "#F5F8FC"
     },
     "ios": {
       "supportsTablet": true
@@ -17,7 +17,7 @@
     "android": {
       "package": "co.qoin.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F7F9FC"
+        "backgroundColor": "#F5F8FC"
       }
     },
     "plugins": [

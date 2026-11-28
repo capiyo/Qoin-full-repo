@@ -14,7 +14,7 @@ function Text(props: TextProps) {
 }
 
 function TextInput(props: TextInputProps) {
-  return <NativeTextInput {...props} selectionColor={props.selectionColor ?? "#7DF162"} style={[{ fontFamily: "DMSans_400Regular" }, props.style]} />;
+  return <NativeTextInput {...props} selectionColor={props.selectionColor ?? "#246BDF"} style={[{ fontFamily: "DMSans_400Regular" }, props.style]} />;
 }
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login"> & { configurationError?: string };

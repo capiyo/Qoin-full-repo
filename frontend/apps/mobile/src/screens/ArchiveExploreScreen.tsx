@@ -36,7 +36,7 @@ function Text(props: TextProps) {
 }
 
 function TextInput(props: TextInputProps) {
-  return <NativeTextInput {...props} selectionColor={props.selectionColor ?? "#7DF162"} style={[{ fontFamily: "DMSans_400Regular" }, props.style]} />;
+  return <NativeTextInput {...props} selectionColor={props.selectionColor ?? "#246BDF"} style={[{ fontFamily: "DMSans_400Regular" }, props.style]} />;
 }
 type QoinNotification = { id: string; symbol: string; title: string; body: string; kind: "signal" | "liquidation"; createdAt: number; read: boolean; details: string };
 const QOIN_FEATURE_SHORT_NAMES = ["OFI", "LQTY", "VOL", "FUND", "OIΔ", "LIQ", "BASIS"] as const;
@@ -61,9 +61,9 @@ function FeatureSpace({ decision }: { decision: QoinVectorDecision | null }) {
     <Text style={styles.attentionTitle}>Seven-force feature space</Text>
     <Text style={styles.attentionCaption}>Normalized engine inputs · not a learned embedding</Text>
     <Svg viewBox="0 0 100 100" width="100%" height={190}>
-      {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#365247" strokeWidth=".5" />)}
-      {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#365247" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
-      {decision ? <Polygon points={coordinates} fill="#7DF162" fillOpacity=".16" stroke="#7DF162" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#89968D" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
+      {[14,24,34].map((radius) => <Polygon key={radius} points={labels.map((_,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return (50+Math.cos(a)*radius)+","+(50+Math.sin(a)*radius); }).join(" ")} fill="none" stroke="#E5EBF3" strokeWidth=".5" />)}
+      {labels.map((label,i) => { const a=-Math.PI/2+i*Math.PI*2/labels.length; return <React.Fragment key={label}><Line x1="50" y1="50" x2={50+Math.cos(a)*35} y2={50+Math.sin(a)*35} stroke="#E5EBF3" strokeWidth=".5" /><SvgText x={50+Math.cos(a)*43} y={50+Math.sin(a)*43} fill="#7F8DA1" fontSize="4.5" textAnchor="middle">{label}</SvgText></React.Fragment>; })}
+      {decision ? <Polygon points={coordinates} fill="#246BDF" fillOpacity=".16" stroke="#246BDF" strokeWidth="1.2" /> : <SvgText x="50" y="52" fill="#7D8BA1" fontSize="5" textAnchor="middle">NO FEATURE VECTOR</SvgText>}
     </Svg>
     <View style={styles.featureValues}>{QOIN_FEATURE_NAMES.map((name,index) => <View key={name} style={styles.featureValue}><Text style={styles.metricLabel}>{labels[index]}</Text><Text style={styles.metricValue}>{values[index].toFixed(3)}</Text></View>)}</View>
   </View>;
@@ -134,9 +134,9 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent, marketVe
     </View>
     <Text style={styles.attentionTitle}>Vector space · seven engine dimensions</Text>
     <Text style={styles.attentionCaption}>Fixed 2D projection of the actual R⁷ feature state · decision output is a separate space</Text>
-    <View style={{padding:11,borderRadius:12,backgroundColor:"#13231C",gap:8}}>
+    <View style={{padding:11,borderRadius:12,backgroundColor:"#F5F8FC",gap:8}}>
       <Text style={{color:"#7DD6A5",fontSize:9,fontWeight:"800"}}>LIVE PROVIDER INPUT · {lastEvent?.venue || "WAITING"}</Text>
-      <Text style={{color:"#E1EEE6",fontSize:11,fontWeight:"700"}}>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"} · {lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "timestamp unavailable"}</Text>
+      <Text style={{color:"#EAF1FF",fontSize:11,fontWeight:"700"}}>{lastEvent?.event_type?.replaceAll("_"," ") || "No incoming event"} · {lastEvent?.ts_ms ? new Date(lastEvent.ts_ms).toLocaleTimeString() : "timestamp unavailable"}</Text>
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:12}}>
         {[
           ["Price",marketState?.last_price?.toLocaleString(undefined,{maximumFractionDigits:8})],
@@ -152,23 +152,23 @@ function MobileVectorSpaceMechanics({ decision, marketState, lastEvent, marketVe
           ["Open interest",marketState?.open_interest?.toLocaleString(undefined,{maximumFractionDigits:4})],
           ["Funding",marketState?.funding_rate?.toFixed(7)],
         ].map(([label,value])=><View key={label} style={{minWidth:"28%"}}>
-          <Text style={{color:"#91A99B",fontSize:8}}>{label}</Text>
-          <Text style={{color:"#F1F7F3",fontSize:11,fontWeight:"800"}}>{value ?? "—"}</Text>
+          <Text style={{color:"#7D8BA1",fontSize:8}}>{label}</Text>
+          <Text style={{color:"#F5F8FC",fontSize:11,fontWeight:"800"}}>{value ?? "—"}</Text>
         </View>)}
       </View>
     </View>
 
     <View style={styles.mapWrap}>
       <Svg viewBox="0 0 100 100" width="100%" height={260}>
-        <Rect width="100" height="100" fill="#0E1612"/>
-        {[12,22,32].map((radius)=><Circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#365247" strokeWidth=".35" strokeDasharray="1.5 2"/>)}
-        <Line x1="5" y1="50" x2="95" y2="50" stroke="#668477" strokeWidth=".5"/>
-        <Line x1="50" y1="5" x2="50" y2="95" stroke="#668477" strokeWidth=".5"/>
+        <Rect width="100" height="100" fill="#F5F8FC"/>
+        {[12,22,32].map((radius)=><Circle key={radius} cx="50" cy="50" r={radius} fill="none" stroke="#E5EBF3" strokeWidth=".35" strokeDasharray="1.5 2"/>)}
+        <Line x1="5" y1="50" x2="95" y2="50" stroke="#7D8BA1" strokeWidth=".5"/>
+        <Line x1="50" y1="5" x2="50" y2="95" stroke="#7D8BA1" strokeWidth=".5"/>
         {links.map((link,index)=><Line key={index} x1={endpoints[link.from].x} y1={endpoints[link.from].y} x2={endpoints[link.to].x} y2={endpoints[link.to].y} stroke="#D6A85C" strokeWidth={0.35+link.weight*1.1} opacity={0.18+link.weight*.55}/>)}
         {endpoints.map((point,index)=><React.Fragment key={names[index]}>
           <Line x1="50" y1="50" x2={point.x} y2={point.y} stroke={colors[index]} strokeWidth="1.2"/>
           <Circle cx={point.x} cy={point.y} r="1.8" fill={colors[index]}/>
-          <SvgText x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} fill="#D6E4DC" fontSize="3.8" textAnchor="middle">{names[index].slice(0,8)}</SvgText>
+          <SvgText x={50+Math.cos(directions[index])*43} y={50-Math.sin(directions[index])*43} fill="#52637A" fontSize="3.8" textAnchor="middle">{names[index].slice(0,8)}</SvgText>
         </React.Fragment>)}
         <Circle cx="50" cy="50" r="1.8" fill="#FFFFFF"/>
       </Svg>
@@ -288,7 +288,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
       <Text style={styles.engineLabel}>SET MEMBERSHIP & MEASURE</Text>
       {ledger.sets.map((item) => <View key={item.set_id} style={{padding:9,borderRadius:9,backgroundColor:"#FBFCFE",gap:4}}>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#7DF162"}]}>{item.measure.counting_measure}</Text>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#246BDF"}]}>{item.measure.counting_measure}</Text>
         </View>
         <Text style={styles.attentionCaption}>Counting measure · trade-size {item.measure.trade_size_measure.toFixed(6)} {item.measure.trade_size_unit} · observed {item.measure.trade_size_observed_count} / missing {item.measure.trade_size_missing_count}</Text>
         <Text style={styles.attentionCaption} numberOfLines={2}>Members: {item.member_event_ids.slice(0,5).join(", ") || "∅"}{item.member_event_ids.length>5 ? " … +" + (item.member_event_ids.length-5) : ""}</Text>
@@ -307,7 +307,7 @@ function MobileSetLedgerPanel({ ledger, status }: { ledger: QoinSetLedger | null
           <Text numberOfLines={2} style={{flex:1,textAlign:"right",color:"#159B78",fontSize:8,fontWeight:"700"}}>{item.target_set.replaceAll("_"," ")}</Text>
         </View>
         <View style={{flexDirection:"row",justifyContent:"space-between",gap:8}}>
-          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#7DF162"}]}>{item.edge_count} edges</Text>
+          <Text style={styles.traceValue}>{item.label}</Text><Text style={[styles.traceValue,{color:"#246BDF"}]}>{item.edge_count} edges</Text>
         </View>
         <Text style={styles.attentionCaption}>Mean lag {item.mean_lag_ms == null ? "—" : item.mean_lag_ms.toFixed(1) + " ms"} · {item.interpretation}</Text>
         {item.edges.slice(0,4).map((edge,index) => <Text key={item.relation_id+index} style={styles.attentionCaption}>{edge.from_event_id} → {edge.to_event_id} · {edge.lag_ms} ms</Text>)}
@@ -450,11 +450,11 @@ function MobileResearchLedger({ decision, history, events }: { decision: QoinVec
         <Text style={{ color: "#243750", fontSize: 14, fontWeight: "800" }}>Decision &amp; evidence ledger</Text>
         <Text style={{ marginTop: 4, color: "#8794A7", fontSize: 10 }}>Readable history of engine evaluations and recorded market evidence.</Text>
       </View>
-      <Text style={{ color: "#7DF162", fontSize: 10, fontWeight: "800" }}>{records.length} RECORDS</Text>
+      <Text style={{ color: "#246BDF", fontSize: 10, fontWeight: "800" }}>{records.length} RECORDS</Text>
     </View>
     {records.length ? records.map((record) => <View key={record.id} style={{ padding: 11, borderWidth: 1, borderColor: "#EDF1F6", borderRadius: 11, backgroundColor: record.kind === "decision" ? "#F5F8FF" : "#FFFFFF", gap: 6 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-        <Text style={{ color: record.kind === "decision" ? "#7DF162" : "#8190A4", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{record.kind}</Text>
+        <Text style={{ color: record.kind === "decision" ? "#246BDF" : "#8190A4", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{record.kind}</Text>
         <Text style={{ color: "#9AA6B5", fontSize: 9 }}>{record.timestamp != null && Number.isFinite(record.timestamp) ? new Date(record.timestamp).toLocaleString() : "Timestamp unavailable"}</Text>
       </View>
       <Text style={{ color: "#34465F", fontSize: 11, fontWeight: "800", textTransform: "capitalize" }}>{record.title}</Text>
@@ -517,14 +517,14 @@ function MobileBrokerCollectionPanel() {
     <View style={{flexDirection:"row",justifyContent:"space-between",gap:8,alignItems:"center"}}><View style={{flex:1,gap:4}}><Text style={styles.kicker}>EXECUTION VENUES</Text><Text style={styles.newsTitle}>Broker collection</Text><Text style={styles.noteCopy}>Choose providers for Qoin’s execution-readiness check. Account authorization is separate; trades remain blocked until every selected account is verified.</Text></View><Text style={styles.coverageStatus}>{selected.length}/20</Text></View>
     {directory.map((broker)=><View key={broker.id} style={{gap:6,paddingVertical:10,borderTopWidth:1,borderTopColor:"#EDF1F6"}}>
       <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8}}><View style={{flex:1,gap:3}}><Text style={{color:"#243750",fontSize:12,fontWeight:"800"}}>{broker.name}</Text><Text style={{color:"#8794A7",fontSize:8}}>{broker.kind}</Text></View>
-        {broker.selectable?<Pressable accessibilityRole="button" accessibilityState={{selected:selected.includes(broker.id)}} onPress={()=>setSelected((current)=>current.includes(broker.id)?current.filter((id)=>id!==broker.id):current.length<20?[...current,broker.id]:current)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:20,backgroundColor:selected.includes(broker.id)?"#EAF6EF":"#EDF3FF"}}><Text style={{color:selected.includes(broker.id)?"#16845B":"#7DF162",fontSize:9,fontWeight:"800"}}>{selected.includes(broker.id)?"Selected":"Select"}</Text></Pressable>:<Text style={{color:"#A36B12",fontSize:8,fontWeight:"800"}}>DATA ONLY</Text>}
+        {broker.selectable?<Pressable accessibilityRole="button" accessibilityState={{selected:selected.includes(broker.id)}} onPress={()=>setSelected((current)=>current.includes(broker.id)?current.filter((id)=>id!==broker.id):current.length<20?[...current,broker.id]:current)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:20,backgroundColor:selected.includes(broker.id)?"#EAF6EF":"#EDF3FF"}}><Text style={{color:selected.includes(broker.id)?"#16845B":"#246BDF",fontSize:9,fontWeight:"800"}}>{selected.includes(broker.id)?"Selected":"Select"}</Text></Pressable>:<Text style={{color:"#A36B12",fontSize:8,fontWeight:"800"}}>DATA ONLY</Text>}
       </View>
       <Text style={{color:"#8794A7",fontSize:9,lineHeight:14}}>{broker.status}</Text>
     </View>)}
     <View accessibilityLiveRegion="polite" style={{gap:5,padding:11,borderRadius:11,backgroundColor:"#FFF7E8"}}><Text style={styles.engineLabel}>TRADE CONNECTION STATUS</Text><Text style={styles.engineValue}>{readiness?`${readiness.connected_account_count} connected · ${readiness.execution_ready_count}/${readiness.selected_count} ready · ${readiness.dispatch_enabled?"Dispatch enabled":"Dispatch blocked"}`:"Checking selected providers…"}</Text><Text style={styles.coverageDisclaimer}>{readiness?.message||"Waiting for broker readiness API."}</Text>{readiness?.blockers?.map((item)=><Text key={item} style={styles.coverageDisclaimer}>{item}</Text>)}</View>
     <View style={{gap:7,padding:11,borderRadius:11,backgroundColor:"#F5F8FD"}}>
       <Text style={styles.engineLabel}>PORTFOLIO BASE CURRENCY</Text>
-      <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>{["USD","EUR","GBP","KES","USDT"].map((value)=><Pressable key={value} onPress={()=>setCurrency(value)} style={{paddingVertical:6,paddingHorizontal:10,borderRadius:18,backgroundColor:currency===value?"#EAF1FF":"#FFFFFF",borderWidth:1,borderColor:currency===value?"#9AB8F1":"#E1E8F1"}}><Text style={{color:currency===value?"#7DF162":"#8794A7",fontSize:8,fontWeight:"800"}}>{value}</Text></Pressable>)}</View>
+      <View style={{flexDirection:"row",flexWrap:"wrap",gap:6}}>{["USD","EUR","GBP","KES","USDT"].map((value)=><Pressable key={value} onPress={()=>setCurrency(value)} style={{paddingVertical:6,paddingHorizontal:10,borderRadius:18,backgroundColor:currency===value?"#EAF1FF":"#FFFFFF",borderWidth:1,borderColor:currency===value?"#9AB8F1":"#E1E8F1"}}><Text style={{color:currency===value?"#246BDF":"#8794A7",fontSize:8,fontWeight:"800"}}>{value}</Text></Pressable>)}</View>
       <Text style={styles.engineLabel}>EQUAL TARGET NOTIONAL · {currency} · PREVIEW</Text>
       <TextInput value={capital} onChangeText={setCapital} keyboardType="decimal-pad" accessibilityLabel={"Portfolio notional in "+currency+" for allocation preview"} style={[styles.backtestInput,{backgroundColor:"#FFFFFF"}]} placeholder="Portfolio notional"/>
       <View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={styles.attentionCaption}>Selected venue preferences</Text><Text style={styles.engineValue}>{selected.length}</Text></View>
@@ -1135,10 +1135,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
             </View>
             <View style={{flexDirection:"row",alignItems:"center",gap:8,marginTop:9,marginLeft:48,flexWrap:"wrap"}}>
               <View accessibilityRole="tablist" accessibilityLabel={item.name+" research mode"} style={{flexDirection:"row",alignItems:"center",gap:3,padding:3,borderRadius:999,borderWidth:1,borderColor:"#DCE5F2",backgroundColor:"#F5F8FD"}}>
-                {(["live","backtest"] as const).map((nextMode)=><Pressable key={nextMode} accessibilityRole="tab" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")===nextMode}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:nextMode}))} style={{paddingVertical:7,paddingHorizontal:11,borderRadius:999,backgroundColor:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#7DF162":"transparent"}}><Text style={{color:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#FFFFFF":"#718096",fontSize:9,fontWeight:"800"}}>{nextMode==="live"?"Live":"Backtesting"}</Text></Pressable>)}
+                {(["live","backtest"] as const).map((nextMode)=><Pressable key={nextMode} accessibilityRole="tab" accessibilityState={{selected:(viewModeBySymbol[item.symbol]||"live")===nextMode}} onPress={()=>setViewModeBySymbol((current)=>({...current,[item.symbol]:nextMode}))} style={{paddingVertical:7,paddingHorizontal:11,borderRadius:999,backgroundColor:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#246BDF":"transparent"}}><Text style={{color:(viewModeBySymbol[item.symbol]||"live")===nextMode?"#FFFFFF":"#718096",fontSize:9,fontWeight:"800"}}>{nextMode==="live"?"Live":"Backtesting"}</Text></Pressable>)}
               </View>
               <Pressable onPress={()=>setAlgorithmPickerSymbol(item.symbol)} style={{paddingVertical:7,paddingHorizontal:10,borderRadius:18,borderWidth:1,borderColor:"#DCE5F2",backgroundColor:"#FFFFFF"}}>
-                <Text style={{color:"#7DF162",fontSize:9,fontWeight:"800"}}>ALGORITHM · {catalogue?.algorithms.find((entry)=>entry.algorithm_id===(selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline"))?.display_name || "Qoin Vector Baseline"} ▾</Text>
+                <Text style={{color:"#246BDF",fontSize:9,fontWeight:"800"}}>ALGORITHM · {catalogue?.algorithms.find((entry)=>entry.algorithm_id===(selectedAlgorithmBySymbol[item.engineSymbol]||"qoin-vector-baseline"))?.display_name || "Qoin Vector Baseline"} ▾</Text>
               </Pressable>
               <Modal visible={algorithmPickerSymbol===item.symbol} transparent animationType="fade" onRequestClose={()=>setAlgorithmPickerSymbol(null)}>
                 <Pressable onPress={()=>setAlgorithmPickerSymbol(null)} style={{flex:1,justifyContent:"center",padding:24,backgroundColor:"#17294366"}}>
@@ -1256,10 +1256,10 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
                 <Rect x="0" y="0" width="100" height="100" fill="#FBFCFF" />
                 {Array.from({ length: 9 }, (_, i) => <Line key={`v${i}`} x1={i * 12.5} y1="0" x2={i * 12.5} y2="100" stroke="#EDF3FF" strokeWidth=".4" />)}
                 {Array.from({ length: 9 }, (_, i) => <Line key={`h${i}`} x1="0" y1={i * 12.5} x2="100" y2={i * 12.5} stroke="#EDF3FF" strokeWidth=".4" />)}
-                <Line x1="10" y1="8" x2="10" y2="90" stroke="#7DF162" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#7DF162" strokeWidth=".7" />
-                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#7DF162" strokeWidth="1.1" /> : null}
-                {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#7DF162" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#7DF162" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
-                <Circle cx="10" cy="90" r="2" fill="#89968D" />
+                <Line x1="10" y1="8" x2="10" y2="90" stroke="#246BDF" strokeWidth=".7" /><Line x1="10" y1="90" x2="94" y2="90" stroke="#246BDF" strokeWidth=".7" />
+                {vectorPoints.length > 1 ? <Polyline points={trajectoryPoints} fill="none" stroke="#246BDF" strokeWidth="1.1" /> : null}
+                {vector?.decision_vector ? <><Line x1="10" y1="90" x2={vectorX} y2={vectorY} stroke="#246BDF" strokeWidth="1.8" /><Circle cx={vectorX} cy={vectorY} r="3.8" fill="#246BDF" stroke="#FFFFFF" strokeWidth="1.2" /></> : null}
+                <Circle cx="10" cy="90" r="2" fill="#7D8BA1" />
               </Svg>
             </View>
             <Text style={styles.mapCopy}>Horizontal: bullish · Vertical: bearish · {vectorHistory.length} stored observations</Text>
@@ -1402,227 +1402,227 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
 }
 
 const styles = StyleSheet.create({
-  tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 0, borderColor: "transparent", backgroundColor: "#161F1A" },
-  mechanicsTabs: { flexDirection: "row", gap: 6, padding: 6, marginBottom: 12, borderRadius: 13, borderWidth: 0, borderColor: "transparent", backgroundColor: "#161F1A" },
+  tracePanel: { gap: 10, padding: 13, borderRadius: 16, borderWidth: 0, borderColor: "transparent", backgroundColor: "#FFFFFF" },
+  mechanicsTabs: { flexDirection: "row", gap: 6, padding: 6, marginBottom: 12, borderRadius: 13, borderWidth: 0, borderColor: "transparent", backgroundColor: "#FFFFFF" },
   mechanicsTab: { flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 9 },
-  mechanicsTabActive: { backgroundColor: "#243B28" },
-  mechanicsTabText: { color: "#89968D", fontSize: 10, fontWeight: "700" },
-  mechanicsTabTextActive: { color: "#7DF162" },
+  mechanicsTabActive: { backgroundColor: "#EAF1FF" },
+  mechanicsTabText: { color: "#7D8BA1", fontSize: 10, fontWeight: "700" },
+  mechanicsTabTextActive: { color: "#246BDF" },
   mechanicsSetView: { gap: 13 },
-  setOverlap: { flexDirection: "row", alignItems: "center", gap: 7, padding: 12, borderRadius: 11, borderWidth: 0, borderColor: "transparent", backgroundColor: "#0E1612" },
-  setVenn: { alignItems: "center", gap: 5, padding: 10, borderRadius: 11, borderWidth: 0, borderColor: "transparent", backgroundColor: "#0E1612" },
+  setOverlap: { flexDirection: "row", alignItems: "center", gap: 7, padding: 12, borderRadius: 11, borderWidth: 0, borderColor: "transparent", backgroundColor: "#F5F8FC" },
+  setVenn: { alignItems: "center", gap: 5, padding: 10, borderRadius: 11, borderWidth: 0, borderColor: "transparent", backgroundColor: "#F5F8FC" },
   setVennUnion: { flexDirection: "row", alignItems: "center", gap: 8 },
   setOverlapSide: { flex: 1, alignItems: "center", gap: 4 },
   setOverlapMiddle: { flex: 1.1, alignItems: "center", gap: 4, paddingHorizontal: 6, borderLeftWidth: 1, borderRightWidth: 1, borderColor: "transparent" },
-  setOverlapCount: { color: "#7DF162", fontSize: 18, fontWeight: "800" },
-  vectorOutputBridge: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 11, backgroundColor: "#17291F", borderWidth: 0, borderColor: "transparent" },
-  mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 0, borderColor: "transparent", backgroundColor: "#161F1A" },
+  setOverlapCount: { color: "#246BDF", fontSize: 18, fontWeight: "800" },
+  vectorOutputBridge: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 11, backgroundColor: "#FFFFFF", borderWidth: 0, borderColor: "transparent" },
+  mobileBacktest: { gap: 11, padding: 13, borderRadius: 15, borderWidth: 0, borderColor: "transparent", backgroundColor: "#FFFFFF" },
   backtestInputs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   backtestInputWrap: { flexGrow: 1, flexBasis: "30%", minWidth: 85, gap: 5 },
-  backtestInput: { borderWidth: 0, borderColor: "transparent", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, color: "#EDF4EE", fontSize: 12 },
-  backtestRun: { alignItems: "center", paddingVertical: 11, borderRadius: 22, backgroundColor: "#7DF162" },
+  backtestInput: { borderWidth: 0, borderColor: "transparent", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, color: "#1B2A41", fontSize: 12 },
+  backtestRun: { alignItems: "center", paddingVertical: 11, borderRadius: 22, backgroundColor: "#246BDF" },
   backtestDisabled: { opacity: 0.55 },
-  backtestRunText: { color: "#161F1A", fontWeight: "800", fontSize: 11 },
+  backtestRunText: { color: "#FFFFFF", fontWeight: "800", fontSize: 11 },
   backtestMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  backtestMetric: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#161F1A" },
+  backtestMetric: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#FFFFFF" },
   backtestFill: { paddingVertical: 8, borderBottomWidth: 0, borderBottomColor: "transparent", gap: 4 },
-  traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#161F1A" },
-  traceValue: { color: "#EDF4EE", fontSize: 10, fontWeight: "700" },
+  traceSource: { gap: 4, padding: 10, borderRadius: 10, backgroundColor: "#FFFFFF" },
+  traceValue: { color: "#1B2A41", fontSize: 10, fontWeight: "700" },
   traceTableRow: { flexDirection: "row", borderBottomWidth: 0, borderBottomColor: "transparent" },
-  traceCell: { width: 104, paddingHorizontal: 7, paddingVertical: 8, color: "#C5D0C7", fontSize: 8 },
-  traceHead: { color: "#EDF4EE", fontWeight: "800", backgroundColor: "#161F1A" },
+  traceCell: { width: 104, paddingHorizontal: 7, paddingVertical: 8, color: "#52637A", fontSize: 8 },
+  traceHead: { color: "#1B2A41", fontWeight: "800", backgroundColor: "#FFFFFF" },
   traceGateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  traceGate: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#161F1A" },
-  traceSubhead: { color: "#EDF4EE", fontSize: 10, fontWeight: "800", marginTop: 5 },
-  traceJson: { color: "#C5D0C7", backgroundColor: "#0E1612", padding: 9, borderRadius: 9, fontSize: 8, lineHeight: 12 },
+  traceGate: { width: "48%", gap: 4, padding: 9, borderRadius: 9, backgroundColor: "#FFFFFF" },
+  traceSubhead: { color: "#1B2A41", fontSize: 10, fontWeight: "800", marginTop: 5 },
+  traceJson: { color: "#52637A", backgroundColor: "#F5F8FC", padding: 9, borderRadius: 9, fontSize: 8, lineHeight: 12 },
 
-  screen: { flex: 1, backgroundColor: "#0E1612" },
+  screen: { flex: 1, backgroundColor: "#F5F8FC" },
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   notificationButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: "transparent", alignItems: "center", justifyContent: "center" },
-  notificationGlyph: { color: "#7DF162", fontSize: 18 },
-  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#7DF162", alignItems: "center", justifyContent: "center" },
-  notificationBadgeText: { color: "#161F1A", fontSize: 7, fontWeight: "800" },
-  notificationModal: { maxHeight: "88%", backgroundColor: "#161F1A", borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: "hidden" },
+  notificationGlyph: { color: "#246BDF", fontSize: 18 },
+  notificationBadge: { position: "absolute", right: -5, top: -5, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: "#246BDF", alignItems: "center", justifyContent: "center" },
+  notificationBadgeText: { color: "#FFFFFF", fontSize: 7, fontWeight: "800" },
+  notificationModal: { maxHeight: "88%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: "hidden" },
   notificationActions: { flexDirection: "row", justifyContent: "flex-end", gap: 18, paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 0, borderBottomColor: "transparent" },
-  notificationActionText: { color: "#7DF162", fontSize: 10, fontWeight: "700" },
+  notificationActionText: { color: "#246BDF", fontSize: 10, fontWeight: "700" },
   notificationContent: { padding: 14 },
   notificationItem: { paddingVertical: 12, borderBottomWidth: 0, borderBottomColor: "transparent" },
   notificationRead: { opacity: 0.6 },
-  notificationMeta: { color: "#89968D", fontSize: 8, fontWeight: "800" },
-  notificationTitle: { color: "#EDF4EE", fontSize: 11, fontWeight: "800", marginTop: 6 },
-  notificationBody: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 4 },
-  notificationPayload: { color: "#89968D", fontSize: 7, lineHeight: 11, marginTop: 7 },
+  notificationMeta: { color: "#7D8BA1", fontSize: 8, fontWeight: "800" },
+  notificationTitle: { color: "#1B2A41", fontSize: 11, fontWeight: "800", marginTop: 6 },
+  notificationBody: { color: "#7D8BA1", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  notificationPayload: { color: "#7D8BA1", fontSize: 7, lineHeight: 11, marginTop: 7 },
 
   content: { paddingHorizontal: 17, paddingTop: 102, paddingBottom: 100 },
-  topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 12, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#0E1612" },
-  marketStrip: { position: "absolute", top: 60, left: 0, right: 0, zIndex: 11, height: 42, justifyContent: "center", backgroundColor: "#0E1612" },
+  topline: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 12, height: 60, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#F5F8FC" },
+  marketStrip: { position: "absolute", top: 60, left: 0, right: 0, zIndex: 11, height: 42, justifyContent: "center", backgroundColor: "#F5F8FC" },
   marketStripContent: { paddingHorizontal: 17, alignItems: "center", gap: 8 },
   marketChip: { minHeight: 30, justifyContent: "center", paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: 1.5, borderBottomColor: "transparent", borderRadius: 0, backgroundColor: "transparent" },
-  marketChipActive: { borderBottomColor: "#7DF162", backgroundColor: "transparent" },
-  marketChipText: { color: "#89968D", fontSize: 10, fontWeight: "500" },
-  marketChipTextActive: { color: "#7DF162" },
-  brand: { color: "#7DF162", fontSize: 15, fontWeight: "700", letterSpacing: -0.3 },
-  avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#7DF162", fontWeight: "800" },
+  marketChipActive: { borderBottomColor: "#246BDF", backgroundColor: "transparent" },
+  marketChipText: { color: "#7D8BA1", fontSize: 10, fontWeight: "500" },
+  marketChipTextActive: { color: "#246BDF" },
+  brand: { color: "#246BDF", fontSize: 15, fontWeight: "700", letterSpacing: -0.3 },
+  avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#246BDF", fontWeight: "800" },
   avatarImage: { width: 28, height: 28, borderRadius: 14 },
   accountShade: { flex: 1, justifyContent: "flex-start", alignItems: "flex-end", paddingTop: 58, paddingHorizontal: 16, backgroundColor: "#000000B8" },
-  accountSheet: { width: 270, padding: 12, borderRadius: 12, backgroundColor: "#161F1A" },
+  accountSheet: { width: 270, padding: 12, borderRadius: 12, backgroundColor: "#FFFFFF" },
   accountIdentity: { flexDirection: "row", alignItems: "center", gap: 10, padding: 9, marginBottom: 4 },
-  accountAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  accountAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   accountAvatarImage: { width: 38, height: 38, borderRadius: 19 },
-  accountName: { color: "#EDF4EE", fontSize: 12, fontWeight: "800" },
-  accountEmail: { color: "#89968D", fontSize: 9, marginTop: 3 },
+  accountName: { color: "#1B2A41", fontSize: 12, fontWeight: "800" },
+  accountEmail: { color: "#7D8BA1", fontSize: 9, marginTop: 3 },
   accountAction: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 11 },
-  accountActionText: { color: "#C5D0C7", fontSize: 11, fontWeight: "600" },
-  profileModal: { width: "100%", paddingBottom: 20, borderTopLeftRadius: 21, borderTopRightRadius: 21, backgroundColor: "#161F1A", overflow: "hidden" },
+  accountActionText: { color: "#52637A", fontSize: 11, fontWeight: "600" },
+  profileModal: { width: "100%", paddingBottom: 20, borderTopLeftRadius: 21, borderTopRightRadius: 21, backgroundColor: "#FFFFFF", overflow: "hidden" },
   profileIdentity: { flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 18, paddingVertical: 16 },
-  profileAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  profileUidLabel: { color: "#89968D", fontSize: 8, fontWeight: "800", letterSpacing: 1, paddingHorizontal: 18, marginTop: 8 },
-  profileUid: { color: "#C5D0C7", fontSize: 9, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 15 },
+  profileAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  profileUidLabel: { color: "#7D8BA1", fontSize: 8, fontWeight: "800", letterSpacing: 1, paddingHorizontal: 18, marginTop: 8 },
+  profileUid: { color: "#52637A", fontSize: 9, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 15 },
   hero: { paddingTop: 24, paddingBottom: 25 },
-  kicker: { color: "#7DF162", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
-  heroTitle: { color: "#EDF4EE", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
-  blue: { color: "#7DF162" },
-  heroCopy: { color: "#89968D", fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 300 },
+  kicker: { color: "#246BDF", fontSize: 9, fontWeight: "800", letterSpacing: 1.5, marginBottom: 7 },
+  heroTitle: { color: "#1B2A41", fontSize: 42, lineHeight: 46, fontWeight: "800", letterSpacing: -1.7 },
+  blue: { color: "#246BDF" },
+  heroCopy: { color: "#7D8BA1", fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 300 },
   headingRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 16 },
-  heading: { color: "#EDF4EE", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
-  subheading: { color: "#89968D", fontSize: 10, marginTop: 4 },
-  count: { color: "#89968D", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
-  exchangePicker: { marginBottom: 12, padding: 11, borderWidth: 0, borderRadius: 12, backgroundColor: "#161F1A", gap: 7 },
+  heading: { color: "#1B2A41", fontSize: 24, fontWeight: "800", letterSpacing: -.5 },
+  subheading: { color: "#7D8BA1", fontSize: 10, marginTop: 4 },
+  count: { color: "#7D8BA1", fontSize: 8, fontWeight: "800", letterSpacing: 1 },
+  exchangePicker: { marginBottom: 12, padding: 11, borderWidth: 0, borderRadius: 12, backgroundColor: "#FFFFFF", gap: 7 },
   exchangeChips: { flexDirection: "row", gap: 6, paddingVertical: 4 },
-  exchangeChip: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: "#26372D", borderRadius: 18, backgroundColor: "#0E1612" },
-  exchangeChipActive: { borderColor: "#315B3D", backgroundColor: "#17291F" },
-  exchangeChipText: { color: "#89968D", fontSize: 9, fontWeight: "600" },
-  exchangeChipTextActive: { color: "#7DF162" },
-  exchangeReset: { alignSelf: "flex-end", color: "#7DF162", fontSize: 9, fontWeight: "700", paddingVertical: 3 },
-  search: { height: 42, flexDirection: "row", alignItems: "center", borderWidth: 0, borderColor: "transparent", borderRadius: 8, backgroundColor: "#161F1A", paddingHorizontal: 12, marginBottom: 12 },
-  searchIcon: { color: "#89968D", fontSize: 21, marginRight: 8 },
-  searchInput: { flex: 1, color: "#EDF4EE", fontSize: 12, paddingVertical: 0 },
+  exchangeChip: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: "#E5EBF3", borderRadius: 18, backgroundColor: "#F5F8FC" },
+  exchangeChipActive: { borderColor: "#246BDF", backgroundColor: "#FFFFFF" },
+  exchangeChipText: { color: "#7D8BA1", fontSize: 9, fontWeight: "600" },
+  exchangeChipTextActive: { color: "#246BDF" },
+  exchangeReset: { alignSelf: "flex-end", color: "#246BDF", fontSize: 9, fontWeight: "700", paddingVertical: 3 },
+  search: { height: 42, flexDirection: "row", alignItems: "center", borderWidth: 0, borderColor: "transparent", borderRadius: 8, backgroundColor: "#FFFFFF", paddingHorizontal: 12, marginBottom: 12 },
+  searchIcon: { color: "#7D8BA1", fontSize: 21, marginRight: 8 },
+  searchInput: { flex: 1, color: "#1B2A41", fontSize: 12, paddingVertical: 0 },
   filters: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 14 },
-  filter: { borderWidth: 0, borderColor: "transparent", borderRadius: 18, paddingVertical: 6, paddingHorizontal: 11, backgroundColor: "#161F1A" },
-  filterActive: { borderColor: "transparent", backgroundColor: "#17291F" },
-  filterText: { color: "#89968D", fontSize: 10, fontWeight: "600" },
-  filterTextActive: { color: "#7DF162" },
+  filter: { borderWidth: 0, borderColor: "transparent", borderRadius: 18, paddingVertical: 6, paddingHorizontal: 11, backgroundColor: "#FFFFFF" },
+  filterActive: { borderColor: "transparent", backgroundColor: "#FFFFFF" },
+  filterText: { color: "#7D8BA1", fontSize: 10, fontWeight: "600" },
+  filterTextActive: { color: "#246BDF" },
   coverageSection: { marginTop: 8, marginBottom: 18, paddingTop: 15, borderTopWidth: 0, borderTopColor: "transparent", borderBottomWidth: 0, borderBottomColor: "transparent", paddingBottom: 14 },
   coverageHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 11 },
   coverageHeadingCopy: { flex: 1 },
-  coverageSubheading: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 3 },
-  coverageStatus: { color: "#7DF162", backgroundColor: "#17291F", borderRadius: 14, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5, fontSize: 8, fontWeight: "800" },
-  coverageCard: { padding: 12, backgroundColor: "#161F1A", borderWidth: 0, borderColor: "transparent", borderRadius: 12, marginBottom: 8 },
+  coverageSubheading: { color: "#7D8BA1", fontSize: 9, lineHeight: 14, marginTop: 3 },
+  coverageStatus: { color: "#246BDF", backgroundColor: "#FFFFFF", borderRadius: 14, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 5, fontSize: 8, fontWeight: "800" },
+  coverageCard: { padding: 12, backgroundColor: "#FFFFFF", borderWidth: 0, borderColor: "transparent", borderRadius: 12, marginBottom: 8 },
   coverageCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  coverageName: { color: "#EDF4EE", fontSize: 12, fontWeight: "800" },
-  coverageTag: { color: "#89968D", fontSize: 8, textTransform: "uppercase" },
-  coveragePrimary: { color: "#7DF162", fontSize: 23, fontWeight: "800", marginVertical: 8 },
-  coverageUnit: { color: "#89968D", fontSize: 9, fontWeight: "500" },
-  coverageLine: { color: "#C5D0C7", fontSize: 9, lineHeight: 14, marginTop: 4 },
-  coverageNote: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 8 },
-  coverageDisclaimer: { color: "#89968D", fontSize: 9, lineHeight: 14, marginTop: 5 },
-  card: { padding: 14, backgroundColor: "#161F1A", borderWidth: 0, borderColor: "transparent", borderRadius: 8, marginBottom: 9, shadowColor: "#000", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0 },
+  coverageName: { color: "#1B2A41", fontSize: 12, fontWeight: "800" },
+  coverageTag: { color: "#7D8BA1", fontSize: 8, textTransform: "uppercase" },
+  coveragePrimary: { color: "#246BDF", fontSize: 23, fontWeight: "800", marginVertical: 8 },
+  coverageUnit: { color: "#7D8BA1", fontSize: 9, fontWeight: "500" },
+  coverageLine: { color: "#52637A", fontSize: 9, lineHeight: 14, marginTop: 4 },
+  coverageNote: { color: "#7D8BA1", fontSize: 9, lineHeight: 14, marginTop: 8 },
+  coverageDisclaimer: { color: "#7D8BA1", fontSize: 9, lineHeight: 14, marginTop: 5 },
+  card: { padding: 14, backgroundColor: "#FFFFFF", borderWidth: 0, borderColor: "transparent", borderRadius: 8, marginBottom: 9, shadowColor: "#000", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0 },
   cardMain: { flexDirection: "row", alignItems: "center" },
   assetMark: { width: 37, height: 37, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  assetMarkText: { color: "#161F1A", fontWeight: "800", fontSize: 15 },
+  assetMarkText: { color: "#FFFFFF", fontWeight: "800", fontSize: 15 },
   assetCopy: { flex: 1, marginLeft: 11 },
-  assetName: { color: "#EDF4EE", fontSize: 13, fontWeight: "700" },
-  assetMeta: { color: "#89968D", fontSize: 10, marginTop: 4 },
-  arrow: { color: "#89968D", fontSize: 17 },
-  detail: { color: "#89968D", fontSize: 10, marginTop: 12 },
-  providerLine: { color: "#89968D", fontSize: 8, marginTop: 4 },
+  assetName: { color: "#1B2A41", fontSize: 13, fontWeight: "700" },
+  assetMeta: { color: "#7D8BA1", fontSize: 10, marginTop: 4 },
+  arrow: { color: "#7D8BA1", fontSize: 17 },
+  detail: { color: "#7D8BA1", fontSize: 10, marginTop: 12 },
+  providerLine: { color: "#7D8BA1", fontSize: 8, marginTop: 4 },
   cardLiveRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
-  cardLivePrice: { color: "#EDF4EE", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  cardLiveDecision: { color: "#7DF162", fontSize: 8, fontWeight: "800" },
+  cardLivePrice: { color: "#1B2A41", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  cardLiveDecision: { color: "#246BDF", fontSize: 8, fontWeight: "800" },
   addButton: { marginTop: 12, alignSelf: "flex-start", paddingVertical: 5 },
-  addText: { color: "#7DF162", fontSize: 10, fontWeight: "700" },
+  addText: { color: "#246BDF", fontSize: 10, fontWeight: "700" },
   empty: { padding: 28, borderWidth: 0, borderStyle: "dashed", borderColor: "transparent", borderRadius: 14, alignItems: "center" },
-  emptyTitle: { color: "#EDF4EE", fontSize: 13, fontWeight: "700" },
-  emptyCopy: { color: "#89968D", fontSize: 10, textAlign: "center", marginTop: 6 },
-  note: { marginTop: 15, padding: 14, borderWidth: 0, borderColor: "transparent", borderRadius: 12, backgroundColor: "#161F1A" },
+  emptyTitle: { color: "#1B2A41", fontSize: 13, fontWeight: "700" },
+  emptyCopy: { color: "#7D8BA1", fontSize: 10, textAlign: "center", marginTop: 6 },
+  note: { marginTop: 15, padding: 14, borderWidth: 0, borderColor: "transparent", borderRadius: 12, backgroundColor: "#FFFFFF" },
   newsSection: { marginTop: 23, paddingTop: 18, borderTopWidth: 0, borderTopColor: "transparent" },
   macroSection: { marginTop: 20, paddingTop: 17, borderTopWidth: 0, borderTopColor: "transparent" },
-  macroItem: { padding: 11, borderWidth: 0, borderColor: "transparent", borderRadius: 10, backgroundColor: "#161F1A", marginBottom: 7 },
+  macroItem: { padding: 11, borderWidth: 0, borderColor: "transparent", borderRadius: 10, backgroundColor: "#FFFFFF", marginBottom: 7 },
   macroValues: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8, marginTop: 7 },
-  newsTitle: { color: "#EDF4EE", fontSize: 19, fontWeight: "800", marginBottom: 5 },
-  newsItem: { padding: 12, backgroundColor: "#161F1A", borderWidth: 0, borderColor: "transparent", borderRadius: 11, marginBottom: 8 },
+  newsTitle: { color: "#1B2A41", fontSize: 19, fontWeight: "800", marginBottom: 5 },
+  newsItem: { padding: 12, backgroundColor: "#FFFFFF", borderWidth: 0, borderColor: "transparent", borderRadius: 11, marginBottom: 8 },
   newsMeta: { color: "#9AA6B5", fontSize: 8 },
-  newsHeadline: { color: "#EDF4EE", fontSize: 12, fontWeight: "700", lineHeight: 17, marginTop: 7 },
-  newsSummary: { color: "#89968D", fontSize: 10, lineHeight: 15, marginTop: 5 },
-  noteTitle: { color: "#C5D0C7", fontSize: 11, fontWeight: "700" },
-  noteCopy: { color: "#89968D", fontSize: 10, lineHeight: 15, marginTop: 5 },
-  footer: { color: "#89968D", fontSize: 8, fontWeight: "700", letterSpacing: 1, textAlign: "center", marginTop: 25 },
-  modalShade: { flex: 1, justifyContent: "flex-start", backgroundColor: "#161F1A" },
-  modalCard: { flex: 1, width: "100%", height: "100%", maxHeight: "100%", backgroundColor: "#161F1A", borderRadius: 0, overflow: "hidden" },
+  newsHeadline: { color: "#1B2A41", fontSize: 12, fontWeight: "700", lineHeight: 17, marginTop: 7 },
+  newsSummary: { color: "#7D8BA1", fontSize: 10, lineHeight: 15, marginTop: 5 },
+  noteTitle: { color: "#52637A", fontSize: 11, fontWeight: "700" },
+  noteCopy: { color: "#7D8BA1", fontSize: 10, lineHeight: 15, marginTop: 5 },
+  footer: { color: "#7D8BA1", fontSize: 8, fontWeight: "700", letterSpacing: 1, textAlign: "center", marginTop: 25 },
+  modalShade: { flex: 1, justifyContent: "flex-start", backgroundColor: "#FFFFFF" },
+  modalCard: { flex: 1, width: "100%", height: "100%", maxHeight: "100%", backgroundColor: "#FFFFFF", borderRadius: 0, overflow: "hidden" },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 19, borderBottomWidth: 0, borderBottomColor: "transparent" },
-  modalTitle: { color: "#EDF4EE", fontSize: 22, fontWeight: "800" },
-  close: { width: 31, height: 31, borderRadius: 16, backgroundColor: "#17291F", alignItems: "center", justifyContent: "center" },
-  closeText: { color: "#C5D0C7", fontSize: 20 },
+  modalTitle: { color: "#1B2A41", fontSize: 22, fontWeight: "800" },
+  close: { width: 31, height: 31, borderRadius: 16, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  closeText: { color: "#52637A", fontSize: 20 },
   modalContent: { paddingHorizontal: 18, paddingTop: 15, paddingBottom: 18 },
-  mapTitle: { color: "#C5D0C7", fontSize: 12, fontWeight: "700" },
-  mapCopy: { color: "#89968D", fontSize: 10, marginTop: 4 },
+  mapTitle: { color: "#52637A", fontSize: 12, fontWeight: "700" },
+  mapCopy: { color: "#7D8BA1", fontSize: 10, marginTop: 4 },
   mapWrap: { width: "100%", marginTop: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 12, overflow: "hidden" },
   legend: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, marginVertical: 14 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
-  legendText: { color: "#89968D", fontSize: 9 },
+  legendText: { color: "#7D8BA1", fontSize: 9 },
   metric: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, borderBottomWidth: 0, borderBottomColor: "transparent" },
-  metricLabel: { color: "#89968D", fontSize: 10, textTransform: "capitalize" },
-  metricValue: { color: "#C5D0C7", fontSize: 10, fontWeight: "700" },
+  metricLabel: { color: "#7D8BA1", fontSize: 10, textTransform: "capitalize" },
+  metricValue: { color: "#52637A", fontSize: 10, fontWeight: "700" },
   engineMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginVertical: 12 },
-  engineLabel: { color: "#89968D", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
-  engineValue: { color: "#EDF4EE", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  engineLabel: { color: "#7D8BA1", fontSize: 8, textTransform: "uppercase", letterSpacing: .5 },
+  engineValue: { color: "#1B2A41", fontSize: 12, fontWeight: "700", marginTop: 4 },
   attentionHint: { color: "#9AA6B5", fontSize: 8, marginTop: 5 },
-  attentionPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#161F1A" },
-  livePanel: { marginTop: 12, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#161F1A" },
+  attentionPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#FFFFFF" },
+  livePanel: { marginTop: 12, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#FFFFFF" },
   liveHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 9 },
   liveGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   liveMetric: { width: "47%", gap: 4 },
-  featureSpacePanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#161F1A" },
-  strategyPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#161F1A" },
-  contributionPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#161F1A" },
+  featureSpacePanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#FFFFFF" },
+  strategyPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#FFFFFF" },
+  contributionPanel: { marginTop: 14, padding: 10, borderWidth: 0, borderColor: "transparent", borderRadius: 11, backgroundColor: "#FFFFFF" },
   contributionRow: { paddingVertical: 8, borderTopWidth: 0, borderTopColor: "transparent" },
   strategyGates: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginVertical: 10 },
   strategyWeightRow: { paddingVertical: 8, borderTopWidth: 0, borderTopColor: "transparent" },
   strategyWeightValues: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginTop: 5 },
   rawTape: { marginTop: 14, borderWidth: 0, borderColor: "transparent", borderRadius: 11, overflow: "hidden" },
-  rawTapeToggle: { padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#161F1A" },
+  rawTapeToggle: { padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFFFFF" },
   rawEvent: { padding: 9, borderTopWidth: 0, borderTopColor: "transparent" },
   featureValues: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 7 },
   featureValue: { width: "30%", flexDirection: "row", justifyContent: "space-between" },
   attentionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 9 },
-  attentionTitle: { color: "#C5D0C7", fontSize: 10, fontWeight: "700" },
+  attentionTitle: { color: "#52637A", fontSize: 10, fontWeight: "700" },
   attentionCaption: { color: "#9AA6B5", fontSize: 8 },
   attentionRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 3 },
-  attentionRowLabel: { width: 36, color: "#89968D", fontSize: 8, fontWeight: "700" },
-  attentionAxis: { flex: 1, color: "#89968D", fontSize: 7, fontWeight: "700", textAlign: "center" },
+  attentionRowLabel: { width: 36, color: "#7D8BA1", fontSize: 8, fontWeight: "700" },
+  attentionAxis: { flex: 1, color: "#7D8BA1", fontSize: 7, fontWeight: "700", textAlign: "center" },
   attentionCell: { flex: 1, minWidth: 0, height: 25, borderRadius: 4, alignItems: "center", justifyContent: "center" },
   attentionValue: { fontSize: 8, fontVariant: ["tabular-nums"] },
-  disclaimer: { color: "#89968D", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#0E1612", borderRadius: 9, marginTop: 15 },
+  disclaimer: { color: "#7D8BA1", fontSize: 9, lineHeight: 14, padding: 11, backgroundColor: "#F5F8FC", borderRadius: 9, marginTop: 15 },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, padding: 14, borderTopWidth: 0, borderTopColor: "transparent" },
-  closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#243B28" },
-  closeActionText: { color: "#89968D", fontSize: 11, fontWeight: "700" },
-  saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#7DF162" },
-  saveActionText: { color: "#161F1A", fontSize: 11, fontWeight: "700" },
+  closeAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#EAF1FF" },
+  closeActionText: { color: "#7D8BA1", fontSize: 11, fontWeight: "700" },
+  saveAction: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 9, backgroundColor: "#246BDF" },
+  saveActionText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
 
   cardMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginLeft: 48, marginTop: 9, marginBottom: 9 },
-  cardMetaChip: { overflow: "hidden", color: "#89968D", backgroundColor: "#161F1A", borderWidth: 0, borderColor: "transparent", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
-  cardMetaLive: { color: "#7DF162", borderColor: "transparent", backgroundColor: "#243B28" },
-  cardPager: { flexDirection: "row", minHeight: 90, gap: 10, padding: 10, borderRadius: 13, borderWidth: 0, borderColor: "transparent", backgroundColor: "#161F1A" },
+  cardMetaChip: { overflow: "hidden", color: "#7D8BA1", backgroundColor: "#FFFFFF", borderWidth: 0, borderColor: "transparent", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4, fontSize: 7, fontWeight: "800", letterSpacing: 0.3 },
+  cardMetaLive: { color: "#246BDF", borderColor: "transparent", backgroundColor: "#EAF1FF" },
+  cardPager: { flexDirection: "row", minHeight: 90, gap: 10, padding: 10, borderRadius: 13, borderWidth: 0, borderColor: "transparent", backgroundColor: "#FFFFFF" },
   cardPagerPrimary: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0 },
-  cardKicker: { color: "#89968D", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
-  cardPagerValue: { color: "#EDF4EE", fontSize: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
-  cardPagerStatus: { color: "#7DF162", fontSize: 7, fontWeight: "900", letterSpacing: 0.8 },
+  cardKicker: { color: "#7D8BA1", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
+  cardPagerValue: { color: "#1B2A41", fontSize: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  cardPagerStatus: { color: "#246BDF", fontSize: 7, fontWeight: "900", letterSpacing: 0.8 },
   cardPagerNegative: { color: "#E47A82" },
   cardPagerSecondary: { width: "39%", justifyContent: "center", gap: 4, paddingLeft: 9, borderLeftWidth: 0, borderLeftColor: "transparent" },
-  cardMetaLabel: { color: "#89968D", fontSize: 7, fontWeight: "800" },
-  cardMetaValue: { color: "#C5D0C7", fontSize: 9, fontWeight: "700" },
+  cardMetaLabel: { color: "#7D8BA1", fontSize: 7, fontWeight: "800" },
+  cardMetaValue: { color: "#52637A", fontSize: 9, fontWeight: "700" },
   cardPagerReason: { flex: 1, justifyContent: "center", gap: 5, minWidth: 0, paddingLeft: 9, borderLeftWidth: 0, borderLeftColor: "transparent" },
-  cardReasonText: { color: "#C5D0C7", fontSize: 8, lineHeight: 12 },
+  cardReasonText: { color: "#52637A", fontSize: 8, lineHeight: 12 },
   cardPagerFooter: { flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 48, marginTop: 8 },
   cardPagerDots: { flexDirection: "row", alignItems: "center", gap: 5 },
-  cardPagerDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#365247" },
-  cardPagerDotActive: { width: 18, backgroundColor: "#7DF162" },
+  cardPagerDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#E5EBF3" },
+  cardPagerDotActive: { width: 18, backgroundColor: "#246BDF" },
   cardSwipeHint: { color: "#687A92", fontSize: 7, fontWeight: "800", letterSpacing: 1 },
 
-  marketVectorSummary: { backgroundColor: "#17291F", borderColor: "#365247", borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
-  marketVectorTitle: { color: "#EDF4EE", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
-  marketVectorValue: { color: "#EDF4EE", fontSize: 13, fontWeight: "700", marginTop: 5 },
-  marketVectorMeta: { color: "#89968D", fontSize: 11, marginTop: 4 },
+  marketVectorSummary: { backgroundColor: "#FFFFFF", borderColor: "#E5EBF3", borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 12 },
+  marketVectorTitle: { color: "#1B2A41", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+  marketVectorValue: { color: "#1B2A41", fontSize: 13, fontWeight: "700", marginTop: 5 },
+  marketVectorMeta: { color: "#7D8BA1", fontSize: 11, marginTop: 4 },
 });

@@ -1,15 +1,15 @@
 // Shared Qoin brand tokens for web and native clients.
 export const qoinColors = {
-  bgPrimary: "#0E1612",
-  bgSecondary: "#17291F",
-  border: "#365247",
-  accentCyan: "#7DF162",
-  accent: "#7DF162",
-  bullish: "#7DF162",
-  bearish: "#E05A67",
-  warning: "#D99528",
-  textPrimary: "#EDF4EE",
-  textMuted: "#89968D",
+  bgPrimary: "#F5F8FC",
+  bgSecondary: "#FFFFFF",
+  border: "#E5EBF3",
+  accentCyan: "#246BDF",
+  accent: "#246BDF",
+  bullish: "#16845B",
+  bearish: "#D94B59",
+  warning: "#C88924",
+  textPrimary: "#1B2A41",
+  textMuted: "#7D8BA1",
   white: "#FFFFFF",
 } as const;
 

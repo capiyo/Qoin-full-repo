@@ -6,7 +6,7 @@ type InstrumentOption = {
   symbol: string; name: string; market: string; engineSymbol: string; venue: string; engineVenue: string;
 };
 type Props = { instruments: InstrumentOption[] };
-const palette = { panel: "#14231B", border: "#244B33", accent: "#9DE4B0", text: "#EDF4EE", muted: "#9BAFA0", waiting: "#D9A85B" };
+const palette = { panel: "#F5F8FC", border: "#E5EBF3", accent: "#246BDF", text: "#1B2A41", muted: "#7D8BA1", waiting: "#D9A85B" };
 const keyOf = (item: InstrumentOption) => item.engineSymbol + "::" + item.engineVenue;
 
 export function MultiHorizonPanel({ instruments }: Props) {
@@ -111,15 +111,15 @@ const styles = StyleSheet.create({
   caption: { color: palette.muted, fontSize: 10, lineHeight: 15 },
   badge: { color: palette.accent, fontSize: 10, fontWeight: "800" },
   instrumentList: { gap: 8, paddingVertical: 2 },
-  instrumentChip: { paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: "#0E1912", gap: 3 },
-  instrumentChipActive: { borderColor: palette.accent, backgroundColor: "#203B2A" },
+  instrumentChip: { paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: "#F5F8FC", gap: 3 },
+  instrumentChipActive: { borderColor: palette.accent, backgroundColor: "#E5EBF3" },
   instrumentName: { color: palette.text, fontSize: 10, fontWeight: "700" },
   instrumentNameActive: { color: palette.accent },
   instrumentMeta: { color: palette.muted, fontSize: 8 },
   controls: { flexDirection: "row", alignItems: "flex-end", gap: 9 },
   inputGroup: { flex: 1, gap: 5 },
   inputLabel: { color: palette.muted, fontSize: 9, fontWeight: "700" },
-  input: { minHeight: 38, borderRadius: 10, borderWidth: 1, borderColor: palette.border, paddingHorizontal: 10, color: palette.text, backgroundColor: "#0E1912", fontSize: 12 },
+  input: { minHeight: 38, borderRadius: 10, borderWidth: 1, borderColor: palette.border, paddingHorizontal: 10, color: palette.text, backgroundColor: "#F5F8FC", fontSize: 12 },
   loadButton: { minHeight: 38, borderRadius: 999, backgroundColor: palette.accent, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
   loadText: { color: palette.panel, fontSize: 10, fontWeight: "800" },
   disabled: { opacity: 0.5 },
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   summary: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   summaryText: { color: palette.accent, fontSize: 9, fontWeight: "700" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  card: { width: "48%", minWidth: 140, flexGrow: 1, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: "#0E1912", padding: 10, gap: 5 },
+  card: { width: "48%", minWidth: 140, flexGrow: 1, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: "#F5F8FC", padding: 10, gap: 5 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", gap: 4 },
   cardTitle: { color: palette.text, fontSize: 10, fontWeight: "800", textTransform: "capitalize" },
   ready: { fontSize: 8, fontWeight: "900" },
