@@ -8,7 +8,7 @@ services:
     region: frankfurt
     plan: starter
     branch: master
-    autoDeploy: true
+    autoDeployTrigger: commit
     dockerContext: .
     dockerfilePath: ./backend/rust-axum/Dockerfile
     envVars:
@@ -49,15 +49,16 @@ services:
     region: frankfurt
     plan: starter
     branch: master
-    autoDeploy: true
+    autoDeployTrigger: commit
     dockerContext: .
     dockerfilePath: ./backend/cpp-drogon/Dockerfile
     healthCheckPath: /health
     envVars:
-      - key: QOIN_AXUM_URL
-        value: http://qoin-axum:8081
-      - key: QOIN_AXUM_WS_URL
-        value: ws://qoin-axum:8081
+      - key: QOIN_AXUM_HOSTPORT
+        fromService:
+          type: pserv
+          name: qoin-axum
+          property: hostport
       - key: QOIN_DROGON_HOST
         value: 0.0.0.0
       - key: QOIN_DROGON_PORT
@@ -66,12 +67,14 @@ services:
   - type: web
     name: qoin-web
     runtime: static
-    region: frankfurt
-    plan: starter
     branch: master
-    autoDeploy: true
+    autoDeployTrigger: commit
     buildCommand: corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install --no-frozen-lockfile && pnpm --filter @qoin/react-web build
     staticPublishPath: frontend/apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_QOIN_API_URL
         sync: false
