@@ -206,6 +206,35 @@ void proxyDelete(const drogon::HttpRequestPtr& incoming,
         forwarded->setBody(std::string(response->getBody()));
         callback(forwarded);
     });
+
+void proxyPutJson(const drogon::HttpRequestPtr& incoming,
+                  std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                  const std::string& path) {
+    auto client = drogon::HttpClient::newHttpClient(upstream());
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Put);
+    request->setPath(path);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->addHeader("accept", "application/json");
+    request->setBody(std::string(incoming->getBody()));
+    const auto authorization = incoming->getHeader("authorization");
+    if (!authorization.empty()) request->addHeader("authorization", authorization);
+    client->sendRequest(request, [callback = std::move(callback)](
+        drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        if (result != drogon::ReqResult::Ok || !response) {
+            auto error = drogon::HttpResponse::newHttpJsonResponse(Json::Value{{"error", "flow engine unavailable"}});
+            error->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(error);
+            return;
+        }
+        auto forwarded = drogon::HttpResponse::newHttpResponse();
+        forwarded->setStatusCode(response->getStatusCode());
+        forwarded->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+        forwarded->setBody(std::string(response->getBody()));
+        callback(forwarded);
+    });
+}
+
 }
 
 int main() {
@@ -331,6 +360,43 @@ int main() {
         proxyGet(req, std::move(cb), path);
     }, {drogon::Get});
 
+
+
+    drogon::app().registerHandler("/api/v1/operating-cycle", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        if (req->method() == drogon::Put) proxyPutJson(req, std::move(cb), "/internal/operating-cycle");
+        else proxyGet(req, std::move(cb), "/internal/operating-cycle");
+    }, {drogon::Get, drogon::Put});
+    drogon::app().registerHandler("/api/v1/operating-cycle/start", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/operating-cycle/start");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/operating-cycle/stop", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyPostJson(req, std::move(cb), "/internal/operating-cycle/stop");
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/paper-session", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        proxyGet(req, std::move(cb), "/internal/paper-session");
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/paper-session/history", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        std::string path = "/internal/paper-session/history";
+        const auto symbol = req->getParameter("symbol");
+        const auto cycle = req->getParameter("cycle_id");
+        const auto limit = req->getParameter("limit");
+        std::vector<std::string> query;
+        if (!symbol.empty()) query.push_back("symbol=" + drogon::utils::urlEncode(symbol));
+        if (!cycle.empty()) query.push_back("cycle_id=" + drogon::utils::urlEncode(cycle));
+        if (!limit.empty()) query.push_back("limit=" + drogon::utils::urlEncode(limit));
+        for (const auto& item : query) path += (path.find('?') == std::string::npos ? "?" : "&") + item;
+        proxyGet(req, std::move(cb), path);
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/paper-session/runs", [](const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        const auto limit = req->getParameter("limit");
+        proxyGet(req, std::move(cb), "/internal/paper-session/runs" + (limit.empty() ? std::string{} : "?limit=" + drogon::utils::urlEncode(limit)));
+    }, {drogon::Get});
 
     drogon::app().registerHandler("/api/v1/me", [](const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
