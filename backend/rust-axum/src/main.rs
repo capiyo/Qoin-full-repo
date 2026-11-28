@@ -135,8 +135,8 @@ struct AppState {
     paper_session_runs: Collection<Document>,
     paper_session_decisions: Collection<Document>,
     paper_session_trades: Collection<Document>,
-    active_cycle: Arc<Mutex<OperatingCycle>>,
-    active_paper_session: Arc<Mutex<PaperSession>>,
+    active_cycles: Arc<Mutex<HashMap<String, OperatingCycle>>>,
+    active_paper_sessions: Arc<Mutex<HashMap<String, PaperSession>>>,
 }
 #[derive(Deserialize)]
 struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
@@ -154,55 +154,101 @@ struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 struct AlgorithmSelectionRequest { symbol: String, algorithm_id: String, version: String }
 
 
-async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
+
+async fn ensure_paper_state_loaded(s: &AppState, owner_uid: &str) -> Result<(), StatusCode> {
+    {
+        let mut cycles = s.active_cycles.lock().await;
+        if !cycles.contains_key(owner_uid) {
+            let persisted = s.operating_cycles.find_one(doc! {"owner_uid":owner_uid,"cycle_id":"active"}, None)
+                .await.map_err(|error| { tracing::error!(error=%error,"operating cycle restore failed"); StatusCode::SERVICE_UNAVAILABLE })?;
+            let cycle = match persisted {
+                Some(mut document) => { document.remove("_id"); mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default() }
+                None => OperatingCycle::default(),
+            };
+            cycles.insert(owner_uid.to_owned(), cycle);
+        }
+    }
+    {
+        let mut sessions = s.active_paper_sessions.lock().await;
+        if !sessions.contains_key(owner_uid) {
+            let persisted = s.paper_sessions.find_one(doc! {"owner_uid":owner_uid,"session_key":"active"}, None)
+                .await.map_err(|error| { tracing::error!(error=%error,"paper session restore failed"); StatusCode::SERVICE_UNAVAILABLE })?;
+            let session = match persisted {
+                Some(mut document) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
+                None => PaperSession::default(),
+            };
+            sessions.insert(owner_uid.to_owned(), session);
+        }
+    }
+    Ok(())
+}
+async fn authenticated_cycle_uid(s: &AppState, headers: &HeaderMap) -> Result<String, StatusCode> {
+    let owner_uid = firebase_uid_from_headers(s.firebase_verifier.as_ref(), headers).await?;
+    ensure_user_record(&s.users, &owner_uid).await?;
+    ensure_paper_state_loaded(s, &owner_uid).await?;
+    Ok(owner_uid)
+}
+async fn persist_operating_cycle(s: &AppState, owner_uid: &str, cycle: &OperatingCycle) -> Result<(), String> {
     let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
+    document.insert("owner_uid", owner_uid);
     document.insert("cycle_id", "active");
     let options = UpdateOptions::builder().upsert(true).build();
-    s.operating_cycles.update_one(doc! {"cycle_id":"active"}, doc! {"$set":document}, Some(options))
+    s.operating_cycles.update_one(doc! {"owner_uid":owner_uid,"cycle_id":"active"}, doc! {"$set":document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
 }
-async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+async fn persist_paper_session(s: &AppState, owner_uid: &str, session: &PaperSession) -> Result<(), String> {
     let mut document = mongodb::bson::to_document(session).map_err(|error| error.to_string())?;
+    document.insert("owner_uid", owner_uid);
     document.insert("session_key", "active");
     let options = UpdateOptions::builder().upsert(true).build();
-    s.paper_sessions.update_one(doc! {"session_key":"active"}, doc! {"$set":document}, Some(options))
+    s.paper_sessions.update_one(doc! {"owner_uid":owner_uid,"session_key":"active"}, doc! {"$set":document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
 }
-async fn archive_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+async fn archive_paper_session(s: &AppState, owner_uid: &str, session: &PaperSession) -> Result<(), String> {
     let snapshot = session.snapshot();
     let Some(cycle_id) = snapshot.cycle_id.clone() else { return Ok(()); };
     let mut document = mongodb::bson::to_document(&snapshot).map_err(|error| error.to_string())?;
+    document.insert("owner_uid", owner_uid);
     document.insert("archived_at", mongodb::bson::DateTime::now());
     let options = UpdateOptions::builder().upsert(true).build();
-    s.paper_session_runs.update_one(doc! {"cycle_id":cycle_id}, doc! {"$set":document}, Some(options))
+    s.paper_session_runs.update_one(doc! {"owner_uid":owner_uid,"cycle_id":cycle_id}, doc! {"$set":document}, Some(options))
         .await.map_err(|error| error.to_string())?;
     Ok(())
 }
-async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    let cycle = s.active_cycle.lock().await;
-    (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default()))
+async fn get_operating_cycle(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let cycles = s.active_cycles.lock().await;
+    let snapshot = cycles.get(&owner_uid).map(|cycle| cycle.snapshot());
+    match snapshot {
+        Some(value) => (StatusCode::OK, Json(serde_json::to_value(value).unwrap_or_default())),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"operating cycle unavailable"}))),
+    }
 }
-async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json<CycleConfig>) -> impl IntoResponse {
-    let mut cycle = s.active_cycle.lock().await;
+async fn configure_operating_cycle(State(s): State<AppState>, headers: HeaderMap, Json(config): Json<CycleConfig>) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let mut cycles = s.active_cycles.lock().await;
+    let cycle = cycles.entry(owner_uid.clone()).or_default();
     let snapshot = match cycle.configure(config) {
         Ok(value) => value,
         Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
     };
-    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+    if let Err(error) = persist_operating_cycle(&s, &owner_uid, cycle).await {
         tracing::error!(error=%error, "operating cycle configuration persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
-async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    let mut cycle = s.active_cycle.lock().await;
+async fn start_operating_cycle(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let mut cycles = s.active_cycles.lock().await;
+    let cycle = cycles.entry(owner_uid.clone()).or_default();
     if cycle.snapshot().active {
         return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"an operating cycle is already active"})));
     }
     let config = cycle.snapshot().config;
-    let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
+    let cycle_id = format!("cycle-{}-{}", owner_uid, chrono::Utc::now().timestamp_millis());
     let paper = if config.mode == "paper" {
         match PaperSession::start(cycle_id, &config.paper_accounts) {
             Ok(session) => session,
@@ -210,56 +256,65 @@ async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
         }
     } else { PaperSession::default() };
     let snapshot = cycle.start();
-    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+    if let Err(error) = persist_operating_cycle(&s, &owner_uid, cycle).await {
         tracing::error!(error=%error, "operating cycle start persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
     }
-    drop(cycle);
-    let mut active_paper = s.active_paper_session.lock().await;
+    drop(cycles);
+    let mut sessions = s.active_paper_sessions.lock().await;
+    let active_paper = sessions.entry(owner_uid.clone()).or_default();
     if active_paper.is_active() {
         active_paper.stop();
-        if let Err(error) = persist_paper_session(&s, &active_paper).await {
+        if let Err(error) = persist_paper_session(&s, &owner_uid, active_paper).await {
             tracing::error!(error=%error, "previous paper session stop persistence failed");
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
         }
-        if let Err(error) = archive_paper_session(&s, &active_paper).await {
+        if let Err(error) = archive_paper_session(&s, &owner_uid, active_paper).await {
             tracing::error!(error=%error, "previous paper session archive failed");
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
         }
     }
     *active_paper = paper;
-    if let Err(error) = persist_paper_session(&s, &active_paper).await {
+    if let Err(error) = persist_paper_session(&s, &owner_uid, active_paper).await {
         tracing::error!(error=%error, "paper session start persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
-async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
-    let mut cycle = s.active_cycle.lock().await;
+async fn stop_operating_cycle(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let mut cycles = s.active_cycles.lock().await;
+    let cycle = cycles.entry(owner_uid.clone()).or_default();
     let snapshot = cycle.stop();
-    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+    if let Err(error) = persist_operating_cycle(&s, &owner_uid, cycle).await {
         tracing::error!(error=%error, "operating cycle stop persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
     }
-    drop(cycle);
-    let mut paper = s.active_paper_session.lock().await;
+    drop(cycles);
+    let mut sessions = s.active_paper_sessions.lock().await;
+    let paper = sessions.entry(owner_uid.clone()).or_default();
     paper.stop();
-    if let Err(error) = persist_paper_session(&s, &paper).await {
+    if let Err(error) = persist_paper_session(&s, &owner_uid, paper).await {
         tracing::error!(error=%error, "paper session stop persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
     }
-    if let Err(error) = archive_paper_session(&s, &paper).await {
+    if let Err(error) = archive_paper_session(&s, &owner_uid, paper).await {
         tracing::error!(error=%error, "paper session archive persistence failed");
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive persistence failed"})));
     }
     (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
 }
-async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
-    let session = s.active_paper_session.lock().await;
-    (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
+async fn get_paper_session(State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let sessions = s.active_paper_sessions.lock().await;
+    match sessions.get(&owner_uid) {
+        Some(session) => (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default())),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"paper session unavailable"}))),
+    }
 }
-async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>) -> impl IntoResponse {
-    let mut filter = Document::new();
+async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
+    let mut filter = doc! {"owner_uid":&owner_uid};
     if let Some(cycle_id) = query.cycle_id { filter.insert("cycle_id", cycle_id); }
     if let Some(symbol) = query.symbol { filter.insert("symbol", symbol); }
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
@@ -268,41 +323,36 @@ async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State
         Err(error) => { tracing::error!(error=%error, "paper Mirror history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history unavailable"}))); }
     };
     let mut decisions = Vec::new();
-    loop {
-        match decisions_cursor.try_next().await {
-            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); decisions.push(document); }
-            Ok(None) => break,
-            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
-        }
-    }
+    loop { match decisions_cursor.try_next().await {
+        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); decisions.push(document); }
+        Ok(None) => break,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
+    }}
     let mut trades_cursor = match s.paper_session_trades.find(filter, FindOptions::builder().sort(doc! {"exit_ts_ms":-1}).limit(limit).build()).await {
         Ok(cursor) => cursor,
         Err(error) => { tracing::error!(error=%error, "paper trade history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"}))); }
     };
     let mut trades = Vec::new();
-    loop {
-        match trades_cursor.try_next().await {
-            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); trades.push(document); }
-            Ok(None) => break,
-            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history read interrupted"}))),
-        }
-    }
+    loop { match trades_cursor.try_next().await {
+        Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); trades.push(document); }
+        Ok(None) => break,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history read interrupted"}))),
+    }}
     (StatusCode::OK, Json(serde_json::json!({"decisions":decisions,"trades":trades})))
 }
-async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): State<AppState>) -> impl IntoResponse {
+async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let owner_uid = match authenticated_cycle_uid(&s, &headers).await { Ok(uid) => uid, Err(status) => return (status, Json(serde_json::json!({"error":"valid Firebase sign-in is required"}))) };
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let mut cursor = match s.paper_session_runs.find(doc! {}, FindOptions::builder().sort(doc! {"archived_at":-1}).limit(limit).build()).await {
+    let mut cursor = match s.paper_session_runs.find(doc! {"owner_uid":&owner_uid}, FindOptions::builder().sort(doc! {"archived_at":-1}).limit(limit).build()).await {
         Ok(cursor) => cursor,
         Err(error) => { tracing::error!(error=%error, "paper session archive query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archives unavailable"}))); }
     };
     let mut runs = Vec::new();
-    loop {
-        match cursor.try_next().await {
-            Ok(Some(mut document)) => { document.remove("_id"); runs.push(document); }
-            Ok(None) => break,
-            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
-        }
-    }
+    loop { match cursor.try_next().await {
+        Ok(Some(mut document)) => { document.remove("_id"); runs.push(document); }
+        Ok(None) => break,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
+    }}
     (StatusCode::OK, Json(serde_json::json!({"runs":runs})))
 }
 
@@ -1241,7 +1291,66 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
     }
     let signal_for_paper = signal.clone();
-    let cycle_phase = {
+    let mut cycle_persist = Vec::new();
+    let mut paper_eligible = HashSet::new();
+    {
+        let mut cycles = s.active_cycles.lock().await;
+        for (owner_uid, cycle) in cycles.iter_mut() {
+            let phase = cycle.snapshot().phase;
+            if cycle.is_active() {
+                if phase == "observation" { cycle.record_observation(); }
+                else if phase == "weight_evaluation" {
+                    let bullish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bullish_weight)).collect::<BTreeMap<_,_>>();
+                    let bearish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bearish_weight)).collect::<BTreeMap<_,_>>();
+                    cycle.record_signal_evaluation(signal_for_paper.score, signal_for_paper.alignment, &signal_for_paper.action,
+                        &signal_for_paper.features, &signal_for_paper.attention, &signal_for_paper.attended_features, &bullish, &bearish);
+                }
+                let snapshot = cycle.snapshot();
+                if snapshot.phase == "paper_session" && snapshot.config.mode == "paper" { paper_eligible.insert(owner_uid.clone()); }
+                if phase == "observation" || phase == "weight_evaluation" { cycle_persist.push((owner_uid.clone(), cycle.clone())); }
+            }
+        }
+    }
+    for (owner_uid, cycle) in cycle_persist {
+        if let Err(error) = persist_operating_cycle(&s, &owner_uid, &cycle).await {
+            tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "operating cycle telemetry persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"operating cycle telemetry persistence failed","event_persisted":true,"state_persisted":true,"decision_persisted":true})));
+        }
+    }
+    let mut paper_updates = Vec::new();
+    {
+        let mut sessions = s.active_paper_sessions.lock().await;
+        for (owner_uid, paper) in sessions.iter_mut() {
+            if paper_eligible.contains(owner_uid) {
+                if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper) {
+                    paper_updates.push((owner_uid.clone(), mirror, trade, paper.clone()));
+                }
+            }
+        }
+    }
+    for (owner_uid, mirror, trade, paper) in paper_updates {
+        let mut mirror_doc = match mongodb::bson::to_document(&mirror) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))) };
+        mirror_doc.insert("owner_uid", &owner_uid);
+        mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+        if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+            tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper Mirror persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror persistence failed","event_persisted":true,"decision_persisted":true})));
+        }
+        if let Some(trade) = trade {
+            let mut trade_doc = match mongodb::bson::to_document(&trade) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))) };
+            trade_doc.insert("owner_uid", &owner_uid);
+            trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper trade persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true,"decision_persisted":true})));
+            }
+        }
+        if let Err(error) = persist_paper_session(&s, &owner_uid, &paper).await {
+            tracing::error!(error=%error, owner_uid=%owner_uid, event_id=%event.event_id, "paper session state persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state persistence failed","event_persisted":true,"decision_persisted":true})));
+        }
+    }
+    let update=serde_json::json!({"type":"market.update"
         let mut cycle = s.active_cycle.lock().await;
         let phase = cycle.snapshot().phase;
         if cycle.is_active() {
@@ -3563,19 +3672,11 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
-    operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
-    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session state index");
-    paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session archive index");
+    operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user operating cycle index");
+    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"session_key":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper session state index");
+    paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"owner_uid":1,"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("per-user paper session archive index");
     paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper Mirror event index");
     paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper trade history index");
-    let persisted_cycle = match operating_cycles.find_one(doc!{"cycle_id":"active"}, None).await {
-        Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default() }
-        _ => OperatingCycle::default(),
-    };
-    let persisted_paper = match paper_sessions.find_one(doc!{"session_key":"active"}, None).await {
-        Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
-        _ => PaperSession::default(),
-    };
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
@@ -3596,8 +3697,8 @@ async fn main(){
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
         operating_cycles, paper_sessions, paper_session_runs, paper_session_decisions, paper_session_trades,
-        active_cycle: Arc::new(Mutex::new(persisted_cycle)),
-        active_paper_session: Arc::new(Mutex::new(persisted_paper)),
+        active_cycles: Arc::new(Mutex::new(HashMap::new())),
+        active_paper_sessions: Arc::new(Mutex::new(HashMap::new())),
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
