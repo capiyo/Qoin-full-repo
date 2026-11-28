@@ -185,8 +185,11 @@ pub struct Signal {
     pub angle_radians: f64,
     pub angle_degrees: f64,
     pub active_force_count: usize,
+    #[serde(default)]
     pub strategy_version: String,
+    #[serde(default)]
     pub config_fingerprint: String,
+    #[serde(default)]
     pub reject_reason: Option<RejectReason>,
     pub rationale: String,
     pub feature_names: Vec<String>,
