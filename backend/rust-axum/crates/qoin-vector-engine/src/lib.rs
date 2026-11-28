@@ -569,6 +569,13 @@ mod deterministic_audit_tests {
         }, &EngineConfig::default(), false).unwrap();
         assert_eq!(signal.decision, Decision::Wait);
         assert_eq!(signal.reject_reason, Some(RejectReason::FlatVector));
+        let close = decide(ForceObservation {
+            ofi: 0.0, liquidity: 0.0, volatility: 0.0, funding: 0.0,
+            open_interest_change: 0.0, liquidation_pressure: 0.0, basis: 0.0,
+            spread_bps, spread_age_ms,
+        }, &EngineConfig::default(), true).unwrap();
+        assert_eq!(close.decision, Decision::Close);
+        assert!(close.rationale.starts_with("CLOSE:"));
     }
 
     #[test]
