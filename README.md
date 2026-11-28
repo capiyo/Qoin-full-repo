@@ -5,6 +5,10 @@
 
 Qoin is a multi-client, domain-extensible intelligence and decision platform. Finance is its first application vertical, not the definition of the core. A domain-neutral Rust crate defines entities, source-attributed observations, feature vectors and algorithm decisions. The current complete application remains finance-focused research and paper trading; the baseline is not a validated or proven profitable edge.
 
+## Deployment
+
+Render deployment is defined in [`render.yaml`](render.yaml). Follow [the Render deployment guide](docs/RENDER_DEPLOYMENT.md) to provision the Axum private service, Drogon gateway, and web client from `master`.
+
 ## Repository structure
 
 ```text
