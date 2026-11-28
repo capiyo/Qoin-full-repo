@@ -722,6 +722,9 @@ function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { aut
       setSymbol(savedAccount.symbol); setVenue(savedAccount.venue); setCurrency(savedAccount.quote_currency);
       setCapital(String(savedAccount.initial_cash)); setNotional(String(savedAccount.notional_per_trade));
       setFee(String(savedAccount.fee_bps)); setSlippage(String(savedAccount.slippage_bps));
+    } else {
+      setSymbol("BTCUSDT"); setVenue("binance_usdm"); setCurrency("USDT");
+      setCapital("100"); setNotional("25"); setFee("10"); setSlippage("5");
     }
     loadedForUser.current = accountKey;
   };
@@ -737,6 +740,9 @@ function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { aut
           setSymbol(savedAccount.symbol); setVenue(savedAccount.venue); setCurrency(savedAccount.quote_currency);
           setCapital(String(savedAccount.initial_cash)); setNotional(String(savedAccount.notional_per_trade));
           setFee(String(savedAccount.fee_bps)); setSlippage(String(savedAccount.slippage_bps));
+        } else {
+          setSymbol("BTCUSDT"); setVenue("binance_usdm"); setCurrency("USDT");
+          setCapital("100"); setNotional("25"); setFee("10"); setSlippage("5");
         }
         loadedForUser.current = accountKey;
       }
