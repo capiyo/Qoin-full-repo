@@ -665,6 +665,19 @@ pub async fn submit_risk_checked(
     if adapter.broker_id().trim().is_empty() {
         return Err(ContractError::Broker("adapter has no broker identity".into()));
     }
+    // Before submitting, prove that this client order ID is absent from the
+    // provider's authoritative order history. Unsupported or incomplete
+    // lookups fail closed; an existing order must be reconciled, never resent.
+    if lookup_order_by_client_order_id(
+        adapter,
+        owner_uid,
+        &order.account_id,
+        &order.client_order_id,
+    ).await?.is_some() {
+        return Err(ContractError::Broker(
+            "client_order_id already exists at the broker; reconcile the existing order instead of submitting again".into()
+        ));
+    }
     let account = adapter.account_snapshot(owner_uid, &order.account_id).await?;
     let instrument = adapter.instrument_spec(owner_uid, &order.account_id, &order.instrument_id).await?;
     let quote = adapter.latest_quote(owner_uid, &order.account_id, &order.instrument_id).await?;
@@ -1137,6 +1150,22 @@ mod tests {
                 protective_stop_price: Some(d("95")),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn submit_path_never_dispatches_without_authoritative_client_id_lookup() {
+        let submit_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let adapter = MockAdapter { submit_calls: submit_calls.clone() };
+        let selected = selected_order("account-a");
+        let result = submit_risk_checked(
+            &adapter,
+            "verified-user",
+            &PortfolioRiskPolicy::default(),
+            selected.order,
+            selected.preflight,
+        ).await;
+        assert!(matches!(result, Err(ContractError::Unsupported(_))));
+        assert_eq!(submit_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
