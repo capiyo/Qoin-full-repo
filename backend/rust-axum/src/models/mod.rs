@@ -9,36 +9,36 @@ pub(crate) struct MarketEvent {
     pub(crate) symbol: String,
     pub(crate) event_type: String,
     pub(crate) ts_ms: i64,
-    #[serde(default)] price: Option<f64>,
-    #[serde(default)] size: Option<f64>,
-    #[serde(default)] side: Option<String>,
-    #[serde(default)] bid: Option<f64>,
-    #[serde(default)] ask: Option<f64>,
-    #[serde(default)] bid_size: Option<f64>,
-    #[serde(default)] ask_size: Option<f64>,
-    #[serde(default)] funding_rate: Option<f64>,
-    #[serde(default)] open_interest: Option<f64>,
-    #[serde(default)] liquidation_side: Option<String>,
+    #[serde(default)] pub(crate) price: Option<f64>,
+    #[serde(default)] pub(crate) size: Option<f64>,
+    #[serde(default)] pub(crate) side: Option<String>,
+    #[serde(default)] pub(crate) bid: Option<f64>,
+    #[serde(default)] pub(crate) ask: Option<f64>,
+    #[serde(default)] pub(crate) bid_size: Option<f64>,
+    #[serde(default)] pub(crate) ask_size: Option<f64>,
+    #[serde(default)] pub(crate) funding_rate: Option<f64>,
+    #[serde(default)] pub(crate) open_interest: Option<f64>,
+    #[serde(default)] pub(crate) liquidation_side: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub(crate) struct SymbolState {
-    #[serde(default)] venue: String,
+    #[serde(default)] pub(crate) venue: String,
     pub(crate) symbol: String,
     pub(crate) event_count: usize,
     pub(crate) last_event_ts_ms: Option<i64>,
-    #[serde(default)] last_event_id: Option<String>,
-    #[serde(default)] last_event_venue: Option<String>,
+    #[serde(default)] pub(crate) last_event_id: Option<String>,
+    #[serde(default)] pub(crate) last_event_venue: Option<String>,
     pub(crate) last_price: Option<f64>,
-    #[serde(default)] mark_price: Option<f64>,
-    #[serde(default)] basis_bps: Option<f64>,
+    #[serde(default)] pub(crate) mark_price: Option<f64>,
+    #[serde(default)] pub(crate) basis_bps: Option<f64>,
     pub(crate) spread_bps: Option<f64>,
-    #[serde(default)] last_book_ts_ms: Option<i64>,
-    #[serde(default)] liquidity_imbalance: f64,
-    #[serde(default)] liquidity_available: bool,
-    #[serde(default)] last_trade_ts_ms: Option<i64>,
-    #[serde(skip)] last_price_ts_ms: Option<i64>,
-    #[serde(skip)] recent_return_observations: VecDeque<(i64, f64)>,
+    #[serde(default)] pub(crate) last_book_ts_ms: Option<i64>,
+    #[serde(default)] pub(crate) liquidity_imbalance: f64,
+    #[serde(default)] pub(crate) liquidity_available: bool,
+    #[serde(default)] pub(crate) last_trade_ts_ms: Option<i64>,
+    #[serde(skip)] pub(crate) last_price_ts_ms: Option<i64>,
+    #[serde(skip)] pub(crate) recent_return_observations: VecDeque<(i64, f64)>,
     pub(crate) signed_flow: f64,
     pub(crate) total_trade_size: f64,
     pub(crate) order_flow_imbalance: f64,
@@ -46,8 +46,8 @@ pub(crate) struct SymbolState {
     pub(crate) ewma_abs_return: f64,
     pub(crate) funding_rate: Option<f64>,
     pub(crate) open_interest: Option<f64>,
-    #[serde(default)] open_interest_change: f64,
-    #[serde(default)] liquidation_pressure: f64,
+    #[serde(default)] pub(crate) open_interest_change: f64,
+    #[serde(default)] pub(crate) liquidation_pressure: f64,
     pub(crate) liquidation_events: usize,
     pub(crate) last_liquidation_side: Option<String>,
     pub(crate) state_quality: f64,
@@ -94,37 +94,37 @@ pub(crate) struct AppState {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct MarketHorizonQuery { symbol: Option<String>, venue_id: Option<String>, min_events: Option<usize> }
+pub(crate) struct MarketHorizonQuery { pub(crate) symbol: Option<String>, pub(crate) venue_id: Option<String>, pub(crate) min_events: Option<usize> }
 
 #[derive(Deserialize)]
-pub(crate) struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
+pub(crate) struct PaperHistoryQuery { pub(crate) symbol: Option<String>, pub(crate) cycle_id: Option<String>, pub(crate) limit: Option<i64> }
 
 #[derive(Deserialize)]
-pub(crate) struct PaperRunsQuery { limit: Option<i64> }
+pub(crate) struct PaperRunsQuery { pub(crate) limit: Option<i64> }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct InvestmentPlan { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16, updated_at: Option<String> }
+pub(crate) struct InvestmentPlan { pub(crate) goal: String, pub(crate) currency: String, pub(crate) monthly_contribution_minor: u64, pub(crate) target_amount_minor: Option<u64>, pub(crate) horizon_months: u16, pub(crate) updated_at: Option<String> }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct InvestmentPlanRequest { goal: String, currency: String, monthly_contribution_minor: u64, target_amount_minor: Option<u64>, horizon_months: u16 }
+pub(crate) struct InvestmentPlanRequest { pub(crate) goal: String, pub(crate) currency: String, pub(crate) monthly_contribution_minor: u64, pub(crate) target_amount_minor: Option<u64>, pub(crate) horizon_months: u16 }
 
 #[derive(Deserialize)]
-pub(crate) struct SignalRequest { observation: ForceObservation, has_open_position: bool }
+pub(crate) struct SignalRequest { pub(crate) observation: ForceObservation, pub(crate) has_open_position: bool }
 
 #[derive(Deserialize)]
-pub(crate) struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
+pub(crate) struct SymbolQuery { pub(crate) symbol: Option<String>, pub(crate) venue: Option<String> }
 
 #[derive(Deserialize)]
-pub(crate) struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
+pub(crate) struct StreamQuery { pub(crate) symbol: Option<String>, pub(crate) symbols: Option<String> }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct AlgorithmSelectionRequest { symbol: String, algorithm_id: String, version: String }
+pub(crate) struct AlgorithmSelectionRequest { pub(crate) symbol: String, pub(crate) algorithm_id: String, pub(crate) version: String }
 
 #[derive(Deserialize)]
-pub(crate) struct TradingControlRequest { enabled: bool }
+pub(crate) struct TradingControlRequest { pub(crate) enabled: bool }
 
 #[derive(Deserialize)]
-pub(crate) struct BrokerReadinessQuery { brokers: Option<String> }
+pub(crate) struct BrokerReadinessQuery { pub(crate) brokers: Option<String> }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct BrokerOrderSubmission {
@@ -134,10 +134,10 @@ pub(crate) struct BrokerOrderSubmission {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct StoredAlgorithmSelection { symbol: String, algorithm_id: String, version: String, selected_at_ms: i64 }
+pub(crate) struct StoredAlgorithmSelection { pub(crate) symbol: String, pub(crate) algorithm_id: String, pub(crate) version: String, pub(crate) selected_at_ms: i64 }
 
 #[derive(Deserialize)]
-pub(crate) struct HistoryQuery { symbol: Option<String>, venue: Option<String>, limit: Option<i64>, at_ms: Option<i64> }
+pub(crate) struct HistoryQuery { pub(crate) symbol: Option<String>, pub(crate) venue: Option<String>, pub(crate) limit: Option<i64>, pub(crate) at_ms: Option<i64> }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ProviderHealthQuery {
@@ -147,10 +147,10 @@ pub(crate) struct ProviderHealthQuery {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct DatasetManifestRequest { symbol: String, venue: String, from_ts_ms: i64, to_ts_ms: i64, #[serde(default)] max_gap_ms: Option<i64> }
+pub(crate) struct DatasetManifestRequest { pub(crate) symbol: String, pub(crate) venue: String, pub(crate) from_ts_ms: i64, pub(crate) to_ts_ms: i64, #[serde(default)] max_gap_ms: Option<i64> }
 
 #[derive(Deserialize)]
-pub(crate) struct DatasetManifestQuery { symbol: Option<String>, venue: Option<String>, limit: Option<i64> }
+pub(crate) struct DatasetManifestQuery { pub(crate) symbol: Option<String>, pub(crate) venue: Option<String>, pub(crate) limit: Option<i64> }
 
 #[derive(Deserialize)]
 pub(crate) struct BacktestQuery {
@@ -202,4 +202,4 @@ pub(crate) struct LedgerIntegrityQuery {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct NewsQuery { category: Option<String> }
+pub(crate) struct NewsQuery { pub(crate) category: Option<String> }
