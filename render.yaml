@@ -62,7 +62,7 @@ services:
       - key: QOIN_DROGON_HOST
         value: 0.0.0.0
       - key: QOIN_DROGON_PORT
-        value: "8080"
+        value: "10000"
 
   - type: web
     name: qoin-web
