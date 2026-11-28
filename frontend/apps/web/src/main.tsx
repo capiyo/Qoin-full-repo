@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { initializeQoinFirebase } from "@qoin/core";
 import "./styles.css";
+import "./funspot-parity.css";
 
 const qoinDesktopRuntime = globalThis as typeof globalThis & { __TAURI_INTERNALS__?: unknown };
 if (qoinDesktopRuntime.__TAURI_INTERNALS__) {
