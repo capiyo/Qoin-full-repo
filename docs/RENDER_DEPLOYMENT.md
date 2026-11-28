@@ -39,7 +39,7 @@ they must never call Axum's internal routes directly.
 
 - Deploys automatically from `master`; no feature or deployment branch is
   required.
-- The gateway resolves Axum's private hostname and port through Render's `fromService` Blueprint reference, then proxies HTTP and WebSocket traffic over the private network.
+- The gateway resolves Axum's private hostname and port through Render's `fromService` Blueprint reference, then proxies HTTP and WebSocket traffic over the private network. Its listener binds to Render's injected public-service port (`10000`).
 - MongoDB is external to the Blueprint so database persistence is not tied to
   an ephemeral application filesystem.
 - `QOIN_TRADING_ENABLED=false` is explicit. This deployment is research and
