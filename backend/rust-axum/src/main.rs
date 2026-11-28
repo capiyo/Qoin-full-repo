@@ -425,6 +425,16 @@ async fn put_investment_plan(State(s): State<AppState>, headers: HeaderMap, Json
     (StatusCode::OK, Json(serde_json::to_value(plan).unwrap_or_default()))
 }
 
+fn parse_env_bool(value: Option<&str>, default: bool) -> bool {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => !matches!(value.to_ascii_lowercase().as_str(), "false" | "0" | "off" | "no"),
+        None => default,
+    }
+}
+fn stream_enabled(name: &str, default: bool) -> bool {
+    parse_env_bool(env::var(name).ok().as_deref(), default)
+}
+
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
     if e.event_id.trim().is_empty() || e.venue.trim().is_empty() || e.symbol.trim().is_empty() {
@@ -1104,9 +1114,9 @@ async fn health(State(s): State<AppState>) -> impl IntoResponse {
        "market_recovery":{"status":if recovery_ok{"ok"}else{"degraded"},
          "replayed_events":s.recovery_replayed_events,"skipped_events":s.recovery_skipped_events},
        "strategy_version":strategy_version,
-       "market_streams":{"binance_usdm_enabled":env::var("QOIN_BINANCE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true),
-          "coinbase_advanced_trade_enabled":env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
-          "kraken_spot_enabled":env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v=="true").unwrap_or(false),
+       "market_streams":{"binance_usdm_enabled":stream_enabled("QOIN_BINANCE_STREAM_ENABLED", true),
+          "coinbase_advanced_trade_enabled":stream_enabled("QOIN_COINBASE_STREAM_ENABLED", true),
+          "kraken_spot_enabled":stream_enabled("QOIN_KRAKEN_STREAM_ENABLED", true),
           "finnhub_key_configured":env::var("FINNHUB_API_KEY").map(|v|!v.trim().is_empty()).unwrap_or(false)},
        "execution_adapter_registry":{"configured":configured_adapters,"count":configured_adapter_count,
           "sole_adapter":sole_configured_adapter},
@@ -3810,7 +3820,7 @@ async fn main(){
         tokio::spawn(async move{spawn_binance_open_interest(open_interest_addr,open_interest_symbols).await;});
     } else { tracing::info!("Binance public market stream disabled by configuration"); }
     // Public read-only market data is enabled by default; set the flag to false to opt out.
-    let kraken_enabled=env::var("QOIN_KRAKEN_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
+    let kraken_enabled=stream_enabled("QOIN_KRAKEN_STREAM_ENABLED", true);
     if kraken_enabled {
         let symbols=env::var("QOIN_KRAKEN_STREAM_SYMBOLS").unwrap_or_else(|_|"BTC/USD,ETH/USD,SOL/USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
@@ -3820,7 +3830,7 @@ async fn main(){
         tracing::info!("Kraken Spot public market stream disabled by configuration");
     }
     // Public read-only market data is enabled by default; set the flag to false to opt out.
-    let coinbase_enabled=env::var("QOIN_COINBASE_STREAM_ENABLED").map(|v|v!="false").unwrap_or(true);
+    let coinbase_enabled=stream_enabled("QOIN_COINBASE_STREAM_ENABLED", true);
     if coinbase_enabled {
         let products=env::var("QOIN_COINBASE_STREAM_PRODUCTS").unwrap_or_else(|_|"BTC-USD,ETH-USD,SOL-USD".into())
             .split(',').map(str::trim).filter(|v|!v.is_empty()).map(str::to_owned).collect::<Vec<_>>();
@@ -4142,5 +4152,21 @@ mod investment_plan_tests {
         let mut invalid = base;
         invalid.horizon_months = 0;
         assert!(validate_investment_plan(invalid).is_err());
+    }
+}
+
+#[cfg(test)]
+mod stream_flag_tests {
+    use super::parse_env_bool;
+
+    #[test]
+    fn public_stream_flags_default_on_and_accept_common_false_values() {
+        assert!(parse_env_bool(None, true));
+        assert!(parse_env_bool(Some("true"), false));
+        assert!(parse_env_bool(Some("TRUE"), false));
+        for value in ["false", "FALSE", "0", "off", "no"] {
+            assert!(!parse_env_bool(Some(value), true), "{value}");
+        }
+        assert!(!parse_env_bool(None, false));
     }
 }
