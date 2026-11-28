@@ -739,7 +739,10 @@ function OperatingCyclePanel({ authenticated, accountKey, onRequireAuth }: { aut
     initial_cash: Number(capital), notional_per_trade: Number(notional), contract_multiplier: 1,
     quantity_step: 0.000001, reinvest_profits: true, fee_bps: Number(fee), slippage_bps: Number(slippage),
   };
-  const valid = account.symbol.length > 0 && account.venue.length > 0 && account.quote_currency.length > 0 &&
+  const durations = [Number(observation), Number(evaluation), Number(session)];
+  const valid = durations.every(Number.isInteger) && durations[0] >= 1 && durations[0] <= 120 &&
+    durations[1] >= 1 && durations[1] <= 720 && durations[2] >= 1 && durations[2] <= 1440 &&
+    account.symbol.length > 0 && account.venue.length > 0 && account.quote_currency.length > 0 &&
     [account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite) &&
     account.initial_cash > 0 && account.notional_per_trade > 0 && account.notional_per_trade <= account.initial_cash &&
     account.fee_bps >= 0 && account.fee_bps <= 100 && account.slippage_bps >= 0 && account.slippage_bps <= 100;
