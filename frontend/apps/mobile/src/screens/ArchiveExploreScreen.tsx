@@ -1,3 +1,4 @@
+import { InvestmentPlanPanel } from "../components/InvestmentPlanPanel";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Image } from "react-native";
@@ -6,7 +7,7 @@ import type { User } from "firebase/auth";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text as NativeText, type TextProps, TextInput as NativeTextInput, type TextInputProps, View } from "react-native";
 import Svg, { Circle, Line, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinMarketVector, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy } from "@qoin/core";
+import { subscribeQoinAuth, signOutQoinUser, uploadQoinAvatar, getQoinArchivedSymbols, saveQoinArchivedSymbols, getQoinBrokerSelections, saveQoinBrokerSelections, getQoinBrokerReadiness, getQoinNotifications, recordQoinNotification, markQoinNotificationsRead, getQoinMarketVector, getQoinAlgorithmDecision, getQoinAlgorithmSelections, saveQoinAlgorithmSelection, getQoinMarketState, getInstrumentVectorHistory, getQoinEvents, getQoinSetLedger, getQoinCalendar, getQoinInstruments, getQoinNews, getQoinStrategy, getQoinAlgorithmCatalogue, getQoinBrokerCatalogue, runQoinBacktest, getQoinInvestmentPlan, saveQoinInvestmentPlan, getQoinOperatingCycle, configureQoinOperatingCycle, startQoinOperatingCycle, stopQoinOperatingCycle, getQoinPaperSession, type QoinOperatingCycleConfig, type QoinOperatingCycleSnapshot, type QoinPaperSessionSnapshot, subscribeQoinStream, QOIN_FEATURE_NAMES, type QoinAlgorithmCatalogue, type QoinBacktestResult, type QoinVectorDecision, type QoinVectorHistory, type QoinMarketState, type QoinNewsItem, type QoinInstrument, type QoinStreamUpdate, type QoinMacroEvent, type QoinMarketEvent, type QoinSetLedger, type QoinMarketVectorResponse, type QoinStrategy } from "@qoin/core";
 
 type Market = QoinInstrument["asset_class"];
 type Instrument = {
@@ -1086,6 +1087,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
               <Text style={styles.coverageDisclaimer}>Preview only: not active subscriptions, prices or enforced permissions. Finnhub data depends on a configured key and eligible access. No live broker execution is connected.</Text>
             </View>
             <MobileBrokerCollectionPanel />
+            <InvestmentPlanPanel user={firebaseUser} />
             <MobileOperatingCyclePanel authenticated={Boolean(firebaseUser)} accountKey={firebaseUser?.uid || ""} onRequireAuth={requireAuthentication} />
           </>
         ) : null}
