@@ -15,14 +15,19 @@ export type MarketForceObservation = {
 };
 
 export type QoinDecision = "BUY" | "SELL" | "CLOSE" | "WAIT";
+export type QoinRejectReason = "SPREAD_MISSING_OR_WIDE" | "SPREAD_STALE" | "LOW_MAGNITUDE" | "MISALIGNED" | "BOTH" | "FLAT_VECTOR";
 
 export type QoinSignal = {
   decision: QoinDecision;
+  action: string;
   score: number;
   alignment: number;
   angle_radians: number;
+  angle_degrees: number;
   active_force_count: number;
-  config_version: string;
+  strategy_version: string;
+  config_fingerprint: number;
+  reject_reason: QoinRejectReason | null;
   rationale: string;
 };
 
@@ -813,12 +818,12 @@ export type QoinHorizonInput = {
   horizon: QoinResearchHorizon;
   observation: MarketForceObservation;
   config: QoinEngineConfig;
-  config_version: string;
+  strategy_version: string;
   has_open_position: boolean;
 };
 export type QoinHorizonSignal = {
   horizon: QoinResearchHorizon; duration_seconds: number;
-  signal: { decision: string; action: string; score: number; alignment: number; rationale: string };
+  signal: QoinSignal;
 };
 export type QoinHorizonConsensus = {
   relationship: "aligned_buy" | "aligned_sell" | "divergent" | "no_directional_consensus";
