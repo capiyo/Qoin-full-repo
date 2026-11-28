@@ -13,7 +13,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use std::{collections::{BTreeMap, HashMap, HashSet, VecDeque}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio_tungstenite::connect_async;
 use tower_http::trace::TraceLayer;
 
@@ -41,6 +41,8 @@ mod v2_evaluation;
 mod paper_session;
 mod operating_cycle;
 mod notifications;
+use operating_cycle::{CycleConfig, OperatingCycle};
+use paper_session::{PaperAccountConfig, PaperSession};
 mod market_vector;
 mod market_vector_api;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
@@ -128,7 +130,19 @@ struct AppState {
     signal_config_version: String,
     recovery_replayed_events: u64,
     recovery_skipped_events: u64,
+    operating_cycles: Collection<Document>,
+    paper_sessions: Collection<Document>,
+    paper_session_runs: Collection<Document>,
+    paper_session_decisions: Collection<Document>,
+    paper_session_trades: Collection<Document>,
+    active_cycle: Arc<Mutex<OperatingCycle>>,
+    active_paper_session: Arc<Mutex<PaperSession>>,
 }
+#[derive(Deserialize)]
+struct PaperHistoryQuery { symbol: Option<String>, cycle_id: Option<String>, limit: Option<i64> }
+#[derive(Deserialize)]
+struct PaperRunsQuery { limit: Option<i64> }
+
 #[derive(Deserialize)]
 struct SignalRequest { observation: ForceObservation, has_open_position: bool }
 
@@ -138,6 +152,159 @@ struct SymbolQuery { symbol: Option<String>, venue: Option<String> }
 struct StreamQuery { symbol: Option<String>, symbols: Option<String> }
 #[derive(Debug, Clone, Deserialize)]
 struct AlgorithmSelectionRequest { symbol: String, algorithm_id: String, version: String }
+
+
+async fn persist_operating_cycle(s: &AppState, cycle: &OperatingCycle) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(cycle).map_err(|error| error.to_string())?;
+    document.insert("cycle_id", "active");
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.operating_cycles.update_one(doc! {"cycle_id":"active"}, doc! {"$set":document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+async fn persist_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let mut document = mongodb::bson::to_document(session).map_err(|error| error.to_string())?;
+    document.insert("session_key", "active");
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.paper_sessions.update_one(doc! {"session_key":"active"}, doc! {"$set":document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+async fn archive_paper_session(s: &AppState, session: &PaperSession) -> Result<(), String> {
+    let snapshot = session.snapshot();
+    let Some(cycle_id) = snapshot.cycle_id.clone() else { return Ok(()); };
+    let mut document = mongodb::bson::to_document(&snapshot).map_err(|error| error.to_string())?;
+    document.insert("archived_at", mongodb::bson::DateTime::now());
+    let options = UpdateOptions::builder().upsert(true).build();
+    s.paper_session_runs.update_one(doc! {"cycle_id":cycle_id}, doc! {"$set":document}, Some(options))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+async fn get_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let cycle = s.active_cycle.lock().await;
+    (StatusCode::OK, Json(serde_json::to_value(cycle.snapshot()).unwrap_or_default()))
+}
+async fn configure_operating_cycle(State(s): State<AppState>, Json(config): Json<CycleConfig>) -> impl IntoResponse {
+    let mut cycle = s.active_cycle.lock().await;
+    let snapshot = match cycle.configure(config) {
+        Ok(value) => value,
+        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+    };
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle configuration persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+async fn start_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cycle = s.active_cycle.lock().await;
+    if cycle.snapshot().active {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error":"an operating cycle is already active"})));
+    }
+    let config = cycle.snapshot().config;
+    let cycle_id = format!("cycle-{}", chrono::Utc::now().timestamp_millis());
+    let paper = if config.mode == "paper" {
+        match PaperSession::start(cycle_id, &config.paper_accounts) {
+            Ok(session) => session,
+            Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":message}))),
+        }
+    } else { PaperSession::default() };
+    let snapshot = cycle.start();
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    drop(cycle);
+    let mut active_paper = s.active_paper_session.lock().await;
+    if active_paper.is_active() {
+        active_paper.stop();
+        if let Err(error) = persist_paper_session(&s, &active_paper).await {
+            tracing::error!(error=%error, "previous paper session stop persistence failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
+        }
+        if let Err(error) = archive_paper_session(&s, &active_paper).await {
+            tracing::error!(error=%error, "previous paper session archive failed");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"previous paper session could not be archived"})));
+        }
+    }
+    *active_paper = paper;
+    if let Err(error) = persist_paper_session(&s, &active_paper).await {
+        tracing::error!(error=%error, "paper session start persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+async fn stop_operating_cycle(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cycle = s.active_cycle.lock().await;
+    let snapshot = cycle.stop();
+    if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+        tracing::error!(error=%error, "operating cycle stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"cycle persistence failed"})));
+    }
+    drop(cycle);
+    let mut paper = s.active_paper_session.lock().await;
+    paper.stop();
+    if let Err(error) = persist_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session stop persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session persistence failed"})));
+    }
+    if let Err(error) = archive_paper_session(&s, &paper).await {
+        tracing::error!(error=%error, "paper session archive persistence failed");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive persistence failed"})));
+    }
+    (StatusCode::OK, Json(serde_json::to_value(snapshot).unwrap_or_default()))
+}
+async fn get_paper_session(State(s): State<AppState>) -> impl IntoResponse {
+    let session = s.active_paper_session.lock().await;
+    (StatusCode::OK, Json(serde_json::to_value(session.snapshot()).unwrap_or_default()))
+}
+async fn get_paper_session_history(Query(query): Query<PaperHistoryQuery>, State(s): State<AppState>) -> impl IntoResponse {
+    let mut filter = Document::new();
+    if let Some(cycle_id) = query.cycle_id { filter.insert("cycle_id", cycle_id); }
+    if let Some(symbol) = query.symbol { filter.insert("symbol", symbol); }
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let mut decisions_cursor = match s.paper_session_decisions.find(filter.clone(), FindOptions::builder().sort(doc! {"ts_ms":-1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper Mirror history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history unavailable"}))); }
+    };
+    let mut decisions = Vec::new();
+    loop {
+        match decisions_cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); decisions.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror history read interrupted"}))),
+        }
+    }
+    let mut trades_cursor = match s.paper_session_trades.find(filter, FindOptions::builder().sort(doc! {"exit_ts_ms":-1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper trade history query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history unavailable"}))); }
+    };
+    let mut trades = Vec::new();
+    loop {
+        match trades_cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); document.remove("stored_at"); trades.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade history read interrupted"}))),
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"decisions":decisions,"trades":trades})))
+}
+async fn get_paper_session_runs(Query(query): Query<PaperRunsQuery>, State(s): State<AppState>) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let mut cursor = match s.paper_session_runs.find(doc! {}, FindOptions::builder().sort(doc! {"archived_at":-1}).limit(limit).build()).await {
+        Ok(cursor) => cursor,
+        Err(error) => { tracing::error!(error=%error, "paper session archive query failed"); return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archives unavailable"}))); }
+    };
+    let mut runs = Vec::new();
+    loop {
+        match cursor.try_next().await {
+            Ok(Some(mut document)) => { document.remove("_id"); runs.push(document); }
+            Ok(None) => break,
+            Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session archive read interrupted"}))),
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({"runs":runs})))
+}
 
 fn valid_number(value: Option<f64>) -> bool { value.map(f64::is_finite).unwrap_or(true) }
 fn validate_event(e: &MarketEvent) -> Result<(), String> {
@@ -1072,6 +1239,50 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     if let Err(e)=s.decisions.insert_one(decision_doc,None).await{
         tracing::error!(error=%e,"decision persistence failed");
         return(StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"error":"decision persistence failed","event_persisted":true,"state_persisted":true})));
+    }
+    let signal_for_paper = signal.clone();
+    let cycle_phase = {
+        let mut cycle = s.active_cycle.lock().await;
+        let phase = cycle.snapshot().phase;
+        if cycle.is_active() {
+            if phase == "observation" { cycle.record_observation(); }
+            else if phase == "weight_evaluation" {
+                let bullish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bullish_weight)).collect::<BTreeMap<_,_>>();
+                let bearish = signal_for_paper.feature_trace.iter().map(|trace| (trace.name.clone(), trace.bearish_weight)).collect::<BTreeMap<_,_>>();
+                cycle.record_signal_evaluation(signal_for_paper.score, signal_for_paper.alignment, &signal_for_paper.action,
+                    &signal_for_paper.features, &signal_for_paper.attention, &signal_for_paper.attended_features, &bullish, &bearish);
+            }
+            if phase == "observation" || phase == "weight_evaluation" {
+                if let Err(error) = persist_operating_cycle(&s, &cycle).await {
+                    tracing::error!(error=%error, event_id=%event.event_id, "operating cycle telemetry persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"operating cycle telemetry persistence failed","event_persisted":true,"state_persisted":true,"decision_persisted":true})));
+                }
+            }
+        }
+        cycle.snapshot().phase
+    };
+    if cycle_phase == "paper_session" {
+        let mut paper = s.active_paper_session.lock().await;
+        if let Some((mirror, trade)) = paper.process_event(&event, &signal_for_paper) {
+            let mut mirror_doc = match mongodb::bson::to_document(&mirror) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper Mirror serialization failed"}))) };
+            mirror_doc.insert("stored_at", mongodb::bson::DateTime::now());
+            if let Err(error) = s.paper_session_decisions.insert_one(mirror_doc, None).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper Mirror persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper Mirror persistence failed","event_persisted":true,"decision_persisted":true})));
+            }
+            if let Some(trade) = trade {
+                let mut trade_doc = match mongodb::bson::to_document(&trade) { Ok(value) => value, Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"paper trade serialization failed"}))) };
+                trade_doc.insert("stored_at", mongodb::bson::DateTime::now());
+                if let Err(error) = s.paper_session_trades.insert_one(trade_doc, None).await {
+                    tracing::error!(error=%error, event_id=%event.event_id, "paper trade persistence failed");
+                    return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper trade persistence failed","event_persisted":true,"decision_persisted":true})));
+                }
+            }
+            if let Err(error) = persist_paper_session(&s, &paper).await {
+                tracing::error!(error=%error, event_id=%event.event_id, "paper session state persistence failed");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"paper session state persistence failed","event_persisted":true,"decision_persisted":true})));
+            }
+        }
     }
     let update=serde_json::json!({"type":"market.update","symbol":snapshot.symbol,"event":event,
         "state":snapshot,"decision":decision,"market_vector":market_vector,"market_vector_persisted":market_vector_persisted,"server_ts_ms":chrono::Utc::now().timestamp_millis()});
@@ -3239,6 +3450,11 @@ async fn main(){
     let market_vectors:Collection<Document>=db.collection("market_vectors");
     let fcm_tokens:Collection<Document>=db.collection("fcm_tokens");
     let algorithm_selections:Collection<Document>=db.collection("user_algorithm_selections");
+    let operating_cycles:Collection<Document>=db.collection("operating_cycles");
+    let paper_sessions:Collection<Document>=db.collection("paper_sessions");
+    let paper_session_runs:Collection<Document>=db.collection("paper_session_runs");
+    let paper_session_decisions:Collection<Document>=db.collection("paper_session_decisions");
+    let paper_session_trades:Collection<Document>=db.collection("paper_session_trades");
     let broker_accounts:Collection<Document>=db.collection("broker_accounts");
     let broker_environment = Arc::new(broker_env::BrokerEnvironment::from_env()
         .expect("QOIN_BROKER_* environment configuration must be valid"));
@@ -3347,6 +3563,19 @@ async fn main(){
     }
     tracing::info!(restored_symbols=restored_memory.len(),replayed_events,skipped_events,
         "rebuilt market snapshots from immutable MongoDB event log");
+    operating_cycles.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("operating cycle index");
+    paper_sessions.create_index(mongodb::IndexModel::builder().keys(doc!{"session_key":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session state index");
+    paper_session_runs.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper session archive index");
+    paper_session_decisions.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"event_id":1}).options(IndexOptions::builder().unique(true).build()).build(),None).await.expect("paper Mirror event index");
+    paper_session_trades.create_index(mongodb::IndexModel::builder().keys(doc!{"cycle_id":1,"venue":1,"symbol":1,"exit_ts_ms":1}).build(),None).await.expect("paper trade history index");
+    let persisted_cycle = match operating_cycles.find_one(doc!{"cycle_id":"active"}, None).await {
+        Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<OperatingCycle>(document).unwrap_or_default() }
+        _ => OperatingCycle::default(),
+    };
+    let persisted_paper = match paper_sessions.find_one(doc!{"session_key":"active"}, None).await {
+        Ok(Some(mut document)) => { document.remove("_id"); mongodb::bson::from_document::<PaperSession>(document).unwrap_or_default() }
+        _ => PaperSession::default(),
+    };
     let firebase_verifier = env::var("QOIN_FIREBASE_PROJECT_ID").ok()
         .filter(|project_id| !project_id.trim().is_empty())
         .map(firebase_identity::FirebaseIdentityVerifier::new)
@@ -3366,6 +3595,9 @@ async fn main(){
         signal_config_version,
         recovery_replayed_events: replayed_events,
         recovery_skipped_events: skipped_events,
+        operating_cycles, paper_sessions, paper_session_runs, paper_session_decisions, paper_session_trades,
+        active_cycle: Arc::new(Mutex::new(persisted_cycle)),
+        active_paper_session: Arc::new(Mutex::new(persisted_paper)),
     };
     let app=Router::new().route("/health",get(health)).route("/internal/brokers",get(broker_catalogue::get_brokers)).route("/v1/signal",post(evaluate_signal))
         .route("/internal/users/me",get(get_qoin_me))
@@ -3405,6 +3637,12 @@ async fn main(){
         .route("/internal/news",get(get_news)).route("/internal/calendar",get(get_calendar))
         .route("/internal/strategy",get(get_strategy).put(put_strategy))
         .route("/internal/algorithms",get(algorithm_catalogue::get_algorithms))
+        .route("/internal/operating-cycle",get(get_operating_cycle).put(configure_operating_cycle))
+        .route("/internal/operating-cycle/start",post(start_operating_cycle))
+        .route("/internal/operating-cycle/stop",post(stop_operating_cycle))
+        .route("/internal/paper-session",get(get_paper_session))
+        .route("/internal/paper-session/history",get(get_paper_session_history))
+        .route("/internal/paper-session/runs",get(get_paper_session_runs))
         .with_state(state).layer(TraceLayer::new_for_http());
     let addr=env::var("QOIN_AXUM_ADDR").unwrap_or_else(|_|"127.0.0.1:8081".into());
     // Bind address may be 0.0.0.0 inside a container; provider callbacks must
