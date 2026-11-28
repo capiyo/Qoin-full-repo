@@ -48,9 +48,6 @@ mod market_vector_api;
 use edge_strategy::{EdgeStrategy, STRATEGY_KEY};
 use qoin_vector_engine::{aggregate_horizon, decide as decide_signal, evaluate_multi_horizon, EngineConfig, ForceObservation, Horizon, HorizonInput, MarketEvent as HorizonMarketEvent, Signal};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-
 mod models;
 mod handlers;
 mod routes;
