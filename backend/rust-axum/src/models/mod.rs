@@ -147,7 +147,7 @@ pub(crate) struct ProviderHealthQuery {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct DatasetManifestRequest { pub(crate) symbol: String, pub(crate) venue: String, pub(crate) from_ts_ms: i64, pub(crate) to_ts_ms: i64, #[serde(default)] max_gap_ms: Option<i64> }
+pub(crate) struct DatasetManifestRequest { pub(crate) symbol: String, pub(crate) venue: String, pub(crate) from_ts_ms: i64, pub(crate) to_ts_ms: i64, #[serde(default)] pub(crate) max_gap_ms: Option<i64> }
 
 #[derive(Deserialize)]
 pub(crate) struct DatasetManifestQuery { pub(crate) symbol: Option<String>, pub(crate) venue: Option<String>, pub(crate) limit: Option<i64> }
