@@ -788,3 +788,43 @@ export function getQoinInvestmentPlan(): Promise<QoinInvestmentPlan | null> {
 export function saveQoinInvestmentPlan(plan: QoinInvestmentPlanInput): Promise<QoinInvestmentPlan> {
   return authenticatedQoinRequest("/api/v1/investment-plan", { method: "PUT", body: JSON.stringify(plan) });
 }
+
+
+export type QoinResearchHorizon =
+  | "one_minute" | "five_minutes" | "fifteen_minutes" | "thirty_minutes"
+  | "one_hour" | "four_hours" | "one_day" | "one_week";
+export type QoinHorizonObservation = {
+  horizon: QoinResearchHorizon;
+  observation: {
+    ofi: number; liquidity: number; volatility: number; funding: number;
+    open_interest_change: number; liquidation_pressure: number; basis: number;
+    spread_bps: number | null; spread_age_ms: number | null;
+  };
+  event_count: number; trade_count: number; book_count: number;
+  first_event_ts_ms: number | null; last_event_ts_ms: number | null;
+  data_quality: number; coverage_ratio: number; ready: boolean; reasons: string[];
+};
+export type QoinHorizonSignal = {
+  horizon: QoinResearchHorizon; duration_seconds: number;
+  signal: { decision: string; action: string; score: number; alignment: number; rationale: string };
+};
+export type QoinHorizonConsensus = {
+  relationship: "aligned_buy" | "aligned_sell" | "divergent" | "no_directional_consensus";
+  buy_count: number; sell_count: number; wait_count: number; close_count: number;
+  directional_count: number; unanimous_direction: string | null;
+};
+export type QoinMultiHorizonSignal = { horizons: QoinHorizonSignal[]; consensus: QoinHorizonConsensus };
+export type QoinMarketHorizonsResponse = {
+  symbol: string; venue_id: string; decision_ts_ms: number; events_loaded: number;
+  event_documents: number; invalid_event_documents: number; event_limit_reached: boolean;
+  mode: "research_only"; observations: QoinHorizonObservation[];
+  signals: QoinMultiHorizonSignal | null; note: string;
+};
+/** Causal multi-horizon research from stored events for one exact venue and symbol. */
+export function getQoinMarketHorizons(symbol: string, venueId: string, minEvents = 20): Promise<QoinMarketHorizonsResponse> {
+  if (!symbol.trim() || symbol.length > 64) return Promise.reject(new Error("symbol must contain 1 to 64 characters"));
+  if (!venueId.trim() || venueId.length > 64) return Promise.reject(new Error("canonical venue ID is required"));
+  if (!Number.isInteger(minEvents) || minEvents < 5 || minEvents > 10_000) return Promise.reject(new Error("minEvents must be an integer between 5 and 10000"));
+  const params = new URLSearchParams({ symbol, venue_id: venueId, min_events: String(minEvents) });
+  return request<QoinMarketHorizonsResponse>("/api/v1/market-horizons?" + params.toString());
+}
