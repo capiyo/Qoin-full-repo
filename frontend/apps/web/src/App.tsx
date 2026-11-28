@@ -737,7 +737,7 @@ function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: 
   const valid = account.symbol.length > 0 && account.venue.length > 0 && account.quote_currency.length > 0 &&
     [account.initial_cash,account.notional_per_trade,account.fee_bps,account.slippage_bps].every(Number.isFinite) &&
     account.initial_cash > 0 && account.notional_per_trade > 0 && account.notional_per_trade <= account.initial_cash &&
-    account.fee_bps >= 0 && account.slippage_bps >= 0 && account.slippage_bps < 10000;
+    account.fee_bps >= 0 && account.fee_bps <= 100 && account.slippage_bps >= 0 && account.slippage_bps <= 100;
   const act = async (action: "configure" | "start" | "stop") => {
     if (!authenticated) { onRequireAuth(); return; }
     if (action === "configure" && !valid) { setStatus("Check the instrument, venue, currency, capital, notional and cost assumptions."); return; }
@@ -758,16 +758,16 @@ function OperatingCyclePanel({ authenticated, onRequireAuth }: { authenticated: 
     <div className="coverage-heading"><div><p className="eyebrow">RESEARCH OPERATIONS</p><h3>Operating cycle</h3><p>Observe → evaluate weights → run a bounded paper session.</p></div><span className="coverage-status">{cycle?.phase?.replaceAll("_"," ").toUpperCase() || "NOT LOADED"}</span></div>
     {!authenticated ? <div className="empty-state"><p>Sign in to configure and monitor your private paper cycle.</p><button className="primary-button" onClick={onRequireAuth}>Sign in</button></div> : <>
       <div className="backtest-controls">
-        <label>Observation (minutes)<input type="number" min="1" max="1440" value={observation} onChange={e=>setObservation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
-        <label>Weight evaluation (minutes)<input type="number" min="1" max="10080" value={evaluation} onChange={e=>setEvaluation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
-        <label>Paper session (minutes)<input type="number" min="1" max="10080" value={session} onChange={e=>setSession(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Observation (minutes)<input type="number" min="1" max="120" value={observation} onChange={e=>setObservation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Weight evaluation (minutes)<input type="number" min="1" max="720" value={evaluation} onChange={e=>setEvaluation(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Paper session (minutes)<input type="number" min="1" max="1440" value={session} onChange={e=>setSession(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
         <label>Engine symbol<input value={symbol} onChange={e=>setSymbol(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
         <label>Venue ID<input value={venue} onChange={e=>setVenue(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
         <label>Quote currency<input value={currency} onChange={e=>setCurrency(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
         <label>Starting capital<input type="number" min="0.01" value={capital} onChange={e=>setCapital(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
         <label>Entry notional<input type="number" min="0.01" value={notional} onChange={e=>setNotional(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
-        <label>Fee (bps)<input type="number" min="0" value={fee} onChange={e=>setFee(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
-        <label>Slippage (bps)<input type="number" min="0" max="9999" value={slippage} onChange={e=>setSlippage(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Fee (bps)<input type="number" min="0" max="100" value={fee} onChange={e=>setFee(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
+        <label>Slippage (bps)<input type="number" min="0" max="100" value={slippage} onChange={e=>setSlippage(e.target.value)} disabled={Boolean(cycle?.active)} /></label>
       </div>
       <div className="coverage-actions">
         <button className="secondary-button" disabled={busy || cycle?.active} onClick={()=>void act("configure")}>Save configuration</button>
