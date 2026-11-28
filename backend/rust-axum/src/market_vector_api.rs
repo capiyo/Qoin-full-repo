@@ -4,7 +4,8 @@ use mongodb::{bson::doc,options::{FindOneOptions,FindOptions}};
 use qoin_market_space::MarketVector;
 use serde::Deserialize;
 use serde_json::{json,Value};
-use super::{firebase_uid_from_headers,ensure_user_record,AppState};
+use crate::handlers::{ensure_user_record, firebase_uid_from_headers};
+use crate::models::AppState;
 
 #[derive(Debug,Deserialize)]
 pub(super) struct MarketVectorQuery {
