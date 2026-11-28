@@ -800,6 +800,7 @@ export function ArchiveExploreScreen({ mode, onAuthRequested, onHeaderVisibility
     return () => { active = false; };
   }, [firebaseUser?.uid]);
   const archived = useMemo(() => items.filter((item) => item.archived), [items]);
+  const instruments = items;
   const decisionStrategy = strategy;
   const availableVenues = useMemo(() => [...new Set(items.map((item) => item.venue).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
   const availableQuotes = useMemo(() => [...new Set(items.map((item) => item.quoteCurrency).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)), [items]);
