@@ -2,6 +2,7 @@ name: Qoin React web
 
 on:
   push:
+    branches: [master]
     paths:
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
@@ -9,6 +10,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/react-web.yml"
   pull_request:
+    branches: [master]
     paths:
       - "frontend/apps/web/**"
       - "frontend/packages/core/**"
