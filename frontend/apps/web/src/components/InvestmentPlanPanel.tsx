@@ -26,6 +26,7 @@ export function InvestmentPlanPanel({ user }: Props) {
       setLoading(false);
       setSaved(false);
       setGoal("");
+      setCurrency("KES");
       setMonthly("");
       setTarget("");
       setYears("10");
@@ -33,6 +34,7 @@ export function InvestmentPlanPanel({ user }: Props) {
     }
     setSaved(false);
     setGoal("");
+    setCurrency("KES");
     setMonthly("");
     setTarget("");
     setYears("10");
