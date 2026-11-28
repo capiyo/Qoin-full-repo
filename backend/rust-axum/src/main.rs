@@ -11,7 +11,7 @@ use mongodb::{
     Client, Collection,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, HashMap, HashSet}, env, sync::{Arc, RwLock}, time::Duration};
+use std::{collections::{BTreeMap, HashMap, HashSet, VecDeque}, env, sync::{Arc, RwLock}, time::Duration};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::connect_async;
@@ -69,6 +69,7 @@ fn venue_state_key(venue:&str,symbol:&str)->String { format!("{}|{}",venue.trim(
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 struct SymbolState {
+    #[serde(default)] venue: String,
     symbol: String,
     event_count: usize,
     last_event_ts_ms: Option<i64>,
@@ -82,6 +83,8 @@ struct SymbolState {
     #[serde(default)] liquidity_imbalance: f64,
     #[serde(default)] liquidity_available: bool,
     #[serde(default)] last_trade_ts_ms: Option<i64>,
+    #[serde(skip)] last_price_ts_ms: Option<i64>,
+    #[serde(skip)] recent_return_observations: VecDeque<(i64, f64)>,
     signed_flow: f64,
     total_trade_size: f64,
     order_flow_imbalance: f64,
@@ -187,13 +190,32 @@ fn apply(state: &mut SymbolState, event: &MarketEvent) {
         let oi_decay = (-std::f64::consts::LN_2 * elapsed_ms / 300_000.0).exp();
         state.open_interest_change *= oi_decay;
     }
+    state.venue = event.venue.clone();
     state.symbol = event.symbol.clone();
     if event.event_type == "trade" {
         state.last_trade_ts_ms = Some(event.ts_ms);
     if let Some(price) = event.price.filter(|v| *v > 0.0) {
         if let Some(previous) = state.last_price.filter(|p| *p > 0.0) {
-            state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * (price / previous).ln().abs();
+            let log_return = (price / previous).ln();
+            if log_return.is_finite() {
+                let minute_bucket = event.ts_ms.div_euclid(60_000);
+                if let Some((last_ts, last_return)) = state.recent_return_observations.back_mut() {
+                    if last_ts.div_euclid(60_000) == minute_bucket {
+                        *last_return += log_return;
+                        *last_ts = event.ts_ms;
+                    } else {
+                        state.recent_return_observations.push_back((event.ts_ms, log_return));
+                    }
+                } else {
+                    state.recent_return_observations.push_back((event.ts_ms, log_return));
+                }
+                while state.recent_return_observations.len() > 1_440 {
+                    state.recent_return_observations.pop_front();
+                }
+            }
+            state.ewma_abs_return = 0.94 * state.ewma_abs_return + 0.06 * log_return.abs();
         }
+        state.last_price_ts_ms = Some(event.ts_ms);
         state.last_price = Some(price);
         state.basis_bps = state.mark_price.filter(|mark| *mark > 0.0)
             .map(|mark| (mark - price) / price * 10_000.0);
@@ -934,9 +956,22 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
     if !newly_inserted {
         return (StatusCode::OK,Json(serde_json::json!({"status":"duplicate_ignored","event_id":event.event_id,"ledger_repair_attempted":true})));
     }
-    let snapshot={
+    let (snapshot, mut peer_states)={
         let mut guard=match s.memory.write(){Ok(v)=>v,Err(_)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"error":"state lock poisoned"})))};
-        let state=guard.entry(state_key.clone()).or_default(); apply(state,&event); state.clone()
+        let snapshot={
+            let state=guard.entry(state_key.clone()).or_default();
+            apply(state,&event);
+            state.clone()
+        };
+        let mut peers=guard.iter()
+            .filter(|(key,_)| *key != &state_key)
+            .map(|(_,peer)| peer.clone())
+            .filter(|peer| peer.venue == event.venue && peer.symbol != event.symbol)
+            .collect::<Vec<_>>();
+        peers.sort_by(|left,right| right.last_price_ts_ms.cmp(&left.last_price_ts_ms)
+            .then_with(|| left.symbol.cmp(&right.symbol)));
+        peers.truncate(50);
+        (snapshot,peers)
     };
     let mut state_doc=mongodb::bson::to_document(&snapshot).unwrap_or_default();
     state_doc.insert("stored_at",mongodb::bson::DateTime::now());
@@ -967,7 +1002,7 @@ async fn ingest(State(s):State<AppState>,Json(event):Json<MarketEvent>)->impl In
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"vector decision failed","event_persisted":true,"state_persisted":true})));
         }
     };
-    let market_vector = market_vector::build_market_vector(&event, &snapshot, &signal, received_at_ms);
+    let market_vector = market_vector::build_market_vector(&event, &snapshot, &signal, received_at_ms, &peer_states);
     let market_vector_persisted = if let Some(vector) = market_vector.as_ref() {
         let mut document = mongodb::bson::to_document(vector).unwrap_or_default();
         document.insert("stored_at", mongodb::bson::DateTime::now());
