@@ -1,9 +1,9 @@
 name: Qoin live workspace checks
 on:
   push:
-    branches: [master, qoin-archive-explore-vector-ui]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   rust-engine:
